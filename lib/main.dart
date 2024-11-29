@@ -1,0 +1,31 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'screens/home_screen.dart';
+import 'providers/produto_provider.dart';
+import 'providers/cliente_provider.dart';
+import 'providers/vendas_provider.dart';
+
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => ProdutoProvider()),
+        ChangeNotifierProvider(create: (context) => ClienteProvider()),
+        ChangeNotifierProvider(create: (context) => VendasProvider()),
+      ],
+      child: MaterialApp(
+        title: 'PetShop',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          visualDensity: VisualDensity.adaptivePlatformDensity,
+        ),
+        home: HomeScreen(),
+      ),
+    );
+  }
+}
