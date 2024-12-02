@@ -1,8 +1,10 @@
-// pagamento_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_icons_null_safety/flutter_icons_null_safety.dart';  // Importando o pacote de ícones
+import 'package:flutter_icons_null_safety/flutter_icons_null_safety.dart';
 import 'package:gestor/screens/pagamento_credito_screen.dart';
 import 'package:gestor/screens/pagamento_debito_screen.dart';
+import 'package:provider/provider.dart';
+import '../providers/cliente_provider.dart';
+import 'cadastrar_cliente_screen.dart';
 import 'pagamento_dinheiro_screen.dart';
 
 class PagamentoScreen extends StatefulWidget {
@@ -16,12 +18,23 @@ class PagamentoScreen extends StatefulWidget {
 
 class _PagamentoScreenState extends State<PagamentoScreen> {
   String metodoPagamentoSelecionado = '';
+  String? clienteSelecionado;
 
   // Função para alterar o método de pagamento selecionado
   void selecionarMetodoPagamento(String metodo) {
     setState(() {
       metodoPagamentoSelecionado = metodo;
     });
+  }
+
+  // Função para navegar para a tela de cadastro de cliente
+  void cadastrarNovoCliente() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CadastrarClienteScreen(),
+      ),
+    );
   }
 
   // Função para navegar para a tela de pagamento correspondente
@@ -51,17 +64,62 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final clientProvider = Provider.of<ClientProvider>(context);
+    clienteSelecionado = clientProvider.clienteSelecionado; // Obtém o cliente selecionado do provider
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final clientProvider = Provider.of<ClientProvider>(context);
+    final clientes = clientProvider.clientes; // Acessando a lista de clientes
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Selecione o Método de Pagamento'),
+        title: Text('Método de Pagamento'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.person_add),
+            onPressed: cadastrarNovoCliente,
+            tooltip: 'Cadastrar Novo Cliente',
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
+            // Campo para selecionar o cliente
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20.0),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.blue),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: DropdownButton<String>(
+                  value: clienteSelecionado,
+                  hint: Text('Selecione um Cliente'),
+                  isExpanded: true,
+                  items: clientes.map((cliente) {
+                    return DropdownMenuItem<String>(
+                      value: cliente,
+                      child: Text(cliente),
+                    );
+                  }).toList(),
+                  onChanged: (novoCliente) {
+                    setState(() {
+                      clienteSelecionado = novoCliente;
+                      clientProvider.setClienteSelecionado(novoCliente!); // Atualiza o cliente selecionado no provider
+                    });
+                  },
+                ),
+              ),
+            ),
+
             // Exibindo o valor total no centro da tela
             Text(
               'Valor Total: R\$ ${widget.valorTotal.toStringAsFixed(2)}',
@@ -72,6 +130,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
               ),
             ),
             SizedBox(height: 30),
+
             // Exibindo as opções de pagamento com ícones
             GridView.builder(
               shrinkWrap: true,
@@ -110,6 +169,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
               },
             ),
             SizedBox(height: 30),
+
             // Botão Avançar
             ElevatedButton(
               onPressed: metodoPagamentoSelecionado.isEmpty

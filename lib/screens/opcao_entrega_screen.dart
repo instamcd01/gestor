@@ -22,6 +22,7 @@ Map<String, Map<String, double>> opcoesEntrega = {
     '0-2km': 0.0,
     '2-5km': 50.0,
     '5-7km': 70.0,
+    '7-10km': 100.0,
     '10-13km': 120.0,
     '13-15km': 150.0,
     '15-17km': 170.0,
@@ -32,8 +33,8 @@ Map<String, Map<String, double>> opcoesEntrega = {
   'Entrega paga': {
     '0-2km': 0.0,
     '2-5km': 4.99,
-    '0-5km': 4.99,
     '5-7km': 7.99,
+    '7-10km': 9.99,
     '10-13km': 12.99,
     '13-15km': 14.99,
     '15-17km': 16.99,

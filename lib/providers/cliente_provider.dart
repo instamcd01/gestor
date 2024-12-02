@@ -1,26 +1,57 @@
+import 'package:diacritic/diacritic.dart';
 import 'package:flutter/material.dart';
-import '../models/cliente.dart';
 
-class ClienteProvider with ChangeNotifier {
-  List<Cliente> _clientes = [];
+class ClientProvider with ChangeNotifier {
+  // Lista de clientes
+  List<String> _clientes = ['João', 'Maria', 'Carlos', 'Ana', 'Felipe'];
 
-  List<Cliente> get clientes => _clientes;
+  // Lista de clientes filtrados para a pesquisa
+  List<String> _clientesFiltrados = [];
 
-  void adicionarCliente(Cliente cliente) {
+  // Cliente selecionado
+  String? _clienteSelecionado;
+
+  // Getter para acessar a lista de clientes (filtrados ou completos)
+  List<String> get clientes => _clientesFiltrados.isEmpty ? _clientes : _clientesFiltrados;
+
+  String? get clienteSelecionado => _clienteSelecionado;
+
+  // Função para adicionar um cliente
+  void addCliente(String cliente) {
     _clientes.add(cliente);
-    notifyListeners();
+    notifyListeners(); // Notifica os listeners para atualizar a UI
   }
 
-  void editarCliente(String id, Cliente novoCliente) {
-    final index = _clientes.indexWhere((cliente) => cliente.id == id);
-    if (index >= 0) {
-      _clientes[index] = novoCliente;
-      notifyListeners();
+  // Função para remover um cliente
+  void removeCliente(String cliente) {
+    _clientes.remove(cliente);
+    notifyListeners(); // Notifica os listeners para atualizar a UI
+  }
+
+  // Função para pesquisar clientes (filtro)
+  void pesquisarClientes(String texto) {
+    if (texto.isEmpty) {
+      _clientesFiltrados.clear(); // Se o texto estiver vazio, exibe todos os clientes
+    } else {
+      // Normaliza o texto (remove acentos e converte para minúsculo)
+      String textoNormalizado = removeDiacritics(texto).toLowerCase();
+
+      // Filtra a lista de clientes
+      _clientesFiltrados = _clientes
+          .where((cliente) {
+        // Normaliza o nome do cliente (remove acentos e converte para minúsculo)
+        String clienteNormalizado = removeDiacritics(cliente).toLowerCase();
+        // Compara o nome normalizado com o texto da pesquisa
+        return clienteNormalizado.contains(textoNormalizado);
+      })
+          .toList();
     }
+    notifyListeners(); // Notifica os listeners para atualizar a UI
   }
 
-  void removerCliente(String id) {
-    _clientes.removeWhere((cliente) => cliente.id == id);
-    notifyListeners();
+  // Função para definir o cliente selecionado
+  void setClienteSelecionado(String cliente) {
+    _clienteSelecionado = cliente;
+    notifyListeners(); // Notifica os listeners para atualizar a UI
   }
 }

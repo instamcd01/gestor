@@ -211,7 +211,7 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                 );
               },
               child: Text(
-                'Finalizar Venda - ${widget.carrinho.length} Itens - R\$ ${totalComDesconto.toStringAsFixed(2)}',
+                '${widget.carrinho.length} Itens - R\$ ${totalComDesconto.toStringAsFixed(2)}',
               ),
             ),
           ],

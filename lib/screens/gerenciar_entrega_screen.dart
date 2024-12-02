@@ -14,17 +14,107 @@ class GerenciarEntregaScreen extends StatefulWidget {
 }
 
 class _GerenciarEntregaScreenState extends State<GerenciarEntregaScreen> {
-  Map<String, Map<String, double>> tempOpcoesEntrega = {};
+  late Map<String, Map<String, double>> opcoesEntrega;
 
-  // Controladores para os campos de entrada
-  final _tipoEntregaController = TextEditingController();
   final _distanciaController = TextEditingController();
   final _valorController = TextEditingController();
+
+  String? _selectedCategoria;
 
   @override
   void initState() {
     super.initState();
-    tempOpcoesEntrega = Map.from(widget.opcoesEntrega);
+    opcoesEntrega = Map.from(widget.opcoesEntrega);
+  }
+
+  void _adicionarOuEditarOpcaoEntrega({
+    String? categoria,
+    String? distancia,
+    double? valor,
+  }) {
+    setState(() {
+      _selectedCategoria = categoria ?? null;
+    });
+
+    _distanciaController.text = distancia ?? '';
+    _valorController.text = valor?.toString() ?? '';
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(categoria != null ? 'Editar Opção de Entrega' : 'Adicionar Nova Opção de Entrega'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: _selectedCategoria,
+                hint: Text('Selecione uma Categoria'),
+                items: opcoesEntrega.keys.map((categoria) {
+                  return DropdownMenuItem<String>(
+                    value: categoria,
+                    child: Text(categoria),
+                  );
+                }).toList(),
+                onChanged: (newCategoria) {
+                  setState(() {
+                    _selectedCategoria = newCategoria;
+                  });
+                },
+                decoration: InputDecoration(labelText: 'Categoria (Frete Grátis/Entrega Paga)'),
+              ),
+              TextField(
+                controller: _distanciaController,
+                decoration: InputDecoration(labelText: 'Distância (km)'),
+                keyboardType: TextInputType.text,
+              ),
+              TextField(
+                controller: _valorController,
+                decoration: InputDecoration(labelText: 'Valor (R\$)'),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                String novaDistancia = _distanciaController.text.trim();
+                double novoValor = double.tryParse(_valorController.text) ?? 0.0;
+
+                if (_selectedCategoria != null && novaDistancia.isNotEmpty) {
+                  setState(() {
+                    opcoesEntrega[_selectedCategoria!] ??= {};
+                    opcoesEntrega[_selectedCategoria!]![novaDistancia] = novoValor;
+                    _ordenarOpcoesPorDistancia(_selectedCategoria!);
+                  });
+                }
+
+                Navigator.of(ctx).pop();
+              },
+              child: Text('Salvar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _ordenarOpcoesPorDistancia(String categoria) {
+    if (opcoesEntrega[categoria] != null) {
+      final Map<String, double> ordenado = Map.fromEntries(
+        opcoesEntrega[categoria]!.entries.toList()
+          ..sort((a, b) {
+            int valorA = int.tryParse(a.key.split('-').first) ?? 0;
+            int valorB = int.tryParse(b.key.split('-').first) ?? 0;
+            return valorA.compareTo(valorB);
+          }),
+      );
+      opcoesEntrega[categoria] = ordenado;
+    }
   }
 
   @override
@@ -37,162 +127,79 @@ class _GerenciarEntregaScreenState extends State<GerenciarEntregaScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Exibe as opções de entrega cadastradas
             Expanded(
-              child: ListView.builder(
-                itemCount: tempOpcoesEntrega.keys.length,
-                itemBuilder: (ctx, index) {
-                  String tipoEntrega = tempOpcoesEntrega.keys.elementAt(index);
-                  return ListTile(
-                    title: Text(tipoEntrega),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: tempOpcoesEntrega[tipoEntrega]!
-                          .entries
-                          .map((entry) => Text('${entry.key}: R\$ ${entry.value}'))
-                          .toList(),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(Icons.edit),
-                          onPressed: () {
-                            // Quando clicar em editar, preencher os campos com os valores atuais
-                            _tipoEntregaController.text = tipoEntrega;
-                            _distanciaController.text = tempOpcoesEntrega[tipoEntrega]!.keys.first;
-                            _valorController.text = tempOpcoesEntrega[tipoEntrega]!.values.first.toString();
-                            showDialog(
-                              context: context,
-                              builder: (ctx) {
-                                return AlertDialog(
-                                  title: Text('Editar Opção de Entrega'),
-                                  content: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      TextField(
-                                        controller: _tipoEntregaController,
-                                        decoration: InputDecoration(labelText: 'Tipo de Entrega'),
-                                      ),
-                                      TextField(
-                                        controller: _distanciaController,
-                                        decoration: InputDecoration(labelText: 'Distância (km)'),
-                                      ),
-                                      TextField(
-                                        controller: _valorController,
-                                        keyboardType: TextInputType.number,
-                                        decoration: InputDecoration(labelText: 'Valor'),
-                                      ),
-                                    ],
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () {
-                                        Navigator.of(ctx).pop();
-                                      },
-                                      child: Text('Cancelar'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () {
-                                        String tipoEntrega = _tipoEntregaController.text;
-                                        String distancia = _distanciaController.text;
-                                        double valor = double.tryParse(_valorController.text) ?? 0.0;
-
-                                        setState(() {
-                                          tempOpcoesEntrega[tipoEntrega]![distancia] = valor;
-                                        });
-
-                                        Navigator.of(ctx).pop();
-                                      },
-                                      child: Text('Salvar'),
-                                    ),
-                                  ],
-                                );
-                              },
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.delete),
-                          onPressed: () {
-                            setState(() {
-                              tempOpcoesEntrega.remove(tipoEntrega);
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                  );
-                },
+              child: ListView(
+                children: opcoesEntrega.keys.map((categoria) {
+                  return _buildCategoria(categoria);
+                }).toList(),
               ),
             ),
             ElevatedButton(
               onPressed: () {
-                // Adiciona uma nova opção de entrega
-                showDialog(
-                  context: context,
-                  builder: (ctx) {
-                    return AlertDialog(
-                      title: Text('Adicionar Nova Opção de Entrega'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextField(
-                            controller: _tipoEntregaController,
-                            decoration: InputDecoration(labelText: 'Tipo de Entrega'),
-                          ),
-                          TextField(
-                            controller: _distanciaController,
-                            decoration: InputDecoration(labelText: 'Distância (km)'),
-                          ),
-                          TextField(
-                            controller: _valorController,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(labelText: 'Valor'),
-                          ),
-                        ],
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(ctx).pop();
-                          },
-                          child: Text('Cancelar'),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            String tipoEntrega = _tipoEntregaController.text;
-                            String distancia = _distanciaController.text;
-                            double valor = double.tryParse(_valorController.text) ?? 0.0;
-
-                            setState(() {
-                              if (tempOpcoesEntrega[tipoEntrega] == null) {
-                                tempOpcoesEntrega[tipoEntrega] = {};
-                              }
-                              tempOpcoesEntrega[tipoEntrega]![distancia] = valor;
-                            });
-
-                            Navigator.of(ctx).pop();
-                          },
-                          child: Text('Salvar'),
-                        ),
-                      ],
-                    );
-                  },
-                );
+                _adicionarOuEditarOpcaoEntrega();
               },
               child: Text('Adicionar Nova Opção de Entrega'),
             ),
             SizedBox(height: 10),
             ElevatedButton(
               onPressed: () {
-                widget.onSalvarOpcoesEntrega(tempOpcoesEntrega);
+                widget.onSalvarOpcoesEntrega(opcoesEntrega);
                 Navigator.pop(context);
               },
               child: Text('Salvar Alterações'),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCategoria(String categoria) {
+    return Card(
+      margin: EdgeInsets.symmetric(vertical: 8),
+      child: ExpansionTile(
+        title: Text(
+          categoria,
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        children: opcoesEntrega[categoria]?.entries
+            .map((entry) => ListTile(
+          title: Text('Distância: ${entry.key} km'),
+          subtitle: Text('Valor: R\$ ${entry.value.toStringAsFixed(2)}'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: Icon(Icons.edit),
+                onPressed: () {
+                  _adicionarOuEditarOpcaoEntrega(
+                    categoria: categoria,
+                    distancia: entry.key,
+                    valor: entry.value,
+                  );
+                },
+              ),
+              IconButton(
+                icon: Icon(Icons.delete),
+                onPressed: () {
+                  setState(() {
+                    opcoesEntrega[categoria]?.remove(entry.key);
+                    if (opcoesEntrega[categoria]?.isEmpty ?? true) {
+                      opcoesEntrega.remove(categoria);
+                    }
+                  });
+                },
+              ),
+            ],
+          ),
+        ))
+            .toList() ??
+            [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text('Nenhuma opção cadastrada.'),
+              ),
+            ],
       ),
     );
   }
