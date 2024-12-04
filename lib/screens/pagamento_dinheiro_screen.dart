@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/pedido_provider.dart';
+import 'conclusao_venda_screen.dart'; // Importar a nova tela
 
 class PagamentoDinheiroScreen extends StatefulWidget {
   final double valorTotal;
@@ -36,6 +39,22 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
     }
   }
 
+  void concluirPagamento(BuildContext context) {
+    final pedidoProvider = Provider.of<PedidoProvider>(context, listen: false);
+    pedidoProvider.adicionarPedido(
+      Pedido(
+        codigo: DateTime.now().millisecondsSinceEpoch.toString(),
+        cliente: 'Cliente Padrão', // Substituir pelo nome do cliente real
+        valor: widget.valorTotal,
+        status: 'Concluído',
+        vendedor: 'Loja A', // Substituir pela loja ou vendedor real
+      ),
+    );
+
+    // Navegar para a tela de pedidos
+    Navigator.pushReplacementNamed(context, '/pedidos');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -47,7 +66,6 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
-            // Valor total do carrinho
             Text(
               'Valor Total: R\$ ${widget.valorTotal.toStringAsFixed(2)}',
               style: TextStyle(
@@ -57,7 +75,6 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
               ),
             ),
             SizedBox(height: 30),
-            // Campo para o valor recebido
             TextField(
               controller: _valorRecebidoController,
               keyboardType: TextInputType.number,
@@ -70,7 +87,6 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
               },
             ),
             SizedBox(height: 20),
-            // Exibindo o troco ou o valor que falta
             if (_troco > 0)
               Text(
                 'Troco: R\$ ${_troco.toStringAsFixed(2)}',
@@ -88,16 +104,22 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
                 ),
               ),
             SizedBox(height: 30),
-            // Botão para concluir o pagamento
             ElevatedButton(
               onPressed: () {
-                // Implementar lógica de conclusão, pode ser uma navegação ou outra ação
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Pagamento concluído!'),
+                if (_valorFaltando > 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Pagamento incompleto!')),
+                  );
+                  return;
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        ConclusaoVendaScreen(valorTotal: widget.valorTotal),
                   ),
                 );
-                Navigator.pop(context);  // Voltar para a tela anterior após o pagamento
+                concluirPagamento(context);
               },
               child: Text('Concluir'),
               style: ElevatedButton.styleFrom(

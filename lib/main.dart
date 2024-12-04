@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gestor/providers/pedido_provider.dart';
 import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'providers/produto_provider.dart';
@@ -17,6 +18,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => ProdutoProvider()),
         ChangeNotifierProvider(create: (context) => ClientProvider()),
         ChangeNotifierProvider(create: (context) => VendasProvider()),
+        ChangeNotifierProvider(create: (_) => PedidoProvider()),
       ],
       child: MaterialApp(
         title: 'PetShop',

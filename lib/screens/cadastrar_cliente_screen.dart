@@ -41,7 +41,7 @@ class _CadastrarClienteScreenState extends State<CadastrarClienteScreen> {
         MaterialPageRoute(
           builder: (context) => AdicionarClienteScreen(
             onSalvar: (nome) {
-              clientProvider.addCliente(nome); // Adiciona o cliente ao provider
+              clientProvider.addCliente(nome as String); // Adiciona o cliente ao provider
               Navigator.pop(context); // Volta para a tela de cadastro com lista atualizada
             },
           ),

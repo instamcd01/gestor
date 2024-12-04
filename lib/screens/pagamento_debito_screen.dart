@@ -1,6 +1,8 @@
 // pagamento_cartao_debito_screen.dart
 import 'package:flutter/material.dart';
 
+import 'conclusao_venda_screen.dart';
+
 class PagamentoCartaoDebitoScreen extends StatefulWidget {
   final double valorTotal;
 
@@ -70,24 +72,46 @@ class _PagamentoCartaoDebitoScreenState
               ),
             SizedBox(height: 30),
             ElevatedButton(
-              onPressed: valorFaltante > 0
-                  ? null // Desabilita o botão se ainda faltar valor
-                  : () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Pagamento com Cartão de Débito realizado!'),
+              onPressed: () {
+                if (valorFaltante > 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Pagamento incompleto!')),
+                  );
+                  return;
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        ConclusaoVendaScreen(valorTotal: widget.valorTotal),
                   ),
                 );
-                Navigator.pop(context);
               },
-              child: Text(valorFaltante > 0
-                  ? 'Finalizar Pagamento' // Caso haja falta, o texto muda
-                  : 'Concluir'),
+              child: Text('Concluir'),
               style: ElevatedButton.styleFrom(
                 minimumSize: Size(double.infinity, 50),
                 textStyle: TextStyle(fontSize: 18),
               ),
             ),
+            // ElevatedButton(
+            //   onPressed: valorFaltante > 0
+            //       ? null // Desabilita o botão se ainda faltar valor
+            //       : () {
+            //     ScaffoldMessenger.of(context).showSnackBar(
+            //       SnackBar(
+            //         content: Text('Pagamento com Cartão de Débito realizado!'),
+            //       ),
+            //     );
+            //     Navigator.pop(context);
+            //   },
+            //   child: Text(valorFaltante > 0
+            //       ? 'Finalizar Pagamento' // Caso haja falta, o texto muda
+            //       : 'Concluir'),
+            //   style: ElevatedButton.styleFrom(
+            //     minimumSize: Size(double.infinity, 50),
+            //     textStyle: TextStyle(fontSize: 18),
+            //   ),
+            // ),
           ],
         ),
       ),

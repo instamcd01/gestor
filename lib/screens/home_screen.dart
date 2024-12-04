@@ -1,4 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:gestor/screens/catalogo_online_screen.dart';
+import 'package:gestor/screens/cliente_screen.dart';
+import 'package:gestor/screens/configuracoes_screen.dart';
+import 'package:gestor/screens/estatisticas_screen.dart';
+import 'package:gestor/screens/financas_screen.dart';
+import 'package:gestor/screens/pedidos_screen.dart';
+import 'package:gestor/screens/usuarios_screen.dart';
 import 'package:provider/provider.dart';
 import '../providers/cliente_provider.dart';
 import 'vendas_screen.dart';
@@ -11,7 +18,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Controlador para o Drawer
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
@@ -19,7 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final clientes = Provider.of<ClientProvider>(context).clientes;
 
     return Scaffold(
-      key: _scaffoldKey, // Adiciona a chave para controlar o Drawer
+      key: _scaffoldKey,
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.blue,
@@ -31,7 +37,6 @@ class _HomeScreenState extends State<HomeScreen> {
         leading: IconButton(
           icon: Icon(Icons.menu),
           onPressed: () {
-            // Abre o painel lateral quando o ícone de menu for clicado
             _scaffoldKey.currentState?.openDrawer();
           },
         ),
@@ -39,34 +44,98 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: _buildCustomDrawer(context),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            // Espaço para a logo
-            Container(
-              margin: EdgeInsets.only(bottom: 32),
-              child: Image.asset(
-                'assets/logo.png', // Insira o caminho da logo
-                height: 120,
+        child: SingleChildScrollView( // Adicionando scroll para garantir que todo conteúdo seja acessível
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              // Espaço para a logo
+              Container(
+                margin: EdgeInsets.only(bottom: 32),
+                // child: Image.asset(
+                //   'assets/logo.png', // Insira o caminho da logo
+                //   height: 120,
+                // ),
               ),
-            ),
-          ],
+
+              // Conteúdo adicional
+              Text(
+                'Bem-vindo ao seu PetShop!',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Gerencie seus produtos, pedidos, e clientes de forma simples e eficiente.',
+                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 40),
+
+              // Botões de navegação rápidos
+              GridView.count(
+                shrinkWrap: true, // Para garantir que o GridView não ocupe mais espaço que o necessário
+                crossAxisCount: 2, // 2 colunas para os botões
+                crossAxisSpacing: 20,
+                mainAxisSpacing: 20,
+                childAspectRatio: 1.2, // Ajuste o aspecto para prevenir overflow
+                children: <Widget>[
+                  _buildButton('Vender', Icons.shopping_cart_outlined, VendasScreen()),
+                  _buildButton('Pedidos', Icons.pets, PedidosScreen(pedidosConcluidos: [])),
+                  _buildButton('Produtos', Icons.local_mall, ProdutosScreen()), // Ajustei para um ícone mais específico de produtos
+                  _buildButton('Histórico', Icons.history, HistoricoVendasScreen()),
+                  _buildButton('Clientes', Icons.person, ClientesScreen()),
+                  _buildButton('Catálogo Online', Icons.book_online, CatalogoOnlineScreen()),
+                  _buildButton('Finanças', Icons.money, FinancasScreen()),
+                  _buildButton('Estatisticas', Icons.area_chart, EstatisticasScreen()),
+                  _buildButton('Usuários', Icons.person_pin, UsuariosScreen()),
+                  _buildButton('Configurações', Icons.settings, ConfiguracoesScreen()),// Ajustei para um ícone de cliente mais apropriado
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // Método para criar o Drawer customizado
+  // Método para criar botões de navegação
+  Widget _buildButton(String title, IconData icon, Widget screen) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => screen),
+        );
+      },
+      child: Card(
+        color: Colors.blue[50],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Container(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 40, color: Colors.blue),
+              SizedBox(height: 8),
+              Text(
+                title,
+                style: TextStyle(fontSize: 18, color: Colors.blue, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCustomDrawer(BuildContext context) {
     return Drawer(
       width: MediaQuery.of(context).size.width * 0.7, // 70% da largura
       child: Container(
-        color: Colors.blue[100], // Cor de fundo para o painel
+        color: Colors.blue[100],
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            // Cabeçalho do painel
             DrawerHeader(
               decoration: BoxDecoration(
                 color: Colors.blue,
@@ -86,7 +155,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            // Itens do menu
             ListTile(
               leading: Icon(Icons.shopping_cart_outlined),
               title: Text('Vender', style: TextStyle(fontSize: 18)),
@@ -99,6 +167,16 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ListTile(
               leading: Icon(Icons.pets),
+              title: Text('Pedidos', style: TextStyle(fontSize: 18)),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => PedidosScreen(pedidosConcluidos: [],)),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.local_mall),
               title: Text('Produtos', style: TextStyle(fontSize: 18)),
               onTap: () {
                 Navigator.push(
@@ -114,6 +192,66 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => HistoricoVendasScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.person),
+              title: Text('Clientes', style: TextStyle(fontSize: 18)),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ClientesScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.book_online),
+              title: Text('Catálogo Online', style: TextStyle(fontSize: 18)),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => CatalogoOnlineScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.money),
+              title: Text('Finanças', style: TextStyle(fontSize: 18)),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => FinancasScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.area_chart),
+              title: Text('Estatisticas', style: TextStyle(fontSize: 18)),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => EstatisticasScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.person_pin),
+              title: Text('Usuários', style: TextStyle(fontSize: 18)),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => UsuariosScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.settings),
+              title: Text('Configurações', style: TextStyle(fontSize: 18)),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ConfiguracoesScreen()),
                 );
               },
             ),
