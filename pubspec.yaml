@@ -49,6 +49,9 @@ dependencies:
   path_provider: ^2.0.11
   permission_handler: ^10.0.0
   image_picker: ^0.8.5+3
+  excel: ^2.0.5
+  file_picker: ^5.2.7
+  share_plus: ^6.0.1
 
 dev_dependencies:
   flutter_test:
