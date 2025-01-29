@@ -110,7 +110,8 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
               itemBuilder: (ctx, i) {
                 return Card(
                   margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                  child: ListTile(
+                  child:
+                  ListTile(
                     contentPadding: EdgeInsets.all(16),
                     leading: produtosFiltrados[i].imagemUrl.isNotEmpty
                         ? Image.network(produtosFiltrados[i].imagemUrl)

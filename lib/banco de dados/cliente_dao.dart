@@ -21,13 +21,15 @@ class ClienteDao {
     final List<Map<String, dynamic>> maps = await _db.query('clientes');
     return List.generate(maps.length, (i) {
       return Cliente(
-        id: maps[i]['id'],
+        idCliente: maps[i]['id'],
         nome: maps[i]['nome'],
         celular: maps[i]['celular'],
         email: maps[i]['email'],
         endereco: maps[i]['endereco'],
+        complemento: maps[i]['complemento'],
         cpf: maps[i]['cpf'],
         pet: maps[i]['pet'],
+        observacao: maps[i]['observacao'],
         saldo: maps[i]['saldo'],
       );
     });
@@ -44,7 +46,7 @@ class ClienteDao {
       'clientes',
       cliente.toMap(),
       where: 'id = ?',
-      whereArgs: [cliente.id],
+      whereArgs: [cliente.idCliente],
     );
   }
 

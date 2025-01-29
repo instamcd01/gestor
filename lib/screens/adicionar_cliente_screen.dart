@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/cliente.dart';
+import '../providers/cliente_provider.dart';
+
 class AdicionarClienteScreen extends StatefulWidget {
-  final Function(String) onSalvar; // Callback para salvar o cliente
+  final Function(Cliente) onSalvar; // Callback para salvar o cliente
 
   AdicionarClienteScreen({required this.onSalvar});
 
@@ -16,34 +19,82 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
   final _enderecoController = TextEditingController();
   final _emailController = TextEditingController();
   final _cpfController = TextEditingController();
+  final _idController = TextEditingController();
+  final _complementoController = TextEditingController();
+  final _observacaoController = TextEditingController();
+  final _saldoController = TextEditingController();
 
   // Lista de opções de pets
   final List<String> _pets = ['Cão', 'Gato', 'Passarinho', 'Peixe', 'Coelho'];
   // Lista para armazenar os pets selecionados
   List<String> _petsSelecionados = [];
 
-  void salvarCliente() {
-    final nome = _nomeController.text;
-    if (nome.isEmpty) return; // Verifica se o nome foi preenchido
-    // Adiciona a informação dos pets ao nome antes de salvar
-    // final petsInfo = _petsSelecionados.isNotEmpty
-    //     ? 'Pets: ${_petsSelecionados.join(', ')}'
-    //     : 'Sem pets';
+  // void salvarCliente() {
+  //   final nome = _nomeController.text;
+  //   final celular = _celularController.text;
+  //   final endereco = _enderecoController.text;
+  //   final email = _emailController.text;
+  //   final cpf = _cpfController.text;
+  //   final id = _idController.text;
+  //   final complemento = _complementoController.text;
+  //   final observacao = _observacaoController.text;
+  //   final saldo = _saldoController.text;
+  //
+  //   if (nome.isEmpty || celular.isEmpty) return; // Verifica se nome e celular foram preenchidos
+  //
+  //   // Cria o objeto Cliente com os dados
+  //   final novoCliente = Cliente(
+  //     nome: nome,
+  //     celular: celular,
+  //     endereco: endereco,
+  //     email: email,
+  //     cpf: cpf,
+  //     pet: _petsSelecionados,
+  //     id: id,
+  //     complemento: complemento,
+  //     observacao: observacao,
+  //     saldo: double.tryParse(saldo) ?? 0.0,
+  //   );
+  //
+  //   widget.onSalvar(novoCliente); // Passa o Cliente para o callback
+  //
+  //   Navigator.pop(context); // Volta para a tela anterior
+  // }
 
-    widget.onSalvar('$nome '
-        // '- $petsInfo'
-    ); // Chama a função de salvar com o nome e pets
+  void _salvarCliente() {
+    final updatedCliente = Cliente(
+      nome: _nomeController.text,
+      celular: _celularController.text,
+      endereco: _enderecoController.text,
+      complemento: _complementoController.text,
+      email: _emailController.text,
+      cpf: _cpfController.text,
+      observacao: _observacaoController.text,
+      saldo: double.tryParse(_saldoController.text) ?? 0.0,
+      idCliente: _idController.text,
+      pet: _petsSelecionados,
+    );
 
-    Navigator.pop(context); // Volta para a tela anterior
+    // Atualiza ou adiciona o cliente no provider
+    final clientProvider = Provider.of<ClientProvider>(context, listen: false);
+
+    // Verifica se o cliente selecionado possui um ID. Se tiver, é uma atualização, caso contrário, é uma criação.
+    // if (widget.clienteSelecionado != null && widget.clienteSelecionado!.id.isNotEmpty) {
+    //   clientProvider.atualizarCliente(updatedCliente); // Atualiza o cliente
+    // } else {
+      clientProvider.addCliente(updatedCliente); // Adiciona um novo cliente
+
+
+    // Volta para a tela anterior
+    Navigator.pop(context);
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Adicionar Cliente'),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,12 +112,28 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
               decoration: InputDecoration(labelText: 'Endereço'),
             ),
             TextField(
+              controller: _complementoController,
+              decoration: InputDecoration(labelText: 'Complemento'),
+            ),
+            TextField(
               controller: _emailController,
               decoration: InputDecoration(labelText: 'Email'),
             ),
             TextField(
               controller: _cpfController,
               decoration: InputDecoration(labelText: 'CPF'),
+            ),
+            TextField(
+              controller: _observacaoController,
+              decoration: InputDecoration(labelText: 'Observação'),
+            ),
+            TextField(
+              controller: _saldoController,
+              decoration: InputDecoration(labelText: 'Saldo'),
+            ),
+            TextField(
+              controller: _idController,
+              decoration: InputDecoration(labelText: 'Id'),
             ),
             SizedBox(height: 20),
             // Seção de seleção de pets
@@ -85,9 +152,18 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
               },
             )),
             SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: salvarCliente,
-              child: Text('Salvar'),
+            Center(
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _salvarCliente,
+                  style: ElevatedButton.styleFrom(
+                    padding: EdgeInsets.symmetric(vertical: 16.0),
+                    textStyle: TextStyle(fontSize: 18),
+                  ),
+                  child: Text('Salvar'),
+                ),
+              ),
             ),
           ],
         ),
@@ -95,6 +171,7 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
     );
   }
 }
+
 
 // import 'package:flutter/material.dart';
 // import 'package:uuid/uuid.dart';
@@ -146,7 +223,7 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
 //       endereco: endereco,
 //       cpf: cpf,
 //       pet: pet,
-//       saldo: 0.0, // Define saldo como 0.0
+//       saldo: 0.0, complemento: '', observacao: '', // Define saldo como 0.0
 //     );
 //
 //     // Salva no banco de dados

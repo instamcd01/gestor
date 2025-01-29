@@ -5,8 +5,8 @@ import 'conclusao_venda_screen.dart'; // Importar a nova tela
 
 class PagamentoDinheiroScreen extends StatefulWidget {
   final double valorTotal;
-
-  PagamentoDinheiroScreen({required this.valorTotal});
+  final List<Map<String, dynamic>> carrinho;
+  PagamentoDinheiroScreen({required this.valorTotal, required this.carrinho});
 
   @override
   _PagamentoDinheiroScreenState createState() =>
@@ -52,7 +52,7 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
     );
 
     // Navegar para a tela de pedidos
-    Navigator.pushReplacementNamed(context, '/pedidos');
+    // Navigator.pushReplacementNamed(context, '/historico_vendas');
   }
 
   @override
@@ -116,7 +116,7 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (context) =>
-                        ConclusaoVendaScreen(valorTotal: widget.valorTotal),
+                        ConclusaoVendaScreen(valorTotal: widget.valorTotal,carrinho: widget.carrinho,),
                   ),
                 );
                 concluirPagamento(context);

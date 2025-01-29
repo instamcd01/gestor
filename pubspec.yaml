@@ -52,6 +52,7 @@ dependencies:
   excel: ^2.0.5
   file_picker: ^5.2.7
   share_plus: ^6.0.1
+  url_launcher: ^6.1.9
 
 dev_dependencies:
   flutter_test:

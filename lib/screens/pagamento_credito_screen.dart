@@ -6,7 +6,7 @@ import 'conclusao_venda_screen.dart';
 class PagamentoCartaoCreditoScreen extends StatefulWidget {
   final double valorTotal;
 
-  PagamentoCartaoCreditoScreen({required this.valorTotal});
+  PagamentoCartaoCreditoScreen({required this.valorTotal, required List<Map<String, dynamic>> carrinho});
 
   @override
   _PagamentoCartaoCreditoScreenState createState() =>
@@ -83,7 +83,7 @@ class _PagamentoCartaoCreditoScreenState
                   context,
                   MaterialPageRoute(
                     builder: (context) =>
-                        ConclusaoVendaScreen(valorTotal: widget.valorTotal),
+                        ConclusaoVendaScreen(valorTotal: widget.valorTotal,carrinho: [],),
                   ),
                 );
               },

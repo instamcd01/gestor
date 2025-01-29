@@ -1,47 +1,3 @@
-// class Produto {
-//   final String id;
-//   final String nome;
-//   final double preco;
-//   final double precoPromocional;
-//   final double precoIfood;
-//   final double custo;
-//   final String categoria;
-//   final String validade;
-//   final String descricao;
-//   final String codigoBarras;
-//   final String imagemUrl;
-//   final String markup;
-//   final String lucro;
-//   final String empresa;
-//   final String precoConcorrencia;
-//   final int estoqueAtual;
-//   final int estoqueMinimo;
-//   final bool destacar;
-//   final bool exibirNoCatalogo;
-//
-//   Produto({
-//     required this.id,
-//     required this.nome,
-//     required this.preco,
-//     required this.precoPromocional,
-//     required this.custo,
-//     required this.categoria,
-//     required this.descricao,
-//     required this.codigoBarras,
-//     required this.imagemUrl,
-//     required this.estoqueAtual,
-//     required this.estoqueMinimo,
-//     required this.destacar,
-//     required this.exibirNoCatalogo,
-//     required this.precoIfood,
-//     required this.validade,
-//     required this.markup,
-//     required this.lucro,
-//     required this.empresa,
-//     required this.precoConcorrencia,
-//   });
-// }
-
 
 class Produto {
   String _id;
@@ -55,15 +11,14 @@ class Produto {
   String _descricao;
   String _codigoBarras;
   String _imagemUrl;
-  String _markup;
-  String _lucro;
+  double _markup;  // Alterado para double
+  double _lucro;  // Alterado para double
   String _empresa;
-  String _precoConcorrencia;
+  double _precoConcorrencia;  // Alterado para double
   int _estoqueAtual;
   int _estoqueMinimo;
   bool _destacar;
   bool _exibirNoCatalogo;
-
 
   Produto({
     required String id,
@@ -77,10 +32,10 @@ class Produto {
     required String descricao,
     required String codigoBarras,
     required String imagemUrl,
-    required String markup,
-    required String lucro,
+    required double markup,  // Alterado para double
+    required double lucro,  // Alterado para double
     required String empresa,
-    required String precoConcorrencia,
+    required double precoConcorrencia,  // Alterado para double
     required int estoqueAtual,
     required int estoqueMinimo,
     required bool destacar,
@@ -117,20 +72,20 @@ class Produto {
   String get descricao => _descricao;
   String get codigoBarras => _codigoBarras;
   String get imagemUrl => _imagemUrl;
-  String get markup => _markup;
-  String get lucro => _lucro;
+  double get markup => _markup;  // Alterado para double
+  double get lucro => _lucro;  // Alterado para double
   String get empresa => _empresa;
-  String get precoConcorrencia => _precoConcorrencia;
+  double get precoConcorrencia => _precoConcorrencia;  // Alterado para double
   int get estoqueAtual => _estoqueAtual;
   int get estoqueMinimo => _estoqueMinimo;
   bool get destacar => _destacar;
   bool get exibirNoCatalogo => _exibirNoCatalogo;
 
   // Setters
-
   set id(String novoId) {
     _id = novoId;
   }
+
   set nome(String novoNome) {
     _nome = novoNome;
   }
@@ -171,11 +126,11 @@ class Produto {
     _imagemUrl = novaImagemUrl;
   }
 
-  set markup(String novoMarkup) {
+  set markup(double novoMarkup) {  // Alterado para double
     _markup = novoMarkup;
   }
 
-  set lucro(String novoLucro) {
+  set lucro(double novoLucro) {  // Alterado para double
     _lucro = novoLucro;
   }
 
@@ -183,7 +138,7 @@ class Produto {
     _empresa = novaEmpresa;
   }
 
-  set precoConcorrencia(String novoPrecoConcorrencia) {
+  set precoConcorrencia(double novoPrecoConcorrencia) {  // Alterado para double
     _precoConcorrencia = novoPrecoConcorrencia;
   }
 
@@ -202,4 +157,50 @@ class Produto {
   set exibirNoCatalogo(bool novoExibirNoCatalogo) {
     _exibirNoCatalogo = novoExibirNoCatalogo;
   }
- }
+}
+
+
+// class Produto {
+//   final String id;
+//   final String nome;
+//   final double preco;
+//   final double precoPromocional;
+//   final double precoIfood;
+//   final double custo;
+//   final String categoria;
+//   final String validade;
+//   final String descricao;
+//   final String codigoBarras;
+//   final String imagemUrl;
+//   final double markup;
+//   final double lucro;
+//   final String empresa;
+//   final double precoConcorrencia;
+//   final int estoqueAtual;
+//   final int estoqueMinimo;
+//   final bool destacar;
+//   final bool exibirNoCatalogo;
+//
+//   // Construtor
+//   Produto({
+//     required this.id,
+//     required this.nome,
+//     required this.preco,
+//     required this.precoPromocional,
+//     required this.precoIfood,
+//     required this.custo,
+//     required this.categoria,
+//     required this.validade,
+//     required this.descricao,
+//     required this.codigoBarras,
+//     required this.imagemUrl,
+//     required this.markup,
+//     required this.lucro,
+//     required this.empresa,
+//     required this.precoConcorrencia,
+//     required this.estoqueAtual,
+//     required this.estoqueMinimo,
+//     required this.destacar,
+//     required this.exibirNoCatalogo,
+//   });
+// }

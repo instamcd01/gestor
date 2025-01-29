@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/produto.dart';
+import '../widgets/produto_service.dart';
 
 class ProdutoProvider with ChangeNotifier {
   List<Produto> _produtos = [
@@ -50,6 +51,7 @@ class ProdutoProvider with ChangeNotifier {
   ];
 
   List<Produto> get produtos => _produtos;
+  // final ProdutoService _produtoService = ProdutoService();
 
   void atualizarProduto(Produto produto) {
     final index = _produtos.indexWhere((p) => p.id == produto.id);
@@ -90,6 +92,36 @@ class ProdutoProvider with ChangeNotifier {
     _produtos.add(produto);
     notifyListeners();
   }
+
+  // Future<void> adicionarProduto(Produto produto) async {
+  //   final dados = await _produtoService.buscarProdutoPorCodigoBarras(produto.codigoBarras);
+  //   final novoProduto = Produto(
+  //     id: produto.id,
+  //     nome: produto.nome,
+  //     categoria: produto.categoria,
+  //     preco: produto.preco,
+  //     estoqueAtual: produto.estoqueAtual,
+  //     imagemUrl: dados['imagemUrl'] ?? '',
+  //     descricao: dados['descricao'] ?? '',
+  //     precoPromocional: produto.precoPromocional,
+  //     precoIfood: produto.precoIfood,
+  //     custo: produto.custo,
+  //     validade: produto.validade,
+  //     codigoBarras: produto.codigoBarras,
+  //     markup: produto.markup,
+  //     lucro: produto.lucro,
+  //     empresa: produto.empresa,
+  //     precoConcorrencia: produto.precoConcorrencia,
+  //     estoqueMinimo: produto.estoqueMinimo,
+  //     destacar: produto.destacar,
+  //     exibirNoCatalogo: produto.exibirNoCatalogo,
+  //
+  //   );
+  //   _produtos.add(novoProduto);
+  //   notifyListeners();
+  // }
+
+
   void adicionarProdutos(List<Produto> novosProdutos) {
     // Adicionar múltiplos produtos à lista existente
     _produtos.addAll(novosProdutos);

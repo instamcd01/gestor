@@ -23,6 +23,9 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   final _estoqueController = TextEditingController();
   final _estoqueMinimoController = TextEditingController();
   final _precoIfoodController = TextEditingController();
+  final _markupController = TextEditingController();
+  final _lucroController = TextEditingController();
+  final _precoConcorrenciaController = TextEditingController();
   bool _destacarProduto = false;
   bool _exibirNoCatalogo = true;
   XFile? _imagemProduto;
@@ -53,7 +56,10 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
         destacar: _destacarProduto,
         exibirNoCatalogo: _exibirNoCatalogo,
         precoIfood: double.parse(_precoIfoodController.text),
-        validade: '', markup: '', lucro: '', empresa: '', precoConcorrencia: '',
+        validade: '', markup: double.parse(_markupController.text),
+        lucro: double.parse(_lucroController.text),
+        empresa: '',
+        precoConcorrencia: double.parse(_precoConcorrenciaController.text),
       );
 
       // Adicionar o produto ao Provider

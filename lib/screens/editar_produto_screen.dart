@@ -135,10 +135,10 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _descricaoController = TextEditingController(text: widget.produto.descricao);
     _codigoBarrasController = TextEditingController(text: widget.produto.codigoBarras);
     _imagemUrlController = TextEditingController(text: widget.produto.imagemUrl);
-    _markupController = TextEditingController(text: widget.produto.markup);
-    _lucroController = TextEditingController(text: widget.produto.lucro);
+    _markupController = TextEditingController(text: widget.produto.markup.toString());
+    _lucroController = TextEditingController(text: widget.produto.lucro.toString());
     _empresaController = TextEditingController(text: widget.produto.empresa);
-    _precoConcorrenciaController = TextEditingController(text: widget.produto.precoConcorrencia);
+    _precoConcorrenciaController = TextEditingController(text: widget.produto.precoConcorrencia.toString());
     _estoqueAtualController = TextEditingController(text: widget.produto.estoqueAtual.toString());
     _estoqueMinimoController = TextEditingController(text: widget.produto.estoqueMinimo.toString());
     _destacarController = TextEditingController(text: widget.produto.destacar.toString());
@@ -183,10 +183,10 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     widget.produto.descricao = _descricaoController.text;
     widget.produto.codigoBarras = _codigoBarrasController.text;
     widget.produto.imagemUrl = _imagemUrlController.text;
-    widget.produto.markup = _markupController.text;
-    widget.produto.lucro = _lucroController.text;
+    widget.produto.markup = double.tryParse(_markupController.text) ?? 0.0;
+    widget.produto.lucro = double.tryParse(_lucroController.text) ?? 0.0;
     widget.produto.empresa = _empresaController.text;
-    widget.produto.precoConcorrencia = _precoConcorrenciaController.text;
+    widget.produto.precoConcorrencia = double.tryParse(_precoConcorrenciaController.text) ?? 0.0;
     widget.produto.estoqueAtual = int.tryParse(_estoqueAtualController.text) ?? 0;
     widget.produto.estoqueMinimo = int.tryParse(_estoqueMinimoController.text) ?? 0;
     widget.produto.destacar = _destacarController.text.toLowerCase() == 'true';

@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:gestor/providers/carrinho_provider.dart';
+import 'package:gestor/providers/historico_vendas_provider.dart';
 import 'package:gestor/providers/pedido_provider.dart';
+import 'package:gestor/screens/conclusao_venda_screen.dart';
+import 'package:gestor/screens/historico_vendas_screen.dart';
+import 'package:gestor/screens/pagamento_debito_screen.dart';
+import 'package:gestor/screens/pedidos_screen.dart';
 import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'providers/produto_provider.dart';
@@ -19,6 +25,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => ClientProvider()),
         ChangeNotifierProvider(create: (context) => VendasProvider()),
         ChangeNotifierProvider(create: (_) => PedidoProvider()),
+        ChangeNotifierProvider(create: (_) => HistoricoVendasProvider()),
+    // ChangeNotifierProvider(create: (context) => CarrinhoProvider()),
       ],
       child: MaterialApp(
         title: 'PetShop',
@@ -27,6 +35,13 @@ class MyApp extends StatelessWidget {
           visualDensity: VisualDensity.adaptivePlatformDensity,
         ),
         home: HomeScreen(),
+        routes: {
+          '/home': (context) => HomeScreen(),
+          '/pagamento_cartao_debito': (context) => PagamentoCartaoDebitoScreen(valorTotal: 0.0, carrinho: [],),
+          '/conclusao_venda': (context) => ConclusaoVendaScreen(valorTotal: 0.0,carrinho: [],),
+          '/historico_vendas': (context) => HistoricoVendasScreen(),
+          '/pedidos': (context) => PedidosScreen(pedidosConcluidos: [],),
+        },
       ),
     );
   }

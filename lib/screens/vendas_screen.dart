@@ -74,19 +74,48 @@ class _VendasScreenState extends State<VendasScreen> {
     });
   }
 
+  String getTotalUnidades() {
+    double totalUnidades = 0;
+    for (var item in carrinho) {
+      totalUnidades += item['quantidade'];
+    }
+    // Retorna como inteiro se for equivalente; caso contrário, como double formatado
+    return totalUnidades == totalUnidades.toInt()
+        ? totalUnidades.toInt().toString()
+        : totalUnidades.toString();
+  }
   void _filtrarProdutosPorCategoria(String categoria) {
     setState(() {
       categoriaSelecionada = categoria;
+      final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
+
       if (categoria == 'Tudo') {
-        produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false).produtos;
+        // Exibe todos os produtos
+        produtosFiltrados = produtoProvider.produtos;
       } else {
-        produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false)
-            .produtos
-            .where((produto) => produto.categoria == categoria)
-            .toList();
+        // Normaliza o nome da categoria para garantir a correspondência
+        final categoriaNormalizada = normalizeString(categoria);
+        produtosFiltrados = produtoProvider.produtos.where((produto) {
+          final categoriaProdutoNormalizada = normalizeString(produto.categoria ?? '');
+          return categoriaProdutoNormalizada == categoriaNormalizada;
+        }).toList();
       }
     });
   }
+
+  // void _filtrarProdutosPorCategoria(String categoria) {
+  //   setState(() {
+  //     categoriaSelecionada = categoria;
+  //     if (categoria == 'Tudo') {
+  //       produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false).produtos;
+  //     } else {
+  //       produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false)
+  //           .produtos
+  //           .where((produto) => produto.categoria == categoria)
+  //           .toList();
+  //     }
+  //   });
+  // }
 
   // Future<void> _scanBarcode() async {
   //   String barcode = await FlutterBarcodeScanner.scanBarcode(
@@ -157,11 +186,29 @@ class _VendasScreenState extends State<VendasScreen> {
                   onTap: () {
                     _filtrarProdutosPorCategoria(categorias[index]);
                   },
-                  child: Container(
+                  child:
+                  Container(
                     padding: EdgeInsets.symmetric(horizontal: 16.0),
                     alignment: Alignment.center,
-                    child: Text(categorias[index]),
+                    decoration: BoxDecoration(
+                      border: categoriaSelecionada == categorias[index]
+                          ? Border(bottom: BorderSide(color: Colors.blue, width: 2))
+                          : null,
+                    ),
+                    child: Text(
+                      categorias[index],
+                      style: TextStyle(
+                        color: categoriaSelecionada == categorias[index] ? Colors.blue : Colors.black,
+                        fontWeight: categoriaSelecionada == categorias[index] ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
                   ),
+
+                  // Container(
+                  //   padding: EdgeInsets.symmetric(horizontal: 16.0),
+                  //   alignment: Alignment.center,
+                  //   child: Text(categorias[index]),
+                  // ),
                 );
               },
             ),
@@ -215,13 +262,13 @@ class _VendasScreenState extends State<VendasScreen> {
                   MaterialPageRoute(
                     builder: (ctx) => CarrinhoScreen(
                       carrinho: carrinho,
-                      valorTotal: valorTotal,
+                      valorTotal: valorTotal, idVenda: '', idCliente: '',
                     ),
                   ),
                 );
               },
               child: Text(
-                'Carrinho: ${carrinho.length} item(s) - R\$ ${valorTotal.toStringAsFixed(2)}',
+                'Carrinho: ${getTotalUnidades()} Itens(s) - R\$ ${valorTotal.toStringAsFixed(2)}',
                 style: TextStyle(fontSize: 18),
               ),
             ),

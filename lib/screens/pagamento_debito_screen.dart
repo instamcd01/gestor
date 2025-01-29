@@ -1,12 +1,17 @@
 // pagamento_cartao_debito_screen.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../models/cliente.dart';
+import '../models/venda.dart';
+import '../providers/historico_vendas_provider.dart';
 import 'conclusao_venda_screen.dart';
 
 class PagamentoCartaoDebitoScreen extends StatefulWidget {
   final double valorTotal;
+  final List<Map<String, dynamic>> carrinho;
 
-  PagamentoCartaoDebitoScreen({required this.valorTotal});
+  PagamentoCartaoDebitoScreen({required this.valorTotal, required this.carrinho});
 
   @override
   _PagamentoCartaoDebitoScreenState createState() =>
@@ -26,7 +31,64 @@ class _PagamentoCartaoDebitoScreenState
       valorFaltante = widget.valorTotal - valorPago;
     });
   }
+  void concluirVenda() {
+    if (valorFaltante > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pagamento incompleto!')),
+      );
+      return;
+    }
+    final itensVenda = widget.carrinho.map<ItemVenda>((item) {
+      return ItemVenda(
+        produto: item['nome'].nome,      // Adapte conforme sua estrutura de Map
+        precoTotal: item['preco'].preco,    // Adapte conforme sua estrutura de Map
+        quantidade: item['quantidade'].quantidade, // Adapte conforme sua estrutura de Map
+      );
+    }).toList();
 
+
+
+    final historicoVendasProvider =
+    Provider.of<HistoricoVendasProvider>(context, listen: false);
+
+    // Criação de um objeto Cliente de exemplo (substitua conforme necessário)
+    Cliente clienteExemplo = Cliente(idCliente: '', nome: '', celular: '', email: '', endereco: '', complemento: '', cpf: '', pet: [], observacao: '', saldo: 0.0); // Supondo que o nome seja o único parâmetro
+
+    historicoVendasProvider.adicionarVenda(
+      Venda(
+        cliente: clienteExemplo, // Passando o objeto Cliente
+        metodoPagamento: 'Cartão de Débito',
+        valorTotal: widget.valorTotal,
+        itens: itensVenda, // Se você tiver itens, coloque-os aqui
+        idVenda: '', // O ID deve ser gerado ou atribuído aqui
+        dataVenda: DateTime.now(), // Passando a data atual como DateTime
+      ),
+    );
+
+    Navigator.pushReplacementNamed(context, '/historico_vendas');
+  }
+
+  // void concluirVenda() {
+  //   if (valorFaltante > 0) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(content: Text('Pagamento incompleto!')),
+  //     );
+  //     return;
+  //   }
+  //
+  //   final historicoVendasProvider =
+  //   Provider.of<HistoricoVendasProvider>(context, listen: false);
+  //
+  //   historicoVendasProvider.adicionarVenda(
+  //     Venda(
+  //       cliente: 'Cliente Exemplo', // Substitua com o nome do cliente selecionado
+  //       metodoPagamento: 'Cartão de Débito',
+  //       valorTotal: widget.valorTotal, itens: [], id: '', dataVenda: DateTime,
+  //     ),
+  //   );
+  //
+  //   Navigator.pushReplacementNamed(context, '/historico_vendas');
+  // }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -83,7 +145,7 @@ class _PagamentoCartaoDebitoScreenState
                   context,
                   MaterialPageRoute(
                     builder: (context) =>
-                        ConclusaoVendaScreen(valorTotal: widget.valorTotal),
+                        ConclusaoVendaScreen(valorTotal: widget.valorTotal, carrinho: widget.carrinho,),
                   ),
                 );
               },
