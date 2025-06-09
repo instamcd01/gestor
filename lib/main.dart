@@ -11,8 +11,15 @@ import 'screens/home_screen.dart';
 import 'providers/produto_provider.dart';
 import 'providers/cliente_provider.dart';
 import 'providers/vendas_provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 
-void main() {
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   runApp(MyApp());
 }
 
@@ -26,6 +33,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => VendasProvider()),
         ChangeNotifierProvider(create: (_) => PedidoProvider()),
         ChangeNotifierProvider(create: (_) => HistoricoVendasProvider()),
+        ChangeNotifierProvider(create: (context) => ProdutoProvider()..carregarProdutos()),
     // ChangeNotifierProvider(create: (context) => CarrinhoProvider()),
       ],
       child: MaterialApp(

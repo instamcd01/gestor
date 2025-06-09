@@ -1,16 +1,14 @@
 // import 'package:sqflite/sqflite.dart';
 // import 'package:path/path.dart';
+// import '../models/produto.dart';
 //
 // class DatabaseHelper {
 //   static final DatabaseHelper _instance = DatabaseHelper._internal();
-//   static DatabaseHelper get instance => _instance;
-//   factory DatabaseHelper() {
-//     return _instance;
-//   }
-//
-//   DatabaseHelper._internal();
+//   factory DatabaseHelper() => _instance;
 //
 //   static Database? _database;
+//
+//   DatabaseHelper._internal();
 //
 //   Future<Database> get database async {
 //     if (_database != null) return _database!;
@@ -19,63 +17,53 @@
 //   }
 //
 //   Future<Database> _initDatabase() async {
-//     final dbPath = await getDatabasesPath();
-//     final path = join(dbPath, 'app_database.db');
-//
+//     final path = join(await getDatabasesPath(), 'produtos.db');
 //     return await openDatabase(
 //       path,
 //       version: 1,
-//       onCreate: _onCreate,
+//       onCreate: (db, version) async {
+//         await db.execute('''
+//           CREATE TABLE produtos (
+//             id TEXT PRIMARY KEY,
+//             nome TEXT,
+//             preco REAL,
+//             imagemUrl TEXT,
+//             categoria TEXT,
+//             estoqueAtual INTEGER
+//           )
+//         ''');
+//       },
 //     );
 //   }
 //
-//   Future<void> _onCreate(Database db, int version) async {
-//     await db.execute('''
-//     CREATE TABLE clientes (
-//       id TEXT PRIMARY KEY,
-//       nome TEXT NOT NULL,
-//       celular TEXT NOT NULL,
-//       email TEXT,
-//       endereco TEXT,
-//       cpf TEXT,
-//       pet TEXT
-//     )
-//   ''');
+//   Future<void> inserirProduto(Produto produto) async {
+//     final db = await database;
+//     await db.insert('produtos', produto.toJson(),
+//         conflictAlgorithm: ConflictAlgorithm.replace);
+//   }
 //
+//   Future<List<Produto>> listarProdutos() async {
+//     final db = await database;
+//     final List<Map<String, dynamic>> maps = await db.query('produtos');
 //
-//     await db.execute('''
-//       CREATE TABLE produtos (
-//         id INTEGER PRIMARY KEY AUTOINCREMENT,
-//         nome TEXT NOT NULL,
-//         preco REAL NOT NULL,
-//         descricao TEXT
-//       )
-//     ''');
+//     return List.generate(maps.length, (i) {
+//       return Produto.fromJson(maps[i]);
+//     });
+//   }
 //
-//     await db.execute('''
-//       CREATE TABLE pedidos (
-//         id INTEGER PRIMARY KEY AUTOINCREMENT,
-//         clienteId INTEGER NOT NULL,
-//         data TEXT NOT NULL,
-//         total REAL NOT NULL,
-//         status TEXT NOT NULL,
-//         FOREIGN KEY (clienteId) REFERENCES clientes (id)
-//       )
-//     ''');
+//   Future<void> deletarProduto(String id) async {
+//     final db = await database;
+//     await db.delete('produtos', where: 'id = ?', whereArgs: [id]);
+//   }
 //
-//     await db.execute('''
-//       CREATE TABLE pedido_itens (
-//         id INTEGER PRIMARY KEY AUTOINCREMENT,
-//         pedidoId INTEGER NOT NULL,
-//         produtoId INTEGER NOT NULL,
-//         quantidade INTEGER NOT NULL,
-//         subtotal REAL NOT NULL,
-//         FOREIGN KEY (pedidoId) REFERENCES pedidos (id),
-//         FOREIGN KEY (produtoId) REFERENCES produtos (id)
-//       )
-//     ''');
+//   Future<void> atualizarProduto(Produto produto) async {
+//     final db = await database;
+//     await db.update('produtos', produto.toJson(),
+//         where: 'id = ?', whereArgs: [produto.id]);
 //   }
 // }
+//////////////////////////////////////
+
 
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -90,6 +78,7 @@ class DatabaseHelper {
 
   DatabaseHelper._internal();
 
+  // Inicializa o banco de dados
   Future<Database> getDatabase() async {
     if (_database != null) return _database!;
 
@@ -127,7 +116,7 @@ class DatabaseHelper {
     return _database!;
   }
 
-  // Métodos não são mais estáticos!
+  // Inserir um produto
   Future<void> inserirProduto(Produto produto) async {
     final db = await getDatabase();
     await db.insert(
@@ -137,6 +126,7 @@ class DatabaseHelper {
     );
   }
 
+  // Buscar todos os produtos
   Future<List<Produto>> buscarProdutos() async {
     final db = await getDatabase();
     final List<Map<String, dynamic>> produtosData = await db.query(_tableName);
@@ -144,6 +134,7 @@ class DatabaseHelper {
     return produtosData.map((produto) => Produto.fromMap(produto)).toList();
   }
 
+  // Atualizar um produto
   Future<void> atualizarProduto(Produto produto) async {
     final db = await getDatabase();
     await db.update(
@@ -154,6 +145,7 @@ class DatabaseHelper {
     );
   }
 
+  // Remover um produto
   Future<void> removerProduto(String id) async {
     final db = await getDatabase();
     await db.delete(
