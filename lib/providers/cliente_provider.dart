@@ -1,95 +1,11 @@
-// import 'package:diacritic/diacritic.dart';
-// import 'package:flutter/material.dart';
-//
-// class ClientProvider with ChangeNotifier {
-//   // Lista de clientes
-//   List<String> _clientes = ['João', 'Maria', 'Carlos', 'Ana', 'Felipe'];
-//
-//   // Lista de clientes filtrados para a pesquisa
-//   List<String> _clientesFiltrados = [];
-//
-//   // Cliente selecionado
-//   String? _clienteSelecionado;
-//
-//   // Getter para acessar a lista de clientes (filtrados ou completos)
-//   List<String> get clientes => _clientesFiltrados.isEmpty ? _clientes : _clientesFiltrados;
-//
-//   String? get clienteSelecionado => _clienteSelecionado;
-//
-//   // Função para adicionar um cliente
-//   void addCliente(String cliente) {
-//     _clientes.add(cliente);
-//     notifyListeners(); // Notifica os listeners para atualizar a UI
-//   }
-//
-//   // Função para remover um cliente
-//   void removeCliente(String cliente) {
-//     _clientes.remove(cliente);
-//     notifyListeners(); // Notifica os listeners para atualizar a UI
-//   }
-//
-//   // Função para pesquisar clientes (filtro)
-//   void pesquisarClientes(String texto) {
-//     if (texto.isEmpty) {
-//       _clientesFiltrados.clear(); // Se o texto estiver vazio, exibe todos os clientes
-//     } else {
-//       // Normaliza o texto (remove acentos e converte para minúsculo)
-//       String textoNormalizado = removeDiacritics(texto).toLowerCase();
-//
-//       // Filtra a lista de clientes
-//       _clientesFiltrados = _clientes
-//           .where((cliente) {
-//         // Normaliza o nome do cliente (remove acentos e converte para minúsculo)
-//         String clienteNormalizado = removeDiacritics(cliente).toLowerCase();
-//         // Compara o nome normalizado com o texto da pesquisa
-//         return clienteNormalizado.contains(textoNormalizado);
-//       })
-//           .toList();
-//     }
-//     notifyListeners(); // Notifica os listeners para atualizar a UI
-//   }
-//
-//
-//   // Função para definir o cliente selecionado
-//   void setClienteSelecionado(String cliente) {
-//     _clienteSelecionado = cliente;
-//     notifyListeners(); // Notifica os listeners para atualizar a UI
-//   }
-// }
-
-
 import 'package:diacritic/diacritic.dart';
 import 'package:flutter/material.dart';
 import '../models/cliente.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ClientProvider with ChangeNotifier {
   // Lista de clientes
   List<Cliente> _clientes = [
-    Cliente(
-      idCliente: '1',
-      nome: 'João',
-      celular: '123456789',
-      email: 'joao@exemplo.com',
-      endereco: 'Rua Exemplo, 123',
-      complemento: 'Apto 101',
-      cpf: '123.456.789-00',
-      pet: ['Cachorro'],
-      observacao: 'Cliente VIP',
-      saldo: 100.50,
-    ),
-    Cliente(
-      idCliente: '2',
-      nome: 'Maria',
-      celular: '987654321',
-      email: 'maria@exemplo.com',
-      endereco: 'Av. Central, 456',
-      complemento: 'Bloco B',
-      cpf: '987.654.321-00',
-      pet: ['Gato', 'Papagaio'],
-      observacao: 'Frequente',
-      saldo: 50.00,
-    ),
-    // Adicione outros clientes conforme necessário
   ];
 
   // Lista de clientes filtrados para pesquisa
@@ -103,25 +19,86 @@ class ClientProvider with ChangeNotifier {
 
   Cliente? get clienteSelecionado => _clienteSelecionado;
 
-  // Função para adicionar um cliente
-  void addCliente(Cliente cliente) {
-    _clientes.add(cliente);
-    notifyListeners(); // Notifica os listeners para atualizar a UI
+  Future<void> addCliente(Cliente cliente) async {
+    try {
+      final firestore = FirebaseFirestore.instance;
+      await firestore
+          .collection('clientes')
+          .doc(cliente.idCliente)
+          .set(cliente.toMap());
+
+      _clientes.add(cliente);
+      notifyListeners();
+      print('✅ Cliente adicionado e salvo no Firestore');
+    } catch (e) {
+      print('❌ Erro ao adicionar cliente: $e');
+    }
+  }
+
+  Future<void> carregarClientesDoFirestore() async {
+    final firestore = FirebaseFirestore.instance;
+
+    try {
+      final snapshot = await FirebaseFirestore.instance.collection('clientes').get();
+
+      print('📥 Total de documentos encontrados: ${snapshot.docs.length}');
+
+      final List<Cliente> clientesFirestore = snapshot.docs.map((doc) {
+        print('🔎 Documento: ${doc.data()}');
+        final data = doc.data();
+        return Cliente.fromMap(data);
+      }).toList();
+
+      _clientes = clientesFirestore;
+      notifyListeners();
+
+      print('✅ Clientes carregados: ${_clientes.length}');
+    } catch (e) {
+      print('❌ Erro ao carregar clientes: $e');
+    }
   }
 
   // Método para atualizar um cliente existente
-  void atualizarCliente(Cliente clienteAtualizado) {
-    int index = _clientes.indexWhere((cliente) => cliente.idCliente == clienteAtualizado.idCliente);
-    if (index != -1) {
-      _clientes[index] = clienteAtualizado; // Atualiza o cliente
-      notifyListeners(); // Notifica os ouvintes de que o cliente foi atualizado
+  Future<void> atualizarCliente(Cliente clienteAtualizado) async {
+    try {
+      final firestore = FirebaseFirestore.instance;
+
+      await firestore
+          .collection('clientes')
+          .doc(clienteAtualizado.idCliente)
+          .set(clienteAtualizado.toMap());
+
+      int index = _clientes.indexWhere((cliente) => cliente.idCliente == clienteAtualizado.idCliente);
+      if (index != -1) {
+        _clientes[index] = clienteAtualizado;
+      } else {
+        _clientes.add(clienteAtualizado); // fallback de segurança
+      }
+
+      notifyListeners();
+      print('✅ Cliente atualizado no Firestore');
+    } catch (e) {
+      print('❌ Erro ao atualizar cliente no Firestore: $e');
     }
   }
+
   // Função para remover um cliente
   // Função para remover cliente
-  void removeCliente(Cliente cliente) {
-    _clientes.removeWhere((item) => item.idCliente == cliente.idCliente); // Remover cliente baseado no ID
-    notifyListeners();
+  Future<void> removerClienteDoFirestore(Cliente cliente) async {
+    final firestore = FirebaseFirestore.instance;
+
+    try {
+      // Remove do Firestore
+      await firestore.collection('clientes').doc(cliente.idCliente).delete();
+
+      // Remove localmente
+      _clientes.removeWhere((item) => item.idCliente == cliente.idCliente);
+      notifyListeners();
+
+      print('🗑️ Cliente removido do Firestore: ${cliente.nome}');
+    } catch (e) {
+      print('❌ Erro ao remover cliente do Firestore: $e');
+    }
   }
   // Função para buscar cliente por nome
   Cliente? buscarClientePorNome(String nome) {
@@ -134,42 +111,64 @@ class ClientProvider with ChangeNotifier {
   // Função para pesquisar clientes (filtro)
   void pesquisarClientes(String texto) {
     if (texto.isEmpty) {
-      _clientesFiltrados.clear(); // Se o texto estiver vazio, exibe todos os clientes
+      _clientesFiltrados = List.from(_clientes); // ← ANTES estava clear()
     } else {
-      // Normaliza o texto (remove acentos e converte para minúsculo)
       String textoNormalizado = removeDiacritics(texto).toLowerCase();
 
-      // Filtra a lista de clientes
-      _clientesFiltrados = _clientes
-          .where((cliente) {
-        // Normaliza todas as variáveis do cliente (remove acentos e converte para minúsculo)
-        String nomeNormalizado = removeDiacritics(cliente.nome).toLowerCase();
-        String celularNormalizado = removeDiacritics(cliente.celular).toLowerCase();
-        String emailNormalizado = removeDiacritics(cliente.email).toLowerCase();
-        String enderecoNormalizado = removeDiacritics(cliente.endereco).toLowerCase();
-        String complementoNormalizado = removeDiacritics(cliente.complemento).toLowerCase();
-        String cpfNormalizado = removeDiacritics(cliente.cpf).toLowerCase();
-        String petNormalizado = removeDiacritics(cliente.pet.join(" ")).toLowerCase();
-        String observacaoNormalizada = removeDiacritics(cliente.observacao).toLowerCase();
+      _clientesFiltrados = _clientes.where((cliente) {
+        final nome = removeDiacritics(cliente.nome).toLowerCase();
+        final celular = removeDiacritics(cliente.celular).toLowerCase();
+        final email = removeDiacritics(cliente.email).toLowerCase();
+        final endereco = removeDiacritics(cliente.endereco).toLowerCase();
+        final complemento = removeDiacritics(cliente.complemento).toLowerCase();
+        final cpf = removeDiacritics(cliente.cpf).toLowerCase();
+        final pet = removeDiacritics(cliente.especies.join(" ")).toLowerCase();
+        final observacao = removeDiacritics(cliente.observacao).toLowerCase();
 
-        // Compara todos os campos normalizados com o texto de pesquisa
-        return nomeNormalizado.contains(textoNormalizado) ||
-            celularNormalizado.contains(textoNormalizado) ||
-            emailNormalizado.contains(textoNormalizado) ||
-            enderecoNormalizado.contains(textoNormalizado) ||
-            complementoNormalizado.contains(textoNormalizado) ||
-            cpfNormalizado.contains(textoNormalizado) ||
-            petNormalizado.contains(textoNormalizado) ||
-            observacaoNormalizada.contains(textoNormalizado);
-      })
-          .toList();
+        return nome.contains(textoNormalizado) ||
+            celular.contains(textoNormalizado) ||
+            email.contains(textoNormalizado) ||
+            endereco.contains(textoNormalizado) ||
+            complemento.contains(textoNormalizado) ||
+            cpf.contains(textoNormalizado) ||
+            pet.contains(textoNormalizado) ||
+            observacao.contains(textoNormalizado);
+      }).toList();
     }
-    notifyListeners(); // Notifica os listeners para atualizar a UI
+
+    notifyListeners();
   }
 
   // Função para definir o cliente selecionado
   void setClienteSelecionado(Cliente cliente) {
     _clienteSelecionado = cliente;
     notifyListeners(); // Notifica os listeners para atualizar a UI
+  }
+}
+final _firestore = FirebaseFirestore.instance;
+
+Future<List<String>> carregarCanaisOrigem() async {
+  try {
+    final snapshot = await _firestore.collection('canais_origem').get();
+    final canais = snapshot.docs.map((doc) => doc['nome'] as String).toList();
+    return canais;
+  } catch (e) {
+    print('❌ Erro ao carregar canais: $e');
+    return ['WhatsApp', 'Instagram', 'Ifood', 'Outro canal'];
+  }
+}
+
+Future<void> adicionarCanalOrigem(String canal) async {
+  try {
+    final snapshot = await _firestore
+        .collection('canais_origem')
+        .where('nome', isEqualTo: canal)
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      await _firestore.collection('canais_origem').add({'nome': canal});
+    }
+  } catch (e) {
+    print('❌ Erro ao salvar canal: $e');
   }
 }

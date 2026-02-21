@@ -1,25 +1,3 @@
-// import 'package:flutter/material.dart';
-//
-// class VendasProvider with ChangeNotifier {
-//   List<Map<String, dynamic>> _vendas = [];
-//
-//   List<Map<String, dynamic>> get vendas => _vendas;
-//
-//   void adicionarVenda(Map<String, dynamic> venda) {
-//     _vendas.add(venda);
-//     notifyListeners();
-//   }
-//
-//   List<Map<String, dynamic>> filtrarVendasPorPeriodo(DateTime inicio, DateTime fim) {
-//     return _vendas
-//         .where((venda) =>
-//     venda['data'].isAfter(inicio) && venda['data'].isBefore(fim))
-//         .toList();
-//   }
-// }
-//
-
-
 import 'package:flutter/material.dart';
 import 'package:gestor/models/venda.dart';
 // Importe o arquivo onde as classes Venda e ItemVenda estão definidas

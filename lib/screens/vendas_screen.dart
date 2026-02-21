@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/produto_provider.dart';
 import '../models/produto.dart';
+import 'cadastro_produto_screen.dart';
 import 'carrinho_screen.dart';
-// import 'package:flutter_barcode_scanner/flutter_barcode_scanner.dart';
 
 class VendasScreen extends StatefulWidget {
   @override
@@ -17,26 +17,33 @@ class _VendasScreenState extends State<VendasScreen> {
   TextEditingController _searchController = TextEditingController();
   List<Produto> produtosFiltrados = [];
   String categoriaSelecionada = 'Tudo';
+  bool _isFirstLoad = true;
 
-  // Categorias definidas
-  List<String> categorias = [
-    'Tudo', 'Destaques', 'Farmácia', 'Atacado', 'Petiscos e Saches',
-    'Higiene e Beleza', 'Brinquedos e Outros', 'Areia e Granulado',
-    'Ração para Cães', 'Ração para Gatos', 'Vermífugos', 'Antiparasitários',
-    'Dermatológicos', 'Camas e Colchonetes', 'Dedetização'
-  ];
+  List<String> categorias = ['Tudo'];
 
   @override
   void initState() {
     super.initState();
-    produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false).produtos;
+    _carregarProdutosIniciais();
+  }
+
+  Future<void> _carregarProdutosIniciais() async {
+    final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
+    await produtoProvider.atualizarProdutosDoFirestore();
+    final produtos = produtoProvider.produtos;
+    final categoriasDinamicas = produtos.map((p) => p.categoria).toSet().toList();
+    categoriasDinamicas.sort();
+    setState(() {
+      categorias = ['Tudo', ...categoriasDinamicas];
+      produtosFiltrados = produtos;
+    });
   }
 
   void _adicionarAoCarrinho(Produto produto) {
     setState(() {
       var item = carrinho.firstWhere(
-              (element) => element['produto'].id == produto.id,
-          orElse: () => {}
+            (element) => element['produto'].id == produto.id,
+        orElse: () => {},
       );
 
       if (item.isNotEmpty) {
@@ -51,25 +58,22 @@ class _VendasScreenState extends State<VendasScreen> {
   }
 
   double get valorTotal {
-    return carrinho.fold(0.0, (total, item) => total + (item['produto'].preco * item['quantidade']));
+    return carrinho.fold(0.0, (total, item) =>
+    total + (item['produto'].preco * item['quantidade']));
   }
 
-
-// Função para remover caracteres especiais e normalizar a string
   String normalizeString(String input) {
-    String normalized = removeDiacritics(input);  // Remove acentos e diacríticos
+    String normalized = removeDiacritics(input);
     return normalized.replaceAll(RegExp(r'[^\w\s]'), '').toLowerCase();
   }
 
-  // Função de pesquisa
   void _pesquisarProdutos(String query) {
     final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
-    final queryNormalized = normalizeString(query); // Normaliza a query de pesquisa
+    final queryNormalized = normalizeString(query);
     setState(() {
       produtosFiltrados = produtoProvider.produtos.where((produto) {
-        // Normaliza o nome do produto também e compara com a query
-        final produtoNomeNormalized = normalizeString(produto.nome);
-        return produtoNomeNormalized.contains(queryNormalized);
+        final nomeNormalizado = normalizeString(produto.nome);
+        return nomeNormalizado.contains(queryNormalized);
       }).toList();
     });
   }
@@ -79,21 +83,18 @@ class _VendasScreenState extends State<VendasScreen> {
     for (var item in carrinho) {
       totalUnidades += item['quantidade'];
     }
-    // Retorna como inteiro se for equivalente; caso contrário, como double formatado
     return totalUnidades == totalUnidades.toInt()
         ? totalUnidades.toInt().toString()
         : totalUnidades.toString();
   }
+
   void _filtrarProdutosPorCategoria(String categoria) {
     setState(() {
       categoriaSelecionada = categoria;
       final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
-
       if (categoria == 'Tudo') {
-        // Exibe todos os produtos
         produtosFiltrados = produtoProvider.produtos;
       } else {
-        // Normaliza o nome da categoria para garantir a correspondência
         final categoriaNormalizada = normalizeString(categoria);
         produtosFiltrados = produtoProvider.produtos.where((produto) {
           final categoriaProdutoNormalizada = normalizeString(produto.categoria ?? '');
@@ -102,30 +103,6 @@ class _VendasScreenState extends State<VendasScreen> {
       }
     });
   }
-
-  // void _filtrarProdutosPorCategoria(String categoria) {
-  //   setState(() {
-  //     categoriaSelecionada = categoria;
-  //     if (categoria == 'Tudo') {
-  //       produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false).produtos;
-  //     } else {
-  //       produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false)
-  //           .produtos
-  //           .where((produto) => produto.categoria == categoria)
-  //           .toList();
-  //     }
-  //   });
-  // }
-
-  // Future<void> _scanBarcode() async {
-  //   String barcode = await FlutterBarcodeScanner.scanBarcode(
-  //       '#ff6666', 'Cancelar', true, ScanMode.BARCODE);
-  //   if (barcode != '-1') {
-  //     // Aqui você pode usar o código de barras para buscar o produto
-  //     // Exemplo de exibição:
-  //     print('Código de barras: $barcode');
-  //   }
-  // }
 
   @override
   Widget build(BuildContext context) {
@@ -136,9 +113,11 @@ class _VendasScreenState extends State<VendasScreen> {
         title: Text('Venda de Produtos'),
         actions: [
           IconButton(
-            icon: Icon(Icons.person),
+            icon: Icon(Icons.add),
             onPressed: () {
-              // Ação para selecionar ou cadastrar um cliente
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (ctx) => CadastroProdutoScreen(),
+              ));
             },
           ),
         ],
@@ -156,15 +135,9 @@ class _VendasScreenState extends State<VendasScreen> {
                       hintText: 'Pesquisar produto...',
                       prefixIcon: Icon(Icons.search),
                     ),
-                    onChanged: (value) {
-                      _pesquisarProdutos(value);
-                    },
+                    onChanged: _pesquisarProdutos,
                   ),
                 ),
-                // IconButton(
-                //   icon: Icon(Icons.camera_alt),
-                //   onPressed: _scanBarcode,
-                // ),
                 IconButton(
                   icon: Icon(isGridView ? Icons.list : Icons.grid_view),
                   onPressed: () {
@@ -183,11 +156,8 @@ class _VendasScreenState extends State<VendasScreen> {
               itemCount: categorias.length,
               itemBuilder: (ctx, index) {
                 return GestureDetector(
-                  onTap: () {
-                    _filtrarProdutosPorCategoria(categorias[index]);
-                  },
-                  child:
-                  Container(
+                  onTap: () => _filtrarProdutosPorCategoria(categorias[index]),
+                  child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 16.0),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
@@ -198,17 +168,15 @@ class _VendasScreenState extends State<VendasScreen> {
                     child: Text(
                       categorias[index],
                       style: TextStyle(
-                        color: categoriaSelecionada == categorias[index] ? Colors.blue : Colors.black,
-                        fontWeight: categoriaSelecionada == categorias[index] ? FontWeight.bold : FontWeight.normal,
+                        color: categoriaSelecionada == categorias[index]
+                            ? Colors.blue
+                            : Colors.black,
+                        fontWeight: categoriaSelecionada == categorias[index]
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
                     ),
                   ),
-
-                  // Container(
-                  //   padding: EdgeInsets.symmetric(horizontal: 16.0),
-                  //   alignment: Alignment.center,
-                  //   child: Text(categorias[index]),
-                  // ),
                 );
               },
             ),
@@ -220,20 +188,55 @@ class _VendasScreenState extends State<VendasScreen> {
                 crossAxisCount: 3,
                 crossAxisSpacing: 8.0,
                 mainAxisSpacing: 8.0,
+                childAspectRatio: 0.75, // AJUSTADO: controla altura/largura para evitar overflow
               ),
               itemCount: produtosFiltrados.length,
               itemBuilder: (ctx, i) {
+                final produto = produtosFiltrados[i];
+
+                final imagemUrl = produto.imagemUrl != null && produto.imagemUrl!.isNotEmpty
+                    ? produto.imagemUrl!
+                    : 'http://imagens.lukz.com.br/produtos/${produto.codigoBarras}.png';
+
                 return GestureDetector(
-                  onTap: () {
-                    _adicionarAoCarrinho(produtosFiltrados[i]);
-                  },
+                  onTap: () => _adicionarAoCarrinho(produto),
                   child: Card(
-                    child: Column(
-                      children: [
-                        Image.network(produtosFiltrados[i].imagemUrl),
-                        Text(produtosFiltrados[i].nome),
-                        Text('R\$ ${produtosFiltrados[i].preco}'),
-                      ],
+                    child: Padding(
+                      padding: const EdgeInsets.all(4.0), // AJUSTADO: espaçamento interno
+                      child: Column(
+                        children: [
+                          Image.network(
+                            imagemUrl,
+                            height: 60,
+                            width: 60,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Icon(Icons.image_not_supported,
+                                  size: 50, color: Colors.grey);
+                            },
+                          ),
+                          SizedBox(height: 4), // AJUSTADO: espaçamento
+                          // AJUSTADO: Texto com ellipsis para evitar overflow
+                          Text(
+                            produto.nome,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                          Text('R\$ ${produto.preco}'),
+                          Text(
+                            'Estoque: ${produto.estoqueAtual}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: produto.estoqueAtual == 0
+                                  ? Colors.red
+                                  : Colors.grey[700],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis, // AJUSTADO
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -242,13 +245,35 @@ class _VendasScreenState extends State<VendasScreen> {
                 : ListView.builder(
               itemCount: produtosFiltrados.length,
               itemBuilder: (ctx, i) {
+                final produto = produtosFiltrados[i];
+                final imagemUrl = produto.imagemUrl != null && produto.imagemUrl!.isNotEmpty
+                    ? produto.imagemUrl!
+                    : 'http://imagens.lukz.com.br/produtos/${produto.codigoBarras}.png';
+
                 return GestureDetector(
-                  onTap: () {
-                    _adicionarAoCarrinho(produtosFiltrados[i]);
-                  },
+                  onTap: () => _adicionarAoCarrinho(produto),
                   child: ListTile(
-                    title: Text(produtosFiltrados[i].nome),
-                    subtitle: Text('Preço: R\$ ${produtosFiltrados[i].preco}'),
+                    leading: Image.network(
+                      imagemUrl,
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(Icons.image_not_supported,
+                            size: 30, color: Colors.grey);
+                      },
+                    ),
+                    // AJUSTADO: Título com ellipsis
+                    title: Text(
+                      produto.nome,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      'Preço: R\$ ${produto.preco}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 );
               },
@@ -257,19 +282,27 @@ class _VendasScreenState extends State<VendasScreen> {
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).push(
+              onPressed: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (ctx) => CarrinhoScreen(
                       carrinho: carrinho,
-                      valorTotal: valorTotal, idVenda: '', idCliente: '',
+                      valorTotal: valorTotal,
+                      idVenda: '',
+                      idCliente: '',
                     ),
                   ),
                 );
+
+                await Provider.of<ProdutoProvider>(context, listen: false).carregarProdutos();
+                setState(() {
+                  produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false).produtos;
+                });
               },
               child: Text(
                 'Carrinho: ${getTotalUnidades()} Itens(s) - R\$ ${valorTotal.toStringAsFixed(2)}',
                 style: TextStyle(fontSize: 18),
+                overflow: TextOverflow.ellipsis, // AJUSTADO: evita overflow do botão
               ),
             ),
           ),

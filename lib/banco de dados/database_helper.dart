@@ -76,90 +76,90 @@
 //     ''');
 //   }
 // }
-
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import '../models/produto.dart';
-
-class DatabaseHelper {
-  static final DatabaseHelper _instance = DatabaseHelper._internal();
-  static DatabaseHelper get instance => _instance;
-
-  static const String _tableName = 'produtos';
-  static Database? _database;
-
-  DatabaseHelper._internal();
-
-  Future<Database> getDatabase() async {
-    if (_database != null) return _database!;
-
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'produtos.db');
-
-    _database = await openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, version) {
-        return db.execute(
-          '''CREATE TABLE $_tableName(
-            id TEXT PRIMARY KEY,
-            nome TEXT,
-            preco REAL,
-            precoPromocional REAL,
-            imagemUrl TEXT,
-            categoria TEXT,
-            estoqueAtual INTEGER,
-            estoqueMinimo INTEGER,
-            codigoBarras TEXT,
-            custo REAL,
-            destacar INTEGER,
-            exibirNoCatalogo INTEGER,
-            precoIfood REAL,
-            markup TEXT,
-            lucro TEXT,
-            precoConcorrencia TEXT,
-            validade TEXT,
-            empresa TEXT
-          )''',
-        );
-      },
-    );
-    return _database!;
-  }
-
-  // Métodos não são mais estáticos!
-  Future<void> inserirProduto(Produto produto) async {
-    final db = await getDatabase();
-    await db.insert(
-      _tableName,
-      produto.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<List<Produto>> buscarProdutos() async {
-    final db = await getDatabase();
-    final List<Map<String, dynamic>> produtosData = await db.query(_tableName);
-
-    return produtosData.map((produto) => Produto.fromMap(produto)).toList();
-  }
-
-  Future<void> atualizarProduto(Produto produto) async {
-    final db = await getDatabase();
-    await db.update(
-      _tableName,
-      produto.toMap(),
-      where: 'id = ?',
-      whereArgs: [produto.id],
-    );
-  }
-
-  Future<void> removerProduto(String id) async {
-    final db = await getDatabase();
-    await db.delete(
-      _tableName,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-}
+///////////////////////////////////
+// import 'package:sqflite/sqflite.dart';
+// import 'package:path/path.dart';
+// import '../models/produto.dart';
+//
+// class DatabaseHelper {
+//   static final DatabaseHelper _instance = DatabaseHelper._internal();
+//   static DatabaseHelper get instance => _instance;
+//
+//   static const String _tableName = 'produtos';
+//   static Database? _database;
+//
+//   DatabaseHelper._internal();
+//
+//   Future<Database> getDatabase() async {
+//     if (_database != null) return _database!;
+//
+//     final dbPath = await getDatabasesPath();
+//     final path = join(dbPath, 'produtos.db');
+//
+//     _database = await openDatabase(
+//       path,
+//       version: 1,
+//       onCreate: (db, version) {
+//         return db.execute(
+//           '''CREATE TABLE $_tableName(
+//             id TEXT PRIMARY KEY,
+//             nome TEXT,
+//             preco REAL,
+//             precoPromocional REAL,
+//             imagemUrl TEXT,
+//             categoria TEXT,
+//             estoqueAtual INTEGER,
+//             estoqueMinimo INTEGER,
+//             codigoBarras TEXT,
+//             custo REAL,
+//             destacar INTEGER,
+//             exibirNoCatalogo INTEGER,
+//             precoIfood REAL,
+//             markup TEXT,
+//             lucro TEXT,
+//             precoConcorrencia TEXT,
+//             validade TEXT,
+//             empresa TEXT
+//           )''',
+//         );
+//       },
+//     );
+//     return _database!;
+//   }
+//
+//   // Métodos não são mais estáticos!
+//   Future<void> inserirProduto(Produto produto) async {
+//     final db = await getDatabase();
+//     await db.insert(
+//       _tableName,
+//       produto.toMap(),
+//       conflictAlgorithm: ConflictAlgorithm.replace,
+//     );
+//   }
+//
+//   Future<List<Produto>> buscarProdutos() async {
+//     final db = await getDatabase();
+//     final List<Map<String, dynamic>> produtosData = await db.query(_tableName);
+//
+//     return produtosData.map((produto) => Produto.fromMap(produto)).toList();
+//   }
+//
+//   Future<void> atualizarProduto(Produto produto) async {
+//     final db = await getDatabase();
+//     await db.update(
+//       _tableName,
+//       produto.toMap(),
+//       where: 'id = ?',
+//       whereArgs: [produto.id],
+//     );
+//   }
+//
+//   Future<void> removerProduto(String id) async {
+//     final db = await getDatabase();
+//     await db.delete(
+//       _tableName,
+//       where: 'id = ?',
+//       whereArgs: [id],
+//     );
+//   }
+// }

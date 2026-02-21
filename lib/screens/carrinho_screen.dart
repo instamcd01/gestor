@@ -1,14 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:gestor/models/produto.dart';
 import 'package:gestor/models/cliente.dart';
-import 'package:gestor/models/cliente.dart';
-import 'package:gestor/models/venda.dart';
-import 'package:gestor/screens/pagamento_screen.dart'; // Importando a tela de pagamento
+import 'package:gestor/screens/desconto_screen.dart';
+import 'package:gestor/screens/opcao_entrega_screen.dart';
+import 'package:gestor/screens/pagamento_screen.dart';
 import 'package:uuid/uuid.dart';
-import '../models/cliente.dart';
-import '../models/produto.dart';
-import 'desconto_screen.dart';
-import 'gerenciar_entrega_screen.dart';
-import 'opcao_entrega_screen.dart';
 
 class CarrinhoScreen extends StatefulWidget {
   final List<Map<String, dynamic>> carrinho;
@@ -16,7 +12,12 @@ class CarrinhoScreen extends StatefulWidget {
   final String idVenda;
   final String idCliente;
 
-  CarrinhoScreen({required this.carrinho, required this.valorTotal, required this.idVenda, required this.idCliente});
+  CarrinhoScreen({
+    required this.carrinho,
+    required this.valorTotal,
+    required this.idVenda,
+    required this.idCliente,
+  });
 
   @override
   _CarrinhoScreenState createState() => _CarrinhoScreenState();
@@ -24,13 +25,39 @@ class CarrinhoScreen extends StatefulWidget {
 
 class _CarrinhoScreenState extends State<CarrinhoScreen> {
   final String idVenda = Uuid().v4();
-  double desconto = 0.0;
-  bool opcaoEntrega = false;
+  // double desconto = 0.0;
   double valorEntrega = 0.0;
-  double valorEntregaNormal = 0.0; // Variável para armazenar o valor normal da entrega
-  String entregaSelecionada = '0-5km';
+  double valorEntregaNormal = 0.0;
+  String entregaSelecionada = '0-2km';
+  Cliente? clienteSelecionado;
 
-  // Função para calcular o subtotal
+  final Map<String, Map<String, double>> opcoesEntrega = {
+    'Frete grátis': {
+      '0-2km': 0.0,
+      '2-5km': 50.0,
+      '5-7km': 70.0,
+      '7-10km': 100.0,
+      '10-13km': 120.0,
+      '13-15km': 150.0,
+      '15-17km': 170.0,
+      '17-20km': 200.0,
+      '20-25km': 250.0,
+      '25-30km': 300.0,
+    },
+    'Entrega paga': {
+      '0-2km': 0.0,
+      '2-5km': 4.99,
+      '5-7km': 7.99,
+      '7-10km': 9.99,
+      '10-13km': 12.99,
+      '13-15km': 14.99,
+      '15-17km': 16.99,
+      '17-20km': 19.99,
+      '20-25km': 24.99,
+      '25-30km': 29.99,
+    },
+  };
+
   double getSubtotal() {
     double subtotal = 0.0;
     for (var item in widget.carrinho) {
@@ -39,7 +66,6 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
     return subtotal;
   }
 
-  // Função para calcular o valor faltante para frete grátis
   double calcularFaltandoParaFreteGratis(double subtotal) {
     double valorMinimo = opcoesEntrega['Frete grátis']![entregaSelecionada] ?? 0.0;
     if (subtotal < valorMinimo) {
@@ -48,13 +74,11 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
     return 0.0;
   }
 
-  // Função para calcular o total de unidades no carrinho
   String getTotalUnidades() {
     double totalUnidades = 0;
     for (var item in widget.carrinho) {
       totalUnidades += item['quantidade'];
     }
-    // Retorna como inteiro se for equivalente; caso contrário, como double formatado
     return totalUnidades == totalUnidades.toInt()
         ? totalUnidades.toInt().toString()
         : totalUnidades.toString();
@@ -62,23 +86,18 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Recalcular o subtotal sempre que a tela for reconstruída
     double subtotal = getSubtotal();
-
-    // Calcular o valor faltante para frete grátis
     double faltandoParaFreteGratis = calcularFaltandoParaFreteGratis(subtotal);
+    valorEntrega = faltandoParaFreteGratis <= 0 ? 0.0 : valorEntregaNormal;
+    // double totalComDesconto = subtotal - desconto + valorEntrega;
+    double totalComEntrega = subtotal + valorEntrega;
 
-    // Se o valor faltante for zero ou negativo, o frete será grátis (valorEntrega = 0)
-    if (faltandoParaFreteGratis <= 0) {
-      valorEntrega = 0.0;
-    } else {
-      // Restaurar o valor normal da entrega caso o frete grátis não seja mais aplicável
-      valorEntrega = valorEntregaNormal;
-    }
-
-    // Calcular o total com desconto e entrega
-    double totalComDesconto = subtotal - desconto + valorEntrega;
-
+    print('=== CarrinhoScreen ===');
+    print('Subtotal: $subtotal');
+    print('Entrega selecionada: $entregaSelecionada');
+    print('Valor do frete: $valorEntrega');
+    print('Total com entrega: $totalComEntrega');
+    print('Cliente selecionado: $clienteSelecionado');
     return Scaffold(
       appBar: AppBar(
         title: Text('Carrinho de Compras'),
@@ -100,29 +119,41 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: <Widget>[
-            // Exibe os produtos no carrinho
             Expanded(
               child: ListView.builder(
                 itemCount: widget.carrinho.length,
                 itemBuilder: (ctx, i) {
+                  final produto = widget.carrinho[i]['produto'] as Produto;
+                  final quantidade = widget.carrinho[i]['quantidade'];
+                  final excedeuEstoque = quantidade > produto.estoqueAtual;
+
                   return ListTile(
-                    title: Text(widget.carrinho[i]['produto'].nome),
-                    subtitle: Text('Preço: R\$ ${widget.carrinho[i]['produto'].preco}'),
+                    title: Text(produto.nome),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Preço: R\$ ${produto.preco.toStringAsFixed(2)}'),
+                        if (excedeuEstoque)
+                          Text(
+                            'Verifique o estoque disponível (${produto.estoqueAtual})',
+                            style: TextStyle(color: Colors.red, fontSize: 12),
+                          ),
+                      ],
+                    ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Campo para editar a quantidade
                         IconButton(
                           icon: Icon(Icons.remove),
                           onPressed: () {
                             setState(() {
-                              if (widget.carrinho[i]['quantidade'] > 1) {
+                              if (quantidade > 1) {
                                 widget.carrinho[i]['quantidade']--;
                               }
                             });
                           },
                         ),
-                        Text(widget.carrinho[i]['quantidade'].toString()),
+                        Text(quantidade.toString()),
                         IconButton(
                           icon: Icon(Icons.add),
                           onPressed: () {
@@ -131,16 +162,12 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                             });
                           },
                         ),
-                        // Ícone de exclusão do produto
                         IconButton(
                           icon: Icon(Icons.delete),
                           onPressed: () {
                             setState(() {
                               widget.carrinho.removeAt(i);
                             });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Produto removido!')),
-                            );
                           },
                         ),
                       ],
@@ -150,8 +177,10 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
               ),
             ),
             ElevatedButton(
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+
+              final resultado = await Navigator.push(
+
                   context,
                   MaterialPageRoute(
                     builder: (context) => OpcaoEntregaScreen(
@@ -159,45 +188,65 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                       onSelecionarEntrega: (entrega, valor) {
                         setState(() {
                           entregaSelecionada = entrega;
-                          valorEntregaNormal = valor; // Salvar o valor normal da entrega
-                          valorEntrega = valor; // Atualizar o valor da entrega
+                          valorEntregaNormal = valor;
                         });
                       },
-                      subtotal: subtotal, // Passando o subtotal correto
+                      subtotal: subtotal,
                     ),
                   ),
                 );
+
+                if (resultado != null && resultado is Map<String, dynamic>) {
+                  setState(() {
+                    clienteSelecionado = resultado['cliente'];
+                                     });
+                }
               },
-              child: Text('Selecionar Opção de Entrega'),
+              child: Text('Selecionar Cliente'),
             ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => DescontoScreen(
-                      valorTotal: subtotal,
-                      onDescontoAplicado: (novoValor) {
-                        setState(() {
-                          desconto = subtotal - novoValor;
-                        });
-                      },
-                    ),
-                  ),
-                );
-              },
-              child: Text('Aplicar Desconto'),
-            ),
-            // Exibe os valores atualizados
+            // ElevatedButton(
+            //   onPressed: () {
+            //     Navigator.push(
+            //       context,
+            //       MaterialPageRoute(
+            //         builder: (context) => DescontoScreen(
+            //           valorTotal: subtotal,
+            //           onDescontoAplicado: (novoValor) {
+            //             setState(() {
+            //               desconto = subtotal - novoValor;
+            //             });
+            //           },
+            //         ),
+            //       ),
+            //     );
+            //   },
+            //   child: Text('Aplicar Desconto'),
+            // ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('Subtotal: R\$ ${subtotal.toStringAsFixed(2)}'),
-                Text('Desconto aplicado: -R\$ ${desconto.toStringAsFixed(2)}'),
-                Text('Valor da entrega: +R\$ ${valorEntrega.toStringAsFixed(2)}'),
+                // Text('Desconto aplicado: -R\$ ${desconto.toStringAsFixed(2)}'),
+                Text.rich(
+                  valorEntrega == 0
+                      ? TextSpan(
+                    text: 'Valor da entrega: ',
+                    style: TextStyle(color: Colors.black),
+                    children: [
+                      TextSpan(
+                        text: 'Frete Grátis',
+                        style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  )
+                      : TextSpan(
+                    text: 'Valor da entrega: +R\$ ${valorEntrega.toStringAsFixed(2)}',
+                    style: TextStyle(color: Colors.black),
+                  ),
+                ),
                 Divider(),
                 Text(
-                  'Total: R\$ ${totalComDesconto.toStringAsFixed(2)}',
+                  'Total: R\$ ${totalComEntrega.toStringAsFixed(2)}',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 if (faltandoParaFreteGratis > 0)
@@ -210,33 +259,54 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                   ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Text(
-                'Total: R\$ ${totalComDesconto.toStringAsFixed(2)}',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-            ),
-            // Botão para finalizar a venda (exibindo total de itens e valor total)
             ElevatedButton(
-              onPressed: () {
-                print('Redirecionando para pagamento com carrinho: ${widget.carrinho.map((item) => 'Produto: ${item['produto'].nome}, Preço: ${item['produto'].preco}, Quantidade: ${item['quantidade']}').toList()}');
+              onPressed: (clienteSelecionado == null )
+                  ? null
+                  : () {
 
-                // Redirecionar para a tela de pagamento
+                // Cria um Map com todos os dados que serão passados
+                final dadosPagamento = {
+                  'idVenda': idVenda,
+                  'valorTotal': totalComEntrega,
+                  'carrinho': widget.carrinho,
+                  'cliente': clienteSelecionado,
+                  'desconto': 0.0, // ou variável de desconto se aplicável
+                  'valorEntrega': valorEntrega,
+                };
+
+                print('🔹 Dados para PagamentoScreen:');
+                print('idVenda: $idVenda');
+                print('valorTotal: $totalComEntrega');
+                print('valorEntrega: $valorEntrega');
+                print('desconto: 0.0');
+                print('Entrega selecionada antes de ir para PagamentoScreen: $entregaSelecionada');
+
+                print('Cliente: ${clienteSelecionado?.nome}, ${clienteSelecionado?.endereco}');
+
+                print('Carrinho:');
+                for (var item in widget.carrinho) {
+                  final produto = item['produto'] as Produto;
+                  final quantidade = item['quantidade'];
+                  print('- ${produto.nome} | Preço: ${produto.preco} | Quantidade: $quantidade');
+                }
+
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => PagamentoScreen(
                       idVenda: idVenda,
-                      idCliente: widget.idCliente,
-                      valorTotal: totalComDesconto,
+                      valorTotal: totalComEntrega,
                       carrinho: widget.carrinho,
+                      cliente: clienteSelecionado!,
+                      desconto: 0.0,
+                      valorEntrega: valorEntrega,
+                      entregaSelecionada: entregaSelecionada,
                     ),
                   ),
                 );
               },
               child: Text(
-                '${getTotalUnidades()} Itens - R\$ ${totalComDesconto.toStringAsFixed(2)}',
+                '${getTotalUnidades()} Itens - R\$ ${totalComEntrega.toStringAsFixed(2)}',
               ),
             ),
           ],
@@ -246,164 +316,3 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
   }
 }
 
-
-//
-// import 'package:flutter/material.dart';
-// import 'package:gestor/screens/pagamento_screen.dart'; // Importando a tela de pagamento
-// import 'package:provider/provider.dart';
-// import '../models/produto.dart';
-// import 'desconto_screen.dart';
-// import 'gerenciar_entrega_screen.dart';
-// import 'opcao_entrega_screen.dart';
-// import '../providers/carrinho_provider.dart';
-//
-// class CarrinhoScreen extends StatelessWidget {
-//   @override
-//   Widget build(BuildContext context) {
-//     final carrinhoProvider = Provider.of<CarrinhoProvider>(context);
-//     double subtotal = carrinhoProvider.getSubtotal();
-//     double faltandoParaFreteGratis = carrinhoProvider.calcularFaltandoParaFreteGratis(subtotal, opcoesEntrega);
-//     double totalComDesconto = subtotal - carrinhoProvider.desconto + carrinhoProvider.valorEntrega;
-//
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Text('Carrinho de Compras'),
-//         actions: [
-//           IconButton(
-//             icon: Icon(Icons.delete),
-//             onPressed: () {
-//               carrinhoProvider.clearCarrinho();
-//               ScaffoldMessenger.of(context).showSnackBar(
-//                 SnackBar(content: Text('Carrinho esvaziado!')),
-//               );
-//             },
-//           ),
-//         ],
-//       ),
-//       body: Padding(
-//         padding: const EdgeInsets.all(16.0),
-//         child: Column(
-//           children: <Widget>[
-//             Expanded(
-//               child: ListView.builder(
-//                 itemCount: carrinhoProvider.carrinho.length,
-//                 itemBuilder: (ctx, i) {
-//                   return ListTile(
-//                     title: Text(carrinhoProvider.carrinho[i]['produto'].nome),
-//                     subtitle: Text('Preço: R\$ ${carrinhoProvider.carrinho[i]['produto'].preco}'),
-//                     trailing: Row(
-//                       mainAxisSize: MainAxisSize.min,
-//                       children: [
-//                         IconButton(
-//                           icon: Icon(Icons.remove),
-//                           onPressed: () {
-//                             int novaQuantidade = carrinhoProvider.carrinho[i]['quantidade'] - 1;
-//                             carrinhoProvider.atualizarQuantidade(i, novaQuantidade);
-//                           },
-//                         ),
-//                         Text(carrinhoProvider.carrinho[i]['quantidade'].toString()),
-//                         IconButton(
-//                           icon: Icon(Icons.add),
-//                           onPressed: () {
-//                             int novaQuantidade = carrinhoProvider.carrinho[i]['quantidade'] + 1;
-//                             carrinhoProvider.atualizarQuantidade(i, novaQuantidade);
-//                           },
-//                         ),
-//                         IconButton(
-//                           icon: Icon(Icons.delete),
-//                           onPressed: () {
-//                             carrinhoProvider.removerProduto(i);
-//                             ScaffoldMessenger.of(context).showSnackBar(
-//                               SnackBar(content: Text('Produto removido!')),
-//                             );
-//                           },
-//                         ),
-//                       ],
-//                     ),
-//                   );
-//                 },
-//               ),
-//             ),
-//             ElevatedButton(
-//               onPressed: () {
-//                 Navigator.push(
-//                   context,
-//                   MaterialPageRoute(
-//                     builder: (context) => OpcaoEntregaScreen(
-//                       opcoesEntrega: opcoesEntrega,
-//                       onSelecionarEntrega: (entrega, valor) {
-//                         carrinhoProvider.atualizarEntrega(entrega, valor);
-//                       },
-//                       subtotal: subtotal,
-//                     ),
-//                   ),
-//                 );
-//               },
-//               child: Text('Selecionar Opção de Entrega'),
-//             ),
-//             ElevatedButton(
-//               onPressed: () {
-//                 Navigator.push(
-//                   context,
-//                   MaterialPageRoute(
-//                     builder: (context) => DescontoScreen(
-//                       valorTotal: subtotal,
-//                       onDescontoAplicado: (novoValor) {
-//                         carrinhoProvider.aplicarDesconto(novoValor);
-//                       },
-//                     ),
-//                   ),
-//                 );
-//               },
-//               child: Text('Aplicar Desconto'),
-//             ),
-//             Column(
-//               crossAxisAlignment: CrossAxisAlignment.stretch,
-//               children: [
-//                 Text('Subtotal: R\$ ${subtotal.toStringAsFixed(2)}'),
-//                 Text('Desconto aplicado: -R\$ ${carrinhoProvider.desconto.toStringAsFixed(2)}'),
-//                 Text('Valor da entrega: +R\$ ${carrinhoProvider.valorEntrega.toStringAsFixed(2)}'),
-//                 Divider(),
-//                 Text(
-//                   'Total: R\$ ${totalComDesconto.toStringAsFixed(2)}',
-//                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-//                 ),
-//                 if (faltandoParaFreteGratis > 0)
-//                   Padding(
-//                     padding: const EdgeInsets.all(8.0),
-//                     child: Text(
-//                       'Faltam R\$ ${faltandoParaFreteGratis.toStringAsFixed(2)} para frete grátis',
-//                       style: TextStyle(fontSize: 16, color: Colors.red),
-//                     ),
-//                   ),
-//               ],
-//             ),
-//             Padding(
-//               padding: const EdgeInsets.all(8.0),
-//               child: Text(
-//                 'Total: R\$ ${totalComDesconto.toStringAsFixed(2)}',
-//                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-//               ),
-//             ),
-//             ElevatedButton(
-//               onPressed: () {
-//                 Navigator.push(
-//                   context,
-//                   MaterialPageRoute(
-//                     builder: (context) => PagamentoScreen(
-//                       valorTotal: totalComDesconto,
-//                       carrinho: carrinhoProvider.carrinho,
-//                     ),
-//                   ),
-//                 );
-//               },
-//               child: Text(
-//                 '${carrinhoProvider.carrinho.length} Itens - R\$ ${totalComDesconto.toStringAsFixed(2)}',
-//               ),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }

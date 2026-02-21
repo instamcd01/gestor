@@ -5,7 +5,8 @@ import "package:file_picker/file_picker.dart";
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-
+import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 import '../providers/produto_provider.dart';
 import '../models/produto.dart';
 
@@ -71,10 +72,11 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
                   // double.tryParse(row[9]?.value?.toString() ?? '0') ?? 0.0;
               final lucro =  row[10]?.value?.toString() ?? '';
                   // double.tryParse(row[10]?.value?.toString() ?? '0') ?? 0.0;
-              final precoConcorrencia =  row[11]?.value?.toString() ?? '';
+              final precoConcorrencia =  double.tryParse(row[11]?.value?.toString() ?? '0') ?? 0.0;
                   // double.tryParse(row[11]?.value?.toString() ?? '0') ?? 0.0;
               final empresa = row[12]?.value?.toString() ?? '';
-              final id = int.tryParse(row[13]?.value?.toString() ?? '0') ?? 0;
+              final idDaPlanilha = row[13]?.value?.toString().trim() ?? '';
+              // final id = int.tryParse(row[13]?.value?.toString() ?? '0') ?? 0;
                   // row[13]?.value?.toString().trim() ?? '';
               final precoPromocional = double.tryParse(row[14]?.value?.toString() ?? '0') ?? 0.0;
               final destacar = row[15]?.value?.toString().toLowerCase() == 'true';
@@ -94,7 +96,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
                 lucro: lucro,
                 precoConcorrencia: precoConcorrencia,
                 empresa: empresa,
-                id: id,
+                id: idDaPlanilha.isNotEmpty ? idDaPlanilha : null,
                 precoPromocional: precoPromocional,
                 descricao: '', // Ajuste conforme necessário
                 imagemUrl: '', // Ajuste conforme necessário
@@ -122,23 +124,23 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
 
     // Definindo as colunas da planilha
     sheet.appendRow([
-      'Nome',
-      'Categoria',
-      'Código de Barras',
-      'Custo',
-      'Preço',
-      'Preço Ifood',
-      'Validade',
-      'Estoque Atual',
-      'Estoque Mínimo',
-      'Markup',
-      'Lucro',
-      'Preço Concorrência',
-      'Empresa',
-      'ID',
-      'Preço Promocional',
-      'Destacar',
-      'Exibir no Catálogo'
+      TextCellValue('Nome'),
+      TextCellValue('Categoria'),
+      TextCellValue('Código de Barras'),
+      TextCellValue('Custo'),
+      TextCellValue('Preço'),
+      TextCellValue('Preço Ifood'),
+      TextCellValue('Validade'),
+      TextCellValue('Estoque Atual'),
+      TextCellValue('Estoque Mínimo'),
+      TextCellValue('Markup'),
+      TextCellValue('Lucro'),
+      TextCellValue('Preço Concorrência'),
+      TextCellValue('Empresa'),
+      TextCellValue('ID'),
+      TextCellValue('Preço Promocional'),
+      TextCellValue('Destacar'),
+      TextCellValue('Exibir no Catálogo'),
     ]);
 
     // Obter o diretório onde o arquivo será salvo
@@ -150,7 +152,10 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     await file.writeAsBytes(bytes);
 
     // Usando share_plus para compartilhar o arquivo gerado
-    await Share.shareFiles([file.path], text: 'Aqui está a planilha de produtos para preenchimento!');
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: 'Aqui está a planilha de produtos para preenchimento!',
+    );
   }
 
   @override

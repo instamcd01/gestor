@@ -1,31 +1,29 @@
 // pagamento_cartao_credito_screen.dart
 import 'package:flutter/material.dart';
-
+import 'package:gestor/models/cliente.dart';
 import 'conclusao_venda_screen.dart';
 
-class PagamentoCartaoCreditoScreen extends StatefulWidget {
+class PagamentoCartaoCreditoScreen extends StatelessWidget {
   final double valorTotal;
+  final List<Map<String, dynamic>> carrinho;
+  final String? idCliente;
+  final String metodoPagamento;
+  final Cliente cliente;
+  final double desconto;
+  final double valorEntrega;
+  final String entregaSelecionada;
+  final double saldoUsado;
 
-  PagamentoCartaoCreditoScreen({required this.valorTotal, required List<Map<String, dynamic>> carrinho});
-
-  @override
-  _PagamentoCartaoCreditoScreenState createState() =>
-      _PagamentoCartaoCreditoScreenState();
-}
-
-class _PagamentoCartaoCreditoScreenState
-    extends State<PagamentoCartaoCreditoScreen> {
-  TextEditingController _valorController = TextEditingController();
-  double valorPago = 0.0;
-  double valorFaltante = 0.0;
-
-  void calcularValorFaltante() {
-    double valor = double.tryParse(_valorController.text) ?? 0.0;
-    setState(() {
-      valorPago = valor;
-      valorFaltante = widget.valorTotal - valorPago;
-    });
-  }
+  PagamentoCartaoCreditoScreen({
+    required this.valorTotal,
+    required this.carrinho,
+    this.idCliente,
+    required this.metodoPagamento,
+    required this.cliente, required this.desconto,
+    required this.valorEntrega,
+    required this.entregaSelecionada,
+    required this.saldoUsado,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -39,79 +37,48 @@ class _PagamentoCartaoCreditoScreenState
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
+            Icon(Icons.credit_card, size: 100, color: Colors.blue),
+            SizedBox(height: 30),
             Text(
-              'Valor Total: R\$ ${widget.valorTotal.toStringAsFixed(2)}',
+              'Valor Total: R\$ ${valorTotal.toStringAsFixed(2)}',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                color: Colors.black,
               ),
             ),
-            SizedBox(height: 30),
-            TextField(
-              controller: _valorController,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Valor do Pagamento',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) {
-                calcularValorFaltante();
-              },
+            SizedBox(height: 20),
+            Text(
+              'Pagamento via cartão de crédito será processado no valor exato.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18),
             ),
-            SizedBox(height: 30),
-            // Exibindo a diferença, se houver
-            if (valorFaltante > 0)
-              Text(
-                'Faltando: R\$ ${valorFaltante.toStringAsFixed(2)}',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.red,
-                ),
-              ),
-            SizedBox(height: 30),
+            SizedBox(height: 50),
             ElevatedButton(
               onPressed: () {
-                if (valorFaltante > 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Pagamento incompleto!')),
-                  );
-                  return;
-                }
+                // Navegar para a tela de conclusão da venda
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        ConclusaoVendaScreen(valorTotal: widget.valorTotal,carrinho: [],),
+                    builder: (context) => ConclusaoVendaScreen(
+                      valorTotal: valorTotal,
+                      carrinho: carrinho,
+                      idCliente: idCliente,
+                      metodoPagamento: metodoPagamento,
+                      cliente: cliente,
+                      desconto: desconto,
+                      valorEntrega: valorEntrega,
+                      entregaSelecionada: entregaSelecionada,
+                      saldoUsado: saldoUsado,
+                    ),
                   ),
                 );
               },
-              child: Text('Concluir'),
+              child: Text('Concluir Pagamento'),
               style: ElevatedButton.styleFrom(
                 minimumSize: Size(double.infinity, 50),
                 textStyle: TextStyle(fontSize: 18),
               ),
             ),
-            // ElevatedButton(
-            //   onPressed: valorFaltante > 0
-            //       ? null // Desabilita o botão se ainda faltar valor
-            //       : () {
-            //     ScaffoldMessenger.of(context).showSnackBar(
-            //       SnackBar(
-            //         content: Text('Pagamento com Cartão de Crédito realizado!'),
-            //       ),
-            //     );
-            //     Navigator.pop(context);
-            //   },
-            //   child: valorFaltante > 0
-            //       ? Text('Finalizar Pagamento') // Caso haja falta, o texto muda
-            //       : Text('Concluir'),
-            //   style: ElevatedButton.styleFrom(
-            //     minimumSize: Size(double.infinity, 50),
-            //     textStyle: TextStyle(fontSize: 18),
-            //   ),
-            // ),
           ],
         ),
       ),

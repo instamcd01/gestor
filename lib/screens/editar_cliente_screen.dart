@@ -1,124 +1,15 @@
-// import 'package:flutter/material.dart';
-// import 'package:provider/provider.dart';
-// import '../providers/cliente_provider.dart';
-// import 'adicionar_cliente_screen.dart'; // Importe a tela de adicionar cliente
-//
-// class EditarClienteScreen extends StatefulWidget {
-//   @override
-//   _EditarClienteScreenState createState() =>
-//       _EditarClienteScreenState();
-// }
-//
-// class _EditarClienteScreenState extends State<EditarClienteScreen> {
-//   @override
-//   Widget build(BuildContext context) {
-//     // Obtém o ClientProvider
-//     final clientProvider = Provider.of<ClientProvider>(context);
-//
-//     // Função para pesquisar clientes
-//     void pesquisarCliente(String texto) {
-//       // Chama a função de pesquisa do provider
-//       setState(() {
-//         clientProvider.pesquisarClientes(texto);
-//       });
-//     }
-//
-//     // Função para importar clientes da lista de contatos
-//     void importarClientes() {
-//       print('Importando contatos...');
-//     }
-//
-// // Função para selecionar o cliente
-//     void selecionarCliente(String cliente) {
-//       clientProvider.setClienteSelecionado(cliente); // Define o cliente selecionado no provider
-//       Navigator.pop(context); // Volta para a tela de pagamento
-//     }
-//
-//     // Função para adicionar um novo cliente
-//     void adicionarNovoCliente() {
-//       Navigator.push(
-//         context,
-//         MaterialPageRoute(
-//           builder: (context) => AdicionarClienteScreen(
-//             onSalvar: (nome) {
-//               clientProvider.addCliente(nome as String); // Adiciona o cliente ao provider
-//               Navigator.pop(context); // Volta para a tela de cadastro com lista atualizada
-//             },
-//           ),
-//         ),
-//       );
-//     }
-//
-//     // Função para desvincular um cliente
-//     void desvincularCliente(String cliente) {
-//       clientProvider.removeCliente(cliente); // Remove o cliente do provider
-//     }
-//
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Text('Editar Cliente'),
-//         actions: [
-//           IconButton(
-//             icon: Icon(Icons.contacts),
-//             onPressed: importarClientes,
-//             tooltip: 'Importar Clientes',
-//           ),
-//           IconButton(
-//             icon: Icon(Icons.add),
-//             onPressed: adicionarNovoCliente,
-//             tooltip: 'Adicionar Novo Cliente',
-//           ),
-//         ],
-//       ),
-//       body: Padding(
-//         padding: const EdgeInsets.all(16.0),
-//         child: Column(
-//           children: [
-//             // Campo de pesquisa
-//             TextField(
-//               onChanged: pesquisarCliente,
-//               decoration: InputDecoration(
-//                 labelText: 'Pesquisar Cliente',
-//                 prefixIcon: Icon(Icons.search),
-//                 border: OutlineInputBorder(),
-//               ),
-//             ),
-//             SizedBox(height: 20),
-//
-//             // Lista de clientes
-//             Expanded(
-//               child: ListView.builder(
-//                 itemCount: clientProvider.clientes.length,
-//                 itemBuilder: (context, index) {
-//                   final cliente = clientProvider.clientes[index];
-//                   return ListTile(
-//                     title: Text(cliente),
-//                     onTap: () => selecionarCliente(cliente), // Seleciona o cliente ao clicar
-//                   );
-//                 },
-//               ),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }
-
-
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import '../models/cliente.dart';
+import '../models/pet.dart';
 import '../providers/cliente_provider.dart';
-import '../models/cliente.dart'; // Certifique-se de que o modelo Cliente está importado
+import 'cadastro_pet_screen.dart';
+import 'editar_pet_screen.dart';
 
 class EditarClienteScreen extends StatefulWidget {
   final Cliente clienteSelecionado;
 
-  // Lista de opções de pets
-  final List<String> _pets = ['Cão', 'Gato', 'Passarinho', 'Peixe', 'Coelho'];
-
-  // Construtor
   EditarClienteScreen({required this.clienteSelecionado});
 
   @override
@@ -135,15 +26,19 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
   late TextEditingController _observacaoController;
   late TextEditingController _saldoController;
   late TextEditingController _idController;
+  final TextEditingController _outroCanalController = TextEditingController();
+  late TextEditingController _distanciaController;
+  late TextEditingController _estimativaController;
 
-  // Lista de pets selecionados
-  List<String> _petsSelecionados = [];
+  List<Pet> _pets = [];
+  DateTime? _aniversario;
+  bool _aceitaMarketing = false;
+  final List<String> _canais = ['WhatsApp', 'Instagram', 'Ifood', 'Outro canal'];
+  String? _canalSelecionado;
 
   @override
   void initState() {
     super.initState();
-
-    // Inicializa os controllers com os dados do cliente selecionado
     final cliente = widget.clienteSelecionado;
     _nomeController = TextEditingController(text: cliente.nome);
     _celularController = TextEditingController(text: cliente.celular);
@@ -154,78 +49,189 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     _observacaoController = TextEditingController(text: cliente.observacao);
     _saldoController = TextEditingController(text: cliente.saldo.toString());
     _idController = TextEditingController(text: cliente.idCliente);
-    _petsSelecionados = cliente.pet.toList(); // Carrega os pets selecionados
+    // _canalOrigemController = TextEditingController(text: cliente.canalOrigem ?? '');
+    _aniversario = cliente.aniversario;
+    _aceitaMarketing = cliente.aceitaMarketing ?? false;
+    _pets = cliente.pets.toList();
+    _distanciaController = TextEditingController(
+        text: cliente.rangeDistancia != null ? cliente.rangeDistancia!.toString() : '');
+    _estimativaController = TextEditingController(
+        text: cliente.estimativaEntrega != null ? cliente.estimativaEntrega!.toString() : '');
+    if (_canais.contains(cliente.canalOrigem)) {
+      _canalSelecionado = cliente.canalOrigem;
+    } else if (cliente.canalOrigem!.isNotEmpty) {
+      _canalSelecionado = 'Outro canal';
+      _outroCanalController.text = cliente.canalOrigem!;
+    }
+    }
+
+  void _selecionarAniversario() async {
+    final data = await showDatePicker(
+      context: context,
+      initialDate: _aniversario ?? DateTime(2000, 1, 1),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (data != null) setState(() => _aniversario = data);
   }
 
-  @override
-  void dispose() {
-    // Limpeza dos controllers quando a tela for descartada
-    _nomeController.dispose();
-    _celularController.dispose();
-    _enderecoController.dispose();
-    _complementoController.dispose();
-    _emailController.dispose();
-    _cpfController.dispose();
-    _observacaoController.dispose();
-    _saldoController.dispose();
-    _idController.dispose();
-    super.dispose();
-  }
-
-  // Função para salvar os dados atualizados
   void _salvarCliente() {
-    final updatedCliente = Cliente(
+    String canalOrigem;
+    if (_canalSelecionado == 'Outro canal') {
+      canalOrigem = _outroCanalController.text.trim();
+      if (canalOrigem.isNotEmpty && !_canais.contains(canalOrigem)) {
+        setState(() {
+          _canais.insert(_canais.length - 1, canalOrigem);
+        });
+      }
+    } else {
+      canalOrigem = _canalSelecionado ?? '';
+    }
+    final clienteAtualizado = Cliente(
+      idCliente: _idController.text,
       nome: _nomeController.text,
       celular: _celularController.text,
+      email: _emailController.text,
       endereco: _enderecoController.text,
       complemento: _complementoController.text,
-      email: _emailController.text,
       cpf: _cpfController.text,
       observacao: _observacaoController.text,
       saldo: double.tryParse(_saldoController.text) ?? 0.0,
-      idCliente: _idController.text,
-      pet: _petsSelecionados,
+      pets: _pets,
+      canalOrigem: canalOrigem,
+      aniversario: _aniversario,
+      aceitaMarketing: _aceitaMarketing,
+      dataCadastro: widget.clienteSelecionado.dataCadastro,
+      quantidadeCompras: widget.clienteSelecionado.quantidadeCompras,
+      rangeDistancia: double.tryParse(_distanciaController.text),
+      estimativaEntrega: int.tryParse(_estimativaController.text),
     );
 
-    // Atualiza o cliente no provider
-    final clientProvider = Provider.of<ClientProvider>(context, listen: false);
-    clientProvider.atualizarCliente(updatedCliente);
-
-    // Volta para a tela anterior
-    Navigator.pop(context, updatedCliente);
+    Provider.of<ClientProvider>(context, listen: false).atualizarCliente(clienteAtualizado);
+    Navigator.pop(context, clienteAtualizado);
   }
-
+  @override
+  void dispose() {
+    _outroCanalController.dispose();
+    _distanciaController.dispose();
+    _estimativaController.dispose();
+    super.dispose();
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Editar Cliente'),
         actions: [
-          IconButton(
-            icon: Icon(Icons.save),
-            onPressed: _salvarCliente,
-            tooltip: 'Salvar',
-          ),
+          IconButton(icon: Icon(Icons.save), onPressed: _salvarCliente),
         ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: ListView(
-          children: <Widget>[
+          children: [
             _buildTextField('Nome', _nomeController),
             _buildTextField('Celular', _celularController),
             _buildTextField('Endereço', _enderecoController),
+            _buildTextField('Distância (km)', _distanciaController),
+            _buildTextField('Estimativa de entrega (min)', _estimativaController),
             _buildTextField('Complemento', _complementoController),
             _buildTextField('Email', _emailController),
             _buildTextField('CPF', _cpfController),
             _buildTextField('Observação', _observacaoController),
             _buildTextField('Saldo', _saldoController),
+            SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _canalSelecionado,
+              items: _canais.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+              onChanged: (valor) {
+                setState(() {
+                  _canalSelecionado = valor;
+                  if (valor != 'Outro canal') _outroCanalController.clear();
+                });
+              },
+              decoration: InputDecoration(labelText: 'Canal de Origem', border: OutlineInputBorder()),
+            ),
+
+            if (_canalSelecionado == 'Outro canal')
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: TextField(
+                  controller: _outroCanalController,
+                  decoration: InputDecoration(labelText: 'Digite o canal', border: OutlineInputBorder()),
+                ),
+              ),
+
+            SizedBox(height: 16),
+            ListTile(
+              title: Text(_aniversario != null
+                  ? 'Aniversário: ${_aniversario!.day}/${_aniversario!.month}/${_aniversario!.year}'
+                  : 'Selecionar aniversário'),
+              trailing: Icon(Icons.calendar_today),
+              onTap: _selecionarAniversario,
+            ),
+            SwitchListTile(
+              title: Text('Aceita receber promoções?'),
+              value: _aceitaMarketing,
+              onChanged: (v) => setState(() => _aceitaMarketing = v),
+            ),
             SizedBox(height: 20),
-            _buildPetSelection(),
+            ElevatedButton.icon(
+              icon: Icon(Icons.pets),
+              label: Text('Adicionar Pet'),
+              onPressed: () async {
+                final pet = await Navigator.push<Pet>(
+                  context,
+                  MaterialPageRoute(builder: (_) => CadastroPetScreen()),
+                );
+                if (pet != null) {
+                  setState(() => _pets.add(pet));
+                  _salvarCliente();
+                }
+              },
+            ),
+            SizedBox(height: 16),
+            Text('Pets cadastrados:', style: TextStyle(fontWeight: FontWeight.bold)),
+            ..._pets.asMap().entries.map((entry) {
+              final i = entry.key;
+              final pet = entry.value;
+              return ListTile(
+                leading: pet.imagemUrl.isNotEmpty
+                    ? Image.network(pet.imagemUrl, width: 40, height: 40, fit: BoxFit.cover)
+                    : Icon(Icons.pets),
+                title: Text(pet.nome),
+                subtitle: Text('${pet.especie} - ${pet.raca}'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.edit),
+                      onPressed: () async {
+                        final petEditado = await Navigator.push<Pet>(
+                          context,
+                          MaterialPageRoute(builder: (_) => EditarPetScreen(pet: pet)),
+                        );
+                        if (petEditado != null) {
+                          setState(() => _pets[i] = petEditado);
+                          _salvarCliente();
+                        }
+                      },
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.delete, color: Colors.red),
+                      onPressed: () {
+                        setState(() => _pets.removeAt(i));
+                        _salvarCliente();
+                      },
+                    ),
+                  ],
+                ),
+              );
+            }),
             SizedBox(height: 20),
             ElevatedButton(
               onPressed: _salvarCliente,
-              child: Text('Salvar'),
+              child: Text('Salvar Cliente'),
             ),
           ],
         ),
@@ -233,7 +239,6 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     );
   }
 
-  // Widget reutilizável para criar campos de texto editáveis
   Widget _buildTextField(String label, TextEditingController controller) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -246,145 +251,4 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
       ),
     );
   }
-
-  // Função para criar a seção de seleção de pets
-  Widget _buildPetSelection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text('Selecione os pets que o cliente possui:'),
-        ...widget._pets.map((pet) {
-          return CheckboxListTile(
-            title: Text(pet),
-            value: _petsSelecionados.contains(pet),
-            onChanged: (bool? value) {
-              setState(() {
-                if (value == true) {
-                  _petsSelecionados.add(pet);
-                } else {
-                  _petsSelecionados.remove(pet);
-                }
-              });
-            },
-          );
-        }).toList(),
-      ],
-    );
-  }
 }
-
-
-
-
-
-
-// import 'package:flutter/material.dart';
-// import 'package:provider/provider.dart';
-// import '../providers/cliente_provider.dart';
-// import 'adicionar_cliente_screen.dart'; // Importe a tela de adicionar cliente
-// import '../models/cliente.dart'; // Certifique-se de que o modelo Cliente está importado
-//
-// class EditarClienteScreen extends StatefulWidget {
-//   @override
-//   _EditarClienteScreenState createState() => _EditarClienteScreenState();
-// }
-//
-// class _EditarClienteScreenState extends State<EditarClienteScreen> {
-//   @override
-//   Widget build(BuildContext context) {
-//     // Obtém o ClientProvider
-//     final clientProvider = Provider.of<ClientProvider>(context);
-//
-//     // Função para pesquisar clientes
-//     void pesquisarCliente(String texto) {
-//       setState(() {
-//         clientProvider.pesquisarClientes(texto); // Pesquisa os clientes no provider
-//       });
-//     }
-//
-//     // Função para importar clientes da lista de contatos
-//     void importarClientes() {
-//       print('Importando contatos...');
-//       // Aqui, você pode adicionar lógica para importar contatos, se necessário
-//     }
-//
-//     // Função para selecionar o cliente
-//     void selecionarCliente(Cliente cliente) {
-//       clientProvider.setClienteSelecionado(cliente); // Define o cliente selecionado
-//       Navigator.pop(context); // Volta para a tela anterior
-//     }
-//
-//     // Função para adicionar um novo cliente
-//     void adicionarNovoCliente() {
-//       Navigator.push(
-//         context,
-//         MaterialPageRoute(
-//           builder: (context) => AdicionarClienteScreen(
-//             onSalvar: (Cliente novoCliente) {
-//               clientProvider.addCliente(novoCliente); // Adiciona o cliente ao provider
-//               Navigator.pop(context); // Volta para a tela de edição
-//             },
-//           ),
-//         ),
-//       );
-//     }
-//
-//     // Função para desvincular um cliente
-//     void desvincularCliente(Cliente cliente) {
-//       clientProvider.removeCliente(cliente); // Remove o cliente do provider
-//     }
-//
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Text('Editar Cliente'),
-//         actions: [
-//           IconButton(
-//             icon: Icon(Icons.contacts),
-//             onPressed: importarClientes,
-//             tooltip: 'Importar Clientes',
-//           ),
-//           IconButton(
-//             icon: Icon(Icons.add),
-//             onPressed: adicionarNovoCliente,
-//             tooltip: 'Adicionar Novo Cliente',
-//           ),
-//         ],
-//       ),
-//       body: Padding(
-//         padding: const EdgeInsets.all(16.0),
-//         child: Column(
-//           children: [
-//             // Campo de pesquisa
-//             TextField(
-//               onChanged: pesquisarCliente,
-//               decoration: InputDecoration(
-//                 labelText: 'Pesquisar Cliente',
-//                 prefixIcon: Icon(Icons.search),
-//                 border: OutlineInputBorder(),
-//               ),
-//             ),
-//             SizedBox(height: 20),
-//
-//             // Lista de clientes
-//             Expanded(
-//               child: ListView.builder(
-//                 itemCount: clientProvider.clientes.length,
-//                 itemBuilder: (context, index) {
-//                   final Cliente cliente = clientProvider.clientes[index];
-//                   return ListTile(
-//                     title: Text(cliente.nome), // Exibe o nome do cliente
-//                     onTap: () => selecionarCliente(cliente), // Seleciona o cliente
-//                     trailing: IconButton(
-//                       icon: Icon(Icons.delete),
-//                       onPressed: () => desvincularCliente(cliente), // Remove o cliente
-//                     ),
-//                   );
-//                 },
-//               ),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }

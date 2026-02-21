@@ -3,6 +3,8 @@ import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:io';
+import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 
 class GerarPlanilhaBaseScreen extends StatelessWidget {
   // Função para gerar a planilha base
@@ -12,23 +14,23 @@ class GerarPlanilhaBaseScreen extends StatelessWidget {
 
     // Definindo as colunas da planilha
     sheet.appendRow([
-      'Nome',
-      'Categoria',
-      'Código de Barras',
-      'Custo',
-      'Preço',
-      'Preço Ifood',
-      'Validade',
-      'Estoque Atual',
-      'Estoque Mínimo',
-      'Markup',
-      'Lucro',
-      'Preço Concorrência',
-      'Empresa',
-      'ID',
-      'Preço Promocional',
-      'Destacar',
-      'Exibir no Catálogo'
+      TextCellValue('Nome'),
+      TextCellValue('Categoria'),
+      TextCellValue('Código de Barras'),
+      TextCellValue('Custo'),
+      TextCellValue('Preço'),
+      TextCellValue('Preço Ifood'),
+      TextCellValue('Validade'),
+      TextCellValue('Estoque Atual'),
+      TextCellValue('Estoque Mínimo'),
+      TextCellValue('Markup'),
+      TextCellValue('Lucro'),
+      TextCellValue('Preço Concorrência'),
+      TextCellValue('Empresa'),
+      TextCellValue('ID'),
+      TextCellValue('Preço Promocional'),
+      TextCellValue('Destacar'),
+      TextCellValue('Exibir no Catálogo'),
     ]);
 
     // Obter o diretório onde o arquivo será salvo
@@ -39,8 +41,11 @@ class GerarPlanilhaBaseScreen extends StatelessWidget {
     final bytes = await excel.encode() ?? [];
     await file.writeAsBytes(bytes);
 
-    // Usando share_plus para compartilhar o arquivo gerado
-    await Share.shareFiles([file.path], text: 'Aqui está a planilha de produtos para preenchimento!');
+    // Usando share_plus para compartilhar o arquivopathado
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: 'Aqui está a planilha de produtos para preenchimento!',
+    );
 
     // Exibir informativo com o local onde o arquivo foi salvo
     ScaffoldMessenger.of(context).showSnackBar(

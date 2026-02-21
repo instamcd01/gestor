@@ -1,62 +1,77 @@
-// class Venda {
-//   final String id;
-//   final String clienteId;
-//   final List<Map<String, dynamic>> produtos;
-//   final DateTime data;
-//   final double total;
-//
-//   Venda({
-//     required this.id,
-//     required this.clienteId,
-//     required this.produtos,
-//     required this.data,
-//     required this.total,
-//   });
-// }
-
-
 import 'package:gestor/models/cliente.dart';
 import 'package:gestor/models/produto.dart';
 
 class Venda {
-  final Cliente cliente;
   final String idVenda;
+  final Cliente cliente;
   final DateTime dataVenda;
-  final String metodoPagamento;
-  final double valorTotal;
-  final List<ItemVenda> itens;
-  // final double custoTotal;
+
+  final double subtotal;          // valor dos produtos antes de frete/desconto
+  final double desconto;          // desconto aplicado
+  final double saldoUsado;
+  final double valorEntrega;      // frete efetivo
+  final String entregaSelecionada; // faixa de entrega ex: '0-2km'
+
+  final double valorTotal;        // subtotal - desconto + frete
+  final double valorPago;         // quanto o cliente pagou
+  final double troco;             // se pagamento em dinheiro
+  final String metodoPagamento;   // forma de pagamento
+
+  final int totalItens;           // quantidade total de unidades
+  final List<ItemVenda> itens;    // lista de produtos da venda
+
+  final double custoTotal;        // soma do custo dos produtos
+  final double lucroTotal;        // lucro líquido
+  final String observacao;        // observações da venda
+  final Map<String, double>? pagamentosDetalhados;
 
   Venda({
-    required this.cliente,
     required this.idVenda,
+    required this.cliente,
     required this.dataVenda,
-    required this.metodoPagamento,
+    required this.subtotal,
+    required this.desconto,
+    required this.saldoUsado,
+    required this.valorEntrega,
+    required this.entregaSelecionada,
     required this.valorTotal,
-    // required this.custoTotal,
+    required this.valorPago,
+    required this.troco,
+    required this.metodoPagamento,
+    required this.totalItens,
     required this.itens,
+    required this.custoTotal,
+    required this.lucroTotal,
+    this.observacao = '',
+    this.pagamentosDetalhados,
   });
 }
+
+
 class ItemVenda {
   final Produto produto;
-   final int quantidade;
-  final double precoTotal;
+  final int quantidade;
+  final double precoUnitario; // preço de venda aplicado no momento da venda
 
-  ItemVenda({required this.produto, required this.quantidade, required this.precoTotal,});
+  ItemVenda({
+    required this.produto,
+    required this.quantidade,
+    required this.precoUnitario,
+  });
+
+  // --- Getters calculados ---
+  double get precoTotal => precoUnitario * quantidade;
+
+  double get custoUnitario => produto.custo;
+
+  double get custoTotal => produto.custo * quantidade;
+
+  double get lucroUnitario => precoUnitario - produto.custo;
+
+  double get lucroTotal => (precoUnitario - produto.custo) * quantidade;
 }
-// Definindo o método custoTotal
-// double custoTotal() {
-//   double custo = 0.0;
-//   for (var produto in produto) {
-//     custo += produto.custo; // Supondo que o ItemVenda tenha um campo 'custo'
-//   }
-//   return custo;
-// }
-// class Cliente {
-//   final String nome;
-//
-//   Cliente({required this.nome});
-// }
+
+
 
 
 
