@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
+import '../models/cliente.dart';
 import '../models/produto.dart'; // Seu modelo de Produto
 
 // Modelo para um item no carrinho (mais robusto que Map<String, dynamic>)
@@ -8,16 +10,21 @@ class ItemCarrinho {
 
   ItemCarrinho({required this.produto, required this.quantidade});
 
-  double get precoTotalItem => (produto.precoPromocional ?? produto.preco) * quantidade;
+  double get precoUnitario =>
+      produto.precoPromocional ?? produto.preco;
+
+  double get precoTotalItem =>
+      precoUnitario * quantidade;
 }
 
 class CarrinhoProvider with ChangeNotifier {
   final List<ItemCarrinho> _itens = [];
+  Cliente? _clienteSelecionado;
   double _desconto = 0.0;
   String _entregaSelecionadaId = 'retirada'; // ID da opção de entrega padrão
   double _valorEntrega = 0.0;
   double _valorEntregaNormalAplicado = 0.0; // Valor da entrega antes de verificar frete grátis
-
+  String _idVenda = const Uuid().v4();
   // Exemplo de estrutura para opções de entrega (pode vir de configurações/outro provider)
   final Map<String, Map<String, dynamic>> _opcoesEntregaConfig = {
     'retirada': {'nome': 'Retirar na Loja', 'valor': 0.0, 'minimoFreteGratis': 0.0},
@@ -27,11 +34,12 @@ class CarrinhoProvider with ChangeNotifier {
 
   // Getters
   List<ItemCarrinho> get itens => [..._itens]; // Retorna uma cópia para evitar modificação externa
+  Cliente? get clienteSelecionado => _clienteSelecionado;
   double get desconto => _desconto;
   String get entregaSelecionadaId => _entregaSelecionadaId;
   Map<String, dynamic> get detalhesEntregaSelecionada => _opcoesEntregaConfig[_entregaSelecionadaId] ?? _opcoesEntregaConfig.values.first;
   Map<String, Map<String, dynamic>> get opcoesEntregaDisponiveis => _opcoesEntregaConfig;
-
+  String get idVenda => _idVenda;
   double get subtotal {
     return _itens.fold(0.0, (sum, item) => sum + item.precoTotalItem);
   }
@@ -58,9 +66,8 @@ class CarrinhoProvider with ChangeNotifier {
     double minimoFreteGratis = detalhes['minimoFreteGratis'] as double? ?? 0.0;
     if (minimoFreteGratis == 0) return 0.0; // Se não há mínimo, não falta nada
 
-    final valorAtual = subtotal;
-    if (valorAtual < minimoFreteGratis) {
-      return minimoFreteGratis - valorAtual;
+    if (subtotal < minimoFreteGratis) {
+      return minimoFreteGratis - subtotal;
     }
     return 0.0;
   }
@@ -114,12 +121,12 @@ class CarrinhoProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void aplicarDesconto(double valorDoDesconto) {
-    if (valorDoDesconto < 0) valorDoDesconto = 0;
-    if (valorDoDesconto > subtotal) { // Não permitir desconto maior que o subtotal
+  void aplicarDesconto(double valor) {
+    if (valor < 0) valor = 0;
+    if (valor > subtotal) { // Não permitir desconto maior que o subtotal
       _desconto = subtotal;
     } else {
-      _desconto = valorDoDesconto;
+      _desconto = valor;
     }
     notifyListeners();
   }
@@ -133,10 +140,23 @@ class CarrinhoProvider with ChangeNotifier {
       notifyListeners();
     }
   }
+  void selecionarCliente(Cliente cliente) {
+    _clienteSelecionado = cliente;
+    notifyListeners();
+  }
 
   void limparCarrinho() {
     _itens.clear();
     _desconto = 0.0;
+    _itens.clear();
+    _desconto = 0.0;
+    _clienteSelecionado = null;
+    _entregaSelecionadaId = 'retirada';
+    _valorEntregaNormalAplicado =
+    _opcoesEntregaConfig['retirada']!['valor']
+    as double;
+    _idVenda = const Uuid().v4();
+
     // Resetar entrega para o padrão ou manter a seleção do usuário?
     // _entregaSelecionadaId = 'retirada';
     // _valorEntregaNormalAplicado = _opcoesEntregaConfig['retirada']!['valor'] as double;

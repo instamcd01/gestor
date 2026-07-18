@@ -193,8 +193,29 @@ class ProdutoProvider with ChangeNotifier {
   Future<void> adicionarProduto(Produto produto) async {
     try {
       DocumentReference docRef = await _firestore.collection(_collectionName).add(produto.toMap());
-      produto.id = docRef.id; // Atualiza ID local
-      _produtos.add(produto);
+      final novoProduto = Produto(
+        id: produto.id,
+        nome: produto.nome,
+        categoria: produto.categoria,
+        codigoBarras: produto.codigoBarras,
+        preco: produto.preco,
+        precoPromocional: produto.precoPromocional,
+        estoqueAtual: produto.estoqueAtual,
+        estoqueMinimo: produto.estoqueMinimo,
+        custo: produto.custo,
+        markup: produto.markup,
+        lucro: produto.lucro,
+        imagemUrl: produto.imagemUrl,
+        imagemAutomaticaUrl: produto.imagemAutomaticaUrl,
+        empresa: produto.empresa,
+        destacar: produto.destacar,
+        exibirNoCatalogo: produto.exibirNoCatalogo,
+        validade: produto.validade,
+        precoConcorrencia: produto.precoConcorrencia, descricao:produto.descricao,
+      );
+
+      _produtos.add(novoProduto);
+
       notifyListeners();
     } catch (e) {
       print("Erro ao adicionar produto: $e");

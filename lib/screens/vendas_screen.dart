@@ -285,12 +285,7 @@ class _VendasScreenState extends State<VendasScreen> {
               onPressed: () async {
                 await Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (ctx) => CarrinhoScreen(
-                      carrinho: carrinho,
-                      valorTotal: valorTotal,
-                      idVenda: '',
-                      idCliente: '',
-                    ),
+                    builder: (_) => const CarrinhoScreen(idVenda: '',),
                   ),
                 );
 

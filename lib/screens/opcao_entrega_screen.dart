@@ -329,7 +329,7 @@ import '../providers/cliente_provider.dart';
 import 'gerenciar_entrega_screen.dart';
 
 class OpcaoEntregaScreen extends StatefulWidget {
-  final Map<String, Map<String, double>> opcoesEntrega;
+  final Map<String, Map<String, dynamic>> opcoesEntrega;
   final Function(String, double) onSelecionarEntrega;
   final double subtotal;
 

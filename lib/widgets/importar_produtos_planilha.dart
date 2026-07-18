@@ -96,7 +96,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
                 lucro: lucro,
                 precoConcorrencia: precoConcorrencia,
                 empresa: empresa,
-                id: idDaPlanilha.isNotEmpty ? idDaPlanilha : null,
+                id: idDaPlanilha.isNotEmpty  idDaPlanilha : null,
                 precoPromocional: precoPromocional,
                 descricao: '', // Ajuste conforme necessário
                 imagemUrl: '', // Ajuste conforme necessário

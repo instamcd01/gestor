@@ -1,5 +1,5 @@
 class Produto {
-  String? id;
+  final String id;
   String nome;
   double preco;
   double? precoPromocional;
@@ -21,7 +21,7 @@ class Produto {
   double? precoConcorrencia;
 
   Produto({
-    this.id,
+    required this.id,
     required this.nome,
     required this.preco,
     this.precoPromocional,
@@ -40,7 +40,7 @@ class Produto {
     this.markup,
     this.lucro,
     this.empresa,
-    this.precoConcorrencia,
+    this.precoConcorrencia, Object? idDaPlanilha,
   });
 
   Map<String, dynamic> toMap() {

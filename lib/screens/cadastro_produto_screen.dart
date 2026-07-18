@@ -191,7 +191,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       precoConcorrencia:
           double.tryParse(_precoConcorrenciaController.text) ?? 0.0,
       validade: _validadeController.text,
-      empresa: _empresaController.text,
+      empresa: _empresaController.text, id: '',
     );
 
     try {
