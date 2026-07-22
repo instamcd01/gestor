@@ -1,75 +1,62 @@
 import 'package:flutter/material.dart';
 import 'package:gestor/providers/carrinho_provider.dart';
 import 'package:gestor/providers/historico_vendas_provider.dart';
-import 'package:gestor/providers/pedido_provider.dart';
-import 'package:gestor/screens/conclusao_venda_screen.dart';
 import 'package:gestor/screens/historico_vendas_screen.dart';
-import 'package:gestor/screens/pagamento_debito_screen.dart';
-import 'package:gestor/screens/pedidos_screen.dart';
+import 'package:gestor/screens/fila_pedidos_screen.dart';
 import 'package:provider/provider.dart';
-import 'models/cliente.dart';
 import 'screens/home_screen.dart';
 import 'providers/produto_provider.dart';
 import 'providers/cliente_provider.dart';
-import 'providers/vendas_provider.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_app_check/firebase_app_check.dart'; // 👈 importa o AppCheck
-import 'firebase_options.dart';
+import 'providers/branding_provider.dart';
+import 'providers/auth_provider.dart';
+import 'providers/usuario_provider.dart';
+import 'providers/zona_entrega_provider.dart';
+import 'providers/fornecedor_provider.dart';
+import 'providers/despesa_provider.dart';
+import 'screens/auth_gate.dart';
+import 'config/supabase_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Backend único do app (auth, dados multi-tenant com RLS, storage).
+  await SupabaseConfig.inicializar();
 
-  // 👇 Ativando o App Check com Debug Provider
-  await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.debug,
-    appleProvider: AppleProvider.debug,
-    // Se não for usar Web, pode remover a linha abaixo
-    webProvider: ReCaptchaV3Provider('SUA_CHAVE_RECAPTCHA'),
-  );
-
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (context) {
-            final provider = ProdutoProvider();
-            provider.carregarProdutos();
-            return provider;
-          },
-        ),
-        ChangeNotifierProvider(
-          create: (context) {
-            final provider = ClientProvider();
-            provider.carregarClientesDoFirestore();
-            return provider;
-          },
-        ),
-        ChangeNotifierProvider(create: (context) => VendasProvider()),
-        ChangeNotifierProvider(create: (_) => PedidoProvider()),
+        ChangeNotifierProvider(create: (_) => ProdutoProvider()),
+        ChangeNotifierProvider(create: (_) => ClientProvider()),
         ChangeNotifierProvider(create: (_) => HistoricoVendasProvider()),
-        ChangeNotifierProvider(create: (context) => ProdutoProvider()..carregarProdutos()),
-        // ChangeNotifierProvider(create: (context) => CarrinhoProvider()),
+        ChangeNotifierProvider(create: (_) => CarrinhoProvider()),
+        ChangeNotifierProvider(create: (_) => BrandingProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => UsuarioProvider()),
+        ChangeNotifierProvider(create: (_) => ZonaEntregaProvider()),
+        ChangeNotifierProvider(create: (_) => FornecedorProvider()),
+        ChangeNotifierProvider(create: (_) => DespesaProvider()),
       ],
-      child: MaterialApp(
-        title: 'PetShop',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-        ),
-        home: HomeScreen(),
-        routes: {
-          '/home': (context) => HomeScreen(),
-          '/historico_vendas': (context) => HistoricoVendasScreen(),
-          '/pedidos': (context) => PedidosScreen(pedidosConcluidos: []),
+      child: Consumer<BrandingProvider>(
+        builder: (context, branding, _) {
+          return MaterialApp(
+            title: 'Gestor',
+            theme: branding.temaClaro,
+            darkTheme: branding.temaEscuro,
+            themeMode: branding.temaModo,
+            home: const AuthGate(),
+            routes: {
+              '/home': (context) => HomeScreen(),
+              '/historico_vendas': (context) => HistoricoVendasScreen(),
+              '/pedidos': (context) => const FilaPedidosScreen(),
+            },
+          );
         },
       ),
     );

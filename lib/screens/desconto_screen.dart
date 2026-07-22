@@ -1,94 +1,10 @@
-// import 'package:flutter/material.dart';
-//
-// class DescontoScreen extends StatefulWidget {
-//   final double valorTotal;
-//   // final Function(double) onDescontoAplicado;
-//
-//   DescontoScreen({required this.valorTotal,
-//     // required this.onDescontoAplicado
-//   });
-//
-//
-//   @override
-//   _DescontoScreenState createState() => _DescontoScreenState();
-// }
-//
-// class _DescontoScreenState extends State<DescontoScreen> {
-//   double descontoValor = 0.0;
-//   double descontoPercentual = 0.0;
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     double valorFinal = widget.valorTotal - descontoValor - (widget.valorTotal * (descontoPercentual / 100));
-//     valorFinal = valorFinal < 0 ? 0.0 : valorFinal;
-//
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Text('Aplicar Desconto'),
-//         actions: [
-//           IconButton(
-//             icon: Icon(Icons.clear),
-//             onPressed: () {
-//               setState(() {
-//                 descontoValor = 0.0;
-//                 descontoPercentual = 0.0;
-//               });
-//             },
-//           ),
-//         ],
-//       ),
-//       body: Padding(
-//         padding: const EdgeInsets.all(16.0),
-//         child: Column(
-//           children: [
-//             TextField(
-//               decoration: InputDecoration(
-//                 labelText: 'Desconto em Valor (R\$)',
-//                 prefixText: 'R\$ ',
-//               ),
-//               keyboardType: TextInputType.numberWithOptions(decimal: true),
-//               onChanged: (value) {
-//                 setState(() {
-//                   descontoValor = double.tryParse(value) ?? 0.0;
-//                 });
-//               },
-//             ),
-//             TextField(
-//               decoration: InputDecoration(
-//                 labelText: 'Desconto Percentual (%)',
-//                 suffixText: '%',
-//               ),
-//               keyboardType: TextInputType.numberWithOptions(decimal: true),
-//               onChanged: (value) {
-//                 setState(() {
-//                   descontoPercentual = double.tryParse(value) ?? 0.0;
-//                 });
-//               },
-//             ),
-//             SizedBox(height: 20),
-//             Text(
-//               'Valor Final: R\$ ${valorFinal.toStringAsFixed(2)}',
-//               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-//             ),
-//             SizedBox(height: 20),
-//             ElevatedButton(
-//               onPressed: () {
-//                 // widget.onDescontoAplicado(valorFinal);
-//                 Navigator.pop(context, valorFinal);
-//               },
-//               child: Text('Aplicar Desconto'),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }
-
-
-
-
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../config/supabase_config.dart';
+import '../providers/auth_provider.dart';
+import '../utils/cliente_validators.dart';
+import '../utils/formatadores_input.dart';
 
 class DescontoScreen extends StatefulWidget {
   final double valorTotal;
@@ -102,11 +18,34 @@ class DescontoScreen extends StatefulWidget {
 class _DescontoScreenState extends State<DescontoScreen> {
   double descontoValor = 0.0;
   double descontoPercentual = 0.0;
+  double? _descontoMaximoPercentual;
 
   final TextEditingController _valorController = TextEditingController();
   final TextEditingController _percentualController = TextEditingController();
 
   bool _atualizando = false; // Para evitar loop de atualização
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarLimiteDesconto();
+  }
+
+  Future<void> _carregarLimiteDesconto() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    try {
+      final data = await supabase
+          .from('empresas')
+          .select('desconto_maximo_percentual')
+          .eq('id', empresaId)
+          .single();
+      final limite = (data['desconto_maximo_percentual'] as num?)?.toDouble();
+      if (mounted) setState(() => _descontoMaximoPercentual = limite);
+    } catch (e) {
+      debugPrint('Erro ao carregar limite de desconto: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -115,17 +54,33 @@ class _DescontoScreenState extends State<DescontoScreen> {
     super.dispose();
   }
 
+  double get _percentualMaximoEfetivo => _descontoMaximoPercentual ?? 100;
+
+  void _mostrarAvisoLimite() {
+    final limite = _descontoMaximoPercentual;
+    if (limite == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Desconto máximo permitido: ${limite.toStringAsFixed(0)}%')),
+    );
+  }
+
   void _atualizarValor(String value) {
     if (_atualizando) return;
     _atualizando = true;
 
     setState(() {
-      descontoValor = double.tryParse(value) ?? 0.0;
+      descontoValor = ClienteValidators.parseNumero(value) ?? 0.0;
       if (descontoValor > widget.valorTotal) descontoValor = widget.valorTotal;
+
+      final valorMaximoPeloLimite = (_percentualMaximoEfetivo / 100) * widget.valorTotal;
+      if (descontoValor > valorMaximoPeloLimite) {
+        descontoValor = valorMaximoPeloLimite;
+        _mostrarAvisoLimite();
+      }
 
       // Atualiza percentual
       descontoPercentual = widget.valorTotal == 0 ? 0 : (descontoValor / widget.valorTotal) * 100;
-      _percentualController.text = descontoPercentual.toStringAsFixed(2);
+      _percentualController.text = ClienteValidators.formatarMoeda(descontoPercentual);
     });
 
     _atualizando = false;
@@ -136,12 +91,15 @@ class _DescontoScreenState extends State<DescontoScreen> {
     _atualizando = true;
 
     setState(() {
-      descontoPercentual = double.tryParse(value) ?? 0.0;
-      if (descontoPercentual > 100) descontoPercentual = 100;
+      descontoPercentual = ClienteValidators.parseNumero(value) ?? 0.0;
+      if (descontoPercentual > _percentualMaximoEfetivo) {
+        descontoPercentual = _percentualMaximoEfetivo;
+        _mostrarAvisoLimite();
+      }
 
       // Atualiza valor
       descontoValor = (descontoPercentual / 100) * widget.valorTotal;
-      _valorController.text = descontoValor.toStringAsFixed(2);
+      _valorController.text = ClienteValidators.formatarMoeda(descontoValor);
     });
 
     _atualizando = false;
@@ -164,12 +122,15 @@ class _DescontoScreenState extends State<DescontoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Aplicar Desconto'),
         actions: [
           IconButton(
             icon: Icon(Icons.clear),
+            tooltip: 'Limpar',
             onPressed: resetar,
           ),
         ],
@@ -177,6 +138,7 @@ class _DescontoScreenState extends State<DescontoScreen> {
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
               controller: _valorController,
@@ -185,28 +147,54 @@ class _DescontoScreenState extends State<DescontoScreen> {
                 prefixText: 'R\$ ',
               ),
               keyboardType: TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [MoedaInputFormatter()],
               onChanged: _atualizarValor,
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 12),
             TextField(
               controller: _percentualController,
               decoration: InputDecoration(
                 labelText: 'Desconto Percentual (%)',
                 suffixText: '%',
+                helperText: _descontoMaximoPercentual != null
+                    ? 'Máximo permitido: ${_descontoMaximoPercentual!.toStringAsFixed(0)}%'
+                    : null,
               ),
+              inputFormatters: [DecimalInputFormatter()],
               keyboardType: TextInputType.numberWithOptions(decimal: true),
               onChanged: _atualizarPercentual,
             ),
-            SizedBox(height: 20),
-            Text(
-              'Valor Final: R\$ ${valorFinal.toStringAsFixed(2)}',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            const SizedBox(height: 20),
+            Card(
+              margin: EdgeInsets.zero,
+              color: colorScheme.primary.withValues(alpha: 0.08),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text('Valor final', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                    const SizedBox(height: 4),
+                    Text(
+                      'R\$ ${valorFinal.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                    ),
+                    if (widget.valorTotal > 0 && descontoValor > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'de R\$ ${widget.valorTotal.toStringAsFixed(2)} — ${descontoPercentual.toStringAsFixed(1)}% off',
+                        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(context, valorFinal); // retorna o valor do desconto
               },
+              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
               child: Text('Aplicar Desconto'),
             ),
           ],

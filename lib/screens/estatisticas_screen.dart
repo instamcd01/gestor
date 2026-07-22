@@ -1,284 +1,457 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
-class EstatisticasScreen extends StatelessWidget {
+import '../models/venda.dart';
+import '../providers/historico_vendas_provider.dart';
+
+class _AgregadoProduto {
+  final String nome;
+  final int quantidade;
+  final double valor;
+  _AgregadoProduto({required this.nome, required this.quantidade, required this.valor});
+}
+
+class _AgregadoCliente {
+  final String nome;
+  final int qtdCompras;
+  final double valor;
+  _AgregadoCliente({required this.nome, required this.qtdCompras, required this.valor});
+}
+
+const _rotulosCanal = {
+  'loja_fisica': 'Loja física',
+  'whatsapp': 'WhatsApp',
+  'ifood': 'iFood',
+  'site': 'Site',
+};
+
+/// Painel de estatísticas reais da empresa (Supabase), calculado em cima
+/// das vendas já carregadas pelo HistoricoVendasProvider. Substitui a
+/// versão antiga que mostrava números fixos no código.
+class EstatisticasScreen extends StatefulWidget {
+  const EstatisticasScreen({super.key});
+
+  @override
+  State<EstatisticasScreen> createState() => _EstatisticasScreenState();
+}
+
+class _EstatisticasScreenState extends State<EstatisticasScreen> {
+  late DateTimeRange _periodo;
+  String _filtroRotulo = 'Este mês';
+
+  @override
+  void initState() {
+    super.initState();
+    final hoje = DateTime.now();
+    _periodo = DateTimeRange(start: DateTime(hoje.year, hoje.month, 1), end: hoje);
+    Provider.of<HistoricoVendasProvider>(context, listen: false).carregarVendas();
+  }
+
+  List<Venda> _filtrarPeriodo(List<Venda> todas) {
+    final inicio = DateTime(_periodo.start.year, _periodo.start.month, _periodo.start.day);
+    final fim = DateTime(_periodo.end.year, _periodo.end.month, _periodo.end.day, 23, 59, 59);
+    return todas.where((v) {
+      if (!v.finalizada) return false;
+      return !v.dataVenda.isBefore(inicio) && !v.dataVenda.isAfter(fim);
+    }).toList();
+  }
+
+  Map<String, double> _somaPor(List<Venda> vendas, String Function(Venda) chave) {
+    final mapa = <String, double>{};
+    for (final v in vendas) {
+      final k = chave(v);
+      mapa[k] = (mapa[k] ?? 0) + v.valorTotal;
+    }
+    return mapa;
+  }
+
+  List<_AgregadoProduto> _rankingProdutos(List<Venda> vendas, {int top = 10}) {
+    final mapa = <String, _AgregadoProduto>{};
+    for (final v in vendas) {
+      for (final item in v.itens) {
+        final chave = item.produto.id ?? item.produto.nome;
+        final atual = mapa[chave];
+        mapa[chave] = _AgregadoProduto(
+          nome: item.produto.nome,
+          quantidade: (atual?.quantidade ?? 0) + item.quantidade,
+          valor: (atual?.valor ?? 0) + item.precoTotal,
+        );
+      }
+    }
+    final lista = mapa.values.toList()..sort((a, b) => b.valor.compareTo(a.valor));
+    return lista.take(top).toList();
+  }
+
+  List<_AgregadoCliente> _rankingClientes(List<Venda> vendas, {int top = 10}) {
+    final mapa = <String, _AgregadoCliente>{};
+    for (final v in vendas) {
+      final chave = v.cliente.idCliente ?? v.cliente.nome;
+      final atual = mapa[chave];
+      mapa[chave] = _AgregadoCliente(
+        nome: v.cliente.nome,
+        qtdCompras: (atual?.qtdCompras ?? 0) + 1,
+        valor: (atual?.valor ?? 0) + v.valorTotal,
+      );
+    }
+    final lista = mapa.values.toList()..sort((a, b) => b.valor.compareTo(a.valor));
+    return lista.take(top).toList();
+  }
+
+  Map<DateTime, double> _faturamentoPorDia(List<Venda> vendas) {
+    final mapa = <DateTime, double>{};
+    for (final v in vendas) {
+      final dia = DateTime(v.dataVenda.year, v.dataVenda.month, v.dataVenda.day);
+      mapa[dia] = (mapa[dia] ?? 0) + v.valorTotal;
+    }
+    return mapa;
+  }
+
+  Future<void> _escolherPeriodo(String rotulo) async {
+    final hoje = DateTime.now();
+    DateTimeRange novoPeriodo;
+
+    switch (rotulo) {
+      case 'Hoje':
+        novoPeriodo = DateTimeRange(start: DateTime(hoje.year, hoje.month, hoje.day), end: hoje);
+        break;
+      case 'Últimos 7 dias':
+        novoPeriodo = DateTimeRange(start: hoje.subtract(const Duration(days: 6)), end: hoje);
+        break;
+      case 'Este mês':
+        novoPeriodo = DateTimeRange(start: DateTime(hoje.year, hoje.month, 1), end: hoje);
+        break;
+      case 'Personalizado':
+        final escolhido = await showDateRangePicker(
+          context: context,
+          firstDate: DateTime(2020),
+          lastDate: hoje,
+          initialDateRange: _periodo,
+        );
+        if (escolhido == null) return;
+        novoPeriodo = escolhido;
+        break;
+      default:
+        return;
+    }
+
+    setState(() {
+      _periodo = novoPeriodo;
+      _filtroRotulo = rotulo;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<HistoricoVendasProvider>();
+    final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final vendas = _filtrarPeriodo(provider.vendas);
+
+    final faturamento = vendas.fold<double>(0, (soma, v) => soma + v.valorTotal);
+    final lucro = vendas.fold<double>(0, (soma, v) => soma + v.lucroTotal);
+    final numVendas = vendas.length;
+    final ticketMedio = numVendas > 0 ? faturamento / numVendas : 0.0;
+    final margem = faturamento > 0 ? (lucro / faturamento * 100) : 0.0;
+    final comEntrega = vendas.where((v) => v.temEntrega).length;
+    final pctComEntrega = numVendas > 0 ? (comEntrega / numVendas * 100) : 0.0;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Estatísticas'),
+        title: const Text('Estatísticas'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: provider.carregarVendas,
+          ),
+        ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          children: [
-            // Filtro de data
-            _buildDateFilter(context),
-
-            // Resumo das estatísticas
-            Expanded(
+      body: provider.carregando
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: provider.carregarVendas,
               child: ListView(
+                padding: const EdgeInsets.all(12),
                 children: [
-                  _buildStatCard(
-                    context,
-                    'Faturamento',
-                    '\$5000',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => FaturamentoDetailScreen()),
-                      );
-                    },
-                  ),
-                  _buildStatCard(
-                    context,
-                    'Número de Vendas',
-                    '120',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => VendasDetailScreen()),
-                      );
-                    },
-                  ),
-                  _buildStatCard(
-                    context,
-                    'Ticket Médio',
-                    '\$41.67',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => TicketMedioDetailScreen()),
-                      );
-                    },
-                  ),
-                  _buildStatCard(
-                    context,
-                    'Lucro',
-                    '\$1500',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => LucroDetailScreen()),
-                      );
-                    },
-                  ),
-                  _buildStatCard(
-                    context,
-                    'Taxa de Venda',
-                    '5%',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => TaxaVendaDetailScreen()),
-                      );
-                    },
-                  ),
-                  _buildStatCard(
-                    context,
-                    'Taxa de Entrega',
-                    '3%',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => TaxaEntregaDetailScreen()),
-                      );
-                    },
-                  ),
-                  _buildStatCard(
-                    context,
-                    'Meios de Pagamento',
-                    'Visa (40%), PayPal (30%), Cash (30%)',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => MeiosPagamentoDetailScreen()),
-                      );
-                    },
-                  ),
-                  _buildStatCard(
-                    context,
-                    'Ranking dos Produtos',
-                    'Produto A - \$2000',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => RankingProdutosDetailScreen()),
-                      );
-                    },
-                  ),
-                  _buildStatCard(
-                    context,
-                    'Ranking dos Clientes',
-                    'Cliente X - \$1000',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => RankingClientesDetailScreen()),
-                      );
-                    },
-                  ),
-                  _buildStatCard(
-                    context,
-                    'Vendas por Usuário',
-                    'Usuário 1 - 50 vendas',
-                        () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => VendasUsuarioDetailScreen()),
-                      );
-                    },
-                  ),
+                  _seletorPeriodo(),
+                  const SizedBox(height: 12),
+                  if (numVendas == 0)
+                    _card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Nenhuma venda finalizada nesse período.',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                    )
+                  else ...[
+                    _gradeKpis(currencyFormat, faturamento, numVendas, ticketMedio, lucro, margem, pctComEntrega),
+                    const SizedBox(height: 12),
+                    _card(
+                      titulo: 'Faturamento por dia',
+                      child: SizedBox(height: 200, child: _graficoFaturamento(_faturamentoPorDia(vendas))),
+                    ),
+                    _card(
+                      titulo: 'Meios de Pagamento',
+                      child: _listaProporcao(_somaPor(vendas, (v) => v.metodoPagamento), faturamento, currencyFormat),
+                    ),
+                    _card(
+                      titulo: 'Vendas por Canal',
+                      child: _listaProporcao(
+                        _somaPor(vendas, (v) => _rotulosCanal[v.canalVenda] ?? v.canalVenda),
+                        faturamento,
+                        currencyFormat,
+                      ),
+                    ),
+                    _card(
+                      titulo: 'Ranking de Produtos',
+                      child: _listaRankingProdutos(context, _rankingProdutos(vendas), currencyFormat),
+                    ),
+                    _card(
+                      titulo: 'Ranking de Clientes',
+                      child: _listaRankingClientes(context, _rankingClientes(vendas), currencyFormat),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
     );
   }
 
-  // Função para criar o filtro de data
-  Widget _buildDateFilter(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.all(16),
-      padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.blue),
-      ),
+  Widget _seletorPeriodo() {
+    const opcoes = ['Hoje', 'Últimos 7 dias', 'Este mês', 'Personalizado'];
+    final dateFormat = DateFormat('dd/MM');
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text('Filtrar por Data', style: TextStyle(fontSize: 16)),
-          IconButton(
-            icon: Icon(Icons.calendar_today),
-            onPressed: () {
-              // Lógica para selecionar a data
-            },
+          ...opcoes.map((rotulo) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(rotulo),
+                  selected: _filtroRotulo == rotulo,
+                  onSelected: (_) => _escolherPeriodo(rotulo),
+                ),
+              )),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(
+              '${dateFormat.format(_periodo.start)} - ${dateFormat.format(_periodo.end)}',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+            ),
           ),
         ],
       ),
     );
   }
 
-  // Função para criar um card de estatísticas
-  Widget _buildStatCard(BuildContext context, String title, String value, Function() onTap) {
-    return Card(
-      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      elevation: 5,
-      child: ListTile(
-        contentPadding: EdgeInsets.all(16),
-        leading: Icon(Icons.bar_chart, size: 40, color: Colors.blue),
-        title: Text(
-          title,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(value, style: TextStyle(fontSize: 16)),
-        trailing: Icon(Icons.arrow_forward_ios, color: Colors.blue),
-        onTap: onTap,
+  Widget _gradeKpis(NumberFormat format, double faturamento, int numVendas, double ticketMedio, double lucro,
+      double margem, double pctComEntrega) {
+    final corPrimaria = Theme.of(context).colorScheme.primary;
+    final itens = [
+      ('Faturamento', format.format(faturamento), corPrimaria),
+      ('Vendas', '$numVendas', corPrimaria),
+      ('Ticket Médio', format.format(ticketMedio), corPrimaria),
+      ('Lucro Bruto', format.format(lucro), Colors.green),
+      ('Margem', '${margem.toStringAsFixed(1)}%', Colors.green),
+      ('Com entrega', '${pctComEntrega.toStringAsFixed(0)}%', Colors.orange),
+    ];
+
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      childAspectRatio: 2.4,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+      children: itens.map((item) {
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(item.$1, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(item.$2, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: item.$3)),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _card({String? titulo, required Widget child}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (titulo != null) ...[
+            Text(titulo, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+          ],
+          child,
+        ],
       ),
     );
   }
-}
 
-// Tela de Detalhes - Exemplo de tela de Faturamento
-class FaturamentoDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes de Faturamento')),
-      body: Center(child: Text('Exibição detalhada do Faturamento')),
+  Widget _graficoFaturamento(Map<DateTime, double> porDia) {
+    if (porDia.isEmpty) {
+      return Center(
+        child: Text('Sem dados no período.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      );
+    }
+
+    final dias = porDia.keys.toList()..sort();
+    final maiorValor = porDia.values.fold<double>(0, (m, v) => v > m ? v : m);
+    final dateFormat = DateFormat('dd/MM');
+    final passoRotulo = (dias.length / 6).ceil().clamp(1, dias.length);
+
+    return BarChart(
+      BarChartData(
+        maxY: maiorValor <= 0 ? 1 : maiorValor * 1.2,
+        gridData: const FlGridData(show: false),
+        borderData: FlBorderData(show: false),
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
+              '${dateFormat.format(dias[group.x.toInt()])}\n${NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$').format(rod.toY)}',
+              const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+        ),
+        titlesData: FlTitlesData(
+          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 28,
+              interval: 1,
+              getTitlesWidget: (value, meta) {
+                final i = value.toInt();
+                if (i < 0 || i >= dias.length || i % passoRotulo != 0) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(dateFormat.format(dias[i]), style: const TextStyle(fontSize: 10)),
+                );
+              },
+            ),
+          ),
+        ),
+        barGroups: [
+          for (var i = 0; i < dias.length; i++)
+            BarChartGroupData(
+              x: i,
+              barRods: [BarChartRodData(toY: porDia[dias[i]] ?? 0, color: Theme.of(context).colorScheme.primary, width: 10, borderRadius: BorderRadius.circular(2))],
+            ),
+        ],
+      ),
     );
   }
-}
 
-// Outras telas de detalhes
-class VendasDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes de Vendas')),
-      body: Center(child: Text('Exibição detalhada de Vendas')),
+  Widget _listaProporcao(Map<String, double> valores, double total, NumberFormat format) {
+    final entradas = valores.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    if (entradas.isEmpty) {
+      return Text('Sem dados no período.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant));
+    }
+    return Column(
+      children: entradas.map((entrada) {
+        final pct = total > 0 ? (entrada.value / total * 100) : 0.0;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(entrada.key.isEmpty ? 'Não informado' : entrada.key),
+                  Text('${format.format(entrada.value)} (${pct.toStringAsFixed(0)}%)',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                ],
+              ),
+              const SizedBox(height: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: (pct / 100).clamp(0, 1),
+                  minHeight: 6,
+                  backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
-}
 
-class TicketMedioDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes do Ticket Médio')),
-      body: Center(child: Text('Exibição detalhada do Ticket Médio')),
+  Widget _listaRankingProdutos(BuildContext context, List<_AgregadoProduto> ranking, NumberFormat format) {
+    if (ranking.isEmpty) {
+      return Text('Sem dados no período.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant));
+    }
+    return Column(
+      children: ranking.asMap().entries.map((entry) {
+        final posicao = entry.key + 1;
+        final produto = entry.value;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              SizedBox(width: 24, child: Text('$posicao°', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+              Expanded(child: Text(produto.nome, overflow: TextOverflow.ellipsis)),
+              Text('${produto.quantidade}x', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+              const SizedBox(width: 8),
+              Text(format.format(produto.valor), style: const TextStyle(fontWeight: FontWeight.w600)),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
-}
 
-class LucroDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes do Lucro')),
-      body: Center(child: Text('Exibição detalhada do Lucro')),
-    );
-  }
-}
-
-class TaxaVendaDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes da Taxa de Venda')),
-      body: Center(child: Text('Exibição detalhada da Taxa de Venda')),
-    );
-  }
-}
-
-class TaxaEntregaDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes da Taxa de Entrega')),
-      body: Center(child: Text('Exibição detalhada da Taxa de Entrega')),
-    );
-  }
-}
-
-class MeiosPagamentoDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes dos Meios de Pagamento')),
-      body: Center(child: Text('Exibição detalhada dos Meios de Pagamento')),
-    );
-  }
-}
-
-class RankingProdutosDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes do Ranking dos Produtos')),
-      body: Center(child: Text('Exibição detalhada do Ranking dos Produtos')),
-    );
-  }
-}
-
-class RankingClientesDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes do Ranking dos Clientes')),
-      body: Center(child: Text('Exibição detalhada do Ranking dos Clientes')),
-    );
-  }
-}
-
-class VendasUsuarioDetailScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Detalhes das Vendas por Usuário')),
-      body: Center(child: Text('Exibição detalhada das Vendas por Usuário')),
+  Widget _listaRankingClientes(BuildContext context, List<_AgregadoCliente> ranking, NumberFormat format) {
+    if (ranking.isEmpty) {
+      return Text('Sem dados no período.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant));
+    }
+    return Column(
+      children: ranking.asMap().entries.map((entry) {
+        final posicao = entry.key + 1;
+        final cliente = entry.value;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              SizedBox(width: 24, child: Text('$posicao°', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+              Expanded(child: Text(cliente.nome, overflow: TextOverflow.ellipsis)),
+              Text('${cliente.qtdCompras} compra${cliente.qtdCompras > 1 ? 's' : ''}',
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+              const SizedBox(width: 8),
+              Text(format.format(cliente.valor), style: const TextStyle(fontWeight: FontWeight.w600)),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 }

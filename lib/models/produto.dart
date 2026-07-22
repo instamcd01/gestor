@@ -1,10 +1,17 @@
+/// Representa um produto do catálogo, já considerando o estoque agregado
+/// (somado entre depósitos) vindo da tabela `estoque` do Supabase.
 class Produto {
-  final String id;
+  final String? id;
   String nome;
   double preco;
   double? precoPromocional;
   String descricao;
   String categoria;
+  String? subcategoria;
+  String? sku;
+  double? peso;
+  double? volume;
+  bool ativo;
   int estoqueAtual;
   int estoqueMinimo;
   String imagemUrl;
@@ -20,13 +27,23 @@ class Produto {
   String? empresa;
   double? precoConcorrencia;
 
+  // Campos novos do schema multi-tenant/estoque
+  final String? estoqueId;
+  final String? unidadeMedida;
+  final bool permiteFracionamento;
+
   Produto({
-    required this.id,
+    this.id,
     required this.nome,
     required this.preco,
     this.precoPromocional,
     required this.descricao,
     required this.categoria,
+    this.subcategoria,
+    this.sku,
+    this.peso,
+    this.volume,
+    this.ativo = true,
     required this.estoqueAtual,
     required this.estoqueMinimo,
     required this.imagemUrl,
@@ -40,195 +57,86 @@ class Produto {
     this.markup,
     this.lucro,
     this.empresa,
-    this.precoConcorrencia, Object? idDaPlanilha,
+    this.precoConcorrencia,
+    this.estoqueId,
+    this.unidadeMedida = 'un',
+    this.permiteFracionamento = false,
   });
 
-  Map<String, dynamic> toMap() {
-    return {
-      'nome': nome,
-      'preco': preco,
-      'precoPromocional': precoPromocional,
-      'descricao': descricao,
-      'categoria': categoria,
-      'estoqueAtual': estoqueAtual,
-      'estoqueMinimo': estoqueMinimo,
-      'imagemUrl': imagemUrl,
-      'imagemAutomaticaUrl': imagemAutomaticaUrl,
-      'codigoBarras': codigoBarras,
-      'custo': custo,
-      'destacar': destacar,
-      'exibirNoCatalogo': exibirNoCatalogo,
-      'precoIfood': precoIfood,
-      'validade': validade,
-      'markup': markup,
-      'lucro': lucro,
-      'empresa': empresa,
-      'precoConcorrencia': precoConcorrencia,
-    };
-  }
+  /// Monta o Produto a partir de uma linha do Supabase.
+  /// Espera o formato retornado por `.select('*, estoque(id, quantidade_atual, quantidade_minima)')`.
+  factory Produto.fromSupabase(Map<String, dynamic> row) {
+    final estoqueRows = (row['estoque'] as List?) ?? [];
+    final totalEstoque = estoqueRows.fold<int>(
+      0,
+      (soma, e) => soma + ((e['quantidade_atual'] as num?)?.toInt() ?? 0),
+    );
+    final estoqueMinimo = estoqueRows.isNotEmpty
+        ? ((estoqueRows.first['quantidade_minima'] as num?)?.toInt() ?? 0)
+        : 0;
+    final estoqueId = estoqueRows.isNotEmpty ? estoqueRows.first['id'] as String? : null;
 
-  factory Produto.fromMap(Map<String, dynamic> map, String documentId) {
-    double? _parseDouble(dynamic value) {
-      if (value == null) return null;
-      if (value is num) return value.toDouble();
-      if (value is String) return double.tryParse(value.replaceAll(',', '.')); // Tenta converter string para double
-      return null;
-    }
-
-    int? _parseInt(dynamic value) {
-      if (value == null) return null;
-      if (value is num) return value.toInt();
-      if (value is String) return int.tryParse(value); // Tenta converter string para int
-      return null;
-    }
+    final preco = (row['preco'] as num?)?.toDouble() ?? 0.0;
+    final custo = (row['custo'] as num?)?.toDouble() ?? 0.0;
+    final margem = (row['margem'] as num?)?.toDouble();
 
     return Produto(
-      id: documentId,
-      nome: map['nome']?.toString() ?? '', // Garantir que é string
-      // Campos numéricos usando as funções auxiliares
-      preco: _parseDouble(map['preco']) ?? 0.0,
-      precoPromocional: _parseDouble(map['precoPromocional']), // Pode ser nulo
-      descricao: map['descricao']?.toString() ?? '',
-      categoria: map['categoria']?.toString() ?? '',
-      estoqueAtual: _parseInt(map['estoqueAtual']) ?? 0,
-      estoqueMinimo: _parseInt(map['estoqueMinimo']) ?? 0,
-      imagemUrl: map['imagemUrl']?.toString() ?? '',
-      imagemAutomaticaUrl: map['imagemAutomaticaUrl']?.toString(),
-      codigoBarras: map['codigoBarras']?.toString() ?? '',
-      custo: _parseDouble(map['custo']) ?? 0.0,
-
-      // Campos booleanos (ajustar conforme como estão salvos)
-      destacar: (map['destacar'] is int) ? (map['destacar'] == 1) : (map['destacar'] ?? false),
-      exibirNoCatalogo: (map['exibirNoCatalogo'] is int) ? (map['exibirNoCatalogo'] == 1) : (map['exibirNoCatalogo'] ?? true),
-      // OU se já são booleanos no Firestore:
-      // destacar: map['destacar'] ?? false,
-      // exibirNoCatalogo: map['exibirNoCatalogo'] ?? true,
-
-      precoIfood: _parseDouble(map['precoIfood']), // Pode ser nulo
-      validade: map['validade']?.toString(),
-      markup: map['markup']?.toString(),
-      lucro: map['lucro']?.toString(),
-      empresa: map['empresa']?.toString(),
-      precoConcorrencia: _parseDouble(map['precoConcorrencia']), // Se for double? no modelo
-      // OU se precoConcorrencia for String? no modelo:
-      // precoConcorrencia: map['precoConcorrencia']?.toString(),
+      id: row['id'] as String?,
+      nome: row['nome']?.toString() ?? '',
+      preco: preco,
+      descricao: row['descricao']?.toString() ?? '',
+      categoria: row['categoria']?.toString() ?? '',
+      subcategoria: row['subcategoria']?.toString(),
+      sku: row['sku']?.toString(),
+      peso: (row['peso'] as num?)?.toDouble(),
+      volume: (row['volume'] as num?)?.toDouble(),
+      ativo: row['ativo'] as bool? ?? true,
+      estoqueAtual: totalEstoque,
+      estoqueMinimo: estoqueMinimo,
+      imagemUrl: row['imagem_url']?.toString() ?? '',
+      codigoBarras: row['codigo_barras']?.toString() ?? '',
+      custo: custo,
+      destacar: row['destaque'] as bool? ?? false,
+      exibirNoCatalogo: row['exibir_no_catalogo'] as bool? ?? true,
+      empresa: row['marca']?.toString(),
+      estoqueId: estoqueId,
+      unidadeMedida: row['unidade_medida']?.toString() ?? 'un',
+      permiteFracionamento: row['permite_fracionamento'] as bool? ?? false,
+      precoPromocional: (row['preco_promocional'] as num?)?.toDouble(),
+      precoIfood: (row['preco_ifood'] as num?)?.toDouble(),
+      precoConcorrencia: (row['preco_concorrencia'] as num?)?.toDouble(),
+      validade: row['validade']?.toString(),
+      // Derivados (não são colunas próprias no banco, calculados aqui pra
+      // manter compatibilidade com as telas que já exibem markup/lucro).
+      markup: margem != null ? '${margem.toStringAsFixed(1)}%' : null,
+      lucro: (preco - custo).toStringAsFixed(2),
     );
   }
-}
 
-// class Produto {
-//   final String id;
-//   final String nome;
-//   final String categoria;
-//   final String codigoBarras;
-//
-//   final double custo;
-//   final double preco;
-//   final double precoIfood;
-//   final double precoPromocional;
-//   final double precoConcorrencia;
-//
-//   final int estoqueAtual;
-//   final int estoqueMinimo;
-//
-//   final String markup; // pode continuar como String para exibição (%)
-//   final String lucro;
-//
-//   final String descricao;
-//   final String imagemUrl;
-//
-//   final String empresa;
-//   final bool destacar;
-//   final bool exibirNoCatalogo;
-//
-//   // Estratégicos
-//   final DateTime? dataCadastro;
-//   final int quantidadeVendida;
-//   final bool ativo;
-//   final String codigoFornecedor;
-//   final String localizacaoEstoque;
-//
-//   Produto({
-//     required this.id,
-//     required this.nome,
-//     required this.categoria,
-//     required this.codigoBarras,
-//     required this.custo,
-//     required this.preco,
-//     required this.precoIfood,
-//     required this.precoPromocional,
-//     required this.precoConcorrencia,
-//     required this.estoqueAtual,
-//     required this.estoqueMinimo,
-//     required this.markup,
-//     required this.lucro,
-//     required this.descricao,
-//     required this.imagemUrl,
-//     required this.empresa,
-//     required this.destacar,
-//     required this.exibirNoCatalogo,
-//     this.dataCadastro,
-//     this.quantidadeVendida = 0,
-//     this.ativo = true,
-//     this.codigoFornecedor = '',
-//     this.localizacaoEstoque = '',
-//   });
-//
-//   Map<String, dynamic> toMap() {
-//     return {
-//       'id': id,
-//       'nome': nome,
-//       'categoria': categoria,
-//       'codigoBarras': codigoBarras,
-//       'custo': custo,
-//       'preco': preco,
-//       'precoIfood': precoIfood,
-//       'precoPromocional': precoPromocional,
-//       'precoConcorrencia': precoConcorrencia,
-//       'estoqueAtual': estoqueAtual,
-//       'estoqueMinimo': estoqueMinimo,
-//       'markup': markup,
-//       'lucro': lucro,
-//       'descricao': descricao,
-//       'imagemUrl': imagemUrl,
-//       'empresa': empresa,
-//       'destacar': destacar,
-//       'exibirNoCatalogo': exibirNoCatalogo,
-//       'dataCadastro': dataCadastro?.toIso8601String(),
-//       'quantidadeVendida': quantidadeVendida,
-//       'ativo': ativo,
-//       'codigoFornecedor': codigoFornecedor,
-//       'localizacaoEstoque': localizacaoEstoque,
-//     };
-//   }
-//
-//   factory Produto.fromMap(Map<String, dynamic> map) {
-//     return Produto(
-//       id: map['id'] ?? '',
-//       nome: map['nome'] ?? '',
-//       categoria: map['categoria'] ?? '',
-//       codigoBarras: map['codigoBarras'] ?? '',
-//       custo: (map['custo'] ?? 0).toDouble(),
-//       preco: (map['preco'] ?? 0).toDouble(),
-//       precoIfood: (map['precoIfood'] ?? 0).toDouble(),
-//       precoPromocional: (map['precoPromocional'] ?? 0).toDouble(),
-//       precoConcorrencia: (map['precoConcorrencia'] ?? 0).toDouble(),
-//       estoqueAtual: map['estoqueAtual'] ?? 0,
-//       estoqueMinimo: map['estoqueMinimo'] ?? 0,
-//       markup: map['markup'] ?? '',
-//       lucro: map['lucro'] ?? '',
-//       descricao: map['descricao'] ?? '',
-//       imagemUrl: map['imagemUrl'] ?? '',
-//       empresa: map['empresa'] ?? '',
-//       destacar: map['destacar'] ?? false,
-//       exibirNoCatalogo: map['exibirNoCatalogo'] ?? false,
-//       dataCadastro: map['dataCadastro'] != null
-//           ? DateTime.tryParse(map['dataCadastro'])
-//           : null,
-//       quantidadeVendida: map['quantidadeVendida'] ?? 0,
-//       ativo: map['ativo'] ?? true,
-//       codigoFornecedor: map['codigoFornecedor'] ?? '',
-//       localizacaoEstoque: map['localizacaoEstoque'] ?? '',
-//     );
-//   }
-// }
+  /// Payload pra INSERT/UPDATE na tabela `produtos` (não inclui estoque).
+  Map<String, dynamic> toSupabaseMap() {
+    return {
+      'nome': nome,
+      'descricao': descricao,
+      'categoria': categoria,
+      'subcategoria': subcategoria,
+      'sku': sku,
+      'peso': peso,
+      'volume': volume,
+      'ativo': ativo,
+      'marca': empresa,
+      'preco': preco,
+      'custo': custo,
+      'destaque': destacar,
+      'exibir_no_catalogo': exibirNoCatalogo,
+      'imagem_url': imagemUrl,
+      'codigo_barras': codigoBarras,
+      'unidade_medida': unidadeMedida,
+      'permite_fracionamento': permiteFracionamento,
+      'preco_promocional': precoPromocional,
+      'preco_ifood': precoIfood,
+      'preco_concorrencia': precoConcorrencia,
+      'validade': validade,
+    };
+  }
+}

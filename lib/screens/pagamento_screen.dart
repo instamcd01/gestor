@@ -5,9 +5,15 @@ import 'package:gestor/screens/pagamento_outros_screen.dart';
 import 'package:gestor/screens/pagamento_pix_screen.dart';
 import 'package:provider/provider.dart';
 
+import '../config/supabase_config.dart';
 import '../models/cliente.dart';
-import '../providers/cliente_provider.dart';
+import '../providers/auth_provider.dart';
+import '../utils/cliente_validators.dart';
+import '../utils/formatadores_input.dart';
+import '../widgets/itens_compra_card.dart';
+import '../widgets/resumo_pagamento_card.dart';
 import 'adicionar_cliente_screen.dart';
+import 'opcoes_pagamento_screen.dart';
 import 'pagamento_credito_screen.dart';
 import 'pagamento_debito_screen.dart';
 import 'pagamento_dinheiro_screen.dart';
@@ -21,7 +27,6 @@ class PagamentoScreen extends StatefulWidget {
   final double desconto;
   final double valorEntrega;
   final String entregaSelecionada;
-  // final double saldoUsado = 0.0;
 
   PagamentoScreen({
     required this.valorTotal,
@@ -40,78 +45,135 @@ class PagamentoScreen extends StatefulWidget {
 class _PagamentoScreenState extends State<PagamentoScreen> {
   String metodoPagamentoSelecionado = '';
   final TextEditingController _saldoController = TextEditingController();
-  late double desconto;
-  late double valorTotal;
-  late double valorEntrega;
+
+  // Base fixa da venda — nunca reatribuída depois de calculada, pra não
+  // acumular erro. Tudo que muda (desconto, saldo) é aplicado em cima
+  // dela sempre a partir do zero, no getter `valorTotal`.
+  late final double _subtotal;
+  double desconto = 0.0;
   double saldoUsado = 0.0;
+
+  // Cliente da venda em andamento — mutável porque "Cadastrar Novo Cliente"
+  // durante o checkout deve passar a usar o cliente recém-criado, não o
+  // original recebido no construtor.
+  late Cliente _cliente;
+
+  List<String> _metodosAtivos = List.from(metodosPagamentoDisponiveis);
 
   @override
   void initState() {
-        super.initState();
+    super.initState();
+    _subtotal = widget.carrinho.fold<double>(
+      0.0,
+      (soma, item) => soma + ((item['precoTotalItem'] as num?)?.toDouble() ?? 0.0),
+    );
     desconto = widget.desconto;
-    valorEntrega = widget.valorEntrega;
-    valorTotal = widget.valorTotal;
+    _cliente = widget.cliente;
+    _carregarMetodosAtivos();
   }
+
+  Future<void> _carregarMetodosAtivos() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    try {
+      final data = await supabase
+          .from('empresas')
+          .select('metodos_pagamento_ativos')
+          .eq('id', empresaId)
+          .single();
+      final metodos = (data['metodos_pagamento_ativos'] as List?)?.map((m) => m.toString()).toList();
+      if (metodos != null && metodos.isNotEmpty && mounted) {
+        setState(() => _metodosAtivos = metodos);
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar métodos de pagamento ativos: $e');
+    }
+  }
+
+  static const _iconesPorMetodo = <String, IconData>{
+    'Dinheiro': Icons.money,
+    'Cartão de Débito': FlutterIcons.credit_card_outline_mco,
+    'Cartão de Crédito': FlutterIcons.credit_card_mdi,
+    'Pix': Icons.pix,
+    'Link de Pagamento': Icons.link,
+    'Outros': Icons.more_horiz,
+  };
+
+  List<Map<String, dynamic>> get _opcoesPagamentoFiltradas => _metodosAtivos
+      .where((metodo) => _iconesPorMetodo.containsKey(metodo))
+      .map((metodo) => {'metodo': metodo, 'icone': _iconesPorMetodo[metodo]!})
+      .toList();
+
   @override
   void dispose() {
     _saldoController.dispose();
     super.dispose();
   }
-  void aplicarSaldo(double valor) {
-    final saldoDisponivel = widget.cliente.saldo;
 
-    if (valor <= 0) return;
+  /// Valor a pagar antes de aplicar o saldo do cliente — usado como teto
+  /// pra quanto de saldo pode ser usado.
+  double get _valorAntesDoSaldo {
+    final v = _subtotal - desconto + widget.valorEntrega;
+    return v < 0 ? 0.0 : v;
+  }
+
+  double get valorTotal {
+    final v = _valorAntesDoSaldo - saldoUsado;
+    return v < 0 ? 0.0 : v;
+  }
+
+  void aplicarSaldo(double valor) {
+    final saldoDisponivel = _cliente.saldo;
+
+    if (valor <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe um valor de saldo válido.')),
+      );
+      return;
+    }
     if (valor > saldoDisponivel) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saldo insuficiente.')),
+        const SnackBar(content: Text('Saldo insuficiente.')),
       );
       return;
     }
-    if (valor > widget.valorTotal) {
+    if (valor > _valorAntesDoSaldo) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saldo não pode ser maior que o valor total.')),
+        const SnackBar(content: Text('Saldo não pode ser maior que o valor a pagar.')),
       );
       return;
     }
 
-    setState(() {
-      saldoUsado = valor;
-      valorTotal = widget.valorTotal - saldoUsado - desconto + valorEntrega;
-    });
+    setState(() => saldoUsado = valor);
   }
 
   void limparSaldo() {
     setState(() {
-     saldoUsado = 0.0;
-      valorTotal = widget.valorTotal - desconto + valorEntrega;
+      saldoUsado = 0.0;
       _saldoController.clear();
     });
   }
 
-
   void selecionarMetodoPagamento(String metodo) {
-    setState(() {
-      metodoPagamentoSelecionado = metodo;
-    });
+    setState(() => metodoPagamentoSelecionado = metodo);
   }
 
   void aplicarDesconto() async {
+    final baseSemDesconto = _subtotal + widget.valorEntrega;
     final novoValorComDesconto = await Navigator.push<double>(
       context,
       MaterialPageRoute(
-        builder: (context) => DescontoScreen(
-          valorTotal: valorTotal,
-          // onDescontoAplicado: (novoValor) {
-          //   Navigator.pop(context, novoValor);
-          // },
-        ),
+        builder: (context) => DescontoScreen(valorTotal: baseSemDesconto),
       ),
     );
 
-    if (novoValorComDesconto != null && novoValorComDesconto < valorTotal) {
+    if (novoValorComDesconto != null) {
       setState(() {
-        desconto = valorTotal - novoValorComDesconto;
-        valorTotal = novoValorComDesconto;
+        desconto = (baseSemDesconto - novoValorComDesconto).clamp(0, baseSemDesconto);
+        // O saldo já aplicado não pode passar a exceder o novo valor devido.
+        if (saldoUsado > _valorAntesDoSaldo) {
+          saldoUsado = _valorAntesDoSaldo;
+        }
       });
     }
   }
@@ -119,57 +181,38 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   void limparDesconto() {
     setState(() {
       desconto = 0.0;
-      valorTotal = widget.valorTotal;
+      if (saldoUsado > _valorAntesDoSaldo) {
+        saldoUsado = _valorAntesDoSaldo;
+      }
     });
   }
 
-  void cadastrarNovoCliente() {
-    Navigator.push(
+  Future<void> cadastrarNovoCliente() async {
+    final novoCliente = await Navigator.push<Cliente>(
       context,
       MaterialPageRoute(
-        builder: (context) => AdicionarClienteScreen(
-          onSalvar: (Cliente cliente) {
-            Provider.of<ClientProvider>(context, listen: false).addCliente(cliente);
-          },
-        ),
+        builder: (context) => AdicionarClienteScreen(),
       ),
     );
+    if (novoCliente != null) {
+      setState(() => _cliente = novoCliente);
+    }
   }
 
   void navegarParaTelaPagamento() {
+    final total = double.parse(valorTotal.toStringAsFixed(2));
 
-    valorTotal = double.parse(valorTotal.toStringAsFixed(2));
-
-    // 🔹 LOG COMPLETO DOS DADOS
-    print('=== Dados enviados para tela de pagamento ===');
-    print('Método de pagamento selecionado: $metodoPagamentoSelecionado');
-    print('Valor Total: $valorTotal');
-    print('Valor Entrega: $valorEntrega');
-    print('Desconto: $desconto');
-    print('Cliente: ${widget.cliente.nome}, ${widget.cliente.endereco}, ${widget.cliente.celular}, Saldo: ${widget.cliente.saldo}');
-    print('EntregaSelecionada recebida: ${widget.entregaSelecionada}');
-    print('Saldo usado: $saldoUsado');
-    print('Carrinho:');
-    for (var item in widget.carrinho) {
-      final produto = item['produto'];
-      final quantidade = item['quantidade'];
-      print('- Produto: ${produto.nome}, Preço: ${produto.preco}, Estoque: ${produto.estoqueAtual}, Quantidade: $quantidade');
-    }
-    print('=== Debug Saldo ===');
-    print('Cliente: ${widget.cliente.nome}');
-    print('Saldo disponível: ${widget.cliente.saldo}');
-    print('Saldo a usar: $saldoUsado');
-   if (metodoPagamentoSelecionado == 'Dinheiro') {
+    if (metodoPagamentoSelecionado == 'Dinheiro') {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => PagamentoDinheiroScreen(
-            valorTotal: valorTotal,
+            valorTotal: total,
             carrinho: widget.carrinho,
             metodoPagamento: metodoPagamentoSelecionado,
-            cliente: widget.cliente,
+            cliente: _cliente,
             desconto: desconto,
-            valorEntrega: widget.valorEntrega,          // ⬅️ Novo
+            valorEntrega: widget.valorEntrega,
             entregaSelecionada: widget.entregaSelecionada,
             saldoUsado: saldoUsado,
           ),
@@ -180,12 +223,12 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
         context,
         MaterialPageRoute(
           builder: (context) => PagamentoCartaoDebitoScreen(
-            valorTotal: valorTotal,
+            valorTotal: total,
             carrinho: widget.carrinho,
             metodoPagamento: metodoPagamentoSelecionado,
-            cliente: widget.cliente,
+            cliente: _cliente,
             desconto: desconto,
-            valorEntrega: widget.valorEntrega,          // ⬅️ Novo
+            valorEntrega: widget.valorEntrega,
             entregaSelecionada: widget.entregaSelecionada,
             saldoUsado: saldoUsado,
           ),
@@ -196,78 +239,75 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
         context,
         MaterialPageRoute(
           builder: (context) => PagamentoCartaoCreditoScreen(
-            valorTotal: valorTotal,
+            valorTotal: total,
             carrinho: widget.carrinho,
             metodoPagamento: metodoPagamentoSelecionado,
-            cliente: widget.cliente,
+            cliente: _cliente,
             desconto: desconto,
-            valorEntrega: widget.valorEntrega,          // ⬅️ Novo
+            valorEntrega: widget.valorEntrega,
+            entregaSelecionada: widget.entregaSelecionada,
+            saldoUsado: saldoUsado,
+          ),
+        ),
+      );
+    } else if (metodoPagamentoSelecionado == 'Pix') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PagamentoPixScreen(
+            valorTotal: total,
+            carrinho: widget.carrinho,
+            metodoPagamento: metodoPagamentoSelecionado,
+            cliente: _cliente,
+            desconto: desconto,
+            valorEntrega: widget.valorEntrega,
+            entregaSelecionada: widget.entregaSelecionada,
+            saldoUsado: saldoUsado,
+          ),
+        ),
+      );
+    } else if (metodoPagamentoSelecionado == 'Link de Pagamento') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PagamentoLinkScreen(
+            valorTotal: total,
+            carrinho: widget.carrinho,
+            metodoPagamento: metodoPagamentoSelecionado,
+            cliente: _cliente,
+            desconto: desconto,
+            valorEntrega: widget.valorEntrega,
+            entregaSelecionada: widget.entregaSelecionada,
+            saldoUsado: saldoUsado,
+          ),
+        ),
+      );
+    } else if (metodoPagamentoSelecionado == 'Outros') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PagamentoOutrosScreen(
+            valorTotal: total,
+            carrinho: widget.carrinho,
+            cliente: _cliente,
+            desconto: desconto,
+            valorEntrega: widget.valorEntrega,
             entregaSelecionada: widget.entregaSelecionada,
             saldoUsado: saldoUsado,
           ),
         ),
       );
     }
-   else if (metodoPagamentoSelecionado == 'Pix') {
-     Navigator.push(
-       context,
-       MaterialPageRoute(
-         builder: (context) => PagamentoPixScreen(
-           valorTotal: valorTotal,
-           carrinho: widget.carrinho,
-           metodoPagamento: metodoPagamentoSelecionado,
-           cliente: widget.cliente,
-           desconto: desconto,
-           valorEntrega: widget.valorEntrega,
-           entregaSelecionada: widget.entregaSelecionada,
-           saldoUsado: saldoUsado,
-         ),
-       ),
-     );
-   }
-   else if (metodoPagamentoSelecionado == 'Link de Pagamento') {
-     Navigator.push(
-       context,
-       MaterialPageRoute(
-         builder: (context) => PagamentoLinkScreen(
-           valorTotal: valorTotal,
-           carrinho: widget.carrinho,
-           metodoPagamento: metodoPagamentoSelecionado,
-           cliente: widget.cliente,
-           desconto: desconto,
-           valorEntrega: widget.valorEntrega,
-           entregaSelecionada: widget.entregaSelecionada,
-           saldoUsado: saldoUsado,
-         ),
-       ),
-     );
-   }
-   else if (metodoPagamentoSelecionado == 'Outros') {
-     Navigator.push(
-       context,
-       MaterialPageRoute(
-         builder: (_) => PagamentoOutrosScreen(
-           valorTotal: valorTotal,
-           carrinho: widget.carrinho,
-           cliente: widget.cliente,
-           desconto: desconto,
-           valorEntrega: widget.valorEntrega,
-           entregaSelecionada: widget.entregaSelecionada,
-           saldoUsado: saldoUsado,
-         ),
-       ),
-     );
-   }
-
   }
 
   @override
   Widget build(BuildContext context) {
-    final cliente = widget.cliente;
+    final cliente = _cliente;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Método de Pagamento'),
+        title: Text('Pagamento'),
         actions: [
           IconButton(
             icon: Icon(Icons.person_add),
@@ -281,235 +321,196 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 📌 DADOS DO CLIENTE
-            Text(
-              'Dados do Cliente',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
             Card(
-              elevation: 2,
-              margin: EdgeInsets.symmetric(vertical: 8),
+              margin: EdgeInsets.zero,
               child: ListTile(
-                title: Text(cliente.nome),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Celular: ${cliente.celular}'),
-                    Text('Endereço: ${cliente.endereco}'),
-                    Text('Saldo: R\$ ${cliente.saldo.toStringAsFixed(2)}'),
-                  ],
+                leading: CircleAvatar(child: Text(cliente.nome.isNotEmpty ? cliente.nome[0].toUpperCase() : '?')),
+                title: Text(cliente.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                  cliente.enderecoCompleto.isNotEmpty ? cliente.enderecoCompleto : cliente.celular,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+                trailing: cliente.saldo > 0
+                    ? Text(
+                        'Saldo\nR\$ ${cliente.saldo.toStringAsFixed(2)}',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                      )
+                    : null,
               ),
             ),
+            const SizedBox(height: 16),
 
-            // 📦 RESUMO DA COMPRA
-            SizedBox(height: 16),
-            Text(
-              'Resumo da Compra',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ItensCompraCard(carrinho: widget.carrinho),
+            const SizedBox(height: 16),
+
+            ResumoPagamentoCard(
+              subtotal: _subtotal,
+              desconto: desconto,
+              valorEntrega: widget.valorEntrega,
+              saldoUsado: saldoUsado,
+              valorTotal: valorTotal,
             ),
-            ...widget.carrinho.map((item) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  children: [
-                    Text('${item['quantidade']} x ', style: TextStyle(fontSize: 16)),
-                    Expanded(
-                      child: Text(
-                        item['produto'].nome,
-                        style: TextStyle(fontSize: 16),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Text(' - R\$ ${item['produto'].preco}', style: TextStyle(fontSize: 16)),
-                  ],
-                ),
-              );
-            }).toList(),
+            const SizedBox(height: 12),
 
-            SizedBox(height: 10),
-
-            // 🚚 Valor da Entrega
-            Row(
-              children: [
-                Text(
-                  'Entrega:',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-                SizedBox(width: 8),
-                Text(
-                  valorEntrega == 0 ? 'Frete Grátis' : 'R\$ ${valorEntrega.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: valorEntrega == 0 ? Colors.green : Colors.black,
-                    fontWeight: valorEntrega == 0 ? FontWeight.bold : FontWeight.normal,
-                  ),
-                ),
-              ],
-            ),
-
-            // 🎯 Desconto (se houver)
-            if (desconto > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Row(
-                  children: [
-                    Text(
-                      'Desconto:',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      '- R\$ ${desconto.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.red,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            SizedBox(height: 20),
-            Center(
-              child: Text(
-                'Valor Total: R\$ ${valorTotal.toStringAsFixed(2)}',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-            ),
-            SizedBox(height: 10),
             if (desconto == 0)
-            ElevatedButton.icon(
-              onPressed: aplicarDesconto,
-              icon: Icon(Icons.percent),
-              label: Text('Aplicar Desconto'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-                minimumSize: Size(double.infinity, 50),
-              ),
-            ),
-            if (desconto > 0)
-              ElevatedButton.icon(
+              OutlinedButton.icon(
+                onPressed: aplicarDesconto,
+                icon: Icon(Icons.percent),
+                label: Text('Aplicar desconto'),
+                style: OutlinedButton.styleFrom(minimumSize: Size(double.infinity, 44)),
+              )
+            else
+              OutlinedButton.icon(
                 onPressed: limparDesconto,
-                icon: Icon(Icons.delete_forever),
-                label: Text('Remover Desconto'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade700,
-                  foregroundColor: Colors.white,
-                  minimumSize: Size(double.infinity, 50),
+                icon: Icon(Icons.close),
+                label: Text('Remover desconto'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: Size(double.infinity, 44),
+                  foregroundColor: Colors.red.shade700,
+                  side: BorderSide(color: Colors.red.shade200),
                 ),
               ),
 
-            SizedBox(height: 20),
-
-            // ✅ CAMPO PARA USAR SALDO
-            Text(
-              'Usar Saldo do Cliente',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _saldoController,
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                      labelText: 'Digite o valor do saldo a usar',
-                      border: OutlineInputBorder(),
-                    ),
+            // ✅ Usar saldo do cliente — só aparece se o cliente tiver saldo
+            if (cliente.saldo > 0) ...[
+              const SizedBox(height: 12),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Usar saldo do cliente',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _saldoController,
+                              keyboardType: TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [MoedaInputFormatter()],
+                              decoration: InputDecoration(
+                                labelText: 'Valor do saldo a usar',
+                                prefixText: 'R\$ ',
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 10),
+                          ElevatedButton(
+                            onPressed: () {
+                              final valor = ClienteValidators.parseNumero(_saldoController.text) ?? 0.0;
+                              aplicarSaldo(valor);
+                            },
+                            child: Text('Aplicar'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => aplicarSaldo(cliente.saldo),
+                              child: Text('Usar todo o saldo'),
+                            ),
+                          ),
+                          if (saldoUsado > 0)
+                            TextButton(
+                              onPressed: limparSaldo,
+                              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+                              child: Text('Remover'),
+                            ),
+                        ],
+                      ),
+                      if (saldoUsado > 0)
+                        Text(
+                          'Saldo aplicado: R\$ ${saldoUsado.toStringAsFixed(2)}',
+                          style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w500),
+                        ),
+                    ],
                   ),
-                ),
-                SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: () {
-                    final valor = double.tryParse(_saldoController.text) ?? 0.0;
-                    aplicarSaldo(valor);
-                  },
-                  child: Text('Aplicar'),
-                ),
-              ],
-            ),
-            SizedBox(height: 8),
-            Row(
-              children: [
-                ElevatedButton(
-                  onPressed: () => aplicarSaldo(cliente.saldo),
-                  child: Text('Usar Todo Saldo'),
-                ),
-                SizedBox(width: 10),
-                if (saldoUsado > 0)
-                  ElevatedButton(
-                    onPressed: limparSaldo,
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                    child: Text('Remover Saldo'),
-                  ),
-              ],
-            ),
-
-            if (saldoUsado > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: Text(
-                  'Saldo aplicado: R\$ ${saldoUsado.toStringAsFixed(2)}',
-                  style: TextStyle(fontSize: 16, color: Colors.green, fontWeight: FontWeight.w500),
                 ),
               ),
-            SizedBox(height: 30),
+            ],
+            const SizedBox(height: 20),
 
-            // 💳 OPÇÕES DE PAGAMENTO
             Text(
-              'Selecione o Método de Pagamento',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              'Selecione o método de pagamento',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             GridView.builder(
               shrinkWrap: true,
               physics: NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 crossAxisSpacing: 10,
-                mainAxisSpacing: 20,
+                mainAxisSpacing: 10,
+                childAspectRatio: 0.9,
               ),
-              itemCount: 6,
+              itemCount: _opcoesPagamentoFiltradas.length,
               itemBuilder: (context, index) {
-                List<Map<String, dynamic>> opcoesPagamento = [
-                  {'metodo': 'Dinheiro', 'icone': Icons.money},
-                  {'metodo': 'Cartão de Débito', 'icone': FlutterIcons.credit_card_outline_mco},
-                  {'metodo': 'Cartão de Crédito', 'icone': FlutterIcons.credit_card_mdi},
-                  {'metodo': 'Pix', 'icone': Icons.pix},
-                  {'metodo': 'Link de Pagamento', 'icone': Icons.link},
-                  {'metodo': 'Outros', 'icone': Icons.more_horiz},
-                ];
-
+                final opcoesPagamento = _opcoesPagamentoFiltradas;
                 String metodo = opcoesPagamento[index]['metodo']!;
                 IconData icone = opcoesPagamento[index]['icone']!;
+                final selecionado = metodoPagamentoSelecionado == metodo;
 
-                return GestureDetector(
-                  onTap: () => selecionarMetodoPagamento(metodo),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(icone, size: 40, color: Colors.blue),
-                      SizedBox(height: 8),
-                      Text(metodo, textAlign: TextAlign.center),
-                    ],
+                return Material(
+                  color: selecionado ? colorScheme.primary.withValues(alpha: 0.1) : colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => selecionarMetodoPagamento(metodo),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: selecionado ? colorScheme.primary : colorScheme.outlineVariant,
+                          width: selecionado ? 2 : 1,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(icone, size: 32, color: colorScheme.primary),
+                          const SizedBox(height: 6),
+                          Text(
+                            metodo,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: selecionado ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 );
               },
             ),
-
-            SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: metodoPagamentoSelecionado.isEmpty ? null : navegarParaTelaPagamento,
-              child: Text('Avançar'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: Size(double.infinity, 50),
-                textStyle: TextStyle(fontSize: 18),
-              ),
-            ),
+            const SizedBox(height: 16),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+          ),
+          child: ElevatedButton(
+            onPressed: metodoPagamentoSelecionado.isEmpty ? null : navegarParaTelaPagamento,
+            style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 52)),
+            child: Text('Avançar — R\$ ${valorTotal.toStringAsFixed(2)}'),
+          ),
         ),
       ),
     );

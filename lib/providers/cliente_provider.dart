@@ -1,117 +1,111 @@
 import 'package:diacritic/diacritic.dart';
 import 'package:flutter/material.dart';
+import '../config/supabase_config.dart';
 import '../models/cliente.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../repositories/cliente_repository.dart';
 
 class ClientProvider with ChangeNotifier {
-  // Lista de clientes
-  List<Cliente> _clientes = [
-  ];
+  final ClienteRepository _repository = ClienteRepository();
 
-  // Lista de clientes filtrados para pesquisa
+  List<Cliente> _clientes = [];
   List<Cliente> _clientesFiltrados = [];
-
-  // Cliente selecionado
   Cliente? _clienteSelecionado;
+  String? _empresaId;
+  bool _carregando = false;
+  String? _erro;
 
-  // Getter para acessar a lista de clientes (filtrados ou completos)
   List<Cliente> get clientes => _clientesFiltrados.isEmpty ? _clientes : _clientesFiltrados;
-
   Cliente? get clienteSelecionado => _clienteSelecionado;
+  bool get carregando => _carregando;
+  String? get erro => _erro;
 
-  Future<void> addCliente(Cliente cliente) async {
+  /// Chamado uma vez pelo AuthGate assim que sabemos a empresa do usuário
+  /// logado — necessário pra criar novos clientes (empresa_id é obrigatório).
+  void definirEmpresa(String empresaId) {
+    _empresaId = empresaId;
+  }
+
+  Future<Cliente> addCliente(Cliente cliente) async {
+    if (_empresaId == null) {
+      throw StateError('Nenhuma empresa definida no ClientProvider ainda.');
+    }
     try {
-      final firestore = FirebaseFirestore.instance;
-      await firestore
-          .collection('clientes')
-          .doc(cliente.idCliente)
-          .set(cliente.toMap());
-
-      _clientes.add(cliente);
+      final novoCliente = await _repository.criar(cliente, empresaId: _empresaId!);
+      _clientes.add(novoCliente);
       notifyListeners();
-      print('✅ Cliente adicionado e salvo no Firestore');
+      return novoCliente;
     } catch (e) {
-      print('❌ Erro ao adicionar cliente: $e');
+      debugPrint('Erro ao adicionar cliente: $e');
+      rethrow;
     }
   }
 
+  Future<void> carregarClientes() async {
+    _carregando = true;
+    _erro = null;
+    notifyListeners();
+
+    try {
+      _clientes = await _repository.listar();
+    } catch (e) {
+      _erro = 'Erro ao carregar clientes: $e';
+      debugPrint(_erro);
+    } finally {
+      _carregando = false;
+      notifyListeners();
+    }
+  }
+
+  /// Mantido pelo nome antigo por compatibilidade com telas existentes.
   Future<void> carregarClientesDoFirestore() async {
-    final firestore = FirebaseFirestore.instance;
-
-    try {
-      final snapshot = await FirebaseFirestore.instance.collection('clientes').get();
-
-      print('📥 Total de documentos encontrados: ${snapshot.docs.length}');
-
-      final List<Cliente> clientesFirestore = snapshot.docs.map((doc) {
-        print('🔎 Documento: ${doc.data()}');
-        final data = doc.data();
-        return Cliente.fromMap(data);
-      }).toList();
-
-      _clientes = clientesFirestore;
-      notifyListeners();
-
-      print('✅ Clientes carregados: ${_clientes.length}');
-    } catch (e) {
-      print('❌ Erro ao carregar clientes: $e');
-    }
+    await carregarClientes();
   }
 
-  // Método para atualizar um cliente existente
   Future<void> atualizarCliente(Cliente clienteAtualizado) async {
+    if (clienteAtualizado.idCliente == null) {
+      debugPrint('Erro: cliente sem id para atualização.');
+      return;
+    }
     try {
-      final firestore = FirebaseFirestore.instance;
-
-      await firestore
-          .collection('clientes')
-          .doc(clienteAtualizado.idCliente)
-          .set(clienteAtualizado.toMap());
-
-      int index = _clientes.indexWhere((cliente) => cliente.idCliente == clienteAtualizado.idCliente);
+      await _repository.atualizar(clienteAtualizado);
+      final index = _clientes.indexWhere((c) => c.idCliente == clienteAtualizado.idCliente);
       if (index != -1) {
         _clientes[index] = clienteAtualizado;
       } else {
-        _clientes.add(clienteAtualizado); // fallback de segurança
+        _clientes.add(clienteAtualizado);
       }
-
       notifyListeners();
-      print('✅ Cliente atualizado no Firestore');
     } catch (e) {
-      print('❌ Erro ao atualizar cliente no Firestore: $e');
+      debugPrint('Erro ao atualizar cliente: $e');
+      rethrow;
     }
   }
 
-  // Função para remover um cliente
-  // Função para remover cliente
   Future<void> removerClienteDoFirestore(Cliente cliente) async {
-    final firestore = FirebaseFirestore.instance;
-
+    if (cliente.idCliente == null) return;
     try {
-      // Remove do Firestore
-      await firestore.collection('clientes').doc(cliente.idCliente).delete();
-
-      // Remove localmente
-      _clientes.removeWhere((item) => item.idCliente == cliente.idCliente);
+      await _repository.excluir(cliente.idCliente!);
+      _clientes.removeWhere((c) => c.idCliente == cliente.idCliente);
       notifyListeners();
-
-      print('🗑️ Cliente removido do Firestore: ${cliente.nome}');
     } catch (e) {
-      print('❌ Erro ao remover cliente do Firestore: $e');
+      debugPrint('Erro ao remover cliente: $e');
+      rethrow;
     }
   }
-  // Função para buscar cliente por nome
+
   Cliente? buscarClientePorNome(String nome) {
-    return _clientes.firstWhere(
-          (cliente) => cliente.nome.toLowerCase() == nome.toLowerCase(),
-      // orElse: () => null, // Retorna null se o cliente não for encontrado
-    );
+    try {
+      return _clientes.firstWhere(
+        (cliente) => cliente.nome.toLowerCase() == nome.toLowerCase(),
+      );
+    } catch (e) {
+      return null;
+    }
   }
 
-  // Função para pesquisar clientes (filtro)
   void pesquisarClientes(String texto) {
     if (texto.isEmpty) {
-      _clientesFiltrados = List.from(_clientes); // ← ANTES estava clear()
+      _clientesFiltrados = List.from(_clientes);
     } else {
       String textoNormalizado = removeDiacritics(texto).toLowerCase();
 
@@ -119,7 +113,7 @@ class ClientProvider with ChangeNotifier {
         final nome = removeDiacritics(cliente.nome).toLowerCase();
         final celular = removeDiacritics(cliente.celular).toLowerCase();
         final email = removeDiacritics(cliente.email).toLowerCase();
-        final endereco = removeDiacritics(cliente.endereco).toLowerCase();
+        final endereco = removeDiacritics(cliente.enderecoCompleto).toLowerCase();
         final complemento = removeDiacritics(cliente.complemento).toLowerCase();
         final cpf = removeDiacritics(cliente.cpf).toLowerCase();
         final pet = removeDiacritics(cliente.especies.join(" ")).toLowerCase();
@@ -139,36 +133,43 @@ class ClientProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Função para definir o cliente selecionado
   void setClienteSelecionado(Cliente cliente) {
     _clienteSelecionado = cliente;
-    notifyListeners(); // Notifica os listeners para atualizar a UI
+    notifyListeners();
+  }
+
+  /// Atualiza só a cópia em memória do saldo — usado depois de uma
+  /// movimentação feita via SaldoRepository, que já escreveu no banco
+  /// (evita reenviar o cliente inteiro de novo pro servidor).
+  void atualizarSaldoLocal(String clienteId, double novoSaldo) {
+    final index = _clientes.indexWhere((c) => c.idCliente == clienteId);
+    if (index != -1) {
+      _clientes[index] = _clientes[index].copyWith(saldo: novoSaldo);
+      notifyListeners();
+    }
   }
 }
-final _firestore = FirebaseFirestore.instance;
 
+/// Canais de origem do cliente (WhatsApp, Instagram, iFood, etc.), agora
+/// vindos do Supabase (tabela `canais_origem`, editável por empresa).
 Future<List<String>> carregarCanaisOrigem() async {
   try {
-    final snapshot = await _firestore.collection('canais_origem').get();
-    final canais = snapshot.docs.map((doc) => doc['nome'] as String).toList();
-    return canais;
+    final data = await supabase.from('canais_origem').select('nome').order('nome');
+    final canais = (data as List).map((row) => row['nome'] as String).toList();
+    return canais.isNotEmpty ? canais : ['WhatsApp', 'Instagram', 'Ifood', 'Outro canal'];
   } catch (e) {
-    print('❌ Erro ao carregar canais: $e');
+    debugPrint('Erro ao carregar canais: $e');
     return ['WhatsApp', 'Instagram', 'Ifood', 'Outro canal'];
   }
 }
 
-Future<void> adicionarCanalOrigem(String canal) async {
+Future<void> adicionarCanalOrigem(String canal, String empresaId) async {
   try {
-    final snapshot = await _firestore
-        .collection('canais_origem')
-        .where('nome', isEqualTo: canal)
-        .get();
-
-    if (snapshot.docs.isEmpty) {
-      await _firestore.collection('canais_origem').add({'nome': canal});
-    }
+    await supabase.from('canais_origem').upsert(
+      {'nome': canal, 'empresa_id': empresaId},
+      onConflict: 'empresa_id,nome',
+    );
   } catch (e) {
-    print('❌ Erro ao salvar canal: $e');
+    debugPrint('Erro ao salvar canal: $e');
   }
 }

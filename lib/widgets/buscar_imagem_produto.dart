@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// Busca imagem de produto usando OpenFoodFacts pelo código de barras
@@ -20,7 +21,7 @@ Future<String?> buscarImagemProdutoPetPorCodigoBarras(String codigoBarras) async
     }
     return null;
   } catch (e) {
-    print("Erro ao buscar imagem do produto pelo código de barras: $e");
+    debugPrint("Erro ao buscar imagem do produto pelo código de barras: $e");
     return null;
   }
 }

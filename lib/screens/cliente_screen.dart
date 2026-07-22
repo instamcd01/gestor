@@ -3,7 +3,7 @@ import 'package:gestor/screens/adicionar_cliente_screen.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/cliente_provider.dart';
-import 'editar_cliente_screen.dart';
+import '../widgets/categoria_cliente_badge.dart';
 import 'cliente_detalhes_screen.dart';
 import '../models/cliente.dart';
 
@@ -13,11 +13,11 @@ class ClientesScreen extends StatefulWidget {
 }
 
 class _ClientesScreenState extends State<ClientesScreen> {
-  String _filtroSaldo = 'Todos';
   String _textoPesquisa = '';
 
   @override
   void initState() {
+    super.initState();
     Future.microtask(() {
       Provider.of<ClientProvider>(context, listen: false).carregarClientesDoFirestore();
     });
@@ -27,13 +27,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => AdicionarClienteScreen(onSalvar: (cliente) {
-          Provider.of<ClientProvider>(context, listen: false).addCliente(cliente);
-        }),
+        builder: (context) => AdicionarClienteScreen(),
       ),
-    ).then((_) {
-      Provider.of<ClientProvider>(context, listen: false).notifyListeners();
-    });
+    );
   }
 
   void _aplicarFiltro() {
@@ -78,10 +74,38 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
 
 
+  Future<void> _confirmarExclusao(ClientProvider clientProvider, Cliente cliente) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Excluir Cliente'),
+        content: Text('Tem certeza que deseja excluir ${cliente.nome}?'),
+        actions: [
+          TextButton(child: Text('Cancelar'), onPressed: () => Navigator.of(ctx).pop(false)),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+    try {
+      await clientProvider.removerClienteDoFirestore(cliente);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível excluir o cliente: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final clientProvider = Provider.of<ClientProvider>(context);
     final clientesFiltrados = clientProvider.clientes;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -94,65 +118,106 @@ class _ClientesScreenState extends State<ClientesScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
               onChanged: (texto) {
                 setState(() {
                   _textoPesquisa = texto;
                 });
                 _aplicarFiltro();
               },
-              decoration: InputDecoration(
-                labelText: 'Pesquisar cliente',
-                suffixIcon: Icon(Icons.search),
+              decoration: const InputDecoration(
+                hintText: 'Pesquisar por nome, celular ou endereço',
+                prefixIcon: Icon(Icons.search),
               ),
             ),
-            SizedBox(height: 20),
-            Expanded(
-              child: clientesFiltrados.isEmpty
-                  ? Center(child: Text('Nenhum cliente encontrado'))
-                  : ListView.builder(
-                itemCount: clientesFiltrados.length,
-                itemBuilder: (context, index) {
-                  final cliente = clientesFiltrados[index];
-                  return Card(
-                    child: ListTile(
-                      title: Row(
-                        children: [
-                          Expanded(child: Text(cliente.nome)),
-                          ..._iconesDePets(cliente),
-                        ],
-                      ),
-                      subtitle: Text(
-                        'Celular: ${cliente.celular} | Saldo: R\$${cliente.saldo.toStringAsFixed(2)}',
-                      ),
-                      onTap: () => _verDetalhesCliente(cliente),
-                      trailing: IconButton(
-                        icon: Icon(Icons.delete, color: Colors.red),
-                        onPressed: () async {
-                          final confirmar = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: Text('Excluir Cliente'),
-                              content: Text('Tem certeza que deseja excluir ${cliente.nome}?'),
-                              actions: [
-                                TextButton(child: Text('Cancelar'), onPressed: () => Navigator.of(ctx).pop(false)),
-                                TextButton(child: Text('Excluir'), onPressed: () => Navigator.of(ctx).pop(true)),
-                              ],
+          ),
+          Expanded(
+            child: clientProvider.carregando
+                ? const Center(child: CircularProgressIndicator())
+                : clientesFiltrados.isEmpty
+                    ? _estadoVazio(colorScheme)
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        itemCount: clientesFiltrados.length,
+                        itemBuilder: (context, index) {
+                          final cliente = clientesFiltrados[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              onTap: () => _verDetalhesCliente(cliente),
+                              leading: CircleAvatar(
+                                backgroundColor: colorScheme.primaryContainer,
+                                child: Text(
+                                  cliente.nome.isNotEmpty ? cliente.nome[0].toUpperCase() : '?',
+                                  style: TextStyle(color: colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              title: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      cliente.nome,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  CategoriaClienteBadge(categoria: cliente.categoriaCliente),
+                                ],
+                              ),
+                              subtitle: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '${cliente.celular} • Saldo R\$${cliente.saldo.toStringAsFixed(2)}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  ..._iconesDePets(cliente),
+                                ],
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                tooltip: 'Excluir',
+                                onPressed: () => _confirmarExclusao(clientProvider, cliente),
+                              ),
                             ),
                           );
-                          if (confirmar == true) {
-                            clientProvider.removerClienteDoFirestore(cliente);
-                          }
                         },
                       ),
-                    ),
-                  );
-                },
-              ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _estadoVazio(ColorScheme colorScheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.people_outline, size: 56, color: colorScheme.onSurfaceVariant),
+            const SizedBox(height: 16),
+            Text(
+              _textoPesquisa.isNotEmpty ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado ainda',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _textoPesquisa.isNotEmpty
+                  ? 'Tente buscar por outro termo.'
+                  : 'Toque no ícone de "+" pra cadastrar o primeiro.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
             ),
           ],
         ),

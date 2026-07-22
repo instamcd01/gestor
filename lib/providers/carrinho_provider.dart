@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/cliente.dart';
 import '../models/produto.dart'; // Seu modelo de Produto
+import '../models/zona_entrega.dart';
 
 // Modelo para um item no carrinho (mais robusto que Map<String, dynamic>)
 class ItemCarrinho {
@@ -15,42 +16,49 @@ class ItemCarrinho {
 
   double get precoTotalItem =>
       precoUnitario * quantidade;
+
+  /// Formato Map esperado pelas telas de pagamento (que ainda trabalham
+  /// com Map<String, dynamic> em vez do objeto ItemCarrinho diretamente).
+  Map<String, dynamic> toMap() {
+    return {
+      'produto': produto,
+      'quantidade': quantidade,
+      'precoUnitario': precoUnitario,
+      'precoTotalItem': precoTotalItem,
+    };
+  }
 }
 
 class CarrinhoProvider with ChangeNotifier {
   final List<ItemCarrinho> _itens = [];
   Cliente? _clienteSelecionado;
   double _desconto = 0.0;
-  String _entregaSelecionadaId = 'retirada'; // ID da opção de entrega padrão
-  double _valorEntrega = 0.0;
-  double _valorEntregaNormalAplicado = 0.0; // Valor da entrega antes de verificar frete grátis
+  ZonaEntrega? _zonaSelecionada; // null = retirada na loja (sem frete)
   String _idVenda = const Uuid().v4();
-  // Exemplo de estrutura para opções de entrega (pode vir de configurações/outro provider)
-  final Map<String, Map<String, dynamic>> _opcoesEntregaConfig = {
-    'retirada': {'nome': 'Retirar na Loja', 'valor': 0.0, 'minimoFreteGratis': 0.0},
-    'local_5km': {'nome': 'Entrega Local (até 5km)', 'valor': 10.0, 'minimoFreteGratis': 100.0},
-    'local_10km': {'nome': 'Entrega Local (5-10km)', 'valor': 15.0, 'minimoFreteGratis': 150.0},
-  };
 
   // Getters
   List<ItemCarrinho> get itens => [..._itens]; // Retorna uma cópia para evitar modificação externa
   Cliente? get clienteSelecionado => _clienteSelecionado;
   double get desconto => _desconto;
-  String get entregaSelecionadaId => _entregaSelecionadaId;
-  Map<String, dynamic> get detalhesEntregaSelecionada => _opcoesEntregaConfig[_entregaSelecionadaId] ?? _opcoesEntregaConfig.values.first;
-  Map<String, Map<String, dynamic>> get opcoesEntregaDisponiveis => _opcoesEntregaConfig;
+  ZonaEntrega? get zonaEntregaSelecionada => _zonaSelecionada;
+
+  /// Nome pra exibição/registro da venda — mantém esse getter (usado em
+  /// vários lugares como rótulo descritivo) mesmo não sendo mais um ID
+  /// interno de um mapa fixo.
+  String get entregaSelecionadaId => _zonaSelecionada?.nome ?? 'Retirada na Loja';
   String get idVenda => _idVenda;
   double get subtotal {
     return _itens.fold(0.0, (sum, item) => sum + item.precoTotalItem);
   }
 
   double get valorEntregaCalculado {
-    final detalhes = detalhesEntregaSelecionada;
-    double minimoFreteGratis = detalhes['minimoFreteGratis'] as double? ?? double.infinity;
-    if (minimoFreteGratis > 0 && subtotal >= minimoFreteGratis) {
+    final zona = _zonaSelecionada;
+    if (zona == null) return 0.0; // retirada na loja
+    final minimoFreteGratis = zona.valorMinimoFreteGratis;
+    if (minimoFreteGratis != null && subtotal >= minimoFreteGratis) {
       return 0.0; // Frete grátis
     }
-    return _valorEntregaNormalAplicado; // Valor normal da entrega
+    return zona.valor;
   }
 
   double get totalCarrinho {
@@ -62,8 +70,7 @@ class CarrinhoProvider with ChangeNotifier {
   }
 
   double get valorFaltanteParaFreteGratis {
-    final detalhes = detalhesEntregaSelecionada;
-    double minimoFreteGratis = detalhes['minimoFreteGratis'] as double? ?? 0.0;
+    final minimoFreteGratis = _zonaSelecionada?.valorMinimoFreteGratis ?? 0.0;
     if (minimoFreteGratis == 0) return 0.0; // Se não há mínimo, não falta nada
 
     if (subtotal < minimoFreteGratis) {
@@ -131,15 +138,13 @@ class CarrinhoProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void selecionarEntrega(String idOpcaoEntrega) {
-    if (_opcoesEntregaConfig.containsKey(idOpcaoEntrega)) {
-      _entregaSelecionadaId = idOpcaoEntrega;
-      final detalhes = _opcoesEntregaConfig[idOpcaoEntrega]!;
-      _valorEntregaNormalAplicado = detalhes['valor'] as double; // Armazena o valor base da entrega
-      // O getter valorEntregaCalculado já lida com a lógica de frete grátis
-      notifyListeners();
-    }
+  /// Define a zona de entrega escolhida (calculada a partir da distância
+  /// real até o cliente). Passe null pra "retirada na loja" (sem frete).
+  void selecionarZonaEntrega(ZonaEntrega? zona) {
+    _zonaSelecionada = zona;
+    notifyListeners();
   }
+
   void selecionarCliente(Cliente cliente) {
     _clienteSelecionado = cliente;
     notifyListeners();
@@ -148,18 +153,9 @@ class CarrinhoProvider with ChangeNotifier {
   void limparCarrinho() {
     _itens.clear();
     _desconto = 0.0;
-    _itens.clear();
-    _desconto = 0.0;
     _clienteSelecionado = null;
-    _entregaSelecionadaId = 'retirada';
-    _valorEntregaNormalAplicado =
-    _opcoesEntregaConfig['retirada']!['valor']
-    as double;
+    _zonaSelecionada = null;
     _idVenda = const Uuid().v4();
-
-    // Resetar entrega para o padrão ou manter a seleção do usuário?
-    // _entregaSelecionadaId = 'retirada';
-    // _valorEntregaNormalAplicado = _opcoesEntregaConfig['retirada']!['valor'] as double;
     notifyListeners();
   }
 }

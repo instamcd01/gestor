@@ -1,6 +1,8 @@
 // pagamento_cartao_credito_screen.dart
 import 'package:flutter/material.dart';
 import 'package:gestor/models/cliente.dart';
+import '../widgets/itens_compra_card.dart';
+import '../widgets/resumo_pagamento_card.dart';
 import 'conclusao_venda_screen.dart';
 
 class PagamentoCartaoCreditoScreen extends StatelessWidget {
@@ -19,7 +21,8 @@ class PagamentoCartaoCreditoScreen extends StatelessWidget {
     required this.carrinho,
     this.idCliente,
     required this.metodoPagamento,
-    required this.cliente, required this.desconto,
+    required this.cliente,
+    required this.desconto,
     required this.valorEntrega,
     required this.entregaSelecionada,
     required this.saldoUsado,
@@ -27,59 +30,73 @@ class PagamentoCartaoCreditoScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final subtotal = ResumoPagamentoCard.calcularSubtotal(carrinho);
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Pagamento: Cartão de Crédito'),
+        title: Text('Cartão de Crédito'),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Icon(Icons.credit_card, size: 100, color: Colors.blue),
-            SizedBox(height: 30),
+            Icon(Icons.credit_card, size: 64, color: colorScheme.primary),
+            const SizedBox(height: 8),
             Text(
-              'Valor Total: R\$ ${valorTotal.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              'Cliente: ${cliente.nome}',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 16),
+            ItensCompraCard(carrinho: carrinho),
+            const SizedBox(height: 16),
+            ResumoPagamentoCard(
+              subtotal: subtotal,
+              desconto: desconto,
+              valorEntrega: valorEntrega,
+              saldoUsado: saldoUsado,
+              valorTotal: valorTotal,
+            ),
+            const SizedBox(height: 12),
             Text(
               'Pagamento via cartão de crédito será processado no valor exato.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18),
-            ),
-            SizedBox(height: 50),
-            ElevatedButton(
-              onPressed: () {
-                // Navegar para a tela de conclusão da venda
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ConclusaoVendaScreen(
-                      valorTotal: valorTotal,
-                      carrinho: carrinho,
-                      idCliente: idCliente,
-                      metodoPagamento: metodoPagamento,
-                      cliente: cliente,
-                      desconto: desconto,
-                      valorEntrega: valorEntrega,
-                      entregaSelecionada: entregaSelecionada,
-                      saldoUsado: saldoUsado,
-                    ),
-                  ),
-                );
-              },
-              child: Text('Concluir Pagamento'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: Size(double.infinity, 50),
-                textStyle: TextStyle(fontSize: 18),
-              ),
+              style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
             ),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+          ),
+          child: ElevatedButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ConclusaoVendaScreen(
+                    valorTotal: valorTotal,
+                    carrinho: carrinho,
+                    idCliente: idCliente,
+                    metodoPagamento: metodoPagamento,
+                    cliente: cliente,
+                    desconto: desconto,
+                    valorEntrega: valorEntrega,
+                    entregaSelecionada: entregaSelecionada,
+                    saldoUsado: saldoUsado,
+                  ),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 52)),
+            child: Text('Concluir Pagamento'),
+          ),
         ),
       ),
     );

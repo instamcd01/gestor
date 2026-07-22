@@ -53,12 +53,11 @@ dependencies:
   file_picker: ^10.3.10
   share_plus: ^12.0.1
   url_launcher: ^6.1.9
-  firebase_core: ^4.4.0
-  cloud_firestore: ^6.1.2
-  firebase_storage: ^13.0.6
   http: ^1.6.0
   google_maps_flutter: ^2.1.1
-  firebase_app_check: ^0.4.1+4
+  supabase_flutter: ^2.8.0
+  google_fonts: ^6.2.1
+  flutter_colorpicker: ^1.1.0
 
 
 dev_dependencies:
@@ -83,7 +82,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-  - assets/images/
+  - lib/assets/images/
 #  fonts:
 #    - family: Roboto
 #      fonts:
@@ -95,7 +94,7 @@ flutter:
   #   - images/a_dot_ham.jpeg
 flutter_native_splash:
   color: "#2da6e2"
-  image: assets/images/logo.png
+  image: lib/assets/images/logo.png
   android: true
   ios: true
   android_gravity: center

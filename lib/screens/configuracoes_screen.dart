@@ -1,140 +1,91 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'aparencia_screen.dart';
+import 'configuracao_entrega_screen.dart';
+import 'dados_loja_screen.dart';
+import 'catalogo_online_screen.dart';
+import 'horario_funcionamento_screen.dart';
+import 'meu_recibo_screen.dart';
+import 'opcoes_pagamento_screen.dart';
+import 'regras_venda_screen.dart';
+import 'exportar_relatorios_screen.dart';
+import 'integrar_plataformas_screen.dart';
+import '../providers/auth_provider.dart';
+import '../widgets/menu_secao.dart';
 
 // Tela principal de configurações do app
 class ConfiguracoesScreen extends StatelessWidget {
+  const ConfiguracoesScreen({super.key});
+
+  Future<void> _confirmarSaida(BuildContext context) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sair'),
+        content: const Text('Tem certeza que deseja sair da sua conta?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sair'),
+          ),
+        ],
+      ),
+    );
+    if (confirmou == true && context.mounted) context.read<AuthProvider>().sair();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Configurações do App'),
+        title: const Text('Configurações do App'),
       ),
       body: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-          _buildListTile(context, 'Geral', Icons.settings, GeralScreen()),
-          _buildListTile(context, 'Dados da Loja', Icons.store, DadosLojaScreen()),
-          // _buildListTile(context, 'Catálogo Online', Icons.library_books, CatalogoOnlineScreen()),
-          _buildListTile(context, 'Meu Recibo', Icons.receipt, MeuReciboScreen()),
-          _buildListTile(context, 'Opções de Pagamento', Icons.payment, OpcoesPagamentoScreen()),
-          _buildListTile(context, 'Pedidos e Vendas', Icons.shopping_cart, PedidosVendasScreen()),
-          _buildListTile(context, 'Opções de Entrega', Icons.local_shipping, OpcoesEntregaScreen()),
-          _buildListTile(context, 'Exportar Relatórios', Icons.file_copy, ExportarRelatoriosScreen()),
-          _buildListTile(context, 'Integrar com Plataformas', Icons.integration_instructions, IntegrarPlataformasScreen()),
+          MenuSecao(
+            titulo: 'Loja',
+            itens: [
+              MenuItem('Dados da Loja', Icons.store_outlined, const DadosLojaScreen()),
+              MenuItem('Horário de Funcionamento', Icons.schedule_outlined, const GeralScreen()),
+              MenuItem('Aparência e Marca', Icons.palette_outlined, const AparenciaScreen()),
+              MenuItem('Catálogo Online', Icons.storefront_outlined, const CatalogoOnlineScreen()),
+              MenuItem('Meu Recibo', Icons.receipt_long_outlined, const MeuReciboScreen()),
+            ],
+          ),
+          const SizedBox(height: 20),
+          MenuSecao(
+            titulo: 'Vendas',
+            itens: [
+              MenuItem('Opções de Pagamento', Icons.payment_outlined, const OpcoesPagamentoScreen()),
+              MenuItem('Pedidos e Vendas', Icons.shopping_cart_outlined, const PedidosVendasScreen()),
+              MenuItem('Opções de Entrega', Icons.local_shipping_outlined, const ConfiguracaoEntregaScreen()),
+            ],
+          ),
+          const SizedBox(height: 20),
+          MenuSecao(
+            titulo: 'Dados e integrações',
+            itens: [
+              MenuItem('Exportar Relatórios', Icons.file_download_outlined, const ExportarRelatoriosScreen()),
+              MenuItem(
+                  'Integrar com Plataformas', Icons.integration_instructions_outlined, const IntegrarPlataformasScreen()),
+            ],
+          ),
+          const SizedBox(height: 24),
+          OutlinedButton.icon(
+            onPressed: () => _confirmarSaida(context),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+              side: BorderSide(color: Theme.of(context).colorScheme.error.withValues(alpha: 0.4)),
+              minimumSize: const Size(double.infinity, 48),
+            ),
+            icon: const Icon(Icons.logout),
+            label: const Text('Sair'),
+          ),
         ],
       ),
-    );
-  }
-
-  // Função que cria o item clicável
-  ListTile _buildListTile(BuildContext context, String title, IconData icon, Widget destinationScreen) {
-    return ListTile(
-      leading: Icon(icon, color: Colors.blue),
-      title: Text(title),
-      onTap: () {
-        // Navegação para a tela correspondente
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => destinationScreen),
-        );
-      },
-    );
-  }
-}
-
-// Tela Geral
-class GeralScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Geral')),
-      body: Center(child: Text('Configurações gerais do aplicativo')),
-    );
-  }
-}
-
-// Tela Dados da Loja
-class DadosLojaScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Dados da Loja')),
-      body: Center(child: Text('Configurações dos dados da loja')),
-    );
-  }
-}
-
-// Tela Catálogo Online
-// class CatalogoOnlineScreen extends StatelessWidget {
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       appBar: AppBar(title: Text('Catálogo Online')),
-//       body: Center(child: Text('Configurações do catálogo online')),
-//     );
-//   }
-// }
-
-// Tela Meu Recibo
-class MeuReciboScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Meu Recibo')),
-      body: Center(child: Text('Configurações do recibo')),
-    );
-  }
-}
-
-// Tela Opções de Pagamento
-class OpcoesPagamentoScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Opções de Pagamento')),
-      body: Center(child: Text('Configurações das opções de pagamento')),
-    );
-  }
-}
-
-// Tela Pedidos e Vendas
-class PedidosVendasScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Pedidos e Vendas')),
-      body: Center(child: Text('Configurações de pedidos e vendas')),
-    );
-  }
-}
-
-// Tela Opções de Entrega
-class OpcoesEntregaScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Opções de Entrega')),
-      body: Center(child: Text('Configurações das opções de entrega')),
-    );
-  }
-}
-
-// Tela Exportar Relatórios
-class ExportarRelatoriosScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Exportar Relatórios')),
-      body: Center(child: Text('Configurações para exportar relatórios')),
-    );
-  }
-}
-
-// Tela Integrar com Plataformas
-class IntegrarPlataformasScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Integrar com Plataformas')),
-      body: Center(child: Text('Configurações para integrar com plataformas')),
     );
   }
 }

@@ -2,22 +2,25 @@ import 'package:diacritic/diacritic.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/produto_provider.dart';
+import '../providers/carrinho_provider.dart';
 import '../models/produto.dart';
+import '../widgets/preco_com_desconto.dart';
 import 'cadastro_produto_screen.dart';
 import 'carrinho_screen.dart';
 
 class VendasScreen extends StatefulWidget {
+  const VendasScreen({super.key});
+
   @override
-  _VendasScreenState createState() => _VendasScreenState();
+  State<VendasScreen> createState() => _VendasScreenState();
 }
 
 class _VendasScreenState extends State<VendasScreen> {
-  List<Map<String, dynamic>> carrinho = [];
   bool isGridView = true;
-  TextEditingController _searchController = TextEditingController();
+  bool _carregando = true;
+  final TextEditingController _searchController = TextEditingController();
   List<Produto> produtosFiltrados = [];
   String categoriaSelecionada = 'Tudo';
-  bool _isFirstLoad = true;
 
   List<String> categorias = ['Tudo'];
 
@@ -27,39 +30,40 @@ class _VendasScreenState extends State<VendasScreen> {
     _carregarProdutosIniciais();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _carregarProdutosIniciais() async {
     final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
     await produtoProvider.atualizarProdutosDoFirestore();
+    if (!mounted) return;
     final produtos = produtoProvider.produtos;
     final categoriasDinamicas = produtos.map((p) => p.categoria).toSet().toList();
     categoriasDinamicas.sort();
     setState(() {
       categorias = ['Tudo', ...categoriasDinamicas];
       produtosFiltrados = produtos;
+      _carregando = false;
     });
   }
 
   void _adicionarAoCarrinho(Produto produto) {
-    setState(() {
-      var item = carrinho.firstWhere(
-            (element) => element['produto'].id == produto.id,
-        orElse: () => {},
+    try {
+      context.read<CarrinhoProvider>().adicionarProduto(produto);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${produto.nome} adicionado ao carrinho'),
+          duration: const Duration(seconds: 1),
+        ),
       );
-
-      if (item.isNotEmpty) {
-        item['quantidade']++;
-      } else {
-        carrinho.add({
-          'produto': produto,
-          'quantidade': 1,
-        });
-      }
-    });
-  }
-
-  double get valorTotal {
-    return carrinho.fold(0.0, (total, item) =>
-    total + (item['produto'].preco * item['quantidade']));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível adicionar: estoque insuficiente de ${produto.nome}.')),
+      );
+    }
   }
 
   String normalizeString(String input) {
@@ -78,16 +82,6 @@ class _VendasScreenState extends State<VendasScreen> {
     });
   }
 
-  String getTotalUnidades() {
-    double totalUnidades = 0;
-    for (var item in carrinho) {
-      totalUnidades += item['quantidade'];
-    }
-    return totalUnidades == totalUnidades.toInt()
-        ? totalUnidades.toInt().toString()
-        : totalUnidades.toString();
-  }
-
   void _filtrarProdutosPorCategoria(String categoria) {
     setState(() {
       categoriaSelecionada = categoria;
@@ -97,7 +91,7 @@ class _VendasScreenState extends State<VendasScreen> {
       } else {
         final categoriaNormalizada = normalizeString(categoria);
         produtosFiltrados = produtoProvider.produtos.where((produto) {
-          final categoriaProdutoNormalizada = normalizeString(produto.categoria ?? '');
+          final categoriaProdutoNormalizada = normalizeString(produto.categoria);
           return categoriaProdutoNormalizada == categoriaNormalizada;
         }).toList();
       }
@@ -106,14 +100,15 @@ class _VendasScreenState extends State<VendasScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final produtoProvider = Provider.of<ProdutoProvider>(context);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Venda de Produtos'),
+        title: const Text('Venda de Produtos'),
         actions: [
           IconButton(
-            icon: Icon(Icons.add),
+            icon: const Icon(Icons.add),
+            tooltip: 'Cadastrar produto',
             onPressed: () {
               Navigator.of(context).push(MaterialPageRoute(
                 builder: (ctx) => CadastroProdutoScreen(),
@@ -125,21 +120,23 @@ class _VendasScreenState extends State<VendasScreen> {
       body: Column(
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _searchController,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       hintText: 'Pesquisar produto...',
                       prefixIcon: Icon(Icons.search),
                     ),
                     onChanged: _pesquisarProdutos,
                   ),
                 ),
-                IconButton(
-                  icon: Icon(isGridView ? Icons.list : Icons.grid_view),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  icon: Icon(isGridView ? Icons.view_list_outlined : Icons.grid_view_outlined),
+                  tooltip: isGridView ? 'Ver em lista' : 'Ver em grade',
                   onPressed: () {
                     setState(() {
                       isGridView = !isGridView;
@@ -149,160 +146,229 @@ class _VendasScreenState extends State<VendasScreen> {
               ],
             ),
           ),
-          Container(
-            height: 50,
-            child: ListView.builder(
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               scrollDirection: Axis.horizontal,
               itemCount: categorias.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (ctx, index) {
-                return GestureDetector(
-                  onTap: () => _filtrarProdutosPorCategoria(categorias[index]),
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      border: categoriaSelecionada == categorias[index]
-                          ? Border(bottom: BorderSide(color: Colors.blue, width: 2))
-                          : null,
-                    ),
-                    child: Text(
-                      categorias[index],
-                      style: TextStyle(
-                        color: categoriaSelecionada == categorias[index]
-                            ? Colors.blue
-                            : Colors.black,
-                        fontWeight: categoriaSelecionada == categorias[index]
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ),
+                final categoria = categorias[index];
+                final selecionada = categoriaSelecionada == categoria;
+                return ChoiceChip(
+                  label: Text(categoria),
+                  selected: selecionada,
+                  onSelected: (_) => _filtrarProdutosPorCategoria(categoria),
                 );
               },
             ),
           ),
+          const SizedBox(height: 8),
           Expanded(
-            child: isGridView
-                ? GridView.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                crossAxisSpacing: 8.0,
-                mainAxisSpacing: 8.0,
-                childAspectRatio: 0.75, // AJUSTADO: controla altura/largura para evitar overflow
-              ),
-              itemCount: produtosFiltrados.length,
-              itemBuilder: (ctx, i) {
-                final produto = produtosFiltrados[i];
-
-                final imagemUrl = produto.imagemUrl != null && produto.imagemUrl!.isNotEmpty
-                    ? produto.imagemUrl!
-                    : 'http://imagens.lukz.com.br/produtos/${produto.codigoBarras}.png';
-
-                return GestureDetector(
-                  onTap: () => _adicionarAoCarrinho(produto),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(4.0), // AJUSTADO: espaçamento interno
-                      child: Column(
-                        children: [
-                          Image.network(
-                            imagemUrl,
-                            height: 60,
-                            width: 60,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(Icons.image_not_supported,
-                                  size: 50, color: Colors.grey);
-                            },
-                          ),
-                          SizedBox(height: 4), // AJUSTADO: espaçamento
-                          // AJUSTADO: Texto com ellipsis para evitar overflow
-                          Text(
-                            produto.nome,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                          Text('R\$ ${produto.preco}'),
-                          Text(
-                            'Estoque: ${produto.estoqueAtual}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: produto.estoqueAtual == 0
-                                  ? Colors.red
-                                  : Colors.grey[700],
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis, // AJUSTADO
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            )
-                : ListView.builder(
-              itemCount: produtosFiltrados.length,
-              itemBuilder: (ctx, i) {
-                final produto = produtosFiltrados[i];
-                final imagemUrl = produto.imagemUrl != null && produto.imagemUrl!.isNotEmpty
-                    ? produto.imagemUrl!
-                    : 'http://imagens.lukz.com.br/produtos/${produto.codigoBarras}.png';
-
-                return GestureDetector(
-                  onTap: () => _adicionarAoCarrinho(produto),
-                  child: ListTile(
-                    leading: Image.network(
-                      imagemUrl,
-                      width: 50,
-                      height: 50,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Icon(Icons.image_not_supported,
-                            size: 30, color: Colors.grey);
-                      },
-                    ),
-                    // AJUSTADO: Título com ellipsis
-                    title: Text(
-                      produto.nome,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      'Preço: R\$ ${produto.preco}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                );
-              },
-            ),
+            child: _carregando
+                ? const Center(child: CircularProgressIndicator())
+                : produtosFiltrados.isEmpty
+                    ? _estadoVazio(colorScheme)
+                    : (isGridView ? _grade(colorScheme) : _lista(colorScheme)),
           ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: ElevatedButton(
-              onPressed: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const CarrinhoScreen(idVenda: '',),
-                  ),
-                );
-
-                await Provider.of<ProdutoProvider>(context, listen: false).carregarProdutos();
-                setState(() {
-                  produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false).produtos;
-                });
-              },
-              child: Text(
-                'Carrinho: ${getTotalUnidades()} Itens(s) - R\$ ${valorTotal.toStringAsFixed(2)}',
-                style: TextStyle(fontSize: 18),
-                overflow: TextOverflow.ellipsis, // AJUSTADO: evita overflow do botão
-              ),
-            ),
-          ),
+          _barraCarrinho(colorScheme),
         ],
       ),
+    );
+  }
+
+  Widget _estadoVazio(ColorScheme colorScheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.inventory_2_outlined, size: 56, color: colorScheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text(
+              'Nenhum produto encontrado',
+              style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Tente outra busca ou categoria.',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _grade(ColorScheme colorScheme) {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.72,
+      ),
+      itemCount: produtosFiltrados.length,
+      itemBuilder: (ctx, i) {
+        final produto = produtosFiltrados[i];
+        final semEstoque = produto.estoqueAtual == 0;
+
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: semEstoque ? null : () => _adicionarAoCarrinho(produto),
+            child: Opacity(
+              opacity: semEstoque ? 0.5 : 1,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  children: [
+                    Expanded(child: _imagemProduto(produto, colorScheme)),
+                    const SizedBox(height: 6),
+                    Text(
+                      produto.nome,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 2),
+                    PrecoComDesconto(produto: produto, compact: true),
+                    Text(
+                      semEstoque ? 'Sem estoque' : '${produto.estoqueAtual} em estoque',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: semEstoque ? Colors.red : colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _lista(ColorScheme colorScheme) {
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      itemCount: produtosFiltrados.length,
+      separatorBuilder: (_, __) => const Divider(height: 1),
+      itemBuilder: (ctx, i) {
+        final produto = produtosFiltrados[i];
+        final semEstoque = produto.estoqueAtual == 0;
+
+        return Opacity(
+          opacity: semEstoque ? 0.5 : 1,
+          child: ListTile(
+            onTap: semEstoque ? null : () => _adicionarAoCarrinho(produto),
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(width: 48, height: 48, child: _imagemProduto(produto, colorScheme)),
+            ),
+            title: Text(produto.nome, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: PrecoComDesconto(produto: produto),
+            trailing: Text(
+              semEstoque ? 'Sem estoque' : '${produto.estoqueAtual} un.',
+              style: TextStyle(
+                fontSize: 12,
+                color: semEstoque ? Colors.red : colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _imagemProduto(Produto produto, ColorScheme colorScheme) {
+    final imagemUrl = produto.imagemUrl.isNotEmpty
+        ? produto.imagemUrl
+        : 'http://imagens.lukz.com.br/produtos/${produto.codigoBarras}.png';
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        color: colorScheme.surfaceContainerHighest,
+        child: Image.network(
+          imagemUrl,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return Icon(Icons.image_not_supported_outlined, color: colorScheme.onSurfaceVariant);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _barraCarrinho(ColorScheme colorScheme) {
+    return Consumer<CarrinhoProvider>(
+      builder: (context, carrinhoProvider, _) {
+        final vazio = carrinhoProvider.totalUnidades == 0;
+
+        return SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+            ),
+            child: ElevatedButton(
+              onPressed: vazio
+                  ? null
+                  : () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CarrinhoScreen(idVenda: ''),
+                        ),
+                      );
+                      if (!mounted) return;
+                      await Provider.of<ProdutoProvider>(context, listen: false).carregarProdutos();
+                      setState(() {
+                        produtosFiltrados = Provider.of<ProdutoProvider>(context, listen: false).produtos;
+                      });
+                    },
+              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.shopping_bag_outlined, size: 20),
+                      const SizedBox(width: 8),
+                      Text('${carrinhoProvider.totalUnidades} ite${carrinhoProvider.totalUnidades == 1 ? 'm' : 'ns'}'),
+                    ],
+                  ),
+                  Text(
+                    'R\$ ${carrinhoProvider.totalCarrinho.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

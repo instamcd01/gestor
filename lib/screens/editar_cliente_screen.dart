@@ -1,11 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 import 'package:provider/provider.dart';
 
 import '../models/cliente.dart';
 import '../models/pet.dart';
+import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
+import '../services/cep_service.dart';
+import '../services/distancia_service.dart';
+import '../utils/cliente_validators.dart';
+import '../utils/formatadores_input.dart';
+import '../widgets/form_section.dart';
 import 'cadastro_pet_screen.dart';
 import 'editar_pet_screen.dart';
+import 'selecionar_localizacao_screen.dart';
 
 class EditarClienteScreen extends StatefulWidget {
   final Cliente clienteSelecionado;
@@ -17,23 +26,38 @@ class EditarClienteScreen extends StatefulWidget {
 }
 
 class _EditarClienteScreenState extends State<EditarClienteScreen> {
+  final _formKey = GlobalKey<FormState>();
+
   late TextEditingController _nomeController;
   late TextEditingController _celularController;
   late TextEditingController _enderecoController;
+  late TextEditingController _numeroController;
+  late TextEditingController _bairroController;
+  late TextEditingController _cidadeController;
+  late TextEditingController _estadoController;
+  late TextEditingController _cepController;
   late TextEditingController _complementoController;
   late TextEditingController _emailController;
   late TextEditingController _cpfController;
   late TextEditingController _observacaoController;
   late TextEditingController _saldoController;
-  late TextEditingController _idController;
   final TextEditingController _outroCanalController = TextEditingController();
-  late TextEditingController _distanciaController;
-  late TextEditingController _estimativaController;
+  late TextEditingController _aniversarioController;
+  final _numeroFocusNode = FocusNode();
+  final _cepFocusNode = FocusNode();
 
   List<Pet> _pets = [];
-  DateTime? _aniversario;
   bool _aceitaMarketing = false;
-  final List<String> _canais = ['WhatsApp', 'Instagram', 'Ifood', 'Outro canal'];
+  bool _salvando = false;
+  bool _autopreenchendoEndereco = false;
+
+  double? _rangeDistancia;
+  int? _estimativaEntrega;
+  double? _latitude;
+  double? _longitude;
+
+  List<String> _canais = [];
+  bool _canaisCarregados = false;
   String? _canalSelecionado;
 
   @override
@@ -43,195 +67,547 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     _nomeController = TextEditingController(text: cliente.nome);
     _celularController = TextEditingController(text: cliente.celular);
     _enderecoController = TextEditingController(text: cliente.endereco);
+    _numeroController = TextEditingController(text: cliente.numero);
+    _bairroController = TextEditingController(text: cliente.bairro);
+    _cidadeController = TextEditingController(text: cliente.cidade);
+    _estadoController = TextEditingController(text: cliente.estado);
+    _cepController = TextEditingController(text: cliente.cep);
     _complementoController = TextEditingController(text: cliente.complemento);
     _emailController = TextEditingController(text: cliente.email);
     _cpfController = TextEditingController(text: cliente.cpf);
     _observacaoController = TextEditingController(text: cliente.observacao);
-    _saldoController = TextEditingController(text: cliente.saldo.toString());
-    _idController = TextEditingController(text: cliente.idCliente);
-    // _canalOrigemController = TextEditingController(text: cliente.canalOrigem ?? '');
-    _aniversario = cliente.aniversario;
+    _saldoController = TextEditingController(text: ClienteValidators.formatarMoeda(cliente.saldo));
+    _aniversarioController = TextEditingController(text: ClienteValidators.formatarData(cliente.aniversario));
     _aceitaMarketing = cliente.aceitaMarketing ?? false;
     _pets = cliente.pets.toList();
-    _distanciaController = TextEditingController(
-        text: cliente.rangeDistancia != null ? cliente.rangeDistancia!.toString() : '');
-    _estimativaController = TextEditingController(
-        text: cliente.estimativaEntrega != null ? cliente.estimativaEntrega!.toString() : '');
-    if (_canais.contains(cliente.canalOrigem)) {
-      _canalSelecionado = cliente.canalOrigem;
-    } else if (cliente.canalOrigem!.isNotEmpty) {
-      _canalSelecionado = 'Outro canal';
-      _outroCanalController.text = cliente.canalOrigem!;
-    }
-    }
+    _rangeDistancia = cliente.rangeDistancia;
+    _estimativaEntrega = cliente.estimativaEntrega;
+    _latitude = cliente.latitude;
+    _longitude = cliente.longitude;
 
-  void _selecionarAniversario() async {
-    final data = await showDatePicker(
-      context: context,
-      initialDate: _aniversario ?? DateTime(2000, 1, 1),
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
-    );
-    if (data != null) setState(() => _aniversario = data);
+    _numeroFocusNode.addListener(_aoSairDoCampoNumero);
+    _cepFocusNode.addListener(_aoSairDoCampoCep);
+    _carregarCanais();
   }
 
-  void _salvarCliente() {
+  void _aoSairDoCampoNumero() {
+    if (!_numeroFocusNode.hasFocus) {
+      _autopreencherEndereco();
+    }
+  }
+
+  void _aoSairDoCampoCep() {
+    if (!_cepFocusNode.hasFocus) {
+      _autopreencherPorCep();
+    }
+  }
+
+  /// CEP é a fonte mais confiável de endereço no Brasil — mesmo nome de
+  /// rua pode existir em bairros/cidades diferentes, mas o CEP não repete.
+  /// Diferente do preenchimento por rua+número, esse aqui sobrescreve
+  /// rua/bairro/cidade/UF quando encontra o CEP.
+  Future<void> _autopreencherPorCep() async {
+    final cep = _cepController.text.trim();
+    if (ClienteValidators.cep(cep) != null) return;
+
+    setState(() => _autopreenchendoEndereco = true);
+    final encontrado = await CepService.buscarPorCep(cep);
+    if (!mounted) return;
+
+    setState(() {
+      if (encontrado != null) {
+        if (encontrado.rua.isNotEmpty) _enderecoController.text = encontrado.rua;
+        if (encontrado.bairro.isNotEmpty) _bairroController.text = encontrado.bairro;
+        if (encontrado.cidade.isNotEmpty) _cidadeController.text = encontrado.cidade;
+        if (encontrado.estado.isNotEmpty) _estadoController.text = encontrado.estado;
+      }
+      _autopreenchendoEndereco = false;
+    });
+  }
+
+  Future<void> _selecionarNoMapa() async {
+    final posicaoInicial = (_latitude != null && _longitude != null)
+        ? LatLng(_latitude!, _longitude!)
+        : null;
+    final enderecoAtual = DistanciaService.montarEnderecoCliente(
+      endereco: _enderecoController.text.trim(),
+      numero: _numeroController.text.trim(),
+      bairro: _bairroController.text.trim(),
+      cidade: _cidadeController.text.trim(),
+      estado: _estadoController.text.trim(),
+      cep: _cepController.text.trim(),
+    );
+
+    final posicaoEscolhida = await Navigator.push<LatLng>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SelecionarLocalizacaoScreen(
+          posicaoInicial: posicaoInicial,
+          enderecoInicial: enderecoAtual,
+        ),
+      ),
+    );
+    if (posicaoEscolhida == null) return;
+
+    setState(() {
+      _latitude = posicaoEscolhida.latitude;
+      _longitude = posicaoEscolhida.longitude;
+      _autopreenchendoEndereco = true;
+    });
+
+    final encontrado = await DistanciaService.buscarEnderecoPorCoordenadas(
+      latitude: posicaoEscolhida.latitude,
+      longitude: posicaoEscolhida.longitude,
+    );
+    if (!mounted) return;
+
+    setState(() {
+      if ((encontrado?.rua ?? '').isNotEmpty) _enderecoController.text = encontrado!.rua!;
+      if ((encontrado?.numero ?? '').isNotEmpty) _numeroController.text = encontrado!.numero!;
+      if ((encontrado?.bairro ?? '').isNotEmpty) _bairroController.text = encontrado!.bairro!;
+      if ((encontrado?.cidade ?? '').isNotEmpty) _cidadeController.text = encontrado!.cidade!;
+      if ((encontrado?.estado ?? '').isNotEmpty) _estadoController.text = encontrado!.estado!;
+      if ((encontrado?.cep ?? '').isNotEmpty) _cepController.text = encontrado!.cep!;
+      _autopreenchendoEndereco = false;
+    });
+  }
+
+  /// Assim que o usuário sai do campo "Número", busca bairro/cidade/UF/CEP
+  /// automaticamente (Google Geocoding) — só preenche o que ainda estiver
+  /// vazio, nunca sobrescreve algo que o usuário já digitou.
+  Future<void> _autopreencherEndereco() async {
+    final rua = _enderecoController.text.trim();
+    final numero = _numeroController.text.trim();
+    if (rua.isEmpty || numero.isEmpty) return;
+    if (_bairroController.text.isNotEmpty &&
+        _cidadeController.text.isNotEmpty &&
+        _estadoController.text.isNotEmpty &&
+        _cepController.text.isNotEmpty) {
+      return;
+    }
+
+    setState(() => _autopreenchendoEndereco = true);
+    final encontrado = await DistanciaService.buscarEnderecoPorRuaNumero(
+      rua: rua,
+      numero: numero,
+    );
+    if (!mounted) return;
+
+    setState(() {
+      if (_bairroController.text.isEmpty && (encontrado?.bairro ?? '').isNotEmpty) {
+        _bairroController.text = encontrado!.bairro!;
+      }
+      if (_cidadeController.text.isEmpty && (encontrado?.cidade ?? '').isNotEmpty) {
+        _cidadeController.text = encontrado!.cidade!;
+      }
+      if (_estadoController.text.isEmpty && (encontrado?.estado ?? '').isNotEmpty) {
+        _estadoController.text = encontrado!.estado!;
+      }
+      if (_cepController.text.isEmpty && (encontrado?.cep ?? '').isNotEmpty) {
+        _cepController.text = encontrado!.cep!;
+      }
+      _autopreenchendoEndereco = false;
+    });
+  }
+
+  Future<void> _carregarCanais() async {
+    final canais = await carregarCanaisOrigem();
+    if (!mounted) return;
+
+    setState(() {
+      _canais = [...canais, 'Outro canal'];
+      _canaisCarregados = true;
+
+      final cliente = widget.clienteSelecionado;
+      if (_canais.contains(cliente.canalOrigem)) {
+        _canalSelecionado = cliente.canalOrigem;
+      } else if ((cliente.canalOrigem ?? '').isNotEmpty) {
+        _canalSelecionado = 'Outro canal';
+        _outroCanalController.text = cliente.canalOrigem!;
+      }
+    });
+  }
+
+  /// Monta o Cliente atualizado com os dados do formulário + a lista de
+  /// pets atual (que pode já ter sido mexida sem o usuário ter apertado
+  /// "Salvar" ainda — ex: acabou de adicionar um pet).
+  Cliente _montarClienteAtualizado() {
     String canalOrigem;
     if (_canalSelecionado == 'Outro canal') {
       canalOrigem = _outroCanalController.text.trim();
-      if (canalOrigem.isNotEmpty && !_canais.contains(canalOrigem)) {
-        setState(() {
-          _canais.insert(_canais.length - 1, canalOrigem);
-        });
-      }
     } else {
       canalOrigem = _canalSelecionado ?? '';
     }
-    final clienteAtualizado = Cliente(
-      idCliente: _idController.text,
-      nome: _nomeController.text,
-      celular: _celularController.text,
-      email: _emailController.text,
-      endereco: _enderecoController.text,
-      complemento: _complementoController.text,
-      cpf: _cpfController.text,
-      observacao: _observacaoController.text,
-      saldo: double.tryParse(_saldoController.text) ?? 0.0,
+
+    return Cliente(
+      idCliente: widget.clienteSelecionado.idCliente,
+      nome: _nomeController.text.trim(),
+      celular: _celularController.text.trim(),
+      email: _emailController.text.trim(),
+      endereco: _enderecoController.text.trim(),
+      numero: _numeroController.text.trim(),
+      bairro: _bairroController.text.trim(),
+      cidade: _cidadeController.text.trim(),
+      estado: _estadoController.text.trim().toUpperCase(),
+      cep: _cepController.text.trim(),
+      complemento: _complementoController.text.trim(),
+      cpf: _cpfController.text.trim(),
+      observacao: _observacaoController.text.trim(),
+      saldo: ClienteValidators.parseNumero(_saldoController.text) ?? 0.0,
       pets: _pets,
       canalOrigem: canalOrigem,
-      aniversario: _aniversario,
+      aniversario: ClienteValidators.parseData(_aniversarioController.text),
       aceitaMarketing: _aceitaMarketing,
       dataCadastro: widget.clienteSelecionado.dataCadastro,
       quantidadeCompras: widget.clienteSelecionado.quantidadeCompras,
-      rangeDistancia: double.tryParse(_distanciaController.text),
-      estimativaEntrega: int.tryParse(_estimativaController.text),
+      rangeDistancia: _rangeDistancia,
+      estimativaEntrega: _estimativaEntrega,
+      latitude: _latitude,
+      longitude: _longitude,
     );
-
-    Provider.of<ClientProvider>(context, listen: false).atualizarCliente(clienteAtualizado);
-    Navigator.pop(context, clienteAtualizado);
   }
+
+  /// Persiste a lista de pets atual sem sair da tela — usado quando o
+  /// usuário adiciona/edita/remove um pet, pra poder mexer em vários sem
+  /// ser jogado de volta pros detalhes do cliente a cada um.
+  Future<void> _salvarPetsSemFechar() async {
+    final atualizado = _montarClienteAtualizado();
+    await Provider.of<ClientProvider>(context, listen: false).atualizarCliente(atualizado);
+  }
+
+  Future<void> _salvarClienteEFechar() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _salvando = true);
+    try {
+      final empresaId = context.read<AuthProvider>().empresaId;
+
+      if (_canalSelecionado == 'Outro canal') {
+        final novoCanal = _outroCanalController.text.trim();
+        if (novoCanal.isNotEmpty && empresaId != null) {
+          await adicionarCanalOrigem(novoCanal, empresaId);
+        }
+      }
+
+      // Recalcula a rota real (Google Maps) da empresa até o endereço
+      // atual do cliente — o endereço pode ter mudado desde a última vez.
+      // Se tem coordenadas exatas (escolhidas no mapa), usa elas — são
+      // mais precisas que o endereço em texto.
+      final enderecoCliente = (_latitude != null && _longitude != null)
+          ? '$_latitude,$_longitude'
+          : DistanciaService.montarEnderecoCliente(
+              endereco: _enderecoController.text.trim(),
+              numero: _numeroController.text.trim(),
+              bairro: _bairroController.text.trim(),
+              cidade: _cidadeController.text.trim(),
+              estado: _estadoController.text.trim(),
+              cep: _cepController.text.trim(),
+            );
+      if (empresaId != null && enderecoCliente != null) {
+        final enderecoEmpresa = await DistanciaService.buscarEnderecoEmpresa(empresaId);
+        if (enderecoEmpresa != null) {
+          final rota = await DistanciaService.calcularRota(
+            origem: enderecoEmpresa,
+            destino: enderecoCliente,
+          );
+          if (rota != null) {
+            _rangeDistancia = rota.distanciaKm;
+            _estimativaEntrega = rota.duracaoMin;
+          }
+        }
+      }
+
+      final clienteAtualizado = _montarClienteAtualizado();
+      if (!mounted) return;
+      await Provider.of<ClientProvider>(context, listen: false).atualizarCliente(clienteAtualizado);
+      if (!mounted) return;
+      Navigator.pop(context, clienteAtualizado);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar cliente: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
+
   @override
   void dispose() {
+    _nomeController.dispose();
+    _celularController.dispose();
+    _enderecoController.dispose();
+    _numeroController.dispose();
+    _bairroController.dispose();
+    _cidadeController.dispose();
+    _estadoController.dispose();
+    _cepController.dispose();
+    _complementoController.dispose();
+    _emailController.dispose();
+    _cpfController.dispose();
+    _observacaoController.dispose();
+    _saldoController.dispose();
     _outroCanalController.dispose();
-    _distanciaController.dispose();
-    _estimativaController.dispose();
+    _aniversarioController.dispose();
+    _numeroFocusNode.dispose();
+    _cepFocusNode.dispose();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Editar Cliente'),
         actions: [
-          IconButton(icon: Icon(Icons.save), onPressed: _salvarCliente),
+          _salvando
+              ? Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary),
+                  ),
+                )
+              : IconButton(icon: Icon(Icons.save), tooltip: 'Salvar', onPressed: _salvarClienteEFechar),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      body: Form(
+        key: _formKey,
         child: ListView(
+          padding: const EdgeInsets.all(16.0),
           children: [
-            _buildTextField('Nome', _nomeController),
-            _buildTextField('Celular', _celularController),
-            _buildTextField('Endereço', _enderecoController),
-            _buildTextField('Distância (km)', _distanciaController),
-            _buildTextField('Estimativa de entrega (min)', _estimativaController),
-            _buildTextField('Complemento', _complementoController),
-            _buildTextField('Email', _emailController),
-            _buildTextField('CPF', _cpfController),
-            _buildTextField('Observação', _observacaoController),
-            _buildTextField('Saldo', _saldoController),
-            SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              value: _canalSelecionado,
-              items: _canais.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-              onChanged: (valor) {
-                setState(() {
-                  _canalSelecionado = valor;
-                  if (valor != 'Outro canal') _outroCanalController.clear();
-                });
-              },
-              decoration: InputDecoration(labelText: 'Canal de Origem', border: OutlineInputBorder()),
-            ),
-
-            if (_canalSelecionado == 'Outro canal')
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: TextField(
-                  controller: _outroCanalController,
-                  decoration: InputDecoration(labelText: 'Digite o canal', border: OutlineInputBorder()),
+            FormSection(
+              titulo: 'Dados do cliente',
+              children: [
+                _buildTextField('Nome', _nomeController, validator: ClienteValidators.nome),
+                _buildTextField(
+                  'Celular',
+                  _celularController,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [TelefoneInputFormatter()],
+                  validator: ClienteValidators.celular,
                 ),
-              ),
+                _buildTextField('Email', _emailController,
+                    keyboardType: TextInputType.emailAddress, validator: ClienteValidators.email),
+                _buildTextField(
+                  'CPF',
+                  _cpfController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [CpfInputFormatter()],
+                  validator: ClienteValidators.cpf,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
 
-            SizedBox(height: 16),
-            ListTile(
-              title: Text(_aniversario != null
-                  ? 'Aniversário: ${_aniversario!.day}/${_aniversario!.month}/${_aniversario!.year}'
-                  : 'Selecionar aniversário'),
-              trailing: Icon(Icons.calendar_today),
-              onTap: _selecionarAniversario,
-            ),
-            SwitchListTile(
-              title: Text('Aceita receber promoções?'),
-              value: _aceitaMarketing,
-              onChanged: (v) => setState(() => _aceitaMarketing = v),
-            ),
-            SizedBox(height: 20),
-            ElevatedButton.icon(
-              icon: Icon(Icons.pets),
-              label: Text('Adicionar Pet'),
-              onPressed: () async {
-                final pet = await Navigator.push<Pet>(
-                  context,
-                  MaterialPageRoute(builder: (_) => CadastroPetScreen()),
-                );
-                if (pet != null) {
-                  setState(() => _pets.add(pet));
-                  _salvarCliente();
-                }
-              },
-            ),
-            SizedBox(height: 16),
-            Text('Pets cadastrados:', style: TextStyle(fontWeight: FontWeight.bold)),
-            ..._pets.asMap().entries.map((entry) {
-              final i = entry.key;
-              final pet = entry.value;
-              return ListTile(
-                leading: pet.imagemUrl.isNotEmpty
-                    ? Image.network(pet.imagemUrl, width: 40, height: 40, fit: BoxFit.cover)
-                    : Icon(Icons.pets),
-                title: Text(pet.nome),
-                subtitle: Text('${pet.especie} - ${pet.raca}'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+            FormSection(
+              titulo: 'Endereço',
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    IconButton(
-                      icon: Icon(Icons.edit),
-                      onPressed: () async {
-                        final petEditado = await Navigator.push<Pet>(
-                          context,
-                          MaterialPageRoute(builder: (_) => EditarPetScreen(pet: pet)),
-                        );
-                        if (petEditado != null) {
-                          setState(() => _pets[i] = petEditado);
-                          _salvarCliente();
-                        }
-                      },
+                    Expanded(
+                      child: Text(
+                        'Preencha rua e número (ou o CEP) — o resto é buscado automaticamente.',
+                        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                      ),
                     ),
-                    IconButton(
-                      icon: Icon(Icons.delete, color: Colors.red),
-                      onPressed: () {
-                        setState(() => _pets.removeAt(i));
-                        _salvarCliente();
-                      },
+                    TextButton.icon(
+                      onPressed: _selecionarNoMapa,
+                      icon: Icon(Icons.map_outlined, size: 18),
+                      label: Text('Mapa'),
                     ),
                   ],
                 ),
-              );
-            }),
-            SizedBox(height: 20),
+                _buildTextField('Endereço (Rua)', _enderecoController),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 1,
+                      child: _buildTextField(
+                        'Número',
+                        _numeroController,
+                        keyboardType: TextInputType.number,
+                        focusNode: _numeroFocusNode,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(flex: 2, child: _buildTextField('Complemento', _complementoController)),
+                  ],
+                ),
+                if (_autopreenchendoEndereco) const LinearProgressIndicator(),
+                _buildTextField('Bairro', _bairroController),
+                Row(
+                  children: [
+                    Expanded(flex: 3, child: _buildTextField('Cidade', _cidadeController)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 1,
+                      child: _buildTextField(
+                        'UF',
+                        _estadoController,
+                        textCapitalization: TextCapitalization.characters,
+                        maxLength: 2,
+                        validator: ClienteValidators.estado,
+                      ),
+                    ),
+                  ],
+                ),
+                _buildTextField(
+                  'CEP',
+                  _cepController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [CepInputFormatter()],
+                  validator: ClienteValidators.cep,
+                  focusNode: _cepFocusNode,
+                ),
+                Text(
+                  _rangeDistancia != null && _estimativaEntrega != null
+                      ? 'Distância: ${_rangeDistancia!.toStringAsFixed(1)} km • '
+                          'Tempo estimado: $_estimativaEntrega min'
+                      : 'Distância e tempo de entrega são recalculados automaticamente '
+                          'pela rota até esse endereço ao salvar.',
+                  style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            FormSection(
+              titulo: 'Informações adicionais',
+              children: [
+                _buildTextField('Observação', _observacaoController, maxLines: 3),
+                _buildTextField(
+                  'Saldo (R\$)',
+                  _saldoController,
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [MoedaInputFormatter()],
+                  validator: ClienteValidators.saldo,
+                ),
+                if (!_canaisCarregados)
+                  const Center(child: CircularProgressIndicator())
+                else
+                  DropdownButtonFormField<String>(
+                    value: _canalSelecionado,
+                    items: _canais.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (valor) {
+                      setState(() {
+                        _canalSelecionado = valor;
+                        if (valor != 'Outro canal') _outroCanalController.clear();
+                      });
+                    },
+                    decoration: const InputDecoration(labelText: 'Canal de Origem'),
+                  ),
+                if (_canalSelecionado == 'Outro canal')
+                  TextFormField(
+                    controller: _outroCanalController,
+                    decoration: const InputDecoration(labelText: 'Digite o canal'),
+                  ),
+                _buildTextField(
+                  'Aniversário (DD/MM/AAAA) (Opcional)',
+                  _aniversarioController,
+                  keyboardType: TextInputType.datetime,
+                  inputFormatters: [DataInputFormatter()],
+                  validator: ClienteValidators.data,
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('Aceita receber promoções?'),
+                  value: _aceitaMarketing,
+                  onChanged: (v) => setState(() => _aceitaMarketing = v),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            FormSection(
+              titulo: 'Pets',
+              children: [
+                OutlinedButton.icon(
+                  icon: Icon(Icons.pets),
+                  label: Text('Adicionar Pet'),
+                  onPressed: () async {
+                    final pet = await Navigator.push<Pet>(
+                      context,
+                      MaterialPageRoute(builder: (_) => CadastroPetScreen()),
+                    );
+                    if (pet != null) {
+                      setState(() => _pets.add(pet));
+                      await _salvarPetsSemFechar();
+                    }
+                  },
+                ),
+                if (_pets.isEmpty)
+                  Text('Nenhum pet cadastrado ainda.', style: TextStyle(color: colorScheme.onSurfaceVariant))
+                else
+                  Column(
+                    children: _pets.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final pet = entry.value;
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: pet.imagemUrl.isNotEmpty
+                              ? Image.network(pet.imagemUrl, fit: BoxFit.cover)
+                              : Container(
+                                  color: colorScheme.surfaceContainerHighest,
+                                  child: Icon(Icons.pets, color: colorScheme.onSurfaceVariant),
+                                ),
+                        ),
+                      ),
+                      title: Text(pet.nome),
+                      subtitle: Text('${pet.especie} - ${pet.raca}'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined),
+                            tooltip: 'Editar',
+                            onPressed: () async {
+                              final petEditado = await Navigator.push<Pet>(
+                                context,
+                                MaterialPageRoute(builder: (_) => EditarPetScreen(pet: pet)),
+                              );
+                              if (petEditado != null) {
+                                setState(() => _pets[i] = petEditado);
+                                await _salvarPetsSemFechar();
+                              }
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            tooltip: 'Remover',
+                            onPressed: () async {
+                              setState(() => _pets.removeAt(i));
+                              await _salvarPetsSemFechar();
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList()),
+              ],
+            ),
+            const SizedBox(height: 24),
+
             ElevatedButton(
-              onPressed: _salvarCliente,
-              child: Text('Salvar Cliente'),
+              onPressed: _salvando ? null : _salvarClienteEFechar,
+              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+              child: _salvando
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.onPrimary),
+                    )
+                  : Text('Salvar Cliente'),
             ),
           ],
         ),
@@ -239,16 +615,27 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: TextField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          border: OutlineInputBorder(),
-        ),
-      ),
+  Widget _buildTextField(
+    String label,
+    TextEditingController controller, {
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String?)? validator,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+    int? maxLines = 1,
+    int? maxLength,
+    FocusNode? focusNode,
+  }) {
+    return TextFormField(
+      controller: controller,
+      focusNode: focusNode,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      validator: validator,
+      textCapitalization: textCapitalization,
+      maxLines: maxLines,
+      maxLength: maxLength,
+      decoration: InputDecoration(labelText: label, counterText: ''),
     );
   }
 }

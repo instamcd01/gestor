@@ -1,8 +1,38 @@
 import 'package:gestor/models/cliente.dart';
 import 'package:gestor/models/produto.dart';
 
+/// Estados possíveis de um pedido/venda ao longo do ciclo de vida — a
+/// coluna `pedidos.status` no banco é texto livre (sem CHECK constraint),
+/// então esses valores são a convenção seguida pelo app inteiro.
+class StatusPedido {
+  static const pendente = 'pendente';
+  static const preparando = 'preparando';
+  static const saiuParaEntrega = 'saiu_para_entrega';
+  static const entregue = 'entregue';
+  static const cancelado = 'cancelado';
+
+  static const emAndamento = [pendente, preparando, saiuParaEntrega];
+
+  static String rotulo(String status) {
+    switch (status) {
+      case pendente:
+        return 'Pendente';
+      case preparando:
+        return 'Em preparo';
+      case saiuParaEntrega:
+        return 'Saiu para entrega';
+      case entregue:
+        return 'Entregue';
+      case cancelado:
+        return 'Cancelada';
+      default:
+        return status;
+    }
+  }
+}
+
 class Venda {
-  final String idVenda;
+  final String? idVenda;
   final Cliente cliente;
   final DateTime dataVenda;
 
@@ -24,9 +54,11 @@ class Venda {
   final double lucroTotal;        // lucro líquido
   final String observacao;        // observações da venda
   final Map<String, double>? pagamentosDetalhados;
+  final String status;            // ver StatusPedido (espelha pedidos.status)
+  final String canalVenda;        // 'loja_fisica', 'whatsapp', 'ifood', 'site', etc.
 
   Venda({
-    required this.idVenda,
+    this.idVenda,
     required this.cliente,
     required this.dataVenda,
     required this.subtotal,
@@ -44,7 +76,30 @@ class Venda {
     required this.lucroTotal,
     this.observacao = '',
     this.pagamentosDetalhados,
+    this.status = StatusPedido.entregue,
+    this.canalVenda = 'loja_fisica',
   });
+
+  bool get cancelada => status == StatusPedido.cancelado;
+  bool get finalizada => status == StatusPedido.entregue;
+  bool get emAndamento => StatusPedido.emAndamento.contains(status);
+  bool get temEntrega => valorEntrega > 0 || entregaSelecionada.isNotEmpty;
+
+  /// Próximo status no ciclo de vida (pula "saiu para entrega" quando o
+  /// pedido é retirada/balcão, sem entrega). Retorna null se já estiver
+  /// num estado final (entregue/cancelado).
+  String? get proximoStatus {
+    switch (status) {
+      case StatusPedido.pendente:
+        return StatusPedido.preparando;
+      case StatusPedido.preparando:
+        return temEntrega ? StatusPedido.saiuParaEntrega : StatusPedido.entregue;
+      case StatusPedido.saiuParaEntrega:
+        return StatusPedido.entregue;
+      default:
+        return null;
+    }
+  }
 }
 
 
@@ -53,22 +108,31 @@ class ItemVenda {
   final int quantidade;
   final double precoUnitario; // preço de venda aplicado no momento da venda
 
+  // Custo do produto NO MOMENTO da venda (vem de itens_pedido.custo_unitario
+  // ao reidratar do banco). Se não informado, cai pro custo atual do produto
+  // — correto só enquanto a venda está sendo montada, nunca pra uma venda
+  // já registrada, cujo custo histórico pode diferir do custo atual.
+  final double? _custoUnitarioNoMomento;
+
   ItemVenda({
     required this.produto,
     required this.quantidade,
     required this.precoUnitario,
-  });
+    double? custoUnitario,
+  }) : _custoUnitarioNoMomento = custoUnitario;
 
   // --- Getters calculados ---
   double get precoTotal => precoUnitario * quantidade;
 
-  double get custoUnitario => produto.custo;
+  double get custoUnitario => _custoUnitarioNoMomento ?? produto.custo;
 
-  double get custoTotal => produto.custo * quantidade;
+  double get custoTotal => custoUnitario * quantidade;
 
-  double get lucroUnitario => precoUnitario - produto.custo;
+  double get lucroUnitario => precoUnitario - custoUnitario;
 
-  double get lucroTotal => (precoUnitario - produto.custo) * quantidade;
+  double get lucroTotal => (precoUnitario - custoUnitario) * quantidade;
+
+  double get margemPercentual => precoUnitario > 0 ? (lucroUnitario / precoUnitario * 100) : 0.0;
 }
 
 

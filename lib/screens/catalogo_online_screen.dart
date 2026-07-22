@@ -1,284 +1,292 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../config/supabase_config.dart';
+import '../providers/auth_provider.dart';
+import '../providers/produto_provider.dart';
+import '../utils/formatadores_input.dart';
+import '../widgets/form_section.dart';
+
+/// Configuração do catálogo/site público (Configurações > Catálogo Online).
+/// O site em si ainda não existe — vai ser um projeto separado depois —
+/// mas os dados ficam prontos aqui: slug da loja, se o catálogo está
+/// publicado, se aceita pedido online, redes sociais e info extra que a
+/// página pública vai exibir.
 class CatalogoOnlineScreen extends StatefulWidget {
+  const CatalogoOnlineScreen({super.key});
+
   @override
-  _CatalogoOnlineScreenState createState() => _CatalogoOnlineScreenState();
+  State<CatalogoOnlineScreen> createState() => _CatalogoOnlineScreenState();
 }
 
 class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
-  String lojaNome = 'Nome da Loja';
-  String lojaLink = 'https://www.exemplo.com';
-  String catalogoVersao = 'Clássico';
-  String corPrincipal = 'Azul';
-  bool pedidosOnline = false;
-  String whatsapp = '';
-  String instagram = '';
-  String facebook = '';
-  String email = '';
-  String informacoesExtras = '';
-  String cpfCnpj = '';
-  String razaoSocial = '';
+  final _formKey = GlobalKey<FormState>();
+  final _slugController = TextEditingController();
+  final _whatsappController = TextEditingController();
+  final _instagramController = TextEditingController();
+  final _facebookController = TextEditingController();
+  final _infoExtraController = TextEditingController();
+
+  bool _catalogoAtivo = false;
+  bool _aceitaPedidosOnline = false;
+  String _modelo = 'classico';
+
+  bool _carregando = true;
+  bool _salvando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarDados();
+  }
+
+  @override
+  void dispose() {
+    _slugController.dispose();
+    _whatsappController.dispose();
+    _instagramController.dispose();
+    _facebookController.dispose();
+    _infoExtraController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _carregarDados() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) {
+      setState(() => _carregando = false);
+      return;
+    }
+
+    try {
+      final data = await supabase
+          .from('empresas')
+          .select('catalogo_slug, catalogo_ativo, aceita_pedidos_online, catalogo_modelo, '
+              'whatsapp_catalogo, instagram, facebook, catalogo_info_extra')
+          .eq('id', empresaId)
+          .single();
+
+      _slugController.text = data['catalogo_slug']?.toString() ?? '';
+      _whatsappController.text = data['whatsapp_catalogo']?.toString() ?? '';
+      _instagramController.text = data['instagram']?.toString() ?? '';
+      _facebookController.text = data['facebook']?.toString() ?? '';
+      _infoExtraController.text = data['catalogo_info_extra']?.toString() ?? '';
+      _catalogoAtivo = data['catalogo_ativo'] as bool? ?? false;
+      _aceitaPedidosOnline = data['aceita_pedidos_online'] as bool? ?? false;
+      _modelo = data['catalogo_modelo']?.toString() ?? 'classico';
+
+      if (mounted) {
+        await context.read<ProdutoProvider>().carregarProdutos();
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar configuração do catálogo: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao carregar configuração: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _carregando = false);
+    }
+  }
+
+  String _sanitizarSlug(String texto) {
+    final semAcento = texto
+        .toLowerCase()
+        .replaceAll(RegExp(r'[áàâã]'), 'a')
+        .replaceAll(RegExp(r'[éê]'), 'e')
+        .replaceAll('í', 'i')
+        .replaceAll(RegExp(r'[óôõ]'), 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ç', 'c');
+    return semAcento.replaceAll(RegExp(r'\s+'), '-').replaceAll(RegExp(r'[^a-z0-9\-]'), '');
+  }
+
+  Future<void> _salvar() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+
+    setState(() => _salvando = true);
+    try {
+      await supabase.from('empresas').update({
+        'catalogo_slug': _slugController.text.trim().isEmpty ? null : _slugController.text.trim(),
+        'catalogo_ativo': _catalogoAtivo,
+        'aceita_pedidos_online': _aceitaPedidosOnline,
+        'catalogo_modelo': _modelo,
+        'whatsapp_catalogo': _whatsappController.text.trim(),
+        'instagram': _instagramController.text.trim(),
+        'facebook': _facebookController.text.trim(),
+        'catalogo_info_extra': _infoExtraController.text.trim(),
+      }).eq('id', empresaId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Configuração do catálogo salva com sucesso!')),
+        );
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        final mensagem = e.code == '23505'
+            ? 'Esse link já está em uso por outra loja. Escolha outro.'
+            : 'Erro ao salvar: ${e.message}';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensagem)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final produtoProvider = context.watch<ProdutoProvider>();
+    final produtosNoCatalogo =
+        produtoProvider.produtos.where((p) => p.exibirNoCatalogo && p.ativo).length;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Catálogo Online'),
+        title: const Text('Catálogo Online'),
+        actions: [
+          _salvando
+              ? Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary, strokeWidth: 2),
+                  ),
+                )
+              : IconButton(icon: const Icon(Icons.save), onPressed: _carregando ? null : _salvar),
+        ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ListView(
-          children: <Widget>[
-            // Publicar Catálogo
-            ElevatedButton(
-              onPressed: () {
-                // Lógica para publicar o catálogo online
-                print('Publicando catálogo online...');
-              },
-              child: Text('Publicar Catálogo Online'),
-            ),
-            SizedBox(height: 16),
-            // Endereço do site
-            ListTile(
-              title: Text('Endereço do Site'),
-              subtitle: Text(lojaLink),
-              trailing: IconButton(
-                icon: Icon(Icons.edit),
-                onPressed: () {
-                  // Redireciona para a tela de edição de nome da loja e link
-                  _editarEndereco();
-                },
+      body: _carregando
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue[100]!),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'O site público ainda não existe — essa tela só guarda a configuração '
+                              'pra quando ele for lançado. $produtosNoCatalogo produto${produtosNoCatalogo != 1 ? 's' : ''} '
+                              'já ${produtosNoCatalogo != 1 ? 'estão marcados' : 'está marcado'} pra aparecer no catálogo '
+                              '(campo "Exibir no Catálogo" no cadastro de produto).',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    FormSection(
+                      titulo: 'Visibilidade',
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Catálogo publicado'),
+                          subtitle: const Text('Quando o site existir, controla se ele fica visível ao público'),
+                          value: _catalogoAtivo,
+                          onChanged: (v) => setState(() => _catalogoAtivo = v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Aceitar pedidos online'),
+                          subtitle: const Text('Desligado = catálogo é só vitrine, cliente compra por WhatsApp/telefone'),
+                          value: _aceitaPedidosOnline,
+                          onChanged: (v) => setState(() => _aceitaPedidosOnline = v),
+                        ),
+                        TextFormField(
+                          controller: _slugController,
+                          decoration: const InputDecoration(
+                            labelText: 'Link da loja',
+                            prefixText: 'suaLoja.com/',
+                            helperText: 'Só letras minúsculas, números e hífen',
+                          ),
+                          onChanged: (texto) {
+                            final sanitizado = _sanitizarSlug(texto);
+                            if (sanitizado != texto) {
+                              _slugController.value = TextEditingValue(
+                                text: sanitizado,
+                                selection: TextSelection.collapsed(offset: sanitizado.length),
+                              );
+                            }
+                          },
+                          inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\s'))],
+                        ),
+                        DropdownButtonFormField<String>(
+                          initialValue: _modelo,
+                          decoration: const InputDecoration(labelText: 'Modelo do catálogo'),
+                          items: const [
+                            DropdownMenuItem(value: 'classico', child: Text('Clássico')),
+                            DropdownMenuItem(value: 'moderno', child: Text('Moderno')),
+                          ],
+                          onChanged: (v) => setState(() => _modelo = v!),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    FormSection(
+                      titulo: 'Redes sociais e contato',
+                      children: [
+                        TextFormField(
+                          controller: _whatsappController,
+                          decoration: const InputDecoration(
+                            labelText: 'WhatsApp do catálogo (Opcional)',
+                            helperText: 'Se vazio, o site futuro pode usar o telefone de Dados da Loja',
+                          ),
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [TelefoneInputFormatter()],
+                        ),
+                        TextFormField(
+                          controller: _instagramController,
+                          decoration: const InputDecoration(labelText: 'Instagram (Opcional)', prefixText: '@'),
+                        ),
+                        TextFormField(
+                          controller: _facebookController,
+                          decoration: const InputDecoration(labelText: 'Facebook (Opcional)'),
+                        ),
+                        TextFormField(
+                          controller: _infoExtraController,
+                          decoration: const InputDecoration(
+                            labelText: 'Informações extras (Opcional)',
+                            helperText: 'Ex: horário de funcionamento, política de trocas',
+                          ),
+                          maxLines: 3,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: _salvando ? null : _salvar,
+                      style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+                      child: const Text('Salvar'),
+                    ),
+                  ],
+                ),
               ),
             ),
-            SizedBox(height: 16),
-            // Versão do catálogo
-            ListTile(
-              title: Text('Versão do Catálogo'),
-              subtitle: Text(catalogoVersao),
-              trailing: IconButton(
-                icon: Icon(Icons.edit),
-                onPressed: () {
-                  // Redireciona para a tela de edição da versão do catálogo
-                  _editarVersaoCatalogo();
-                },
-              ),
-            ),
-            SizedBox(height: 16),
-            // Dados da Loja
-            ListTile(
-              title: Text('Dados da Loja'),
-              trailing: IconButton(
-                icon: Icon(Icons.edit),
-                onPressed: () {
-                  // Redireciona para a tela de edição dos dados da loja
-                  // _editarDadosLoja();
-                },
-              ),
-            ),
-            SizedBox(height: 16),
-            // Identificação
-            ListTile(
-              title: Text('Identificação'),
-              trailing: IconButton(
-                icon: Icon(Icons.edit),
-                onPressed: () {
-                  // Redireciona para a tela de edição de CPF ou CNPJ
-                  // _editarIdentificacao();
-                },
-              ),
-            ),
-            SizedBox(height: 16),
-            // Opções de Exibição
-            ListTile(
-              title: Text('Opções de Exibição'),
-              trailing: IconButton(
-                icon: Icon(Icons.edit),
-                onPressed: () {
-                  // Redireciona para a tela de edição das opções de exibição
-                  // _editarExibicao();
-                },
-              ),
-            ),
-            SizedBox(height: 16),
-            // Pedidos
-            ListTile(
-              title: Text('Pedidos'),
-              trailing: IconButton(
-                icon: Icon(Icons.edit),
-                onPressed: () {
-                  // Redireciona para a tela de edição das configurações de pedidos
-                  // _editarPedidos();
-                },
-              ),
-            ),
-            SizedBox(height: 16),
-            // Redes Sociais e Outros
-            ListTile(
-              title: Text('Redes Sociais e Outros'),
-              trailing: IconButton(
-                icon: Icon(Icons.edit),
-                onPressed: () {
-                  // Redireciona para a tela de edição de redes sociais e outras informações
-                  // _editarRedesSociais();
-                },
-              ),
-            ),
-            SizedBox(height: 16),
-            // Botão para abrir catálogo
-            ElevatedButton(
-              onPressed: () {
-                // Lógica para abrir o catálogo online
-                print('Abrindo catálogo...');
-              },
-              child: Text('Abrir Catálogo'),
-            ),
-            SizedBox(height: 16),
-            // Botão para compartilhar catálogo
-            ElevatedButton(
-              onPressed: () {
-                // Lógica para compartilhar o catálogo
-                print('Compartilhando catálogo...');
-              },
-              child: Text('Compartilhar Catálogo'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _editarEndereco() {
-    // Redirecionar para a tela de edição do nome da loja e link
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => EditarEnderecoScreen(lojaNome, lojaLink)),
-    );
-  }
-
-  void _editarVersaoCatalogo() {
-    // Redirecionar para a tela de edição da versão do catálogo
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => EditarVersaoCatalogoScreen()),
-    );
-  }
-
-  // void _editarDadosLoja() {
-  //   // Redirecionar para a tela de edição dos dados da loja
-  //   Navigator.push(
-  //     context,
-  //     MaterialPageRoute(builder: (context) => EditarDadosLojaScreen()),
-  //   );
-  // }
-  //
-  // void _editarIdentificacao() {
-  //   // Redirecionar para a tela de edição de CPF ou CNPJ
-  //   Navigator.push(
-  //     context,
-  //     MaterialPageRoute(builder: (context) => EditarIdentificacaoScreen()),
-  //   );
-  // }
-  //
-  // void _editarExibicao() {
-  //   // Redirecionar para a tela de edição das opções de exibição
-  //   Navigator.push(
-  //     context,
-  //     MaterialPageRoute(builder: (context) => EditarExibicaoScreen()),
-  //   );
-  // }
-  //
-  // void _editarPedidos() {
-  //   // Redirecionar para a tela de edição de pedidos
-  //   Navigator.push(
-  //     context,
-  //     MaterialPageRoute(builder: (context) => EditarPedidosScreen()),
-  //   );
-  // }
-  //
-  // void _editarRedesSociais() {
-  //   // Redirecionar para a tela de edição de redes sociais
-  //   Navigator.push(
-  //     context,
-  //     MaterialPageRoute(builder: (context) => EditarRedesSociaisScreen()),
-  //   );
-  // }
-}
-
-class EditarEnderecoScreen extends StatelessWidget {
-  final String nomeLoja;
-  final String linkLoja;
-
-  EditarEnderecoScreen(this.nomeLoja, this.linkLoja);
-
-  @override
-  Widget build(BuildContext context) {
-    TextEditingController nomeController = TextEditingController(text: nomeLoja);
-    TextEditingController linkController = TextEditingController(text: linkLoja);
-
-    return Scaffold(
-      appBar: AppBar(title: Text('Editar Endereço')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: nomeController,
-              decoration: InputDecoration(labelText: 'Nome da Loja'),
-            ),
-            TextField(
-              controller: linkController,
-              decoration: InputDecoration(labelText: 'Link da Loja'),
-            ),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                // Lógica para salvar alterações
-                print('Salvando alterações de endereço...');
-              },
-              child: Text('Salvar'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Exemplo de outras telas de edição que você pode criar de forma similar
-
-class EditarVersaoCatalogoScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Editar Versão do Catálogo')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Text('Escolha a versão do catálogo:'),
-            RadioListTile<String>(
-              title: Text('Clássico'),
-              value: 'Clássico',
-              groupValue: 'Clássico',
-              onChanged: (value) {},
-            ),
-            RadioListTile<String>(
-              title: Text('Novo'),
-              value: 'Novo',
-              groupValue: 'Clássico',
-              onChanged: (value) {},
-            ),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                // Lógica para salvar as alterações
-                print('Salvando versão do catálogo...');
-              },
-              child: Text('Salvar'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

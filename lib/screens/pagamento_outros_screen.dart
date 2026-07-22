@@ -1,194 +1,9 @@
-// import 'package:flutter/material.dart';
-// import '../models/cliente.dart';
-// import '../models/produto.dart';
-// import 'conclusao_venda_screen.dart';
-//
-// class PagamentoOutrosScreen extends StatefulWidget {
-//   final double valorTotal;
-//   final List<Map<String, dynamic>> carrinho;
-//   final Cliente cliente;
-//   final double desconto;
-//   final double valorEntrega;
-//   final String entregaSelecionada;
-//   final double saldoUsado;
-//
-//   PagamentoOutrosScreen({
-//     required this.valorTotal,
-//     required this.carrinho,
-//     required this.cliente,
-//     required this.desconto,
-//     required this.valorEntrega,
-//     required this.entregaSelecionada,
-//     this.saldoUsado = 0.0,
-//   });
-//
-//   @override
-//   _PagamentoOutrosScreenState createState() => _PagamentoOutrosScreenState();
-// }
-//
-// class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
-//   Map<String, double> pagamentos = {}; // chave: método, valor: quanto pagar
-//   double totalPago = 0.0;
-//
-//   final TextEditingController _valorController = TextEditingController();
-//   String metodoSelecionado = 'Dinheiro';
-//
-//   final List<String> metodosDisponiveis = [
-//     'Dinheiro',
-//     'Cartão de Débito',
-//     'Cartão de Crédito',
-//     'Pix',
-//     'Link de Pagamento',
-//     'Saldo Cliente',
-//   ];
-//
-//   double get valorRestante {
-//     double restante = widget.valorTotal - totalPago;
-//     print("🔍 [LOG] Cálculo valorRestante -> valorTotal: ${widget.valorTotal}, totalPago: $totalPago, restante: $restante");
-//     return restante < 0 ? 0.0 : restante;
-//   }
-//
-//   void adicionarPagamento() {
-//     final valor = double.tryParse(_valorController.text) ?? 0.0;
-//     print("🔍 [LOG] Tentando adicionar pagamento -> método: $metodoSelecionado, valor digitado: $valor");
-//
-//     if (valor <= 0) {
-//       print("⚠️ [LOG] Valor inválido (<=0), não será adicionado.");
-//       return;
-//     }
-//     if (valor > valorRestante) {
-//       print("⚠️ [LOG] Valor excede restante. valor: $valor, restante: $valorRestante");
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text('Valor excede o restante a pagar.')),
-//       );
-//       return;
-//     }
-//
-//     setState(() {
-//       pagamentos[metodoSelecionado] = (pagamentos[metodoSelecionado] ?? 0.0) + valor;
-//       totalPago += valor;
-//       print("✅ [LOG] Pagamento adicionado -> $metodoSelecionado: $valor | TotalPago atualizado: $totalPago");
-//       print("📊 [LOG] Lista de pagamentos: $pagamentos");
-//       _valorController.clear();
-//     });
-//   }
-//
-//   void removerPagamento(String metodo) {
-//     print("🔍 [LOG] Removendo pagamento -> método: $metodo, valor: ${pagamentos[metodo]}");
-//     setState(() {
-//       totalPago -= pagamentos[metodo]!;
-//       pagamentos.remove(metodo);
-//       print("✅ [LOG] Pagamento removido. TotalPago atualizado: $totalPago");
-//       print("📊 [LOG] Lista de pagamentos: $pagamentos");
-//     });
-//   }
-//
-//   void finalizarPagamento() {
-//     print("🔍 [LOG] Finalizando pagamento...");
-//     print("➡️ valorTotal: ${widget.valorTotal}, totalPago: $totalPago, saldoUsado: ${widget.saldoUsado}, desconto: ${widget.desconto}, entrega: ${widget.valorEntrega}");
-//
-//     if (totalPago < widget.valorTotal) {
-//       print("❌ [LOG] Pagamento incompleto! totalPago: $totalPago, necessário: ${widget.valorTotal}");
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text('Pagamento incompleto.')),
-//       );
-//       return;
-//     }
-//
-//     print("✅ [LOG] Pagamento concluído! Redirecionando para ConclusaoVendaScreen...");
-//     Navigator.pushReplacement(
-//       context,
-//       MaterialPageRoute(
-//         builder: (_) => ConclusaoVendaScreen(
-//           valorTotal: widget.valorTotal,
-//           carrinho: widget.carrinho,
-//           cliente: widget.cliente,
-//           metodoPagamento: 'Outros', // indicando pagamento dividido
-//           desconto: widget.desconto,
-//           valorEntrega: widget.valorEntrega,
-//           entregaSelecionada: widget.entregaSelecionada,
-//           saldoUsado: widget.saldoUsado,
-//           pagamentosDetalhados: pagamentos,
-//         ),
-//       ),
-//     );
-//   }
-//
-//   @override
-//   void dispose() {
-//     _valorController.dispose();
-//     super.dispose();
-//   }
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     print("🔍 [LOG] Build chamado -> valorTotal: ${widget.valorTotal}, desconto: ${widget.desconto}, entrega: ${widget.valorEntrega}, saldoUsado: ${widget.saldoUsado}");
-//     return Scaffold(
-//       appBar: AppBar(title: Text('Pagamento Outros')),
-//       body: Padding(
-//         padding: const EdgeInsets.all(16.0),
-//         child: Column(
-//           crossAxisAlignment: CrossAxisAlignment.start,
-//           children: [
-//             Text('Cliente: ${widget.cliente.nome}', style: TextStyle(fontSize: 18)),
-//             SizedBox(height: 10),
-//             Text('Valor restante a pagar: R\$ ${valorRestante.toStringAsFixed(2)}',
-//                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-//             SizedBox(height: 20),
-//
-//             DropdownButtonFormField<String>(
-//               value: metodoSelecionado,
-//               items: metodosDisponiveis
-//                   .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-//                   .toList(),
-//               onChanged: (valor) => setState(() => metodoSelecionado = valor!),
-//               decoration: InputDecoration(labelText: 'Selecionar método', border: OutlineInputBorder()),
-//             ),
-//             SizedBox(height: 8),
-//             Row(
-//               children: [
-//                 Expanded(
-//                   child: TextField(
-//                     controller: _valorController,
-//                     keyboardType: TextInputType.numberWithOptions(decimal: true),
-//                     decoration: InputDecoration(
-//                       labelText: 'Valor a pagar',
-//                       border: OutlineInputBorder(),
-//                     ),
-//                   ),
-//                 ),
-//                 SizedBox(width: 10),
-//                 ElevatedButton(onPressed: adicionarPagamento, child: Text('Adicionar')),
-//               ],
-//             ),
-//             SizedBox(height: 20),
-//             Text('Pagamentos adicionados:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-//             ...pagamentos.entries.map((e) {
-//               return ListTile(
-//                 title: Text('${e.key}: R\$ ${e.value.toStringAsFixed(2)}'),
-//                 trailing: IconButton(
-//                   icon: Icon(Icons.delete, color: Colors.red),
-//                   onPressed: () => removerPagamento(e.key),
-//                 ),
-//               );
-//             }).toList(),
-//             Spacer(),
-//             Center(
-//               child: ElevatedButton(
-//                 onPressed: valorRestante == 0 ? finalizarPagamento : null,
-//                 child: Text('Finalizar Pagamento'),
-//                 style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50)),
-//               ),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-// }
-
 import 'package:flutter/material.dart';
 import '../models/cliente.dart';
+import '../utils/cliente_validators.dart';
+import '../utils/formatadores_input.dart';
+import '../widgets/itens_compra_card.dart';
+import '../widgets/resumo_pagamento_card.dart';
 import 'conclusao_venda_screen.dart';
 
 class PagamentoOutrosScreen extends StatefulWidget {
@@ -240,9 +55,35 @@ class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
     return restante < 0 ? 0.0 : restante;
   }
 
+  /// Quanto do saldo do cliente ainda pode ser usado — o total do cliente
+  /// menos o que já foi aplicado na tela anterior (widget.saldoUsado) e
+  /// menos o que já foi lançado como "Saldo Cliente" nesta divisão.
+  double get saldoClienteDisponivel {
+    final jaUsado = widget.saldoUsado + (pagamentos['Saldo Cliente'] ?? 0.0);
+    final disponivel = arredondar(widget.cliente.saldo - jaUsado);
+    return disponivel < 0 ? 0.0 : disponivel;
+  }
+
+  double get _limiteParaMetodoSelecionado {
+    if (metodoSelecionado == 'Saldo Cliente') {
+      return saldoClienteDisponivel < valorRestante ? saldoClienteDisponivel : valorRestante;
+    }
+    return valorRestante;
+  }
+
+  void preencherValorRestante() {
+    _valorController.text = ClienteValidators.formatarMoeda(_limiteParaMetodoSelecionado);
+  }
+
   void adicionarPagamento() {
-    final valor = double.tryParse(_valorController.text) ?? 0.0;
+    final valor = ClienteValidators.parseNumero(_valorController.text) ?? 0.0;
     if (valor <= 0) return;
+    if (metodoSelecionado == 'Saldo Cliente' && valor > saldoClienteDisponivel) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('O cliente só tem R\$ ${saldoClienteDisponivel.toStringAsFixed(2)} de saldo.')),
+      );
+      return;
+    }
     if (valor > valorRestante) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Valor excede o restante a pagar.')),
@@ -255,9 +96,6 @@ class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
       totalPago = arredondar(totalPago + valor);
       _valorController.clear();
     });
-
-    print("🔍 [LOG] Pagamento adicionado -> $metodoSelecionado: R\$ $valor");
-    print("🔍 [LOG] TotalPago: $totalPago / ValorTotal: ${widget.valorTotal}");
   }
 
   void removerPagamento(String metodo) {
@@ -265,20 +103,21 @@ class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
       totalPago = arredondar(totalPago - pagamentos[metodo]!);
       pagamentos.remove(metodo);
     });
-
-    print("🔍 [LOG] Pagamento removido -> $metodo");
-    print("🔍 [LOG] TotalPago: $totalPago / ValorTotal: ${widget.valorTotal}");
   }
 
   void finalizarPagamento() {
-    print("🔍 [LOG] Finalizar -> TotalPago: $totalPago | ValorTotal: ${widget.valorTotal}");
-
     if (arredondar(totalPago) < arredondar(widget.valorTotal)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Pagamento incompleto.')),
       );
       return;
     }
+
+    // Soma o saldo já aplicado na tela anterior com o que foi lançado aqui
+    // como "Saldo Cliente" — os dois são débitos reais no saldo do cliente
+    // e precisam ser refletidos juntos em Venda.saldoUsado, senão a parte
+    // lançada aqui nunca é debitada de fato no banco.
+    final saldoUsadoTotal = arredondar(widget.saldoUsado + (pagamentos['Saldo Cliente'] ?? 0.0));
 
     Navigator.pushReplacement(
       context,
@@ -291,7 +130,7 @@ class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
           desconto: widget.desconto,
           valorEntrega: widget.valorEntrega,
           entregaSelecionada: widget.entregaSelecionada,
-          saldoUsado: widget.saldoUsado,
+          saldoUsado: saldoUsadoTotal,
           pagamentosDetalhados: pagamentos,
         ),
       ),
@@ -306,75 +145,152 @@ class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    print("🔍 [LOG] ValorTotal recebido na tela: ${widget.valorTotal}");
+    final subtotal = ResumoPagamentoCard.calcularSubtotal(widget.carrinho);
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Pagamento Outros')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Cliente: ${widget.cliente.nome}', style: TextStyle(fontSize: 18)),
-            SizedBox(height: 10),
-            Text(
-              'Valor restante a pagar: R\$ ${valorRestante.toStringAsFixed(2)}',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 20),
-
-            DropdownButtonFormField<String>(
-              value: metodoSelecionado,
-              items: metodosDisponiveis
-                  .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                  .toList(),
-              onChanged: (valor) => setState(() => metodoSelecionado = valor!),
-              decoration: InputDecoration(
-                labelText: 'Selecionar método',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            SizedBox(height: 8),
-            Row(
+      appBar: AppBar(title: Text('Pagamento Dividido')),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16.0),
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _valorController,
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                      labelText: 'Valor a pagar',
-                      border: OutlineInputBorder(),
+                Text('Cliente: ${widget.cliente.nome}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                ItensCompraCard(carrinho: widget.carrinho),
+                const SizedBox(height: 12),
+                ResumoPagamentoCard(
+                  subtotal: subtotal,
+                  desconto: widget.desconto,
+                  valorEntrega: widget.valorEntrega,
+                  saldoUsado: widget.saldoUsado,
+                  valorTotal: widget.valorTotal,
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  margin: EdgeInsets.zero,
+                  color: valorRestante == 0
+                      ? Colors.green.withValues(alpha: 0.1)
+                      : colorScheme.surfaceContainerHighest,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      valorRestante == 0
+                          ? 'Valor total coberto ✓'
+                          : 'Valor restante a pagar: R\$ ${valorRestante.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: valorRestante == 0 ? Colors.green[800] : colorScheme.onSurface,
+                      ),
                     ),
                   ),
                 ),
-                SizedBox(width: 10),
-                ElevatedButton(onPressed: adicionarPagamento, child: Text('Adicionar')),
+                const SizedBox(height: 16),
+
+                DropdownButtonFormField<String>(
+                  value: metodoSelecionado,
+                  items: metodosDisponiveis
+                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                      .toList(),
+                  onChanged: (valor) => setState(() => metodoSelecionado = valor!),
+                  decoration: const InputDecoration(labelText: 'Selecionar método'),
+                ),
+                if (metodoSelecionado == 'Saldo Cliente')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      'Saldo disponível do cliente: R\$ ${saldoClienteDisponivel.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: saldoClienteDisponivel > 0 ? Colors.green[700] : Colors.red,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _valorController,
+                        keyboardType: TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [MoedaInputFormatter()],
+                        decoration: const InputDecoration(
+                          labelText: 'Valor a pagar',
+                          prefixText: 'R\$ ',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(onPressed: adicionarPagamento, child: const Text('Adicionar')),
+                  ],
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _limiteParaMetodoSelecionado > 0 ? preencherValorRestante : null,
+                    child: Text(
+                      metodoSelecionado == 'Saldo Cliente' ? 'Usar valor máximo' : 'Usar valor restante',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Pagamentos adicionados',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                if (pagamentos.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      'Nenhum pagamento adicionado ainda.',
+                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+                    ),
+                  )
+                else
+                  Card(
+                    margin: EdgeInsets.zero,
+                    child: Column(
+                      children: pagamentos.entries.map((e) {
+                        return ListTile(
+                          dense: true,
+                          title: Text(e.key),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'R\$ ${e.value.toStringAsFixed(2)}',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                onPressed: () => removerPagamento(e.key),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
               ],
             ),
-            SizedBox(height: 20),
-            Text('Pagamentos adicionados:',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            ...pagamentos.entries.map((e) {
-              return ListTile(
-                title: Text('${e.key}: R\$ ${e.value.toStringAsFixed(2)}'),
-                trailing: IconButton(
-                  icon: Icon(Icons.delete, color: Colors.red),
-                  onPressed: () => removerPagamento(e.key),
-                ),
-              );
-            }).toList(),
-            Spacer(),
-            Center(
+          ),
+          SafeArea(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+              ),
               child: ElevatedButton(
                 onPressed: valorRestante == 0 ? finalizarPagamento : null,
-                child: Text('Finalizar Pagamento'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: Size(double.infinity, 50),
-                ),
+                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+                child: const Text('Finalizar Pagamento'),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

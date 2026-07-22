@@ -1,142 +1,276 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
-// Classe principal da tela de usuários
+import '../models/convite_empresa.dart';
+import '../models/usuario.dart';
+import '../providers/auth_provider.dart';
+import '../providers/usuario_provider.dart';
+
+/// Gestão de equipe: quem tem acesso à empresa, com qual papel, e convites
+/// pendentes pra novas pessoas entrarem. Substitui a versão antiga que
+/// mostrava uma lista de usuários fixa no código (com senha em texto puro
+/// na tela de detalhes!) — usuarios.id é sempre uma conta real do Supabase
+/// Auth, então "adicionar alguém" é sempre via código de convite.
 class UsuariosScreen extends StatefulWidget {
+  const UsuariosScreen({super.key});
+
   @override
-  _UsuariosScreenState createState() => _UsuariosScreenState();
+  State<UsuariosScreen> createState() => _UsuariosScreenState();
 }
 
 class _UsuariosScreenState extends State<UsuariosScreen> {
-  // Lista de usuários simulada
-  List<Map<String, String>> usuarios = [
-    {"foto": "https://placekitten.com/200/200", "nome": "João Silva", "email": "joao@example.com", "senha": "123456"},
-    {"foto": "https://placekitten.com/200/200", "nome": "Maria Oliveira", "email": "maria@example.com", "senha": "abcdef"},
-    {"foto": "https://placekitten.com/200/200", "nome": "Carlos Pereira", "email": "carlos@example.com", "senha": "qwerty"},
-    // Adicione mais usuários conforme necessário
-  ];
-
-  // Controlador para pesquisa
-  TextEditingController _searchController = TextEditingController();
-
-  // Filtragem dos usuários conforme a pesquisa
-  List<Map<String, String>> get filteredUsuarios {
-    String query = _searchController.text.toLowerCase();
-    return usuarios
-        .where((user) =>
-    user['nome']!.toLowerCase().contains(query) ||
-        user['email']!.toLowerCase().contains(query))
-        .toList();
+  @override
+  void initState() {
+    super.initState();
+    Provider.of<UsuarioProvider>(context, listen: false).carregar();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Usuários'),
+  Future<void> _gerarConvite(bool souDono) async {
+    if (!souDono) return;
+
+    final auth = context.read<AuthProvider>();
+    final meuId = auth.usuarioAtual?.id;
+    if (meuId == null) return;
+
+    try {
+      final convite = await context
+          .read<UsuarioProvider>()
+          .gerarConvite(criadoPor: meuId, papel: 'funcionario');
+      if (!mounted) return;
+      await _mostrarCodigoGerado(convite);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível gerar o convite: $e')),
+      );
+    }
+  }
+
+  Future<void> _mostrarCodigoGerado(ConviteEmpresa convite) async {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Convite gerado'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Passe esse código pra pessoa entrar como funcionário. '
+                'Ela cria a própria conta na tela de login e usa esse código em vez de criar uma empresa nova.'),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                convite.codigo,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Válido até ${dateFormat.format(convite.expiraEm)}',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.onSurfaceVariant, fontSize: 12),
+            ),
+          ],
+        ),
         actions: [
-          // Ícone de adicionar um novo usuário
-          IconButton(
-            icon: Icon(Icons.add),
-            onPressed: () {
-              // Navegação para a tela de adicionar novo usuário
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => NovoUsuarioScreen()),
-              );
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: convite.codigo));
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Código copiado.')),
+                );
+              }
             },
+            child: const Text('Copiar código'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Fechar'),
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
+    );
+  }
+
+  Future<void> _revogarConvite(ConviteEmpresa convite) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Revogar convite'),
+        content: Text('O código ${convite.codigo} deixará de funcionar. Confirmar?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Revogar')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    try {
+      await context.read<UsuarioProvider>().revogarConvite(convite.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível revogar: $e')),
+      );
+    }
+  }
+
+  Future<void> _editarUsuario(Usuario usuario, bool souDono, bool ehEuMesmo) async {
+    if (!souDono || ehEuMesmo) return;
+
+    final novoPapel = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(usuario.nome?.isNotEmpty == true ? usuario.nome! : (usuario.email ?? 'Usuário')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Campo de pesquisa
-            TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                labelText: 'Pesquisar Usuário',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) {
-                setState(() {});
-              },
+            RadioListTile<String>(
+              title: const Text('Funcionário'),
+              value: 'funcionario',
+              groupValue: usuario.papel,
+              onChanged: (v) => Navigator.pop(ctx, v),
             ),
-            SizedBox(height: 8),
-            // Lista de usuários
-            Expanded(
-              child: ListView.builder(
-                itemCount: filteredUsuarios.length,
-                itemBuilder: (context, index) {
-                  final usuario = filteredUsuarios[index];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundImage: NetworkImage(usuario['foto']!),
-                    ),
-                    title: Text(usuario['nome']!),
-                    subtitle: Text(usuario['email']!),
-                    onTap: () {
-                      // Navegação para a tela de detalhes do usuário
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => UsuarioDetailScreen(usuario),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
+            RadioListTile<String>(
+              title: const Text('Dono'),
+              value: 'dono',
+              groupValue: usuario.papel,
+              onChanged: (v) => Navigator.pop(ctx, v),
+            ),
+            const Divider(),
+            ListTile(
+              leading: Icon(usuario.ativo ? Icons.block : Icons.check_circle, color: usuario.ativo ? Colors.red : Colors.green),
+              title: Text(usuario.ativo ? 'Desativar acesso' : 'Reativar acesso'),
+              onTap: () => Navigator.pop(ctx, usuario.ativo ? '_desativar' : '_reativar'),
             ),
           ],
         ),
       ),
     );
-  }
-}
 
-// Tela para adicionar novo usuário (simulada)
-class NovoUsuarioScreen extends StatelessWidget {
+    if (novoPapel == null || !mounted) return;
+
+    try {
+      final provider = context.read<UsuarioProvider>();
+      if (novoPapel == '_desativar') {
+        await provider.atualizarAtivo(usuario.id, false);
+      } else if (novoPapel == '_reativar') {
+        await provider.atualizarAtivo(usuario.id, true);
+      } else if (novoPapel != usuario.papel) {
+        await provider.atualizarPapel(usuario.id, novoPapel);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível atualizar: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Adicionar Novo Usuário')),
-      body: Center(child: Text('Tela para adicionar novo usuário')),
-    );
-  }
-}
+    final auth = context.watch<AuthProvider>();
+    final provider = context.watch<UsuarioProvider>();
+    final souDono = auth.papel == 'dono';
+    final meuId = auth.usuarioAtual?.id;
 
-// Tela de detalhes do usuário
-class UsuarioDetailScreen extends StatelessWidget {
-  final Map<String, String> usuario;
-
-  UsuarioDetailScreen(this.usuario);
-
-  @override
-  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(usuario['nome']!),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              radius: 50,
-              backgroundImage: NetworkImage(usuario['foto']!),
+        title: const Text('Usuários'),
+        actions: [
+          if (souDono)
+            IconButton(
+              icon: const Icon(Icons.person_add_alt),
+              tooltip: 'Gerar convite',
+              onPressed: () => _gerarConvite(souDono),
             ),
-            SizedBox(height: 16),
-            Text('Nome: ${usuario['nome']}'),
-            SizedBox(height: 8),
-            Text('Email: ${usuario['email']}'),
-            SizedBox(height: 8),
-            Text('Senha: ${usuario['senha']}'),
-          ],
-        ),
+        ],
       ),
+      body: provider.carregando
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: provider.carregar,
+              child: ListView(
+                padding: const EdgeInsets.all(12),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    child: Text(
+                      'Equipe',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary),
+                    ),
+                  ),
+                  ...provider.usuarios.map((usuario) {
+                    final ehEuMesmo = usuario.id == meuId;
+                    return Card(
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: usuario.ativo ? Theme.of(context).colorScheme.primaryContainer : Colors.grey[300],
+                          child: Icon(
+                            usuario.isDono ? Icons.star : Icons.person,
+                            color: usuario.ativo ? Theme.of(context).colorScheme.primary : Colors.grey[600],
+                          ),
+                        ),
+                        title: Text(
+                          (usuario.nome?.isNotEmpty == true ? usuario.nome! : usuario.email) ?? 'Usuário',
+                          style: TextStyle(
+                            decoration: usuario.ativo ? null : TextDecoration.lineThrough,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${usuario.isDono ? 'Dono' : 'Funcionário'}'
+                          '${ehEuMesmo ? ' • você' : ''}'
+                          '${usuario.ativo ? '' : ' • inativo'}',
+                        ),
+                        trailing: souDono && !ehEuMesmo ? const Icon(Icons.chevron_right) : null,
+                        onTap: souDono ? () => _editarUsuario(usuario, souDono, ehEuMesmo) : null,
+                      ),
+                    );
+                  }),
+                  if (souDono && provider.convitesPendentes.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      child: Text(
+                        'Convites pendentes',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary),
+                      ),
+                    ),
+                    ...provider.convitesPendentes.map((convite) {
+                      final dateFormat = DateFormat('dd/MM/yyyy');
+                      return Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.mail_outline, color: Colors.orange),
+                          title: Text(convite.codigo, style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          subtitle: Text('Funcionário • válido até ${dateFormat.format(convite.expiraEm)}'),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.close, color: Colors.red),
+                            tooltip: 'Revogar',
+                            onPressed: () => _revogarConvite(convite),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ],
+              ),
+            ),
     );
   }
 }

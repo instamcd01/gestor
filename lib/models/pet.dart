@@ -1,116 +1,66 @@
-// models/pet.dart
 class Pet {
-  final String id;
-  final String nome;
-  final String especie;
-  final String raca;
-  final DateTime nascimento;
-  final double peso;
-  final bool vacinado;
-  final bool castrado;
-  final String observacoes;
-  final String imagemUrl;
+  final String? id;
+  String nome;
+  String especie;
+  String raca;
+  String porte;
+  DateTime nascimento;
+  double peso;
+  bool vacinado;
+  bool castrado;
+  String alergias;
+  String observacoes;
+  String imagemUrl;
 
   Pet({
-    required this.id,
+    this.id,
     required this.nome,
     required this.especie,
     required this.raca,
+    this.porte = '',
     required this.nascimento,
     required this.peso,
     required this.vacinado,
     required this.castrado,
+    this.alergias = '',
     required this.observacoes,
     required this.imagemUrl,
   });
 
-  factory Pet.fromMap(Map<String, dynamic> map) {
+  factory Pet.fromSupabase(Map<String, dynamic> row) {
     return Pet(
-      id: map['id'],
-      nome: map['nome'],
-      especie: map['especie'],
-      raca: map['raca'],
-      nascimento: DateTime.parse(map['nascimento']),
-      peso: map['peso'].toDouble(),
-      vacinado: map['vacinado'],
-      castrado: map['castrado'],
-      observacoes: map['observacoes'],
-      imagemUrl: map['imagemUrl'] ?? '',
+      id: row['id'] as String?,
+      nome: row['nome']?.toString() ?? '',
+      especie: row['especie']?.toString() ?? '',
+      raca: row['raca']?.toString() ?? '',
+      porte: row['porte']?.toString() ?? '',
+      nascimento: row['data_nascimento'] != null
+          ? DateTime.parse(row['data_nascimento'])
+          : DateTime.now(),
+      peso: (row['peso'] as num?)?.toDouble() ?? 0.0,
+      vacinado: row['vacinado'] as bool? ?? false,
+      castrado: row['castrado'] as bool? ?? false,
+      alergias: row['alergias']?.toString() ?? '',
+      observacoes: row['observacoes']?.toString() ?? '',
+      imagemUrl: row['imagem_url']?.toString() ?? '',
     );
   }
 
-  Map<String, dynamic> toMap() {
+  /// Payload pra INSERT/UPDATE na tabela `pets` (não inclui cliente_id,
+  /// que é adicionado pelo repositório).
+  Map<String, dynamic> toSupabaseMap() {
     return {
-      'id': id,
       'nome': nome,
       'especie': especie,
       'raca': raca,
-      'nascimento': nascimento.toIso8601String(),
+      'porte': porte,
+      'data_nascimento': nascimento.toIso8601String().split('T').first,
       'peso': peso,
       'vacinado': vacinado,
       'castrado': castrado,
+      'alergias': alergias,
       'observacoes': observacoes,
-      'imagemUrl': imagemUrl,
+      'imagem_url': imagemUrl,
     };
   }
 }
-
-// class Pet {
-//   final String nome;
-//   final String especie;
-//   final String raca;
-//   final String idade;
-//   final String cor;
-//   final String porte;
-//   final String vacinas;
-//
-//   // Estratégico
-//   final DateTime? dataNascimento;
-//   final bool castrado;
-//   final String observacoes;
-//
-//   Pet({
-//     required this.nome,
-//     required this.especie,
-//     required this.raca,
-//     required this.idade,
-//     required this.cor,
-//     required this.porte,
-//     required this.vacinas,
-//     this.dataNascimento,
-//     this.castrado = false,
-//     this.observacoes = '',
-//   });
-//
-//   Map<String, dynamic> toMap() {
-//     return {
-//       'nome': nome,
-//       'especie': especie,
-//       'raca': raca,
-//       'idade': idade,
-//       'cor': cor,
-//       'porte': porte,
-//       'vacinas': vacinas,
-//       'dataNascimento': dataNascimento?.toIso8601String(),
-//       'castrado': castrado,
-//       'observacoes': observacoes,
-//     };
-//   }
-//
-//   factory Pet.fromMap(Map<String, dynamic> map) {
-//     return Pet(
-//       nome: map['nome'] ?? '',
-//       especie: map['especie'] ?? '',
-//       raca: map['raca'] ?? '',
-//       idade: map['idade'] ?? '',
-//       cor: map['cor'] ?? '',
-//       porte: map['porte'] ?? '',
-//       vacinas: map['vacinas'] ?? '',
-//       dataNascimento: map['dataNascimento'] != null
-//           ? DateTime.tryParse(map['dataNascimento'])
-//           : null,
-//       castrado: map['castrado'] ?? false,
-//       observacoes: map['observacoes'] ?? '',
-//     );
-//   }
-// }

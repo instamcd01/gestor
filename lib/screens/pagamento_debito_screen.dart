@@ -1,6 +1,8 @@
 // pagamento_cartao_debito_screen.dart
 import 'package:flutter/material.dart';
 import '../models/cliente.dart';
+import '../widgets/itens_compra_card.dart';
+import '../widgets/resumo_pagamento_card.dart';
 import 'conclusao_venda_screen.dart';
 
 class PagamentoCartaoDebitoScreen extends StatefulWidget {
@@ -24,7 +26,6 @@ class PagamentoCartaoDebitoScreen extends StatefulWidget {
     required this.valorEntrega,
     required this.entregaSelecionada,
     required this.saldoUsado,
-
   });
 
   @override
@@ -34,7 +35,6 @@ class PagamentoCartaoDebitoScreen extends StatefulWidget {
 
 class _PagamentoCartaoDebitoScreenState
     extends State<PagamentoCartaoDebitoScreen> {
-
   void concluirPagamento() {
     Navigator.push(
       context,
@@ -46,7 +46,7 @@ class _PagamentoCartaoDebitoScreenState
           metodoPagamento: widget.metodoPagamento,
           cliente: widget.cliente,
           desconto: widget.desconto,
-          valorEntrega: widget.valorEntrega,          // ⬅️ Novo
+          valorEntrega: widget.valorEntrega,
           entregaSelecionada: widget.entregaSelecionada,
           saldoUsado: widget.saldoUsado,
         ),
@@ -56,40 +56,56 @@ class _PagamentoCartaoDebitoScreenState
 
   @override
   Widget build(BuildContext context) {
+    final subtotal = ResumoPagamentoCard.calcularSubtotal(widget.carrinho);
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Pagamento - ${widget.metodoPagamento}'),
+        title: Text('Cartão de Débito'),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Icon(Icons.credit_card, size: 64, color: colorScheme.primary),
+            const SizedBox(height: 8),
             Text(
-              'Valor Total: R\$ ${widget.valorTotal.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
-              ),
+              'Cliente: ${widget.cliente.nome}',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
-            SizedBox(height: 30),
+            const SizedBox(height: 16),
+            ItensCompraCard(carrinho: widget.carrinho),
+            const SizedBox(height: 16),
+            ResumoPagamentoCard(
+              subtotal: subtotal,
+              desconto: widget.desconto,
+              valorEntrega: widget.valorEntrega,
+              saldoUsado: widget.saldoUsado,
+              valorTotal: widget.valorTotal,
+            ),
+            const SizedBox(height: 12),
             Text(
               'Pagamento via Cartão de Débito será processado automaticamente.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.grey[700]),
-            ),
-            SizedBox(height: 50),
-            ElevatedButton(
-              onPressed: concluirPagamento,
-              child: Text('Concluir'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: Size(double.infinity, 50),
-                textStyle: TextStyle(fontSize: 18),
-              ),
+              style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
             ),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
+          ),
+          child: ElevatedButton(
+            onPressed: concluirPagamento,
+            style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 52)),
+            child: Text('Concluir'),
+          ),
         ),
       ),
     );
