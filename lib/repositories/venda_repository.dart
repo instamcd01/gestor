@@ -8,7 +8,10 @@ import '../models/venda.dart';
 /// pedidos vindos de WhatsApp/iFood/site, só que com origem = 'loja_fisica'.
 class VendaRepository {
   static const _selectComItensECliente =
-      '*, cliente:clientes(*), itens_pedido(*, produtos(*))';
+      '*, cliente:clientes(*), itens_pedido(*, produtos(*)), '
+      'marketplace_pedidos(id, rastreio_latitude, rastreio_longitude, rastreio_eta_entrega, rastreio_atualizado_em, '
+      'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
+      'codigo_retirada_exibicao, agendado, entrega_prevista_inicio, entrega_prevista_fim)';
 
   Future<List<Venda>> listar() async {
     final data = await supabase
@@ -132,8 +135,33 @@ class VendaRepository {
   /// tudo dentro da função `cancelar_pedido` no banco (atômico). Pedidos
   /// com status 'entregue'/'concluido' são bloqueados por trigger contra
   /// qualquer outra edição, só a transição para 'cancelado' é permitida.
-  Future<void> cancelar(String idVenda) async {
-    await supabase.rpc('cancelar_pedido', params: {'p_pedido_id': idVenda});
+  Future<void> cancelar(String idVenda, {String? motivoCodigo, String? motivoDescricao}) async {
+    await supabase.rpc('cancelar_pedido', params: {
+      'p_pedido_id': idVenda,
+      'p_motivo_codigo': motivoCodigo,
+      'p_motivo_descricao': motivoDescricao,
+    });
+  }
+
+  /// Confirma retirada/entrega por código (iFood) — o trigger cuida de
+  /// validar de verdade contra a API a partir daqui. `codigo_confirmacao_status`
+  /// fica 'pendente' até a resposta do n8n chegar; a tela recarrega a venda
+  /// depois de um pequeno delay pra mostrar o resultado.
+  Future<void> confirmarComCodigo(String idVenda, String codigo) async {
+    await supabase.from('pedidos').update({
+      'codigo_confirmacao_valor': codigo,
+      'codigo_confirmacao_status': 'pendente',
+      'codigo_confirmacao_erro': null,
+    }).eq('id', idVenda);
+  }
+
+  Future<Venda> buscarPorId(String idVenda) async {
+    final data = await supabase
+        .from('pedidos')
+        .select(_selectComItensECliente)
+        .eq('id', idVenda)
+        .single();
+    return _vendaFromRow(data);
   }
 
   /// Abate o valor usado do saldo (crédito interno) do cliente, registrando
@@ -186,6 +214,7 @@ class VendaRepository {
             );
 
       return ItemVenda(
+        id: itemRow['id'] as String?,
         produto: produto,
         quantidade: (itemRow['quantidade'] as num?)?.toInt() ?? 0,
         precoUnitario: (itemRow['preco_unitario'] as num?)?.toDouble() ?? 0.0,
@@ -200,6 +229,8 @@ class VendaRepository {
       pagamentosDetalhados = Map<String, dynamic>.from(metadata['pagamentosDetalhados'])
           .map((k, v) => MapEntry(k, (v as num).toDouble()));
     }
+
+    final marketplacePedidoRow = row['marketplace_pedidos'] as Map<String, dynamic>?;
 
     return Venda(
       idVenda: row['id'] as String?,
@@ -222,6 +253,28 @@ class VendaRepository {
       itens: itens,
       status: row['status']?.toString() ?? StatusPedido.entregue,
       canalVenda: row['canal_venda']?.toString() ?? 'loja_fisica',
+      marketplacePedidoId: marketplacePedidoRow?['id'] as String?,
+      tipoEntregaMarketplace: row['tipo_entrega_marketplace']?.toString(),
+      codigoConfirmacaoStatus: row['codigo_confirmacao_status']?.toString(),
+      codigoConfirmacaoErro: row['codigo_confirmacao_erro']?.toString(),
+      rastreioLatitude: (marketplacePedidoRow?['rastreio_latitude'] as num?)?.toDouble(),
+      rastreioLongitude: (marketplacePedidoRow?['rastreio_longitude'] as num?)?.toDouble(),
+      rastreioEtaEntrega: DateTime.tryParse(marketplacePedidoRow?['rastreio_eta_entrega']?.toString() ?? '')?.toLocal(),
+      rastreioAtualizadoEm:
+          DateTime.tryParse(marketplacePedidoRow?['rastreio_atualizado_em']?.toString() ?? '')?.toLocal(),
+      separacaoStatus: marketplacePedidoRow?['separacao_status']?.toString(),
+      separacaoErro: marketplacePedidoRow?['separacao_erro']?.toString(),
+      numeroExibicaoMarketplace: marketplacePedidoRow?['numero_exibicao']?.toString(),
+      telefoneLocalizador: marketplacePedidoRow?['telefone_localizador']?.toString(),
+      telefoneLocalizadorExpiraEm:
+          DateTime.tryParse(marketplacePedidoRow?['telefone_localizador_expira_em']?.toString() ?? '')?.toLocal(),
+      codigoRetiradaExibicao: marketplacePedidoRow?['codigo_retirada_exibicao']?.toString(),
+      statusPagamento: row['status_pagamento']?.toString(),
+      agendado: marketplacePedidoRow?['agendado'] as bool? ?? false,
+      entregaPrevistaInicio:
+          DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_inicio']?.toString() ?? '')?.toLocal(),
+      entregaPrevistaFim:
+          DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_fim']?.toString() ?? '')?.toLocal(),
     );
   }
 }

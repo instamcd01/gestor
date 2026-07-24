@@ -57,6 +57,26 @@ class Venda {
   final String status;            // ver StatusPedido (espelha pedidos.status)
   final String canalVenda;        // 'loja_fisica', 'whatsapp', 'ifood', 'site', etc.
 
+  // --- Campos específicos de marketplace (iFood), todos opcionais ---
+  final String? marketplacePedidoId;    // marketplace_pedidos.id, precisa pra ações que gravam lá
+  final String? tipoEntregaMarketplace; // DELIVERY/TAKEOUT/INDOOR (orderType da iFood)
+  final String? codigoConfirmacaoStatus; // null/pendente/valido/invalido
+  final String? codigoConfirmacaoErro;
+  final double? rastreioLatitude;
+  final double? rastreioLongitude;
+  final DateTime? rastreioEtaEntrega;
+  final DateTime? rastreioAtualizadoEm;
+  final String? separacaoStatus; // null/separando/finalizada/erro
+  final String? separacaoErro;
+  final String? numeroExibicaoMarketplace; // "displayId" da iFood, número curto mostrado ao cliente
+  final String? telefoneLocalizador; // código de discagem mascarada -- só funciona pra ligar, não WhatsApp
+  final DateTime? telefoneLocalizadorExpiraEm;
+  final String? codigoRetiradaExibicao; // pickupCode informativo da iFood (não é o código que o lojista digita)
+  final String? statusPagamento; // 'pago' (já cobrado pelo marketplace) / 'pendente' (cobrar na entrega)
+  final bool agendado;
+  final DateTime? entregaPrevistaInicio; // início da janela prometida, só quando agendado
+  final DateTime? entregaPrevistaFim; // fim da janela (agendado) ou estimativa única (pedido imediato)
+
   Venda({
     this.idVenda,
     required this.cliente,
@@ -78,12 +98,39 @@ class Venda {
     this.pagamentosDetalhados,
     this.status = StatusPedido.entregue,
     this.canalVenda = 'loja_fisica',
+    this.marketplacePedidoId,
+    this.tipoEntregaMarketplace,
+    this.codigoConfirmacaoStatus,
+    this.codigoConfirmacaoErro,
+    this.rastreioLatitude,
+    this.rastreioLongitude,
+    this.rastreioEtaEntrega,
+    this.rastreioAtualizadoEm,
+    this.separacaoStatus,
+    this.separacaoErro,
+    this.numeroExibicaoMarketplace,
+    this.telefoneLocalizador,
+    this.telefoneLocalizadorExpiraEm,
+    this.codigoRetiradaExibicao,
+    this.statusPagamento,
+    this.agendado = false,
+    this.entregaPrevistaInicio,
+    this.entregaPrevistaFim,
   });
+
+  bool get pagoPeloMarketplace => statusPagamento == 'pago';
+
+  bool get telefoneLocalizadorValido =>
+      telefoneLocalizador != null &&
+      telefoneLocalizador!.isNotEmpty &&
+      (telefoneLocalizadorExpiraEm == null || telefoneLocalizadorExpiraEm!.isAfter(DateTime.now()));
 
   bool get cancelada => status == StatusPedido.cancelado;
   bool get finalizada => status == StatusPedido.entregue;
   bool get emAndamento => StatusPedido.emAndamento.contains(status);
   bool get temEntrega => valorEntrega > 0 || entregaSelecionada.isNotEmpty;
+  bool get ehMarketplace => canalVenda == 'ifood';
+  bool get temRastreio => rastreioLatitude != null && rastreioLongitude != null;
 
   /// Próximo status no ciclo de vida (pula "saiu para entrega" quando o
   /// pedido é retirada/balcão, sem entrega). Retorna null se já estiver
@@ -104,6 +151,7 @@ class Venda {
 
 
 class ItemVenda {
+  final String? id; // itens_pedido.id -- só presente quando reidratado do banco
   final Produto produto;
   final int quantidade;
   final double precoUnitario; // preço de venda aplicado no momento da venda
@@ -115,6 +163,7 @@ class ItemVenda {
   final double? _custoUnitarioNoMomento;
 
   ItemVenda({
+    this.id,
     required this.produto,
     required this.quantidade,
     required this.precoUnitario,

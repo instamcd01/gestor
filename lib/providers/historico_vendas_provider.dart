@@ -84,8 +84,8 @@ class HistoricoVendasProvider with ChangeNotifier {
   /// Cancela a venda no banco (estorno de estoque/saldo/métricas incluso,
   /// ver VendaRepository.cancelar) e recarrega a lista pra refletir o
   /// novo status.
-  Future<void> cancelarVenda(String idVenda) async {
-    await _repository.cancelar(idVenda);
+  Future<void> cancelarVenda(String idVenda, {String? motivoCodigo, String? motivoDescricao}) async {
+    await _repository.cancelar(idVenda, motivoCodigo: motivoCodigo, motivoDescricao: motivoDescricao);
     await carregarVendas();
   }
 

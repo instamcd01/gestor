@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/interrupcao_marketplace.dart';
 import '../models/marketplace.dart';
 import '../models/marketplace_config.dart';
 import '../providers/auth_provider.dart';
+import '../repositories/interrupcao_marketplace_repository.dart';
 import '../repositories/marketplace_config_repository.dart';
 import '../repositories/marketplace_repository.dart';
 
 /// Configurações > Integrar com Plataformas: onde ficam guardadas as
-/// credenciais de cada marketplace (iFood, 99Food, Rappi...) pra quando a
-/// integração de API de verdade for construída. Nenhuma chamada de API
-/// acontece a partir daqui — é só armazenamento estruturado, restrito ao
-/// dono da empresa (credenciais são dado sensível).
+/// credenciais de cada marketplace (iFood, 99Food, Rappi...), restrito ao
+/// dono da empresa (credenciais são dado sensível). Nenhuma chamada de API
+/// acontece a partir do app — quem autentica de verdade com a API de cada
+/// plataforma é o n8n, que lê essa mesma tabela (`empresa_marketplace_config`).
+/// Pra iFood essa integração já está ativa; pra marketplaces sem workflow
+/// de n8n construído ainda, as credenciais ficam só guardadas até lá.
 class IntegrarPlataformasScreen extends StatefulWidget {
   const IntegrarPlataformasScreen({super.key});
 
@@ -22,9 +27,11 @@ class IntegrarPlataformasScreen extends StatefulWidget {
 class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
   final _marketplaceRepository = MarketplaceRepository();
   final _configRepository = MarketplaceConfigRepository();
+  final _interrupcaoRepository = InterrupcaoMarketplaceRepository();
 
   List<Marketplace> _marketplaces = [];
   Map<String, MarketplaceConfig> _configs = {};
+  InterrupcaoMarketplace? _interrupcaoAtiva;
   bool _carregando = true;
 
   @override
@@ -37,15 +44,155 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
     try {
       final marketplaces = await _marketplaceRepository.listarAtivos();
       final configs = await _configRepository.listar();
+      final interrupcao = await _interrupcaoRepository.buscarAtiva();
       setState(() {
         _marketplaces = marketplaces;
         _configs = {for (final c in configs) c.marketplaceId: c};
+        _interrupcaoAtiva = interrupcao;
         _carregando = false;
       });
     } catch (e) {
       debugPrint('Erro ao carregar integrações: $e');
       if (mounted) setState(() => _carregando = false);
     }
+  }
+
+  Marketplace? get _ifood {
+    for (final m in _marketplaces) {
+      if (m.nome.toLowerCase() == 'ifood') return m;
+    }
+    return null;
+  }
+
+  Future<void> _pausarLoja() async {
+    final ifood = _ifood;
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (ifood == null || empresaId == null) return;
+
+    final motivoController = TextEditingController();
+    Duration duracaoEscolhida = const Duration(hours: 1);
+
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Pausar loja no iFood'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: motivoController,
+                decoration: const InputDecoration(labelText: 'Motivo (ex: acabou o estoque)'),
+              ),
+              const SizedBox(height: 16),
+              const Text('Por quanto tempo?', style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ('30 min', const Duration(minutes: 30)),
+                  ('1 hora', const Duration(hours: 1)),
+                  ('2 horas', const Duration(hours: 2)),
+                  ('Resto do dia', null),
+                ].map((opcao) {
+                  final (rotulo, duracao) = opcao;
+                  final selecionado = duracao == duracaoEscolhida ||
+                      (duracao == null && duracaoEscolhida == _ateOFimDoDia());
+                  return ChoiceChip(
+                    label: Text(rotulo),
+                    selected: selecionado,
+                    onSelected: (_) => setDialogState(() => duracaoEscolhida = duracao ?? _ateOFimDoDia()),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Pausar')),
+          ],
+        ),
+      ),
+    );
+    if (confirmado != true) return;
+    final motivo = motivoController.text.trim().isEmpty ? 'Pausa manual' : motivoController.text.trim();
+
+    try {
+      await _interrupcaoRepository.pausar(
+        empresaId: empresaId,
+        marketplaceId: ifood.id,
+        motivo: motivo,
+        fim: DateTime.now().add(duracaoEscolhida),
+      );
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Loja pausada.')));
+      await _carregar();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível pausar a loja.')));
+      }
+    }
+  }
+
+  Duration _ateOFimDoDia() {
+    final agora = DateTime.now();
+    final fimDoDia = DateTime(agora.year, agora.month, agora.day, 23, 59);
+    return fimDoDia.difference(agora);
+  }
+
+  Future<void> _retomarLoja() async {
+    final interrupcao = _interrupcaoAtiva;
+    if (interrupcao == null) return;
+    try {
+      await _interrupcaoRepository.cancelar(interrupcao.id);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Loja reaberta.')));
+      await _carregar();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível reabrir a loja.')));
+      }
+    }
+  }
+
+  Widget _cardPausaLoja() {
+    if (_ifood == null) return const SizedBox.shrink();
+    final interrupcao = _interrupcaoAtiva;
+    final dateFormat = DateFormat('dd/MM HH:mm');
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: interrupcao == null
+            ? Row(
+                children: [
+                  Icon(Icons.storefront, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 10),
+                  const Expanded(child: Text('Loja aberta no iFood')),
+                  OutlinedButton(onPressed: _pausarLoja, child: const Text('Pausar loja')),
+                ],
+              )
+            : Row(
+                children: [
+                  const Icon(Icons.pause_circle_outline, color: Colors.orange),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Loja pausada: ${interrupcao.motivo}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        Text('Até ${dateFormat.format(interrupcao.fim)}',
+                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        if (interrupcao.status == 'erro' && interrupcao.erro != null)
+                          Text(interrupcao.erro!, style: const TextStyle(fontSize: 12, color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                  TextButton(onPressed: _retomarLoja, child: const Text('Retomar agora')),
+                ],
+              ),
+      ),
+    );
   }
 
   Future<void> _salvarConfig(MarketplaceConfig config) async {
@@ -89,6 +236,7 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
               : ListView(
                   padding: const EdgeInsets.all(12),
                   children: [
+                    _cardPausaLoja(),
                     Container(
                       padding: const EdgeInsets.all(12),
                       margin: const EdgeInsets.only(bottom: 12),
@@ -103,8 +251,9 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'A integração de API com cada plataforma ainda não existe — isso só guarda '
-                              'as credenciais pra quando ela for construída.',
+                              'As credenciais salvas aqui já são usadas por integrações ativas (hoje, '
+                              'iFood) — mantenha atualizadas. Plataformas sem integração construída ainda '
+                              'ficam com as credenciais só guardadas até lá.',
                               style: TextStyle(fontSize: 13),
                             ),
                           ),

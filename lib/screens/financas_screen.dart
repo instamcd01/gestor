@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../widgets/menu_secao.dart';
+import 'dashboard_marketplace_screen.dart';
 import 'despesas_screen.dart';
 import 'entradas_screen.dart';
 import 'fluxo_caixa_screen.dart';
@@ -22,6 +23,7 @@ class FinancasScreen extends StatelessWidget {
               MenuItem('Fluxo de Caixa', Icons.account_balance_outlined, const FluxoCaixaScreen()),
               MenuItem('Entradas', Icons.arrow_downward, const EntradasScreen()),
               MenuItem('Saídas', Icons.arrow_upward, const DespesasScreen(apenasPendentes: false)),
+              MenuItem('Financeiro por Marketplace', Icons.storefront_outlined, const DashboardMarketplaceScreen()),
             ],
           ),
           const SizedBox(height: 20),

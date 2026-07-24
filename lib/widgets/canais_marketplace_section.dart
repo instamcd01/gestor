@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../models/marketplace.dart';
 import '../repositories/marketplace_repository.dart';
@@ -30,6 +31,9 @@ class CanaisMarketplaceSectionState extends State<CanaisMarketplaceSection> {
   List<Marketplace> _marketplaces = [];
   final Map<String, bool> _disponivel = {};
   final Map<String, TextEditingController> _precoControllers = {};
+  // Estado da última sincronização com a API do marketplace (preenchido pelo
+  // n8n depois de cada tentativa) — só pra exibição, não é editado aqui.
+  final Map<String, Map<String, dynamic>> _statusSincronizacao = {};
   bool _carregando = true;
 
   @override
@@ -57,6 +61,13 @@ class CanaisMarketplaceSectionState extends State<CanaisMarketplaceSection> {
           text: ProdutoValidators.formatarMoeda(
               (existente?['preco'] as num?)?.toDouble()),
         );
+        if (existente != null && existente['ultima_sincronizacao_em'] != null) {
+          _statusSincronizacao[marketplace.id] = {
+            'status': existente['sincronizacao_status'] as String?,
+            'em': DateTime.tryParse(existente['ultima_sincronizacao_em'] as String? ?? ''),
+            'erro': existente['sincronizacao_erro'] as String?,
+          };
+        }
       }
 
       if (mounted) {
@@ -95,6 +106,73 @@ class CanaisMarketplaceSectionState extends State<CanaisMarketplaceSection> {
     super.dispose();
   }
 
+  /// Linha pequena abaixo do canal mostrando se a última tentativa de
+  /// sincronizar esse produto com a API do marketplace deu certo, falhou, ou
+  /// ainda nunca rodou. Preenchido pelo n8n depois de cada mudança de preço
+  /// ou estoque — aqui só lemos e mostramos, não editamos.
+  Widget _statusSincronizacaoWidget(String marketplaceId) {
+    final info = _statusSincronizacao[marketplaceId];
+    if (info == null) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 12, bottom: 6),
+        child: Row(
+          children: [
+            Icon(Icons.schedule, size: 14, color: Colors.grey[500]),
+            const SizedBox(width: 4),
+            Text(
+              'Ainda não sincronizado com a plataforma',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final status = info['status'] as String?;
+    final em = info['em'] as DateTime?;
+    final erro = info['erro'] as String?;
+    final sucesso = status == 'sucesso';
+
+    final horario = em != null ? DateFormat('dd/MM HH:mm').format(em.toLocal()) : '';
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, bottom: 6),
+      child: InkWell(
+        onTap: sucesso ? null : () => _mostrarDetalheErro(erro),
+        child: Row(
+          children: [
+            Icon(
+              sucesso ? Icons.check_circle : Icons.error_outline,
+              size: 14,
+              color: sucesso ? Colors.green[700] : Colors.red[700],
+            ),
+            const SizedBox(width: 4),
+            Text(
+              sucesso ? 'Sincronizado às $horario' : 'Falha ao sincronizar às $horario — toque para detalhes',
+              style: TextStyle(
+                fontSize: 12,
+                color: sucesso ? Colors.green[700] : Colors.red[700],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _mostrarDetalheErro(String? erro) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Falha ao sincronizar'),
+        content: Text(erro ?? 'A plataforma não informou o motivo da falha.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_carregando) {
@@ -125,33 +203,39 @@ class CanaisMarketplaceSectionState extends State<CanaisMarketplaceSection> {
           final disponivel = _disponivel[marketplace.id] ?? false;
           return Padding(
             padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  flex: 3,
-                  child: SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(marketplace.nome),
-                    value: disponivel,
-                    onChanged: (value) => setState(() => _disponivel[marketplace.id] = value),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: TextFormField(
-                    controller: _precoControllers[marketplace.id],
-                    enabled: disponivel,
-                    decoration: const InputDecoration(
-                      labelText: 'Preço',
-                      prefixText: 'R\$ ',
-                      isDense: true,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(marketplace.nome),
+                        value: disponivel,
+                        onChanged: (value) => setState(() => _disponivel[marketplace.id] = value),
+                      ),
                     ),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [MoedaInputFormatter()],
-                    validator: disponivel ? ProdutoValidators.precoOpcional : null,
-                  ),
+                    Expanded(
+                      flex: 2,
+                      child: TextFormField(
+                        controller: _precoControllers[marketplace.id],
+                        enabled: disponivel,
+                        decoration: const InputDecoration(
+                          labelText: 'Preço',
+                          prefixText: 'R\$ ',
+                          isDense: true,
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [MoedaInputFormatter()],
+                        validator: disponivel ? ProdutoValidators.precoOpcional : null,
+                      ),
+                    ),
+                  ],
                 ),
+                if (disponivel) _statusSincronizacaoWidget(marketplace.id),
               ],
             ),
           );

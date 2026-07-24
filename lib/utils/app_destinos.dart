@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../screens/avaliacoes_disputas_screen.dart';
 import '../screens/catalogo_online_screen.dart';
 import '../screens/cliente_screen.dart';
 import '../screens/configuracoes_screen.dart';
@@ -31,6 +32,7 @@ final List<AppDestino> appDestinos = [
   AppDestino(titulo: 'Catálogo Online', icone: Icons.book_online, builder: (_) => const CatalogoOnlineScreen()),
   AppDestino(titulo: 'Finanças', icone: Icons.money, builder: (_) => const FinancasScreen()),
   AppDestino(titulo: 'Estatísticas', icone: Icons.area_chart, builder: (_) => const EstatisticasScreen()),
+  AppDestino(titulo: 'Avaliações', icone: Icons.reviews_outlined, builder: (_) => const AvaliacoesDisputasScreen()),
   AppDestino(titulo: 'Usuários', icone: Icons.person_pin, builder: (_) => const UsuariosScreen()),
   AppDestino(titulo: 'Configurações', icone: Icons.settings, builder: (_) => const ConfiguracoesScreen()),
 ];
