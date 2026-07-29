@@ -33,5 +33,33 @@
        <meta-data
            android:name="com.google.android.geo.API_KEY"
            android:value="AIzaSyDKmbywF7XdgUI3LWJ0-c83-tSaEl5EqPU" />
+       <meta-data
+           android:name="com.google.firebase.messaging.default_notification_channel_id"
+           android:value="notificacoes_padrao" />
     </application>
+
+    <!-- Sem isso, o Android 11+ (API 30+) esconde por padrão a
+         visibilidade de outros apps por questão de privacidade — o
+         url_launcher usa canLaunchUrl() pra checar antes de abrir, e sem
+         essas declarações ele sempre retorna false (silenciosamente, sem
+         erro nenhum) pra WhatsApp (https), e-mail (mailto), ligação (tel)
+         e mapa (geo), mesmo com os apps de verdade instalados. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="mailto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+    </queries>
 </manifest>

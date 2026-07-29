@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../models/venda.dart';
 import 'venda_detalhes_screen.dart';
@@ -109,7 +110,14 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
   @override
   Widget build(BuildContext context) {
     final historicoProvider = Provider.of<HistoricoVendasProvider>(context);
-    final todasVendas = historicoProvider.vendas;
+    final auth = context.watch<AuthProvider>();
+    // Vendedor vê só as próprias vendas — lista E resumo (calculado a
+    // partir do que sobra aqui, então já sai correto pros dois em vez de
+    // esconder o resumo inteiro). Dono/gerente continuam vendo tudo, igual
+    // sempre foi.
+    final todasVendas = auth.isVendedor
+        ? historicoProvider.vendas.where((v) => v.vendedorId == auth.usuarioAtual?.id).toList()
+        : historicoProvider.vendas;
     final vendas = _aplicarFiltros(todasVendas);
     final vendasAgrupadas = _agruparVendasPorData(vendas);
     final totaisMes = _calcularTotais(todasVendas);
@@ -231,11 +239,17 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Valor total:'),
-                Text(
-                  format.format(totais['valorTotalMes']),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    format.format(totais['valorTotalMes']),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ],

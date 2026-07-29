@@ -7,6 +7,7 @@ import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../utils/formatadores_input.dart';
+import '../widgets/aviso_banner.dart';
 import '../widgets/form_section.dart';
 
 /// Configuração do catálogo/site público (Configurações > Catálogo Online).
@@ -174,30 +175,11 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue[100]!),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.info_outline, color: Colors.blue, size: 20),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'O site público ainda não existe — essa tela só guarda a configuração '
-                              'pra quando ele for lançado. $produtosNoCatalogo produto${produtosNoCatalogo != 1 ? 's' : ''} '
-                              'já ${produtosNoCatalogo != 1 ? 'estão marcados' : 'está marcado'} pra aparecer no catálogo '
-                              '(campo "Exibir no Catálogo" no cadastro de produto).',
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          ),
-                        ],
-                      ),
+                    AvisoBanner(
+                      texto: 'O site público ainda não existe — essa tela só guarda a configuração '
+                          'pra quando ele for lançado. $produtosNoCatalogo produto${produtosNoCatalogo != 1 ? 's' : ''} '
+                          'já ${produtosNoCatalogo != 1 ? 'estão marcados' : 'está marcado'} pra aparecer no catálogo '
+                          '(campo "Exibir no Catálogo" no cadastro de produto).',
                     ),
                     const SizedBox(height: 20),
                     FormSection(

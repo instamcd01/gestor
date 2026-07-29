@@ -1,11 +1,10 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:gestor/screens/produto_categorias_screen.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
 import '../models/produto.dart';
+import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../utils/calculadora_desconto.dart';
 import '../utils/calculadora_preco.dart';
@@ -13,8 +12,16 @@ import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
+import 'gerenciar_midias_produto_screen.dart';
 
 class CadastroProdutoScreen extends StatefulWidget {
+  /// Pré-preenche nome/código de barras/custo (ex: a partir de um item
+  /// pendente na importação de nota fiscal) — o resto do formulário
+  /// continua em branco, o usuário completa antes de salvar.
+  final Produto? produtoInicial;
+
+  const CadastroProdutoScreen({super.key, this.produtoInicial});
+
   @override
   _CadastroProdutoScreenState createState() => _CadastroProdutoScreenState();
 }
@@ -47,7 +54,6 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   bool _destacarProduto = false;
   bool _exibirNoCatalogo = true;
   bool _ativo = true;
-  XFile? _imagemProdutoFile; // Arquivo da imagem selecionada
   bool _isLoading = false;
 
   List<String> _categorias = []; // categorias cadastradas na empresa
@@ -59,6 +65,14 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   @override
   void initState() {
     super.initState();
+    final inicial = widget.produtoInicial;
+    if (inicial != null) {
+      _nomeController.text = inicial.nome;
+      _codigoBarrasController.text = inicial.codigoBarras;
+      if (inicial.custo > 0) {
+        _custoController.text = ProdutoValidators.formatarMoeda(inicial.custo);
+      }
+    }
     _carregarCategorias();
     _calculadora = CalculadoraPrecoMarkup(
       precoController: _precoVendaController,
@@ -82,11 +96,24 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       final categorias = (data as List)
           .map((row) => row['nome'] as String? ?? '')
           .where((c) => c.isNotEmpty)
-          .toSet()
-          .toList()
-        ..sort();
+          .toSet();
+
+      // A tabela `categorias` só é preenchida quando alguém abre "Gerenciar
+      // categorias" — até isso acontecer pra todo o catálogo, ela fica
+      // incompleta. Unimos com as categorias realmente em uso em
+      // `produtos.categoria` (mesma fonte que "Gerenciar categorias" usa)
+      // pra sempre oferecer todas as opções reais ao cadastrar um produto novo.
+      final produtosData = await supabase.from('produtos').select('categoria');
+      categorias.addAll(
+        (produtosData as List)
+            .map((p) => (p['categoria'] as String?) ?? '')
+            .where((c) => c.isNotEmpty),
+      );
+
+      final lista = categorias.toList()..sort();
+      if (!mounted) return;
       setState(() {
-        _categorias = categorias;
+        _categorias = lista;
         _categoriasCarregadas = true;
       });
     } catch (e) {
@@ -123,60 +150,6 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     super.dispose();
   }
 
-  Future<void> _selecionarImagem() async {
-    final picker = ImagePicker();
-    try {
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-      if (pickedFile != null) {
-        setState(() {
-          _imagemProdutoFile = pickedFile;
-        });
-      }
-    } catch (e) {
-      debugPrint("Erro ao selecionar imagem: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao selecionar imagem: $e')),
-        );
-      }
-    }
-  }
-
-  Future<String?> _uploadImagemProduto(File imageFile) async {
-    if (!mounted) return null;
-    try {
-      String? empresaId;
-      final userId = supabase.auth.currentUser?.id;
-      if (userId != null) {
-        final usuario = await supabase
-            .from('usuarios')
-            .select('empresa_id')
-            .eq('id', userId)
-            .maybeSingle();
-        empresaId = usuario?['empresa_id'] as String?;
-      }
-
-      if (empresaId == null) {
-        throw Exception('Empresa não identificada para o upload.');
-      }
-
-      final fileName =
-          '$empresaId/${DateTime.now().millisecondsSinceEpoch}_${imageFile.path.split('/').last}';
-
-      await supabase.storage.from('produtos').upload(fileName, imageFile);
-
-      return supabase.storage.from('produtos').getPublicUrl(fileName);
-    } catch (e) {
-      debugPrint("Erro no upload da imagem para o Supabase Storage: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro no upload da imagem: $e')),
-        );
-      }
-      return null;
-    }
-  }
-
   Future<void> _adicionarProduto() async {
     if (!_formKey.currentState!.validate()) {
       return; // Se o formulário não for válido, não continue
@@ -185,25 +158,6 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     setState(() {
       _isLoading = true;
     });
-
-    String? imagemUrlParaSalvar; // URL da imagem após o upload
-
-    if (_imagemProdutoFile != null) {
-      imagemUrlParaSalvar =
-          await _uploadImagemProduto(File(_imagemProdutoFile!.path));
-      if (imagemUrlParaSalvar == null && mounted) {
-        // Se o upload falhar e o widget ainda estiver montado, pare o processo
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text('Falha ao fazer upload da imagem. Tente novamente.')),
-        );
-        return;
-      }
-    }
 
     final novoProduto = Produto(
       nome: _nomeController.text,
@@ -218,8 +172,9 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       descricao: _descricaoController.text,
       codigoBarras: _codigoBarrasController.text,
       custo: ProdutoValidators.parseNumero(_custoController.text) ?? 0.0,
-      imagemUrl: imagemUrlParaSalvar ?? '',
-      // Usa a URL do Storage ou string vazia
+      // Fotos/vídeos agora são adicionados na tela de galeria logo depois
+      // de salvar (precisa do id do produto, que só existe após o insert).
+      imagemUrl: '',
       estoqueAtual: int.tryParse(_estoqueController.text) ?? 0,
       estoqueMinimo: int.tryParse(_estoqueMinimoController.text) ?? 0,
       destacar: _destacarProduto,
@@ -246,11 +201,24 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
         }
 
         if (mounted) {
-          // Verifica novamente antes de interagir com a UI
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Produto adicionado com sucesso!')),
-          );
-          Navigator.of(context).pop();
+          // Verifica novamente antes de interagir com a UI. Produto criado —
+          // manda direto pra galeria de mídias, já que fotos/vídeos só podem
+          // ser salvos depois que o produto existe (precisam do id).
+          if (produtoCriado.id != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Produto adicionado! Agora adicione fotos e vídeos.')),
+            );
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => GerenciarMidiasProdutoScreen(produtoId: produtoCriado.id!),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Produto adicionado com sucesso!')),
+            );
+            Navigator.of(context).pop();
+          }
         }
       }
     } catch (e) {
@@ -272,6 +240,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isVendedor = context.watch<AuthProvider>().isVendedor;
 
     return Scaffold(
       appBar: AppBar(title: Text('Cadastrar Novo Produto')),
@@ -283,18 +252,30 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               Center(
-                child: GestureDetector(
-                  onTap: _selecionarImagem,
-                  child: CircleAvatar(
-                    radius: 56,
-                    backgroundColor: colorScheme.surfaceContainerHighest,
-                    backgroundImage: _imagemProdutoFile == null
-                        ? null
-                        : FileImage(File(_imagemProdutoFile!.path)),
-                    child: _imagemProdutoFile == null
-                        ? Icon(Icons.add_a_photo, size: 40, color: colorScheme.onSurfaceVariant)
-                        : null,
-                  ),
+                child: Column(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        width: 120,
+                        height: 120,
+                        color: colorScheme.surfaceContainerHighest,
+                        child: Icon(
+                          Icons.add_photo_alternate_outlined,
+                          size: 40,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Fotos e vídeos podem ser adicionados\nlogo depois de salvar',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 24.0),
@@ -434,45 +415,47 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                       ),
                     ],
                   ),
-                  TextFormField(
-                    controller: _custoController,
-                    decoration: const InputDecoration(labelText: 'Custo (R\$)', prefixText: 'R\$ '),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [MoedaInputFormatter()],
-                    validator: ProdutoValidators.custo,
-                  ),
-                  TextFormField(
-                    controller: _markupController,
-                    decoration: const InputDecoration(
-                      labelText: 'Markup (%) (Opcional)',
-                      suffixText: '%',
-                      helperText: 'Calculado com preço+custo, ou preencha pra calcular o preço',
+                  if (!isVendedor) ...[
+                    TextFormField(
+                      controller: _custoController,
+                      decoration: const InputDecoration(labelText: 'Custo (R\$)', prefixText: 'R\$ '),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [MoedaInputFormatter()],
+                      validator: ProdutoValidators.custo,
                     ),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true, signed: true),
-                    inputFormatters: [DecimalInputFormatter(permiteSinal: true)],
-                    validator: ProdutoValidators.markup,
-                  ),
-                  TextFormField(
-                    controller: _lucroController,
-                    decoration: const InputDecoration(
-                      labelText: 'Lucro (R\$) (Opcional)',
-                      prefixText: 'R\$ ',
-                      helperText: 'Calculado com preço+custo, ou preencha pra calcular o preço',
+                    TextFormField(
+                      controller: _markupController,
+                      decoration: const InputDecoration(
+                        labelText: 'Markup (%) (Opcional)',
+                        suffixText: '%',
+                        helperText: 'Calculado com preço+custo, ou preencha pra calcular o preço',
+                      ),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true, signed: true),
+                      inputFormatters: [DecimalInputFormatter(permiteSinal: true)],
+                      validator: ProdutoValidators.markup,
                     ),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true, signed: true),
-                    inputFormatters: [DecimalInputFormatter(permiteSinal: true)],
-                    validator: ProdutoValidators.lucro,
-                  ),
-                  TextFormField(
-                    controller: _precoConcorrenciaController,
-                    decoration: const InputDecoration(
-                      labelText: 'Preço Concorrência (R\$) (Opcional)',
-                      prefixText: 'R\$ ',
+                    TextFormField(
+                      controller: _lucroController,
+                      decoration: const InputDecoration(
+                        labelText: 'Lucro (R\$) (Opcional)',
+                        prefixText: 'R\$ ',
+                        helperText: 'Calculado com preço+custo, ou preencha pra calcular o preço',
+                      ),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true, signed: true),
+                      inputFormatters: [DecimalInputFormatter(permiteSinal: true)],
+                      validator: ProdutoValidators.lucro,
                     ),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [MoedaInputFormatter()],
-                    validator: ProdutoValidators.precoOpcional,
-                  ),
+                    TextFormField(
+                      controller: _precoConcorrenciaController,
+                      decoration: const InputDecoration(
+                        labelText: 'Preço Concorrência (R\$) (Opcional)',
+                        prefixText: 'R\$ ',
+                      ),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [MoedaInputFormatter()],
+                      validator: ProdutoValidators.precoOpcional,
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 16.0),

@@ -1,20 +1,16 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../config/supabase_config.dart';
 import '../models/venda.dart';
 import '../providers/auth_provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/aviso_banner.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../repositories/venda_repository.dart';
+import '../utils/telefone_utils.dart';
+import 'recibo_screen.dart';
 import 'separacao_pedido_screen.dart';
 
 class VendaDetalhesScreen extends StatefulWidget {
@@ -37,11 +33,12 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
   }
 
   Future<void> _abrirWhatsApp(String numero) async {
-    final numeroLimpo = numero.replaceAll(RegExp(r'[^0-9]'), '');
-    if (numeroLimpo.isEmpty) return;
-    final uri = Uri.parse('https://wa.me/55$numeroLimpo');
+    if (normalizarTelefoneBr(numero).isEmpty) return;
+    final uri = Uri.parse(linkWhatsApp(numero));
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+      // Sem isso, em alguns aparelhos o link abre numa webview dentro do
+      // próprio Gestor em vez de abrir o WhatsApp de verdade.
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -89,155 +86,8 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     return '~${formato.format(venda.entregaPrevistaFim!)}';
   }
 
-  pw.Widget _celulaRecibo(String texto, {bool cabecalho = false}) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.all(4),
-      child: pw.Text(
-        texto,
-        style: pw.TextStyle(fontWeight: cabecalho ? pw.FontWeight.bold : pw.FontWeight.normal),
-      ),
-    );
-  }
-
-  Future<Map<String, dynamic>> _carregarConfigRecibo() async {
-    final empresaId = context.read<AuthProvider>().empresaId;
-    if (empresaId == null) return {};
-    try {
-      return await supabase
-          .from('empresas')
-          .select('nome, razao_social, cnpj, logo_url, recibo_mensagem, recibo_mostrar_logo, recibo_mostrar_cnpj')
-          .eq('id', empresaId)
-          .single();
-    } catch (e) {
-      debugPrint('Erro ao carregar configuração do recibo: $e');
-      return {};
-    }
-  }
-
-  Future<void> _compartilharRecibo() async {
-    final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
-    final temEntrega = _venda.valorEntrega > 0 || _venda.entregaSelecionada.isNotEmpty;
-
-    final config = await _carregarConfigRecibo();
-    final mostrarLogo = config['recibo_mostrar_logo'] as bool? ?? true;
-    final mostrarCnpj = config['recibo_mostrar_cnpj'] as bool? ?? true;
-    final mensagemRodape = config['recibo_mensagem']?.toString() ?? '';
-    final nomeLoja = config['nome']?.toString() ?? '';
-    final razaoSocial = config['razao_social']?.toString() ?? '';
-    final cnpj = config['cnpj']?.toString() ?? '';
-    final logoUrl = config['logo_url']?.toString() ?? '';
-
-    pw.MemoryImage? logoImagem;
-    if (mostrarLogo && logoUrl.isNotEmpty) {
-      try {
-        final resposta = await http.get(Uri.parse(logoUrl));
-        if (resposta.statusCode == 200) {
-          logoImagem = pw.MemoryImage(resposta.bodyBytes);
-        }
-      } catch (e) {
-        debugPrint('Erro ao baixar logo pro recibo: $e');
-      }
-    }
-
-    final pdf = pw.Document();
-
-    pdf.addPage(
-      pw.Page(
-        build: (pw.Context ctx) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              if (logoImagem != null) ...[
-                pw.Center(child: pw.Image(logoImagem, height: 60)),
-                pw.SizedBox(height: 8),
-              ],
-              pw.Text(
-                nomeLoja.isNotEmpty ? nomeLoja : 'Recibo de Venda',
-                style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
-              ),
-              if (mostrarCnpj && (razaoSocial.isNotEmpty || cnpj.isNotEmpty))
-                pw.Text(
-                  [razaoSocial, if (cnpj.isNotEmpty) 'CNPJ: $cnpj'].where((s) => s.isNotEmpty).join(' • '),
-                  style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
-                ),
-              pw.SizedBox(height: 12),
-              pw.Text('Cliente: ${_venda.cliente.nome}'),
-              pw.Text('Data: ${DateFormat('dd/MM/yyyy HH:mm').format(_venda.dataVenda)}'),
-              pw.Text('ID da Venda: ${_venda.idVenda ?? '-'}'),
-              pw.Text('Forma de Pagamento: ${_venda.metodoPagamento}'),
-              pw.SizedBox(height: 16),
-              pw.Table(
-                border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey600),
-                columnWidths: const {
-                  0: pw.FlexColumnWidth(4),
-                  1: pw.FlexColumnWidth(1.3),
-                  2: pw.FlexColumnWidth(2),
-                  3: pw.FlexColumnWidth(2),
-                },
-                children: [
-                  pw.TableRow(
-                    decoration: const pw.BoxDecoration(color: PdfColors.grey300),
-                    children: [
-                      _celulaRecibo('Produto', cabecalho: true),
-                      _celulaRecibo('Qtd', cabecalho: true),
-                      _celulaRecibo('Unit.', cabecalho: true),
-                      _celulaRecibo('Total', cabecalho: true),
-                    ],
-                  ),
-                  ..._venda.itens.map((item) => pw.TableRow(children: [
-                        _celulaRecibo(item.produto.nome),
-                        _celulaRecibo('${item.quantidade}'),
-                        _celulaRecibo(currencyFormat.format(item.precoUnitario)),
-                        _celulaRecibo(currencyFormat.format(item.precoTotal)),
-                      ])),
-                ],
-              ),
-              pw.SizedBox(height: 16),
-              pw.Align(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
-                  children: [
-                    pw.Text('Subtotal: ${currencyFormat.format(_venda.subtotal)}'),
-                    if (_venda.desconto > 0)
-                      pw.Text('Desconto: -${currencyFormat.format(_venda.desconto)}'),
-                    if (temEntrega)
-                      pw.Text('Entrega: +${currencyFormat.format(_venda.valorEntrega)}'),
-                    pw.SizedBox(height: 4),
-                    pw.Text(
-                      'Total: ${currencyFormat.format(_venda.valorTotal)}',
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14),
-                    ),
-                    pw.Text('Valor Pago: ${currencyFormat.format(_venda.valorPago)}'),
-                    if (_venda.troco > 0) pw.Text('Troco: ${currencyFormat.format(_venda.troco)}'),
-                  ],
-                ),
-              ),
-              if (_venda.observacao.isNotEmpty) ...[
-                pw.SizedBox(height: 16),
-                pw.Text('Observações: ${_venda.observacao}'),
-              ],
-              if (mensagemRodape.isNotEmpty) ...[
-                pw.SizedBox(height: 20),
-                pw.Center(
-                  child: pw.Text(mensagemRodape, style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700)),
-                ),
-              ],
-            ],
-          );
-        },
-      ),
-    );
-
-    final directory = await getApplicationDocumentsDirectory();
-    final nomeArquivo = 'recibo_${_venda.idVenda ?? DateTime.now().millisecondsSinceEpoch}.pdf';
-    final file = File('${directory.path}/$nomeArquivo');
-    await file.writeAsBytes(await pdf.save());
-
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Recibo da venda de ${_venda.cliente.nome}',
-    );
+  void _verRecibo() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => ReciboScreen(venda: _venda)));
   }
 
   /// Motivos de cancelamento aceitos pela API de pedidos da iFood (códigos
@@ -385,11 +235,16 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     final controller = TextEditingController();
     final codigo = await showDialog<String>(
       context: context,
+      // Sem autofocus + sem fechar tocando fora: com o teclado aberto (via
+      // autofocus) e o diálogo fechando por barrier-dismiss no mesmo frame,
+      // bate num bug conhecido do framework do Flutter (assert
+      // `_dependents.isEmpty` ao desativar o Overlay/IME) — só os botões
+      // fecham o diálogo agora.
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar com código'),
         content: TextField(
           controller: controller,
-          autofocus: true,
           keyboardType: TextInputType.number,
           maxLength: 6,
           decoration: const InputDecoration(hintText: 'Código informado pelo cliente/entregador'),
@@ -437,6 +292,8 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     final venda = _venda;
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
     final temEntrega = venda.valorEntrega > 0 || venda.entregaSelecionada.isNotEmpty;
+    // Custo/lucro/margem — vendedor não vê, nem o card interno nem por item.
+    final podeVerFinancas = context.watch<AuthProvider>().podeVerFinancas;
     final cancelada = venda.cancelada;
 
     return Scaffold(
@@ -444,9 +301,9 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
         title: Text('Venda - ${venda.cliente.nome}'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
-            tooltip: 'Compartilhar recibo',
-            onPressed: _compartilharRecibo,
+            icon: const Icon(Icons.receipt_long),
+            tooltip: 'Ver recibo',
+            onPressed: _verRecibo,
           ),
           if (!cancelada)
             IconButton(
@@ -508,7 +365,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                             style: TextStyle(
                               fontSize: 11,
                               color: (venda.telefoneLocalizador != null && !venda.telefoneLocalizadorValido)
-                                  ? Colors.orange[800]
+                                  ? AppTheme.tomAdaptavel(Colors.orange, Theme.of(context).brightness)
                                   : Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
@@ -567,7 +424,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
 
                 if (venda.ehMarketplace && !venda.cancelada && !venda.finalizada) _cardMarketplaceAcompanhamento(venda),
 
-                _cardInterno(venda, currencyFormat),
+                if (podeVerFinancas) _cardInterno(venda, currencyFormat),
 
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -579,7 +436,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 if (venda.itens.isEmpty)
                   _card(child: const Text('Nenhum item encontrado.', style: TextStyle(color: Colors.grey)))
                 else
-                  ...venda.itens.map((item) => _itemCard(item, currencyFormat)),
+                  ...venda.itens.map((item) => _itemCard(item, currencyFormat, podeVerFinancas)),
 
                 if (venda.observacao.isNotEmpty)
                   _card(
@@ -654,9 +511,9 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     color: venda.codigoConfirmacaoStatus == 'valido'
-                        ? Colors.green[700]
+                        ? AppTheme.tomAdaptavel(Colors.green, Theme.of(context).brightness)
                         : venda.codigoConfirmacaoStatus == 'invalido'
-                            ? Colors.red
+                            ? AppTheme.tomAdaptavel(Colors.red, Theme.of(context).brightness)
                             : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -698,21 +555,13 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
   }
 
   Widget _bannerCancelada() {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.red[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.red),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.block, color: Colors.red),
-          SizedBox(width: 8),
-          Text('VENDA CANCELADA', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-        ],
+    return const Padding(
+      padding: EdgeInsets.only(bottom: 12),
+      child: AvisoBanner(
+        tipo: TipoAviso.erro,
+        icone: Icons.block,
+        negrito: true,
+        texto: 'VENDA CANCELADA',
       ),
     );
   }
@@ -740,26 +589,34 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
   }
 
   Widget _cardInterno(Venda venda, NumberFormat currencyFormat) {
+    final brightness = Theme.of(context).brightness;
+    // Mistura com a superfície do tema ATUAL em vez do tom pastel fixo
+    // (Colors.orange[50]/[100]) — opaco e claro demais no tema escuro.
+    final fundo = Color.alphaBlend(Colors.orange.withValues(alpha: 0.15), Theme.of(context).colorScheme.surface);
+    final borda = Color.alphaBlend(Colors.orange.withValues(alpha: 0.4), Theme.of(context).colorScheme.surface);
+    final corLaranja = AppTheme.tomAdaptavel(Colors.orange, brightness);
+    final corVerde = AppTheme.tomAdaptavel(Colors.green, brightness);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.orange[50],
+        color: fundo,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange[100]!),
+        border: Border.all(color: borda),
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: false,
-          leading: const Icon(Icons.lock_outline, color: Colors.orange),
-          title: const Text(
+          leading: Icon(Icons.lock_outline, color: corLaranja),
+          title: Text(
             'Informações internas (custo e lucro)',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.orange),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: corLaranja),
           ),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           children: [
-            _linhaValor('Custo Total', venda.custoTotal, currencyFormat, cor: Colors.orange[800]),
-            _linhaValor('Lucro Total', venda.lucroTotal, currencyFormat, cor: Colors.green[800]),
+            _linhaValor('Custo Total', venda.custoTotal, currencyFormat, cor: corLaranja),
+            _linhaValor('Lucro Total', venda.lucroTotal, currencyFormat, cor: corVerde),
             _linhaValor(
               'Margem',
               null,
@@ -767,7 +624,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               textoCustomizado: venda.valorTotal > 0
                   ? '${(venda.lucroTotal / venda.valorTotal * 100).toStringAsFixed(1)}%'
                   : '-',
-              cor: Colors.green[800],
+              cor: corVerde,
             ),
           ],
         ),
@@ -873,7 +730,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
-  Widget _itemCard(ItemVenda item, NumberFormat currencyFormat) {
+  Widget _itemCard(ItemVenda item, NumberFormat currencyFormat, bool podeVerFinancas) {
     final lucroPositivo = item.lucroTotal >= 0;
 
     return Container(
@@ -894,7 +751,9 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 Text(item.produto.nome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                 const SizedBox(height: 2),
                 Text(
-                  '${item.quantidade}x ${currencyFormat.format(item.precoUnitario)}  •  custo ${currencyFormat.format(item.custoUnitario)}',
+                  podeVerFinancas
+                      ? '${item.quantidade}x ${currencyFormat.format(item.precoUnitario)}  •  custo ${currencyFormat.format(item.custoUnitario)}'
+                      : '${item.quantidade}x ${currencyFormat.format(item.precoUnitario)}',
                   style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
@@ -905,15 +764,17 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(currencyFormat.format(item.precoTotal), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              const SizedBox(height: 2),
-              Text(
-                '${lucroPositivo ? '+' : ''}${currencyFormat.format(item.lucroTotal)} (${item.margemPercentual.toStringAsFixed(0)}%)',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: lucroPositivo ? Colors.green[700] : Colors.red,
+              if (podeVerFinancas) ...[
+                const SizedBox(height: 2),
+                Text(
+                  '${lucroPositivo ? '+' : ''}${currencyFormat.format(item.lucroTotal)} (${item.margemPercentual.toStringAsFixed(0)}%)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.tomAdaptavel(lucroPositivo ? Colors.green : Colors.red, Theme.of(context).brightness),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ],

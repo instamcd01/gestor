@@ -25,9 +25,14 @@ class Despesa {
   final double valor;
   final DateTime dataVencimento;
   final DateTime? dataPagamento;
+  final DateTime? dataCancelamento;
   final String status; // ver StatusDespesa — "atrasado" é derivado, não gravado
   final String? metodoPagamento;
   final String observacoes;
+  /// Código de barras/linha digitável do boleto — não vem da NF-e (o XML
+  /// não traz isso, só o banco gera depois de registrado), preenchido
+  /// manualmente pra facilitar identificar/pagar depois.
+  final String? codigoBarrasBoleto;
 
   Despesa({
     this.id,
@@ -37,9 +42,11 @@ class Despesa {
     required this.valor,
     required this.dataVencimento,
     this.dataPagamento,
+    this.dataCancelamento,
     this.status = StatusDespesa.pendente,
     this.metodoPagamento,
     this.observacoes = '',
+    this.codigoBarrasBoleto,
   });
 
   bool get paga => status == StatusDespesa.pago;
@@ -56,9 +63,11 @@ class Despesa {
       valor: (row['valor'] as num?)?.toDouble() ?? 0.0,
       dataVencimento: DateTime.parse(row['data_vencimento'].toString()),
       dataPagamento: row['data_pagamento'] != null ? DateTime.parse(row['data_pagamento'].toString()) : null,
+      dataCancelamento: row['data_cancelamento'] != null ? DateTime.parse(row['data_cancelamento'].toString()) : null,
       status: row['status']?.toString() ?? StatusDespesa.pendente,
       metodoPagamento: row['metodo_pagamento']?.toString(),
       observacoes: row['observacoes']?.toString() ?? '',
+      codigoBarrasBoleto: row['codigo_barras_boleto']?.toString(),
     );
   }
 
@@ -70,9 +79,11 @@ class Despesa {
       'valor': valor,
       'data_vencimento': dataVencimento.toIso8601String().split('T').first,
       'data_pagamento': dataPagamento?.toIso8601String().split('T').first,
+      'data_cancelamento': dataCancelamento?.toIso8601String(),
       'status': status,
       'metodo_pagamento': metodoPagamento,
       'observacoes': observacoes,
+      'codigo_barras_boleto': codigoBarrasBoleto,
     };
   }
 }

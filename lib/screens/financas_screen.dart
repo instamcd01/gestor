@@ -6,6 +6,7 @@ import 'despesas_screen.dart';
 import 'entradas_screen.dart';
 import 'fluxo_caixa_screen.dart';
 import 'fornecedores_screen.dart';
+import 'metricas_despesas_screen.dart';
 
 class FinancasScreen extends StatelessWidget {
   const FinancasScreen({super.key});
@@ -31,6 +32,7 @@ class FinancasScreen extends StatelessWidget {
             titulo: 'Gestão',
             itens: [
               MenuItem('Contas a Pagar', Icons.payment_outlined, const DespesasScreen(apenasPendentes: true)),
+              MenuItem('Métricas de Contas a Pagar', Icons.bar_chart_outlined, const MetricasDespesasScreen()),
               MenuItem('Fornecedores', Icons.business_outlined, const FornecedoresScreen()),
             ],
           ),

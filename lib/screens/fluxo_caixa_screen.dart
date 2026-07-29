@@ -6,6 +6,7 @@ import '../models/despesa.dart';
 import '../models/venda.dart';
 import '../providers/despesa_provider.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../widgets/valor_destaque_card.dart';
 
 class FluxoCaixaScreen extends StatefulWidget {
   const FluxoCaixaScreen({super.key});
@@ -138,27 +139,10 @@ class _FluxoCaixaScreenState extends State<FluxoCaixaScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: saldo >= 0 ? Colors.green[50] : Colors.red[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: saldo >= 0 ? Colors.green[200]! : Colors.red[200]!),
-                  ),
-                  child: Column(
-                    children: [
-                      Text('Saldo do período', style: TextStyle(color: Colors.grey[700])),
-                      const SizedBox(height: 4),
-                      Text(
-                        currencyFormat.format(saldo),
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: saldo >= 0 ? Colors.green[800] : Colors.red[800],
-                        ),
-                      ),
-                    ],
-                  ),
+                ValorDestaqueCard(
+                  rotulo: 'Saldo do período',
+                  valor: currencyFormat.format(saldo),
+                  positivo: saldo >= 0,
                 ),
                 const SizedBox(height: 12),
                 Row(

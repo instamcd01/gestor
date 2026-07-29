@@ -358,6 +358,11 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Saldo é crédito/débito de verdade — vendedor não pode setar um valor
+    // arbitrário direto no cadastro. Ajuste de saldo passa a ser possível
+    // só via "Adicionar Crédito"/"Registrar Débito" (tela de detalhes),
+    // que por sua vez também é restrita a dono/gerente.
+    final isVendedor = context.watch<AuthProvider>().isVendedor;
 
     return Scaffold(
       appBar: AppBar(
@@ -481,13 +486,14 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
               titulo: 'Informações adicionais',
               children: [
                 _buildTextField('Observação', _observacaoController, maxLines: 3),
-                _buildTextField(
-                  'Saldo (R\$)',
-                  _saldoController,
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [MoedaInputFormatter()],
-                  validator: ClienteValidators.saldo,
-                ),
+                if (!isVendedor)
+                  _buildTextField(
+                    'Saldo (R\$)',
+                    _saldoController,
+                    keyboardType: TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [MoedaInputFormatter()],
+                    validator: ClienteValidators.saldo,
+                  ),
                 if (!_canaisCarregados)
                   const Center(child: CircularProgressIndicator())
                 else

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/cliente.dart';
+import '../models/zona_entrega.dart';
+import '../theme/app_theme.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/itens_compra_card.dart';
@@ -14,6 +16,7 @@ class PagamentoOutrosScreen extends StatefulWidget {
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
+  final ZonaEntrega? zonaEntrega;
 
   PagamentoOutrosScreen({
     required this.valorTotal,
@@ -23,6 +26,7 @@ class PagamentoOutrosScreen extends StatefulWidget {
     required this.valorEntrega,
     required this.entregaSelecionada,
     this.saldoUsado = 0.0,
+    this.zonaEntrega,
   });
 
   @override
@@ -132,6 +136,7 @@ class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
           entregaSelecionada: widget.entregaSelecionada,
           saldoUsado: saldoUsadoTotal,
           pagamentosDetalhados: pagamentos,
+          zonaEntrega: widget.zonaEntrega,
         ),
       ),
     );
@@ -181,7 +186,9 @@ class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
                           : 'Valor restante a pagar: R\$ ${valorRestante.toStringAsFixed(2)}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: valorRestante == 0 ? Colors.green[800] : colorScheme.onSurface,
+                        color: valorRestante == 0
+                            ? AppTheme.tomAdaptavel(Colors.green, Theme.of(context).brightness)
+                            : colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -202,7 +209,10 @@ class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
                     child: Text(
                       'Saldo disponível do cliente: R\$ ${saldoClienteDisponivel.toStringAsFixed(2)}',
                       style: TextStyle(
-                        color: saldoClienteDisponivel > 0 ? Colors.green[700] : Colors.red,
+                        color: AppTheme.tomAdaptavel(
+                          saldoClienteDisponivel > 0 ? Colors.green : Colors.red,
+                          Theme.of(context).brightness,
+                        ),
                         fontWeight: FontWeight.w500,
                       ),
                     ),

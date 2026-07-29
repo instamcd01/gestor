@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/fornecedor.dart';
 import '../providers/fornecedor_provider.dart';
 import '../utils/formatadores_input.dart';
+import '../utils/produto_validators.dart';
 import '../widgets/form_section.dart';
 
 class FornecedoresScreen extends StatefulWidget {
@@ -167,6 +168,7 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
   late final TextEditingController _cnpjCpfController;
   late final TextEditingController _emailController;
   late final TextEditingController _observacoesController;
+  late final TextEditingController _fatorCustoController;
   bool _salvando = false;
 
   bool get _editando => widget.fornecedor != null;
@@ -180,6 +182,7 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
     _cnpjCpfController = TextEditingController(text: f?.cnpjCpf ?? '');
     _emailController = TextEditingController(text: f?.email ?? '');
     _observacoesController = TextEditingController(text: f?.observacoes ?? '');
+    _fatorCustoController = TextEditingController(text: ProdutoValidators.formatarMoeda(f?.fatorCusto ?? 1.0));
   }
 
   @override
@@ -189,6 +192,7 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
     _cnpjCpfController.dispose();
     _emailController.dispose();
     _observacoesController.dispose();
+    _fatorCustoController.dispose();
     super.dispose();
   }
 
@@ -203,6 +207,7 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
       cnpjCpf: _cnpjCpfController.text.trim(),
       email: _emailController.text.trim(),
       observacoes: _observacoesController.text.trim(),
+      fatorCusto: ProdutoValidators.parseNumero(_fatorCustoController.text) ?? 1.0,
     );
 
     try {
@@ -263,6 +268,17 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
                     controller: _observacoesController,
                     decoration: const InputDecoration(labelText: 'Observações (Opcional)'),
                     maxLines: 3,
+                  ),
+                  TextFormField(
+                    controller: _fatorCustoController,
+                    decoration: const InputDecoration(
+                      labelText: 'Fator de custo',
+                      helperText: 'Multiplica o custo unitário da NF-e ao importar. 1,00 = usa o valor da nota sem ajuste.',
+                      helperMaxLines: 2,
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [DecimalInputFormatter()],
+                    validator: (v) => (ProdutoValidators.parseNumero(v) ?? 0) > 0 ? null : 'Informe um valor maior que zero',
                   ),
                 ],
               ),

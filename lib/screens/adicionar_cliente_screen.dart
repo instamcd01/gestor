@@ -318,6 +318,9 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Mesma razão do editar: saldo é crédito de verdade, vendedor não pode
+    // conceder um valor arbitrário na criação do cliente.
+    final isVendedor = context.watch<AuthProvider>().isVendedor;
 
     return Scaffold(
       appBar: AppBar(title: Text('Adicionar Cliente')),
@@ -451,13 +454,14 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
                 titulo: 'Informações adicionais',
                 children: [
                   _buildTextField('Observação', _observacaoController, maxLines: 3),
-                  _buildTextField(
-                    'Saldo (R\$)',
-                    _saldoController,
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [MoedaInputFormatter()],
-                    validator: ClienteValidators.saldo,
-                  ),
+                  if (!isVendedor)
+                    _buildTextField(
+                      'Saldo (R\$)',
+                      _saldoController,
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [MoedaInputFormatter()],
+                      validator: ClienteValidators.saldo,
+                    ),
                   if (!_canaisCarregados)
                     const Center(child: CircularProgressIndicator())
                   else

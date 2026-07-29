@@ -9,6 +9,9 @@ import '../providers/usuario_provider.dart';
 import '../providers/zona_entrega_provider.dart';
 import '../providers/fornecedor_provider.dart';
 import '../providers/despesa_provider.dart';
+import '../providers/notificacao_provider.dart';
+import '../providers/entrada_provider.dart';
+import '../services/push_notification_service.dart';
 import 'auth/login_screen.dart';
 import 'auth/onboarding_empresa_screen.dart';
 import 'home_screen.dart';
@@ -55,9 +58,14 @@ class _AuthGateState extends State<AuthGate> {
         context.read<UsuarioProvider>().definirEmpresa(empresaId);
         context.read<FornecedorProvider>().definirEmpresa(empresaId);
         context.read<DespesaProvider>().definirEmpresa(empresaId);
+        context.read<EntradaProvider>().definirEmpresa(empresaId);
         context.read<ZonaEntregaProvider>()
           ..definirEmpresa(empresaId)
           ..carregarZonas();
+        context.read<NotificacaoProvider>()
+          ..definirEmpresa(empresaId)
+          ..carregar();
+        PushNotificationService.inicializar();
       });
     }
 

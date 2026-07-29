@@ -13,6 +13,9 @@ import 'providers/usuario_provider.dart';
 import 'providers/zona_entrega_provider.dart';
 import 'providers/fornecedor_provider.dart';
 import 'providers/despesa_provider.dart';
+import 'providers/preferencias_provider.dart';
+import 'providers/notificacao_provider.dart';
+import 'providers/entrada_provider.dart';
 import 'screens/auth_gate.dart';
 import 'config/supabase_config.dart';
 
@@ -22,11 +25,20 @@ void main() async {
   // Backend único do app (auth, dados multi-tenant com RLS, storage).
   await SupabaseConfig.inicializar();
 
-  runApp(const MyApp());
+  // Carrega a cor/tema/layout do último branding salvo NESTE aparelho antes
+  // do primeiro frame — sem isso, o app sempre nascia com a cor padrão e só
+  // trocava pra cor real da empresa depois que `carregarBranding` (que
+  // depende de autenticação + rede) terminava, um "flash" visível toda vez.
+  final brandingProvider = BrandingProvider();
+  await brandingProvider.carregarCachePrevio();
+
+  runApp(MyApp(brandingProvider: brandingProvider));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final BrandingProvider brandingProvider;
+
+  const MyApp({super.key, required this.brandingProvider});
 
   @override
   Widget build(BuildContext context) {
@@ -36,12 +48,15 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ClientProvider()),
         ChangeNotifierProvider(create: (_) => HistoricoVendasProvider()),
         ChangeNotifierProvider(create: (_) => CarrinhoProvider()),
-        ChangeNotifierProvider(create: (_) => BrandingProvider()),
+        ChangeNotifierProvider.value(value: brandingProvider),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => UsuarioProvider()),
         ChangeNotifierProvider(create: (_) => ZonaEntregaProvider()),
         ChangeNotifierProvider(create: (_) => FornecedorProvider()),
         ChangeNotifierProvider(create: (_) => DespesaProvider()),
+        ChangeNotifierProvider(create: (_) => PreferenciasProvider()),
+        ChangeNotifierProvider(create: (_) => NotificacaoProvider()),
+        ChangeNotifierProvider(create: (_) => EntradaProvider()),
       ],
       child: Consumer<BrandingProvider>(
         builder: (context, branding, _) {

@@ -4,6 +4,7 @@ import '../models/produto.dart';
 import '../models/venda.dart';
 import '../repositories/produto_repository.dart';
 import '../repositories/separacao_pedido_repository.dart';
+import '../widgets/aviso_banner.dart';
 
 enum _AcaoItem { removido, substituido }
 
@@ -185,14 +186,12 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
           ListView(
             padding: const EdgeInsets.all(12),
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-                child: const Text(
-                  'Módulo de Picking da iFood tem liberação separada — se as ações abaixo derem erro, pode ser que '
-                  'esse recurso ainda não esteja habilitado pra essa loja.',
-                  style: TextStyle(fontSize: 12.5),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: AvisoBanner(
+                  tipo: TipoAviso.alerta,
+                  texto: 'Módulo de Picking da iFood tem liberação separada — se as ações abaixo derem erro, pode ser que '
+                      'esse recurso ainda não esteja habilitado pra essa loja.',
                 ),
               ),
               if (_status == null)
@@ -206,11 +205,9 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                 )
               else ...[
                 if (_status == 'finalizada')
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-                    child: const Row(children: [Icon(Icons.check_circle, color: Colors.green), SizedBox(width: 8), Text('Separação finalizada')]),
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: AvisoBanner(tipo: TipoAviso.sucesso, texto: 'Separação finalizada'),
                   ),
                 ...itens.map((item) => _itemCard(item)),
                 if (_status == 'separando') ...[

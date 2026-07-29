@@ -98,7 +98,7 @@ class Cliente {
 
   List<String> get especies => pets.map((p) => p.especie).toSet().toList();
 
-  Cliente copyWith({double? saldo}) {
+  Cliente copyWith({double? saldo, double? rangeDistancia, int? estimativaEntrega}) {
     return Cliente(
       idCliente: idCliente,
       nome: nome,
@@ -133,8 +133,8 @@ class Cliente {
       interesses: interesses,
       documentos: documentos,
       observacoesExtras: observacoesExtras,
-      rangeDistancia: rangeDistancia,
-      estimativaEntrega: estimativaEntrega,
+      rangeDistancia: rangeDistancia ?? this.rangeDistancia,
+      estimativaEntrega: estimativaEntrega ?? this.estimativaEntrega,
       latitude: latitude,
       longitude: longitude,
     );

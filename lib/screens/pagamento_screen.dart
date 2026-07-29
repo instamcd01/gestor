@@ -7,12 +7,14 @@ import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
 import '../models/cliente.dart';
+import '../models/zona_entrega.dart';
 import '../providers/auth_provider.dart';
+import '../providers/carrinho_provider.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/itens_compra_card.dart';
 import '../widgets/resumo_pagamento_card.dart';
-import 'adicionar_cliente_screen.dart';
+import 'opcao_entrega_screen.dart';
 import 'opcoes_pagamento_screen.dart';
 import 'pagamento_credito_screen.dart';
 import 'pagamento_debito_screen.dart';
@@ -27,6 +29,7 @@ class PagamentoScreen extends StatefulWidget {
   final double desconto;
   final double valorEntrega;
   final String entregaSelecionada;
+  final ZonaEntrega? zonaEntrega;
 
   PagamentoScreen({
     required this.valorTotal,
@@ -36,6 +39,7 @@ class PagamentoScreen extends StatefulWidget {
     required this.desconto,
     required this.valorEntrega,
     required this.entregaSelecionada,
+    this.zonaEntrega,
   });
 
   @override
@@ -53,10 +57,17 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   double desconto = 0.0;
   double saldoUsado = 0.0;
 
-  // Cliente da venda em andamento — mutável porque "Cadastrar Novo Cliente"
-  // durante o checkout deve passar a usar o cliente recém-criado, não o
-  // original recebido no construtor.
+  // Cliente da venda em andamento — mutável porque "Trocar Cliente" durante
+  // o checkout deve passar a usar o cliente escolhido, não o original
+  // recebido no construtor.
   late Cliente _cliente;
+
+  // Entrega também mutável: trocar de cliente pode mudar a distância até
+  // ele, então a zona/valor de entrega calculados lá atrás podem não valer
+  // mais pro novo cliente.
+  late double _valorEntrega;
+  late String _entregaSelecionada;
+  ZonaEntrega? _zonaEntrega;
 
   List<String> _metodosAtivos = List.from(metodosPagamentoDisponiveis);
 
@@ -69,6 +80,9 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     );
     desconto = widget.desconto;
     _cliente = widget.cliente;
+    _valorEntrega = widget.valorEntrega;
+    _entregaSelecionada = widget.entregaSelecionada;
+    _zonaEntrega = widget.zonaEntrega;
     _carregarMetodosAtivos();
   }
 
@@ -113,7 +127,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   /// Valor a pagar antes de aplicar o saldo do cliente — usado como teto
   /// pra quanto de saldo pode ser usado.
   double get _valorAntesDoSaldo {
-    final v = _subtotal - desconto + widget.valorEntrega;
+    final v = _subtotal - desconto + _valorEntrega;
     return v < 0 ? 0.0 : v;
   }
 
@@ -159,7 +173,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   }
 
   void aplicarDesconto() async {
-    final baseSemDesconto = _subtotal + widget.valorEntrega;
+    final baseSemDesconto = _subtotal + _valorEntrega;
     final novoValorComDesconto = await Navigator.push<double>(
       context,
       MaterialPageRoute(
@@ -187,16 +201,45 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     });
   }
 
-  Future<void> cadastrarNovoCliente() async {
-    final novoCliente = await Navigator.push<Cliente>(
+  /// Reabre a mesma tela de seleção de cliente/entrega usada no Carrinho,
+  /// pra recalcular a zona/valor de entrega em cima da distância do novo
+  /// cliente em vez de manter os valores do cliente antigo.
+  Future<void> trocarCliente() async {
+    final resultado = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
-        builder: (context) => AdicionarClienteScreen(),
+        builder: (context) => OpcaoEntregaScreen(subtotal: _subtotal),
       ),
     );
-    if (novoCliente != null) {
-      setState(() => _cliente = novoCliente);
+    if (resultado == null || !mounted) return;
+
+    final novoCliente = resultado['cliente'] as Cliente;
+    final novaZona = resultado['zona'] as ZonaEntrega?;
+    final novoValorEntrega = _calcularValorEntrega(novaZona);
+
+    setState(() {
+      _cliente = novoCliente;
+      _valorEntrega = novoValorEntrega;
+      _entregaSelecionada = novaZona?.nome ?? 'Retirada na Loja';
+      _zonaEntrega = novaZona;
+      // O saldo já aplicado não pode passar a exceder o novo valor devido.
+      if (saldoUsado > _valorAntesDoSaldo) {
+        saldoUsado = _valorAntesDoSaldo;
+      }
+    });
+
+    // Mantém o carrinho em sincronia — caso a pessoa volte pra ele.
+    context.read<CarrinhoProvider>().selecionarCliente(novoCliente);
+    context.read<CarrinhoProvider>().selecionarZonaEntrega(novaZona);
+  }
+
+  double _calcularValorEntrega(ZonaEntrega? zona) {
+    if (zona == null) return 0.0;
+    final minimoFreteGratis = zona.valorMinimoFreteGratis;
+    if (minimoFreteGratis != null && _subtotal >= minimoFreteGratis) {
+      return 0.0;
     }
+    return zona.valor;
   }
 
   void navegarParaTelaPagamento() {
@@ -212,8 +255,9 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
-            valorEntrega: widget.valorEntrega,
-            entregaSelecionada: widget.entregaSelecionada,
+            valorEntrega: _valorEntrega,
+            entregaSelecionada: _entregaSelecionada,
+            zonaEntrega: _zonaEntrega,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -228,8 +272,9 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
-            valorEntrega: widget.valorEntrega,
-            entregaSelecionada: widget.entregaSelecionada,
+            valorEntrega: _valorEntrega,
+            entregaSelecionada: _entregaSelecionada,
+            zonaEntrega: _zonaEntrega,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -244,8 +289,9 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
-            valorEntrega: widget.valorEntrega,
-            entregaSelecionada: widget.entregaSelecionada,
+            valorEntrega: _valorEntrega,
+            entregaSelecionada: _entregaSelecionada,
+            zonaEntrega: _zonaEntrega,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -260,8 +306,9 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
-            valorEntrega: widget.valorEntrega,
-            entregaSelecionada: widget.entregaSelecionada,
+            valorEntrega: _valorEntrega,
+            entregaSelecionada: _entregaSelecionada,
+            zonaEntrega: _zonaEntrega,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -276,8 +323,9 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
-            valorEntrega: widget.valorEntrega,
-            entregaSelecionada: widget.entregaSelecionada,
+            valorEntrega: _valorEntrega,
+            entregaSelecionada: _entregaSelecionada,
+            zonaEntrega: _zonaEntrega,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -291,8 +339,9 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             carrinho: widget.carrinho,
             cliente: _cliente,
             desconto: desconto,
-            valorEntrega: widget.valorEntrega,
-            entregaSelecionada: widget.entregaSelecionada,
+            valorEntrega: _valorEntrega,
+            entregaSelecionada: _entregaSelecionada,
+            zonaEntrega: _zonaEntrega,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -310,9 +359,9 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
         title: Text('Pagamento'),
         actions: [
           IconButton(
-            icon: Icon(Icons.person_add),
-            onPressed: cadastrarNovoCliente,
-            tooltip: 'Cadastrar Novo Cliente',
+            icon: Icon(Icons.swap_horiz),
+            onPressed: trocarCliente,
+            tooltip: 'Trocar Cliente',
           ),
         ],
       ),
@@ -348,7 +397,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             ResumoPagamentoCard(
               subtotal: _subtotal,
               desconto: desconto,
-              valorEntrega: widget.valorEntrega,
+              valorEntrega: _valorEntrega,
               saldoUsado: saldoUsado,
               valorTotal: valorTotal,
             ),

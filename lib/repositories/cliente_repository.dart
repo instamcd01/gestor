@@ -66,6 +66,23 @@ class ClienteRepository {
     await _inserirPets(cliente.pets, cliente.idCliente!);
   }
 
+  /// Guarda a distância/tempo de rota real (Google Maps) calculados pro
+  /// endereço desse cliente — evita recalcular (chamada paga à API) no
+  /// próximo checkout, e alimenta os cards da Fila de Pedidos. `metadata`
+  /// é jsonb com outras chaves (observação, interesses etc.) — por isso lê
+  /// e faz merge em vez de sobrescrever a coluna inteira.
+  Future<void> atualizarDistancia(
+    String clienteId, {
+    required double rangeDistancia,
+    required int estimativaEntrega,
+  }) async {
+    final atual = await supabase.from('clientes').select('metadata').eq('id', clienteId).single();
+    final metadata = Map<String, dynamic>.from((atual['metadata'] as Map<String, dynamic>?) ?? {});
+    metadata['rangeDistancia'] = rangeDistancia;
+    metadata['estimativaEntrega'] = estimativaEntrega;
+    await supabase.from('clientes').update({'metadata': metadata}).eq('id', clienteId);
+  }
+
   Future<void> excluir(String clienteId) async {
     await supabase
         .from('clientes')

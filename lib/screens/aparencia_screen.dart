@@ -3,6 +3,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:provider/provider.dart';
 import '../models/modelo_visual.dart';
 import '../providers/branding_provider.dart';
+import '../providers/preferencias_provider.dart';
 import '../theme/app_theme.dart';
 
 /// Tela de personalização visual da empresa (Configurações > Aparência e Marca).
@@ -108,6 +109,32 @@ class AparenciaScreen extends StatelessWidget {
               ],
             ),
           ),
+
+          if (branding.layoutNavegacao == LayoutNavegacao.sidebar) ...[
+            const SizedBox(height: 24),
+            Text('Navegação', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Só vale pra este aparelho — cada pessoa que usa o app escolhe pra si.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Consumer<PreferenciasProvider>(
+              builder: (context, preferencias, _) => Card(
+                child: SwitchListTile(
+                  title: const Text('Barra lateral sempre visível'),
+                  subtitle: const Text(
+                    'Mantém a barra de ícones fixa nas telas principais, mesmo no celular — '
+                    'em vez de precisar abrir o menu toda vez que for navegar.',
+                  ),
+                  value: preferencias.barraLateralFixa,
+                  onChanged: (valor) => preferencias.definirBarraLateralFixa(valor),
+                ),
+              ),
+            ),
+          ],
 
           const SizedBox(height: 24),
           OutlinedButton.icon(

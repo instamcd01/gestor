@@ -33,6 +33,7 @@ class StatusPedido {
 
 class Venda {
   final String? idVenda;
+  final int? numeroSequencial; // número curto/legível do pedido (ex: #123) — idVenda é o uuid interno
   final Cliente cliente;
   final DateTime dataVenda;
 
@@ -56,6 +57,7 @@ class Venda {
   final Map<String, double>? pagamentosDetalhados;
   final String status;            // ver StatusPedido (espelha pedidos.status)
   final String canalVenda;        // 'loja_fisica', 'whatsapp', 'ifood', 'site', etc.
+  final String? vendedorId;       // quem registrou a venda — null em pedidos de outras origens (iFood, site)
 
   // --- Campos específicos de marketplace (iFood), todos opcionais ---
   final String? marketplacePedidoId;    // marketplace_pedidos.id, precisa pra ações que gravam lá
@@ -77,8 +79,17 @@ class Venda {
   final DateTime? entregaPrevistaInicio; // início da janela prometida, só quando agendado
   final DateTime? entregaPrevistaFim; // fim da janela (agendado) ou estimativa única (pedido imediato)
 
+  // Previsão calculada pela LOJA (zona escolhida no checkout + hora do
+  // pedido) — independente do prazo que a iFood promete ao cliente dela
+  // (os dois campos acima). Só existe pra pedidos com entrega feitos pelo
+  // checkout do app (loja física/WhatsApp/site); pedidos iFood ainda não
+  // têm endereço/coordenadas suficientes pra calcular a zona.
+  final DateTime? previsaoEntregaInicio;
+  final DateTime? previsaoEntregaFim;
+
   Venda({
     this.idVenda,
+    this.numeroSequencial,
     required this.cliente,
     required this.dataVenda,
     required this.subtotal,
@@ -98,6 +109,7 @@ class Venda {
     this.pagamentosDetalhados,
     this.status = StatusPedido.entregue,
     this.canalVenda = 'loja_fisica',
+    this.vendedorId,
     this.marketplacePedidoId,
     this.tipoEntregaMarketplace,
     this.codigoConfirmacaoStatus,
@@ -116,6 +128,8 @@ class Venda {
     this.agendado = false,
     this.entregaPrevistaInicio,
     this.entregaPrevistaFim,
+    this.previsaoEntregaInicio,
+    this.previsaoEntregaFim,
   });
 
   bool get pagoPeloMarketplace => statusPagamento == 'pago';
@@ -131,6 +145,17 @@ class Venda {
   bool get temEntrega => valorEntrega > 0 || entregaSelecionada.isNotEmpty;
   bool get ehMarketplace => canalVenda == 'ifood';
   bool get temRastreio => rastreioLatitude != null && rastreioLongitude != null;
+
+  /// true = cliente retira na loja (não precisa entrar em rota nenhuma).
+  /// Não usa `temEntrega` de propósito — esse getter fica true mesmo pra
+  /// retirada, porque `entregaSelecionada` guarda o texto "Retirada na
+  /// Loja" (não vazio) nesse caso.
+  bool get retirada {
+    if (ehMarketplace) {
+      return tipoEntregaMarketplace != null && tipoEntregaMarketplace != 'DELIVERY';
+    }
+    return entregaSelecionada.isEmpty || entregaSelecionada == 'Retirada na Loja';
+  }
 
   /// Próximo status no ciclo de vida (pula "saiu para entrega" quando o
   /// pedido é retirada/balcão, sem entrega). Retorna null se já estiver

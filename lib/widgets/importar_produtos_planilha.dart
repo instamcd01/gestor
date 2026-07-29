@@ -1,6 +1,3 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:excel/excel.dart';
@@ -8,55 +5,13 @@ import "package:file_picker/file_picker.dart";
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:archive/archive.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../models/produto.dart';
 import '../repositories/marketplace_repository.dart';
 import '../repositories/produto_canal_repository.dart';
 import '../repositories/produto_repository.dart';
-
-/// Corrige um problema real observado em planilhas exportadas por algumas
-/// ferramentas (Excel Online entre elas): `xl/styles.xml` às vezes declara
-/// um `<numFmt>` "customizado" com `numFmtId` abaixo de 164 — faixa
-/// reservada pra formatos *embutidos* do Excel. O pacote `excel` (v4.0.6)
-/// lança exceção nesse caso ("custom numFmtId starts at 164 but found a
-/// value of N") em vez de aceitar. A primeira tentativa de corrigir isso
-/// (apagar a declaração) quebrou em outro lugar: o pacote não tem uma
-/// tabela própria de formatos embutidos, só conhece o que está declarado
-/// em `<numFmts>` — apagando a declaração, toda célula com estilo
-/// referenciando esse id (`<xf numFmtId="44">`) passa a apontar pro nada
-/// ("missing numFmt for 44"). A correção certa é RENUMERAR: mover o id
-/// pra faixa válida (+10000) e atualizar todas as referências no mesmo
-/// arquivo pro novo número, preservando a definição em vez de apagá-la.
-Uint8List _corrigirNumFmtsInvalidos(Uint8List bytes) {
-  final archive = ZipDecoder().decodeBytes(bytes);
-  final stylesFile = archive.findFile('xl/styles.xml');
-  if (stylesFile == null) return bytes;
-
-  var conteudo = utf8.decode(stylesFile.content as List<int>);
-
-  final regexNumFmt = RegExp(r'<numFmt\s+numFmtId="(\d+)"');
-  final idsInvalidos = <int>{};
-  for (final m in regexNumFmt.allMatches(conteudo)) {
-    final id = int.tryParse(m.group(1) ?? '');
-    if (id != null && id < 164) idsInvalidos.add(id);
-  }
-  if (idsInvalidos.isEmpty) return bytes;
-
-  for (final idAntigo in idsInvalidos) {
-    final idNovo = idAntigo + 10000;
-    // Substitui toda ocorrência de numFmtId="N" no arquivo (tanto a
-    // declaração em <numFmts> quanto cada referência em <xf>) -- a aspa de
-    // fechamento no padrão evita casar "44" dentro de "440" por engano.
-    conteudo = conteudo.replaceAll('numFmtId="$idAntigo"', 'numFmtId="$idNovo"');
-  }
-
-  final novosBytes = utf8.encode(conteudo);
-  archive.addFile(ArchiveFile('xl/styles.xml', novosBytes.length, novosBytes));
-  final reempacotado = ZipEncoder().encode(archive);
-  return reempacotado != null ? Uint8List.fromList(reempacotado) : bytes;
-}
+import '../utils/planilha_utils.dart';
 
 class _LinhaCanalIfood {
   // Correlação por SKU (o "ID" da planilha) em vez de código de barras: o
@@ -81,67 +36,32 @@ class _LinhaImportada {
   _LinhaImportada({required this.numeroLinha, required this.produto, required this.atualizacao});
 }
 
-/// Reconhece o cabeçalho da planilha por *nome*, não por posição da coluna
-/// — a planilha real da loja ("Planilha Mestre") tem uma ordem de colunas
-/// totalmente diferente do modelo genérico gerado por "Baixar Planilha
-/// Base", então mapear por posição fixa quebraria os dados. Cada campo
-/// aceita uma lista de nomes possíveis (minúsculo, sem acento não é
-/// necessário pois comparamos direto).
-class _MapaColunas {
-  final Map<String, int> indicePorCampo;
-  _MapaColunas(this.indicePorCampo);
-
-  int? _idx(String campo) => indicePorCampo[campo];
-
-  String? celula(List<Data?> row, String campo) {
-    final i = _idx(campo);
-    if (i == null || i >= row.length) return null;
-    final v = row[i]?.value?.toString().trim();
-    return (v == null || v.isEmpty) ? null : v;
-  }
-
-  static const _aliases = {
-    'id_externo': ['id'],
-    'nome': ['nome', 'nome*'],
-    'grupo': ['grupo', 'categoria'],
-    'codigo_barras': ['código de barras', 'codigo de barras', 'código', 'codigo'],
-    'custo': ['custo', 'custo unitário', 'custo unitario'],
-    'preco': ['preço loja', 'preco loja', 'preço unitário*', 'preco unitario', 'preço', 'preco'],
-    'preco_promocional': ['preço promoção', 'preco promocao', 'preço promocional', 'preco promocional'],
-    'preco_ifood': ['preço ifood', 'preco ifood'],
-    'validade': ['validade'],
-    'estoque_atual': ['qtd. atual estoque', 'estoque atual', 'qtd atual estoque'],
-    'estoque_minimo': ['quantidade minima', 'quantidade mínima', 'estoque mínimo', 'estoque minimo'],
-    'markup': ['markup'],
-    'lucro': ['lucro'],
-    'preco_concorrencia': ['preço concorrencia', 'preco concorrencia', 'preço concorrência'],
-    'empresa': ['empresa'],
-    'descricao': ['descriçao', 'descrição', 'descricao'],
-    'destacar': ['destacar'],
-    'exibir_no_catalogo': ['exibir no catálogo', 'exibir no catalogo'],
-    'ativo': ['ativo'],
-    'fracionado': ['fracionado?', 'fracionado'],
-  };
-
-  factory _MapaColunas.deCabecalho(List<Data?> headerRow) {
-    final porNome = <String, int>{};
-    for (var i = 0; i < headerRow.length; i++) {
-      final nome = headerRow[i]?.value?.toString().trim().toLowerCase();
-      if (nome != null && nome.isNotEmpty) porNome[nome] = i;
-    }
-
-    final indicePorCampo = <String, int>{};
-    for (final entry in _aliases.entries) {
-      for (final alias in entry.value) {
-        if (porNome.containsKey(alias)) {
-          indicePorCampo[entry.key] = porNome[alias]!;
-          break;
-        }
-      }
-    }
-    return _MapaColunas(indicePorCampo);
-  }
-}
+/// Aliases de cabeçalho reconhecidos pra planilha de produtos — a planilha
+/// real da loja ("Planilha Mestre") tem uma ordem de colunas totalmente
+/// diferente do modelo genérico gerado por "Baixar Planilha Base", então
+/// mapear por posição fixa quebraria os dados (ver [MapaColunasPlanilha]).
+const _aliasesProdutos = {
+  'id_externo': ['id'],
+  'nome': ['nome', 'nome*'],
+  'grupo': ['grupo', 'categoria'],
+  'codigo_barras': ['código de barras', 'codigo de barras', 'código', 'codigo'],
+  'custo': ['custo', 'custo unitário', 'custo unitario'],
+  'preco': ['preço loja', 'preco loja', 'preço unitário*', 'preco unitario', 'preço', 'preco'],
+  'preco_promocional': ['preço promoção', 'preco promocao', 'preço promocional', 'preco promocional'],
+  'preco_ifood': ['preço ifood', 'preco ifood'],
+  'validade': ['validade'],
+  'estoque_atual': ['qtd. atual estoque', 'estoque atual', 'qtd atual estoque'],
+  'estoque_minimo': ['quantidade minima', 'quantidade mínima', 'estoque mínimo', 'estoque minimo'],
+  'markup': ['markup'],
+  'lucro': ['lucro'],
+  'preco_concorrencia': ['preço concorrencia', 'preco concorrencia', 'preço concorrência'],
+  'empresa': ['empresa'],
+  'descricao': ['descriçao', 'descrição', 'descricao'],
+  'destacar': ['destacar'],
+  'exibir_no_catalogo': ['exibir no catálogo', 'exibir no catalogo'],
+  'ativo': ['ativo'],
+  'fracionado': ['fracionado?', 'fracionado'],
+};
 
 class ImportarProdutosScreen extends StatefulWidget {
   const ImportarProdutosScreen({super.key});
@@ -152,26 +72,6 @@ class ImportarProdutosScreen extends StatefulWidget {
 
 class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
   bool _processando = false;
-
-  /// Preço vindo de planilha pode vir como "R$   19,90" (com prefixo,
-  /// espaços variados e separador de milhar) — bem mais solto do que o
-  /// que os campos de digitação do app aceitam, por isso um parser à
-  /// parte aqui em vez de reusar o das telas de cadastro.
-  double? _parseMoeda(String? texto) {
-    if (texto == null) return null;
-    var limpo = texto.replaceAll('R\$', '').trim();
-    if (limpo.isEmpty) return null;
-    if (limpo.contains(',')) {
-      limpo = limpo.replaceAll('.', '').replaceAll(',', '.');
-    }
-    return double.tryParse(limpo);
-  }
-
-  bool _parseBooleano(String? texto, {bool padrao = false}) {
-    if (texto == null || texto.isEmpty) return padrao;
-    final v = texto.trim().toUpperCase();
-    return v == 'S' || v == 'SIM' || v == '1' || v == 'TRUE' || v == 'V' || v == 'VERDADEIRO';
-  }
 
   /// Devolve (categoria, subcategoria) — a planilha real guarda os dois
   /// juntos numa célula só, separados por "|" (ex: "Areia | Granulado").
@@ -193,7 +93,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     setState(() => _processando = true);
     try {
       final file = File(result.files.single.path!);
-      final bytesCorrigidos = _corrigirNumFmtsInvalidos(file.readAsBytesSync());
+      final bytesCorrigidos = corrigirNumFmtsInvalidos(file.readAsBytesSync());
       final excel = Excel.decodeBytes(bytesCorrigidos);
 
       final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
@@ -230,7 +130,8 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
           final nomeAba = entry.key.toLowerCase();
           if (nomeAba.contains('ifood') || nomeAba.contains('kyte')) continue;
           if (entry.value.rows.isEmpty) continue;
-          if (_MapaColunas.deCabecalho(entry.value.rows.first).indicePorCampo['nome'] != null) {
+          if (MapaColunasPlanilha.deCabecalho(entry.value.rows.first, _aliasesProdutos).indicePorCampo['nome'] !=
+              null) {
             abaProdutos = entry.value;
             break;
           }
@@ -239,7 +140,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
 
       if (abaProdutos != null && abaProdutos.rows.isNotEmpty) {
         final rows = abaProdutos.rows;
-        final mapa = _MapaColunas.deCabecalho(rows.first);
+        final mapa = MapaColunasPlanilha.deCabecalho(rows.first, _aliasesProdutos);
 
         for (var i = 1; i < rows.length; i++) {
           final row = rows[i];
@@ -254,7 +155,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
           double? valor(String campo) {
             final texto = mapa.celula(row, campo);
             if (texto == null) return null;
-            final v = _parseMoeda(texto);
+            final v = parseMoedaPlanilha(texto);
             if (v == null) avisoValor = true;
             return v;
           }
@@ -266,14 +167,21 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
           final custo = valor('custo') ?? 0.0;
           final preco = valor('preco') ?? 0.0;
           final estoqueAtual =
-              int.tryParse(_parseMoeda(mapa.celula(row, 'estoque_atual'))?.toStringAsFixed(0) ?? '') ?? 0;
+              int.tryParse(parseMoedaPlanilha(mapa.celula(row, 'estoque_atual'))?.toStringAsFixed(0) ?? '') ?? 0;
 
           // Markup/Lucro/Ativo NÃO são lidos da planilha, mesmo tendo colunas
           // com esses nomes: nessa planilha real, essas três colunas contêm
           // FÓRMULAS (ex: "M2/E2", "IF(J2>0,1,0)"), não valores — o pacote de
           // leitura devolve o texto da fórmula, não o resultado calculado.
-          // Calculamos aqui do mesmo jeito que a fórmula da própria planilha
-          // pretendia (ativo = tem estoque; lucro/markup = preço − custo).
+          // Lucro/markup seguem a mesma fórmula da planilha (preço − custo).
+          // Ativo NÃO segue mais a fórmula da planilha (era "tem estoque"):
+          // isso silenciosamente marcava como inativo qualquer produto que
+          // estivesse zerado no momento da importação, mesmo quando o
+          // lojista continuava vendendo normalmente — "ativo" no Gestor é
+          // uma decisão manual (descontinuar ou não), sem relação com
+          // estoque momentâneo. Produto já existente preserva o que já
+          // estava marcado no Gestor; produto novo nasce ativo, igual ao
+          // cadastro manual.
           final lucroValor = preco - custo;
 
           final produto = Produto(
@@ -291,16 +199,20 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
             validade: mapa.celula(row, 'validade'),
             estoqueAtual: estoqueAtual,
             estoqueMinimo:
-                int.tryParse(_parseMoeda(mapa.celula(row, 'estoque_minimo'))?.toStringAsFixed(0) ?? '') ?? 0,
+                int.tryParse(parseMoedaPlanilha(mapa.celula(row, 'estoque_minimo'))?.toStringAsFixed(0) ?? '') ?? 0,
             markup: custo > 0 ? '${(lucroValor / custo * 100).toStringAsFixed(1)}%' : null,
             lucro: lucroValor.toStringAsFixed(2),
             empresa: mapa.celula(row, 'empresa'),
             descricao: mapa.celula(row, 'descricao') ?? '',
-            imagemUrl: '',
-            destacar: _parseBooleano(mapa.celula(row, 'destacar')),
-            exibirNoCatalogo: _parseBooleano(mapa.celula(row, 'exibir_no_catalogo'), padrao: true),
-            ativo: estoqueAtual > 0,
-            permiteFracionamento: _parseBooleano(mapa.celula(row, 'fracionado')),
+            // A planilha nunca carrega foto — sem preservar o que já existe,
+            // toda reimportação apagava a imagem (e, por tabela, a capa da
+            // galeria de mídias) de qualquer produto já cadastrado.
+            imagemUrl: existente?.imagemUrl ?? '',
+            imagemUrlSecundaria: existente?.imagemUrlSecundaria,
+            destacar: parseBooleanoPlanilha(mapa.celula(row, 'destacar')),
+            exibirNoCatalogo: parseBooleanoPlanilha(mapa.celula(row, 'exibir_no_catalogo'), padrao: true),
+            ativo: existente?.ativo ?? true,
+            permiteFracionamento: parseBooleanoPlanilha(mapa.celula(row, 'fracionado')),
           );
 
           if (avisoValor) linhasComValorInvalido.add(numeroLinha);
@@ -461,22 +373,28 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
 
     sheet.appendRow([
       TextCellValue('Nome'),
-      TextCellValue('Categoria'),
+      // "Grupo" (não "Categoria" sozinho) pra já expor o formato aceito de
+      // categoria+subcategoria numa célula só: "Categoria | Subcategoria".
+      TextCellValue('Grupo'),
       TextCellValue('Código de Barras'),
       TextCellValue('Custo'),
       TextCellValue('Preço'),
+      TextCellValue('Preço Promoção'),
       TextCellValue('Preço Ifood'),
+      TextCellValue('Preço Concorrência'),
       TextCellValue('Validade'),
       TextCellValue('Estoque Atual'),
       TextCellValue('Estoque Mínimo'),
-      TextCellValue('Markup'),
-      TextCellValue('Lucro'),
-      TextCellValue('Preço Concorrência'),
       TextCellValue('Empresa'),
+      TextCellValue('Descrição'),
       TextCellValue('ID'),
-      TextCellValue('Preço Promocional'),
       TextCellValue('Destacar'),
       TextCellValue('Exibir no Catálogo'),
+      TextCellValue('Fracionado'),
+      // Markup/Lucro ficaram de fora de propósito: a importação não lê
+      // essas colunas, calcula os dois a partir de Custo/Preço (ver
+      // comentário em _iniciarImportacao) — tê-las aqui só faria a pessoa
+      // perder tempo preenchendo algo que seria ignorado.
     ]);
 
     final directory = await getApplicationDocumentsDirectory();
@@ -487,6 +405,97 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     await SharePlus.instance.share(
       ShareParams(files: [XFile(file.path)], text: 'Aqui está a planilha de produtos para preenchimento!'),
     );
+  }
+
+  /// Gera uma planilha com o catálogo atual (todos os produtos, com o que
+  /// já foi curado manualmente no Gestor — nome, categoria/subcategoria
+  /// etc). Serve pra substituir uma "Planilha Mestre" desatualizada: os
+  /// cabeçalhos usados aqui já são reconhecidos por [_MapaColunas], então
+  /// essa mesma planilha pode voltar a ser reimportada depois de editada,
+  /// como atualização (casando pelo ID/SKU).
+  Future<void> _exportarCatalogoAtual() async {
+    setState(() => _processando = true);
+    try {
+      final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
+      await produtoProvider.carregarProdutos();
+      final produtos = List<Produto>.from(produtoProvider.produtos)
+        ..sort((a, b) => a.nome.compareTo(b.nome));
+
+      final excel = Excel.createExcel();
+      final Sheet sheet = excel['Planilha Mestre'];
+
+      sheet.appendRow([
+        TextCellValue('Nome'),
+        TextCellValue('Grupo'),
+        TextCellValue('Código de Barras'),
+        TextCellValue('Custo'),
+        TextCellValue('Preço'),
+        TextCellValue('Preço Promoção'),
+        TextCellValue('Preço Ifood'),
+        TextCellValue('Validade'),
+        TextCellValue('Estoque Atual'),
+        TextCellValue('Estoque Mínimo'),
+        TextCellValue('Markup'),
+        TextCellValue('Lucro'),
+        TextCellValue('Preço Concorrência'),
+        TextCellValue('Empresa'),
+        TextCellValue('ID'),
+        TextCellValue('Descrição'),
+        TextCellValue('Destacar'),
+        TextCellValue('Exibir no Catálogo'),
+        TextCellValue('Ativo'),
+        TextCellValue('Fracionado'),
+      ]);
+
+      for (final p in produtos) {
+        // Mesmo formato "Categoria | Subcategoria" que a importação espera
+        // de volta numa única célula (ver _splitCategoria).
+        final grupo =
+            (p.subcategoria != null && p.subcategoria!.isNotEmpty) ? '${p.categoria} | ${p.subcategoria}' : p.categoria;
+
+        sheet.appendRow([
+          TextCellValue(p.nome),
+          TextCellValue(grupo),
+          TextCellValue(p.codigoBarras),
+          DoubleCellValue(p.custo),
+          DoubleCellValue(p.preco),
+          p.precoPromocional != null ? DoubleCellValue(p.precoPromocional!) : TextCellValue(''),
+          p.precoIfood != null ? DoubleCellValue(p.precoIfood!) : TextCellValue(''),
+          TextCellValue(p.validade ?? ''),
+          IntCellValue(p.estoqueAtual),
+          IntCellValue(p.estoqueMinimo),
+          TextCellValue(p.markup ?? ''),
+          TextCellValue(p.lucro ?? ''),
+          p.precoConcorrencia != null ? DoubleCellValue(p.precoConcorrencia!) : TextCellValue(''),
+          TextCellValue(p.empresa ?? ''),
+          TextCellValue(p.sku ?? ''),
+          TextCellValue(p.descricao),
+          TextCellValue(p.destacar ? 'Sim' : 'Não'),
+          TextCellValue(p.exibirNoCatalogo ? 'Sim' : 'Não'),
+          TextCellValue(p.ativo ? 'Sim' : 'Não'),
+          TextCellValue(p.permiteFracionamento ? 'Sim' : 'Não'),
+        ]);
+      }
+
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/planilha_mestre_atualizada.xlsx');
+      final bytes = excel.encode() ?? [];
+      await file.writeAsBytes(bytes);
+
+      if (!mounted) return;
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path)],
+          text: 'Planilha mestre atualizada com os ${produtos.length} produtos do catálogo atual.',
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao exportar planilha: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
   }
 
   @override
@@ -512,6 +521,18 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
                   ElevatedButton(
                     onPressed: _processando ? null : _iniciarImportacao,
                     child: const Text('Importar Produtos da Planilha'),
+                  ),
+                  const SizedBox(height: 20),
+                  OutlinedButton(
+                    onPressed: _processando ? null : _exportarCatalogoAtual,
+                    child: const Text('Exportar Planilha Mestre Atualizada'),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Gera uma planilha com os dados atuais do catálogo (já com o que você editou '
+                    'no app) — use pra substituir uma planilha mestre desatualizada.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
                   ),
                   const SizedBox(height: 20),
                   OutlinedButton(

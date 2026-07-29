@@ -48,8 +48,8 @@ class UsuarioProvider with ChangeNotifier {
     await carregar();
   }
 
-  Future<void> atualizarNome(String usuarioId, String nome) async {
-    await _repository.atualizarNome(usuarioId, nome);
+  Future<void> atualizarDados(String usuarioId, {String? nome, String? telefone}) async {
+    await _repository.atualizarDados(usuarioId, nome: nome, telefone: telefone);
     await carregar();
   }
 

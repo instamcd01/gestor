@@ -1,19 +1,18 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:gestor/screens/produto_categorias_screen.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
 import '../models/produto.dart';
+import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../utils/calculadora_desconto.dart';
 import '../utils/calculadora_preco.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/canais_marketplace_section.dart';
-import '../widgets/buscar_imagem_produto.dart';
 import '../widgets/form_section.dart';
+import 'gerenciar_midias_produto_screen.dart';
 
 class EditarProdutoScreen extends StatefulWidget {
   final Produto produto;
@@ -56,9 +55,13 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   bool _exibirNoCatalogo = true;
   bool _ativo = true;
 
-  XFile? _novaImagemFile; // Para imagem escolhida do dispositivo
-  String? _imagemUrlAtual; // URL atual do produto
-  String? _imagemAutomaticaUrl; // URL automática pelo código de barras
+  // Imagens/vídeos agora são geridos numa tela dedicada
+  // (GerenciarMidiasProdutoScreen, persiste direto no banco). Guardamos só
+  // a capa (frente) aqui pra exibir a miniatura e o verso pra não perdê-lo
+  // ao salvar o resto do formulário — ambos são recarregados do banco
+  // depois de voltar dessa tela, já que ela pode ter alterado os dois.
+  String? _imagemUrlAtual;
+  String? _imagemUrlVersoAtual;
 
   bool _isLoading = false;
   List<String> _categoriasExistentes = [];
@@ -102,8 +105,12 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
         text: widget.produto.markup?.replaceAll('%', '').replaceAll('.', ',') ?? '');
     _lucroController = TextEditingController(
         text: widget.produto.lucro?.replaceAll('.', ',') ?? '');
+    // formatarValidade normaliza formatos vindos de importação de planilha
+    // (ex: ISO "2026-04-30T00:00:00.000Z") pro DD/MM/AAAA que este campo
+    // espera — sem isso, editar um produto assim mostrava a data crua e o
+    // formatador de digitação (DataInputFormatter) bagunçava tudo ao tocar.
     _validadeController =
-        TextEditingController(text: widget.produto.validade ?? '');
+        TextEditingController(text: ProdutoValidators.formatarValidade(widget.produto.validade));
     _empresaController =
         TextEditingController(text: widget.produto.empresa ?? '');
     _precoConcorrenciaController = TextEditingController(
@@ -114,7 +121,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _ativo = widget.produto.ativo;
 
     _imagemUrlAtual = widget.produto.imagemUrl;
-    _imagemAutomaticaUrl = widget.produto.imagemAutomaticaUrl;
+    _imagemUrlVersoAtual = widget.produto.imagemUrlSecundaria;
 
     _calculadora = CalculadoraPrecoMarkup(
       precoController: _precoController,
@@ -166,10 +173,24 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       final categorias = (data as List)
           .map((row) => row['nome'] as String? ?? '')
           .where((c) => c.isNotEmpty)
-          .toSet()
-          .toList();
+          .toSet();
+
+      // A tabela `categorias` só é preenchida quando alguém abre "Gerenciar
+      // categorias" (que faz esse backfill) — até isso acontecer pra todo o
+      // catálogo, ela fica incompleta. Unimos com as categorias realmente
+      // em uso em `produtos.categoria` (mesma fonte que "Gerenciar
+      // categorias" usa) pra sempre listar todas, não só as já cadastradas
+      // nessa tabela — isso também cobre a categoria atual do produto.
+      final produtosData = await supabase.from('produtos').select('categoria');
+      categorias.addAll(
+        (produtosData as List)
+            .map((p) => (p['categoria'] as String?) ?? '')
+            .where((c) => c.isNotEmpty),
+      );
+
+      if (!mounted) return;
       setState(() {
-        _categoriasExistentes = categorias;
+        _categoriasExistentes = categorias.toList();
         _categoriasCarregadas = true;
       });
     } catch (e) {
@@ -180,96 +201,31 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     }
   }
 
-  // Seleciona nova imagem da galeria
-  Future<void> _selecionarNovaImagem() async {
-    final picker = ImagePicker();
+  // Abre a galeria de imagens/vídeos do produto — as alterações lá são
+  // salvas direto no banco (imediatas, não dependem do botão "Salvar" desta
+  // tela). Ao voltar, recarrega a capa/verso porque podem ter mudado.
+  Future<void> _abrirGerenciarMidias() async {
+    final produtoId = widget.produto.id;
+    if (produtoId == null) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => GerenciarMidiasProdutoScreen(produtoId: produtoId)),
+    );
+
+    if (!mounted) return;
     try {
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-      if (pickedFile != null) {
-        setState(() {
-          _novaImagemFile = pickedFile;
-        });
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao selecionar imagem: $e')),
-      );
-    }
-  }
-
-  // Faz upload de verdade pro Supabase Storage (mesmo fluxo do cadastro) —
-  // antes isso só montava uma URL pra um domínio que nunca recebia o arquivo.
-  Future<String?> _uploadImagemProduto(File imageFile) async {
-    if (!mounted) return null;
-    try {
-      String? empresaId;
-      final userId = supabase.auth.currentUser?.id;
-      if (userId != null) {
-        final usuario = await supabase
-            .from('usuarios')
-            .select('empresa_id')
-            .eq('id', userId)
-            .maybeSingle();
-        empresaId = usuario?['empresa_id'] as String?;
-      }
-
-      if (empresaId == null) {
-        throw Exception('Empresa não identificada para o upload.');
-      }
-
-      final fileName =
-          '$empresaId/${DateTime.now().millisecondsSinceEpoch}_${imageFile.path.split('/').last}';
-
-      await supabase.storage.from('produtos').upload(fileName, imageFile);
-
-      return supabase.storage.from('produtos').getPublicUrl(fileName);
-    } catch (e) {
-      debugPrint('Erro no upload da imagem para o Supabase Storage: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro no upload da imagem: $e')),
-        );
-      }
-      return null;
-    }
-  }
-
-  // Busca imagem automaticamente usando código de barras, via OpenFoodFacts
-  // (mesma função já usada em outras partes do app) — antes isso só montava
-  // uma URL pra um domínio que nunca teve a imagem de verdade.
-  Future<void> _buscarImagemAutomatica() async {
-    final codigo = _codigoBarrasController.text.trim();
-    if (codigo.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Informe o código de barras para buscar a imagem')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final urlEncontrada = await buscarImagemProdutoPetPorCodigoBarras(codigo);
+      final row = await supabase
+          .from('produtos')
+          .select('imagem_url, imagem_url_secundaria')
+          .eq('id', produtoId)
+          .single();
       if (!mounted) return;
-
-      if (urlEncontrada == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nenhuma imagem encontrada para esse código de barras.')),
-        );
-        return;
-      }
-
       setState(() {
-        _imagemAutomaticaUrl = urlEncontrada;
-        if (_novaImagemFile == null) {
-          _imagemUrlAtual = _imagemAutomaticaUrl;
-        }
+        _imagemUrlAtual = row['imagem_url'] as String? ?? '';
+        _imagemUrlVersoAtual = row['imagem_url_secundaria'] as String?;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Imagem automática atribuída!')));
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      debugPrint('Erro ao recarregar imagens do produto: $e');
     }
   }
 
@@ -278,20 +234,6 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-
-    String? imagemUrlParaSalvar = _imagemUrlAtual;
-
-    if (_novaImagemFile != null) {
-      String? novaUrl = await _uploadImagemProduto(File(_novaImagemFile!.path));
-      if (novaUrl != null) {
-        imagemUrlParaSalvar = novaUrl;
-      } else {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Falha ao fazer upload da imagem. Tente novamente.')));
-        return;
-      }
-    }
 
     final produtoAtualizado = Produto(
       id: widget.produto.id,
@@ -316,8 +258,8 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
           widget.produto.estoqueAtual,
       estoqueMinimo: int.tryParse(_estoqueMinimoController.text) ??
           widget.produto.estoqueMinimo,
-      imagemUrl: imagemUrlParaSalvar ?? widget.produto.imagemUrl,
-      imagemAutomaticaUrl: _imagemAutomaticaUrl,
+      imagemUrl: _imagemUrlAtual ?? widget.produto.imagemUrl,
+      imagemUrlSecundaria: _imagemUrlVersoAtual,
       destacar: _destacarProduto,
       exibirNoCatalogo: _exibirNoCatalogo,
       // Campo de preço fixo por marketplace descontinuado no formulário —
@@ -343,6 +285,8 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       permiteFracionamento: widget.produto.permiteFracionamento,
     );
 
+    if (!mounted) return;
+
     try {
       await Provider.of<ProdutoProvider>(context, listen: false)
           .atualizarProduto(produtoAtualizado);
@@ -352,20 +296,26 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
             ?.salvar(widget.produto.id!, produtoAtualizado.preco);
       }
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Produto atualizado com sucesso!')));
       Navigator.of(context).pop();
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erro ao atualizar produto: $e')));
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Custo/margem/preço de concorrência não aparecem pra vendedor — o
+    // controller continua com o valor original carregado, então salvar
+    // sem esses campos visíveis não perde/zera o dado, só não mostra.
+    final isVendedor = context.watch<AuthProvider>().isVendedor;
 
     return Scaffold(
       appBar: AppBar(
@@ -393,34 +343,56 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
               Center(
                 child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 56,
-                      backgroundColor: colorScheme.surfaceContainerHighest,
-                      backgroundImage: _novaImagemFile != null
-                          ? FileImage(File(_novaImagemFile!.path)) as ImageProvider
-                          : (_imagemUrlAtual != null && _imagemUrlAtual!.isNotEmpty
-                              ? NetworkImage(_imagemUrlAtual!)
-                              : null),
-                      child: (_novaImagemFile == null &&
-                              (_imagemUrlAtual == null || _imagemUrlAtual!.isEmpty))
-                          ? Icon(Icons.image, size: 40, color: colorScheme.onSurfaceVariant)
-                          : null,
+                    GestureDetector(
+                      onTap: _abrirGerenciarMidias,
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              width: 120,
+                              height: 120,
+                              color: colorScheme.surfaceContainerHighest,
+                              child: (_imagemUrlAtual != null && _imagemUrlAtual!.isNotEmpty)
+                                  ? Image.network(
+                                      _imagemUrlAtual!,
+                                      width: 120,
+                                      height: 120,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Icon(
+                                        Icons.image,
+                                        size: 40,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.add_photo_alternate_outlined,
+                                      size: 40,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 4,
+                            right: 4,
+                            child: Material(
+                              color: colorScheme.primary,
+                              shape: const CircleBorder(),
+                              child: Padding(
+                                padding: const EdgeInsets.all(6),
+                                child: Icon(Icons.edit, size: 16, color: colorScheme.onPrimary),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 4),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      children: [
-                        TextButton.icon(
-                          icon: Icon(Icons.photo, size: 18),
-                          label: Text('Nova imagem'),
-                          onPressed: _selecionarNovaImagem,
-                        ),
-                        TextButton.icon(
-                          icon: Icon(Icons.search, size: 18),
-                          label: Text('Buscar automática'),
-                          onPressed: _buscarImagemAutomatica,
-                        ),
-                      ],
+                    Text(
+                      'Toque pra gerenciar imagens e vídeos',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                     ),
                   ],
                 ),
@@ -571,45 +543,47 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                       ),
                     ],
                   ),
-                  TextFormField(
-                    controller: _custoController,
-                    decoration: const InputDecoration(labelText: 'Custo (R\$)', prefixText: 'R\$ '),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [MoedaInputFormatter()],
-                    validator: ProdutoValidators.custo,
-                  ),
-                  TextFormField(
-                    controller: _markupController,
-                    decoration: const InputDecoration(
-                      labelText: 'Markup (%) (Opcional)',
-                      suffixText: '%',
-                      helperText: 'Calculado com preço+custo, ou preencha pra calcular o preço',
+                  if (!isVendedor) ...[
+                    TextFormField(
+                      controller: _custoController,
+                      decoration: const InputDecoration(labelText: 'Custo (R\$)', prefixText: 'R\$ '),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [MoedaInputFormatter()],
+                      validator: ProdutoValidators.custo,
                     ),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true, signed: true),
-                    inputFormatters: [DecimalInputFormatter(permiteSinal: true)],
-                    validator: ProdutoValidators.markup,
-                  ),
-                  TextFormField(
-                    controller: _lucroController,
-                    decoration: const InputDecoration(
-                      labelText: 'Lucro (R\$) (Opcional)',
-                      prefixText: 'R\$ ',
-                      helperText: 'Calculado com preço+custo, ou preencha pra calcular o preço',
+                    TextFormField(
+                      controller: _markupController,
+                      decoration: const InputDecoration(
+                        labelText: 'Markup (%) (Opcional)',
+                        suffixText: '%',
+                        helperText: 'Calculado com preço+custo, ou preencha pra calcular o preço',
+                      ),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true, signed: true),
+                      inputFormatters: [DecimalInputFormatter(permiteSinal: true)],
+                      validator: ProdutoValidators.markup,
                     ),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true, signed: true),
-                    inputFormatters: [DecimalInputFormatter(permiteSinal: true)],
-                    validator: ProdutoValidators.lucro,
-                  ),
-                  TextFormField(
-                    controller: _precoConcorrenciaController,
-                    decoration: const InputDecoration(
-                      labelText: 'Preço Concorrência (R\$) (Opcional)',
-                      prefixText: 'R\$ ',
+                    TextFormField(
+                      controller: _lucroController,
+                      decoration: const InputDecoration(
+                        labelText: 'Lucro (R\$) (Opcional)',
+                        prefixText: 'R\$ ',
+                        helperText: 'Calculado com preço+custo, ou preencha pra calcular o preço',
+                      ),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true, signed: true),
+                      inputFormatters: [DecimalInputFormatter(permiteSinal: true)],
+                      validator: ProdutoValidators.lucro,
                     ),
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [MoedaInputFormatter()],
-                    validator: ProdutoValidators.precoOpcional,
-                  ),
+                    TextFormField(
+                      controller: _precoConcorrenciaController,
+                      decoration: const InputDecoration(
+                        labelText: 'Preço Concorrência (R\$) (Opcional)',
+                        prefixText: 'R\$ ',
+                      ),
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [MoedaInputFormatter()],
+                      validator: ProdutoValidators.precoOpcional,
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 16.0),

@@ -175,4 +175,25 @@ class ProdutoValidators {
     }
     return null;
   }
+
+  /// Formata a validade pra exibição — o campo é texto livre no banco e
+  /// planilhas importadas gravam datas em formatos variados (ex: ISO
+  /// "2026-04-30T00:00:00.000Z", já visto em produtos reais), bem diferente
+  /// do DD/MM/AAAA que o cadastro manual sempre usa. Reconhece os dois; se
+  /// não reconhecer nenhum, mostra o texto como está em vez de escondê-lo.
+  static String formatarValidade(String? valor) {
+    if (valor == null || valor.trim().isEmpty) return '';
+    final texto = valor.trim();
+
+    if (RegExp(r'^\d{2}/\d{2}/\d{4}$').hasMatch(texto)) return texto;
+
+    final data = DateTime.tryParse(texto);
+    if (data != null) {
+      final dia = data.day.toString().padLeft(2, '0');
+      final mes = data.month.toString().padLeft(2, '0');
+      return '$dia/$mes/${data.year}';
+    }
+
+    return texto;
+  }
 }

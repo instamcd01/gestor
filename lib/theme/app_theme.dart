@@ -47,7 +47,7 @@ class AppTheme {
       fonte,
       isDark ? ThemeData.dark().textTheme : ThemeData.light().textTheme,
     );
-    final tituloStyle = _fonteParaEstilo(fonte, fontSize: 20, fontWeight: FontWeight.w600, color: colorScheme.onSurface);
+    final tituloStyle = _fonteParaEstilo(fonte, fontSize: 20, fontWeight: FontWeight.w600, color: colorScheme.onPrimary);
     final botaoStyle = _fonteParaEstilo(fonte, fontSize: 15, fontWeight: FontWeight.w600);
     final chipStyle = _fonteParaEstilo(fonte, fontSize: 13);
 
@@ -61,8 +61,11 @@ class AppTheme {
       visualDensity: densidadeCompacta ? VisualDensity.compact : VisualDensity.standard,
 
       appBarTheme: AppBarTheme(
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
+        // Cor cheia da marca (mesma dos botões/chip selecionado), não o
+        // fundo neutro que o Material 3 usaria por padrão — pedido explícito
+        // pra manter o topo de cada tela com a cor de marca em destaque.
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
         elevation: 0,
         scrolledUnderElevation: 1,
         centerTitle: false,
@@ -124,8 +127,22 @@ class AppTheme {
 
       chipTheme: ChipThemeData(
         backgroundColor: colorScheme.surfaceContainerLow,
-        selectedColor: colorScheme.primaryContainer,
-        labelStyle: chipStyle,
+        // Selecionado usa a mesma cor cheia dos botões (colorScheme.primary),
+        // não o tom "container" pastel que o Material 3 geraria por padrão —
+        // pedido explícito pra manter consistência visual com o resto do app.
+        selectedColor: colorScheme.primary,
+        // Sem cor explícita por estado, o texto do chip ficava sem cor
+        // resolvida (mostrando branco em cima de fundo claro, ilegível) —
+        // `WidgetStateColor` garante contraste correto tanto selecionado
+        // quanto não, e acompanha automaticamente tema claro/escuro e a cor
+        // de marca escolhida pela empresa (ambos já embutidos em colorScheme).
+        labelStyle: chipStyle.copyWith(
+          color: WidgetStateColor.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? colorScheme.onPrimary
+                : colorScheme.onSurfaceVariant,
+          ),
+        ),
         side: BorderSide(color: colorScheme.outlineVariant),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusChip),
@@ -156,9 +173,26 @@ class AppTheme {
       // em `colorScheme.secondary`, sem nenhum widget do tema consumindo
       // — por isso trocar essa cor "não mudava quase nada" na prática).
       progressIndicatorTheme: ProgressIndicatorThemeData(color: colorScheme.secondary),
-      tabBarTheme: TabBarThemeData(indicatorColor: colorScheme.secondary),
+      // Sem labelColor/unselectedLabelColor explícitos, o Material 3 usa
+      // colorScheme.primary como cor do texto da aba selecionada por padrão
+      // — mas o AppBar deste app já usa colorScheme.primary como FUNDO (ver
+      // appBarTheme acima), então o nome da aba selecionada ficava com a
+      // mesma cor do fundo atrás dela (texto invisível). onPrimary é a cor
+      // já calculada pra ter contraste garantido contra colorScheme.primary.
+      tabBarTheme: TabBarThemeData(
+        indicatorColor: colorScheme.secondary,
+        labelColor: colorScheme.onPrimary,
+        unselectedLabelColor: colorScheme.onPrimary.withValues(alpha: 0.7),
+      ),
     );
   }
+
+  /// Tom de uma `MaterialColor` (verde/vermelho/laranja) com bom contraste
+  /// nos dois temas — mais claro (300) no escuro, mais escuro (800) no claro.
+  /// Usado em indicadores de valor (lucro, saldo, troco) que antes usavam
+  /// sempre o mesmo tom fixo, ilegível quando o tema não "batia" com ele.
+  static Color tomAdaptavel(MaterialColor cor, Brightness brightness) =>
+      brightness == Brightness.dark ? cor.shade300 : cor.shade800;
 
   /// Escolhe preto ou branco pra sobrepor [cor], com base no brilho real
   /// dela — não no tom que o algoritmo do Material assumiria a partir de

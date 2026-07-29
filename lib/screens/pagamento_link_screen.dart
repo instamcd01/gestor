@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/cliente.dart';
+import '../models/zona_entrega.dart';
 import '../widgets/itens_compra_card.dart';
 import '../widgets/resumo_pagamento_card.dart';
 import 'conclusao_venda_screen.dart';
@@ -13,6 +14,7 @@ class PagamentoLinkScreen extends StatefulWidget {
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
+  final ZonaEntrega? zonaEntrega;
 
   PagamentoLinkScreen({
     required this.valorTotal,
@@ -23,6 +25,7 @@ class PagamentoLinkScreen extends StatefulWidget {
     required this.valorEntrega,
     required this.entregaSelecionada,
     this.saldoUsado = 0.0,
+    this.zonaEntrega,
   });
 
   @override
@@ -85,6 +88,7 @@ class _PagamentoLinkScreenState extends State<PagamentoLinkScreen> {
                     valorEntrega: widget.valorEntrega,
                     entregaSelecionada: widget.entregaSelecionada,
                     saldoUsado: widget.saldoUsado,
+                    zonaEntrega: widget.zonaEntrega,
                   ),
                 ),
               );

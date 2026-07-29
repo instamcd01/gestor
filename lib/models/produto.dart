@@ -15,7 +15,7 @@ class Produto {
   int estoqueAtual;
   int estoqueMinimo;
   String imagemUrl;
-  String? imagemAutomaticaUrl;
+  String? imagemUrlSecundaria;
   String codigoBarras;
   double custo;
   bool destacar;
@@ -32,6 +32,12 @@ class Produto {
   final String? unidadeMedida;
   final bool permiteFracionamento;
 
+  /// Custo mudou (ex: importação de NF-e) e o preço de venda ainda não foi
+  /// revisado — gerenciado pelas triggers do banco (`sinalizar_revisar_preco`),
+  /// nunca enviado em `toSupabaseMap` pra não sobrescrever por engano com um
+  /// valor desatualizado (ver `ProdutoRepository.marcarPrecoRevisado`).
+  bool revisarPreco;
+
   Produto({
     this.id,
     required this.nome,
@@ -47,7 +53,7 @@ class Produto {
     required this.estoqueAtual,
     required this.estoqueMinimo,
     required this.imagemUrl,
-    this.imagemAutomaticaUrl,
+    this.imagemUrlSecundaria,
     required this.codigoBarras,
     required this.custo,
     this.destacar = false,
@@ -61,6 +67,7 @@ class Produto {
     this.estoqueId,
     this.unidadeMedida = 'un',
     this.permiteFracionamento = false,
+    this.revisarPreco = false,
   });
 
   /// Monta o Produto a partir de uma linha do Supabase.
@@ -94,6 +101,7 @@ class Produto {
       estoqueAtual: totalEstoque,
       estoqueMinimo: estoqueMinimo,
       imagemUrl: row['imagem_url']?.toString() ?? '',
+      imagemUrlSecundaria: row['imagem_url_secundaria']?.toString(),
       codigoBarras: row['codigo_barras']?.toString() ?? '',
       custo: custo,
       destacar: row['destaque'] as bool? ?? false,
@@ -106,6 +114,7 @@ class Produto {
       precoIfood: (row['preco_ifood'] as num?)?.toDouble(),
       precoConcorrencia: (row['preco_concorrencia'] as num?)?.toDouble(),
       validade: row['validade']?.toString(),
+      revisarPreco: row['revisar_preco'] as bool? ?? false,
       // Derivados (não são colunas próprias no banco, calculados aqui pra
       // manter compatibilidade com as telas que já exibem markup/lucro).
       markup: margem != null ? '${margem.toStringAsFixed(1)}%' : null,
@@ -130,6 +139,7 @@ class Produto {
       'destaque': destacar,
       'exibir_no_catalogo': exibirNoCatalogo,
       'imagem_url': imagemUrl,
+      'imagem_url_secundaria': imagemUrlSecundaria,
       'codigo_barras': codigoBarras,
       'unidade_medida': unidadeMedida,
       'permite_fracionamento': permiteFracionamento,

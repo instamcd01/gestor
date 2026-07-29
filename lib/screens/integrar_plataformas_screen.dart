@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../repositories/interrupcao_marketplace_repository.dart';
 import '../repositories/marketplace_config_repository.dart';
 import '../repositories/marketplace_repository.dart';
+import '../widgets/aviso_banner.dart';
 
 /// Configurações > Integrar com Plataformas: onde ficam guardadas as
 /// credenciais de cada marketplace (iFood, 99Food, Rappi...), restrito ao
@@ -237,27 +238,12 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
                   padding: const EdgeInsets.all(12),
                   children: [
                     _cardPausaLoja(),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue[100]!),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.info_outline, color: Colors.blue, size: 20),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'As credenciais salvas aqui já são usadas por integrações ativas (hoje, '
-                              'iFood) — mantenha atualizadas. Plataformas sem integração construída ainda '
-                              'ficam com as credenciais só guardadas até lá.',
-                              style: TextStyle(fontSize: 13),
-                            ),
-                          ),
-                        ],
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: AvisoBanner(
+                        texto: 'As credenciais salvas aqui já são usadas por integrações ativas (hoje, '
+                            'iFood) — mantenha atualizadas. Plataformas sem integração construída ainda '
+                            'ficam com as credenciais só guardadas até lá.',
                       ),
                     ),
                     if (_marketplaces.isEmpty)

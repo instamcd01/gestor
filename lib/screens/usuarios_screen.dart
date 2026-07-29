@@ -7,6 +7,7 @@ import '../models/convite_empresa.dart';
 import '../models/usuario.dart';
 import '../providers/auth_provider.dart';
 import '../providers/usuario_provider.dart';
+import '../utils/formatadores_input.dart';
 
 /// Gestão de equipe: quem tem acesso à empresa, com qual papel, e convites
 /// pendentes pra novas pessoas entrarem. Substitui a versão antiga que
@@ -34,10 +35,13 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     final meuId = auth.usuarioAtual?.id;
     if (meuId == null) return;
 
+    final papelEscolhido = await _escolherPapelParaConvite();
+    if (papelEscolhido == null || !mounted) return;
+
     try {
       final convite = await context
           .read<UsuarioProvider>()
-          .gerarConvite(criadoPor: meuId, papel: 'funcionario');
+          .gerarConvite(criadoPor: meuId, papel: papelEscolhido);
       if (!mounted) return;
       await _mostrarCodigoGerado(convite);
     } catch (e) {
@@ -46,6 +50,35 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
         SnackBar(content: Text('Não foi possível gerar o convite: $e')),
       );
     }
+  }
+
+  Future<String?> _escolherPapelParaConvite() {
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Convidar como...'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.storefront_outlined),
+              title: const Text('Vendedor'),
+              subtitle: const Text('Vender, pedidos, produtos, clientes — sem financeiro nem exclusões'),
+              onTap: () => Navigator.pop(ctx, 'vendedor'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.manage_accounts_outlined),
+              title: const Text('Gerente'),
+              subtitle: const Text('Tudo, exceto gerenciar usuários'),
+              onTap: () => Navigator.pop(ctx, 'gerente'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+        ],
+      ),
+    );
   }
 
   Future<void> _mostrarCodigoGerado(ConviteEmpresa convite) async {
@@ -58,7 +91,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Passe esse código pra pessoa entrar como funcionário. '
+            Text('Passe esse código pra pessoa entrar como ${Usuario.rotulosPapel[convite.papel] ?? convite.papel}. '
                 'Ela cria a própria conta na tela de login e usa esse código em vez de criar uma empresa nova.'),
             const SizedBox(height: 16),
             Container(
@@ -126,6 +159,80 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     }
   }
 
+  /// Edita nome/telefone — usado tanto pra alguém editar os próprios dados
+  /// (qualquer papel) quanto pelo dono editando os dados de outro usuário
+  /// da equipe. Papel/status continuam num diálogo separado (`_editarUsuario`),
+  /// já que são reforçados por trigger no banco — e principalmente pra NUNCA
+  /// encadear um showDialog logo depois de fechar outro: fechar um diálogo e
+  /// abrir outro no mesmo frame corrompe o Overlay do Flutter (RenderFlex
+  /// overflow gigante + assert `_dependents.isEmpty`), então cada ação tem
+  /// seu próprio ponto de entrada direto na lista, nunca um dialog chamando
+  /// outro.
+  ///
+  /// IMPORTANTE: os controllers NÃO são descartados (`.dispose()`) logo
+  /// depois do `showDialog` retornar — o retorno acontece assim que
+  /// `Navigator.pop` é chamado, mas o `AlertDialog`/`TextField` continuam
+  /// montados durante a animação de saída (fade-out). Descartar o controller
+  /// nesse meio tempo, com o TextField ainda vivo usando ele, corrompe o
+  /// layout na próxima pintura (mesmo RenderFlex overflow gigante de antes,
+  /// só que agora em QUALQUER forma de fechar o diálogo — Cancelar, Salvar,
+  /// tocar fora). É um leak pequeno e proposital: mesmo padrão já usado nos
+  /// outros diálogos avulsos do app (nenhum deles descarta o controller).
+  Future<void> _editarNomeTelefone(Usuario usuario) async {
+    final nomeController = TextEditingController(text: usuario.nome ?? '');
+    final telefoneController = TextEditingController(text: usuario.telefone ?? '');
+
+    final salvou = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Editar dados'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: nomeController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Nome completo',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: telefoneController,
+              keyboardType: TextInputType.phone,
+              inputFormatters: [TelefoneInputFormatter()],
+              decoration: const InputDecoration(
+                labelText: 'Telefone',
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Salvar')),
+        ],
+      ),
+    );
+
+    final nome = nomeController.text.trim();
+    final telefone = telefoneController.text.trim();
+
+    if (salvou != true || !mounted) return;
+
+    try {
+      await context.read<UsuarioProvider>().atualizarDados(usuario.id, nome: nome, telefone: telefone);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível salvar: $e')),
+      );
+    }
+  }
+
   Future<void> _editarUsuario(Usuario usuario, bool souDono, bool ehEuMesmo) async {
     if (!souDono || ehEuMesmo) return;
 
@@ -137,8 +244,14 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             RadioListTile<String>(
-              title: const Text('Funcionário'),
-              value: 'funcionario',
+              title: const Text('Vendedor'),
+              value: 'vendedor',
+              groupValue: usuario.papel,
+              onChanged: (v) => Navigator.pop(ctx, v),
+            ),
+            RadioListTile<String>(
+              title: const Text('Gerente'),
+              value: 'gerente',
               groupValue: usuario.papel,
               onChanged: (v) => Navigator.pop(ctx, v),
             ),
@@ -232,12 +345,27 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                           ),
                         ),
                         subtitle: Text(
-                          '${usuario.isDono ? 'Dono' : 'Funcionário'}'
+                          '${usuario.rotuloPapel}'
                           '${ehEuMesmo ? ' • você' : ''}'
-                          '${usuario.ativo ? '' : ' • inativo'}',
+                          '${usuario.ativo ? '' : ' • inativo'}'
+                          '${usuario.telefone?.isNotEmpty == true ? ' • ${usuario.telefone}' : ''}',
                         ),
-                        trailing: souDono && !ehEuMesmo ? const Icon(Icons.chevron_right) : null,
-                        onTap: souDono ? () => _editarUsuario(usuario, souDono, ehEuMesmo) : null,
+                        trailing: souDono && !ehEuMesmo
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined),
+                                    tooltip: 'Editar nome e telefone',
+                                    onPressed: () => _editarNomeTelefone(usuario),
+                                  ),
+                                  const Icon(Icons.chevron_right),
+                                ],
+                              )
+                            : (ehEuMesmo ? const Icon(Icons.edit_outlined) : null),
+                        onTap: ehEuMesmo
+                            ? () => _editarNomeTelefone(usuario)
+                            : (souDono ? () => _editarUsuario(usuario, souDono, ehEuMesmo) : null),
                       ),
                     );
                   }),
@@ -258,7 +386,8 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                         child: ListTile(
                           leading: const Icon(Icons.mail_outline, color: Colors.orange),
                           title: Text(convite.codigo, style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-                          subtitle: Text('Funcionário • válido até ${dateFormat.format(convite.expiraEm)}'),
+                          subtitle: Text(
+                              '${Usuario.rotulosPapel[convite.papel] ?? convite.papel} • válido até ${dateFormat.format(convite.expiraEm)}'),
                           trailing: IconButton(
                             icon: const Icon(Icons.close, color: Colors.red),
                             tooltip: 'Revogar',

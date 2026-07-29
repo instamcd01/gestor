@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../models/venda.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../widgets/valor_destaque_card.dart';
 import 'venda_detalhes_screen.dart';
 
 /// "Entradas" no menu de Finanças = receita real das vendas finalizadas
@@ -109,26 +110,10 @@ class _EntradasScreenState extends State<EntradasScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.green[50],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.green[200]!),
-                    ),
-                    child: Column(
-                      children: [
-                        Text('Total de entradas no período', style: TextStyle(color: Colors.grey[700])),
-                        const SizedBox(height: 4),
-                        Text(
-                          currencyFormat.format(total),
-                          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.green[800]),
-                        ),
-                        Text('${vendas.length} venda${vendas.length != 1 ? 's' : ''}',
-                            style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                      ],
-                    ),
+                  ValorDestaqueCard(
+                    rotulo: 'Total de entradas no período',
+                    valor: currencyFormat.format(total),
+                    subtitulo: '${vendas.length} venda${vendas.length != 1 ? 's' : ''}',
                   ),
                   const SizedBox(height: 12),
                   if (vendas.isEmpty)

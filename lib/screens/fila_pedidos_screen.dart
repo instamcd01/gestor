@@ -1,15 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/venda.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../widgets/categoria_cliente_badge.dart';
 import 'venda_detalhes_screen.dart';
 
-/// Fila de pedidos em andamento (pendente/em preparo/saiu para entrega),
-/// de qualquer canal de venda (loja física com entrega, WhatsApp, iFood,
-/// site). Vendas de balcão sem entrega não passam por aqui — já nascem
-/// como entregues, ver `VendaRepository.registrar`.
+/// Urgência do pedido em relação à previsão de entrega calculada pela
+/// LOJA (zona escolhida no checkout + faixa de minutos configurada nela —
+/// ver `ConfiguracaoEntregaScreen`). `atencao` dispara quando falta só o
+/// tempo real de rota (Google Maps) até o prazo da zona acabar — a partir
+/// daí, despachar agora é o que garante chegar dentro do prazo.
+enum _Urgencia { neutro, atencao, atrasado }
+
+/// Fila de pedidos do dia, de qualquer canal de venda (loja física com
+/// entrega, WhatsApp, iFood, site). Por padrão mostra só os em andamento
+/// (pendente/em preparo/saiu para entrega) — Concluídos/Cancelados são
+/// filtros à parte, escondidos por padrão pra não confundir com o que
+/// ainda precisa de ação, e só trazem pedidos de hoje (não é histórico
+/// completo, esse já existe em Histórico de Vendas). Vendas de balcão sem
+/// entrega não entram na fila em andamento — já nascem como entregues,
+/// ver `VendaRepository.registrar`.
 class FilaPedidosScreen extends StatefulWidget {
   const FilaPedidosScreen({super.key});
 
@@ -19,11 +34,155 @@ class FilaPedidosScreen extends StatefulWidget {
 
 class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   String? _filtroStatus; // null = todos
+  Timer? _timerUrgencia;
 
   @override
   void initState() {
     super.initState();
     Provider.of<HistoricoVendasProvider>(context, listen: false).carregarVendas();
+    // Os selos de urgência dependem só da hora atual (não de dado novo do
+    // servidor) — atualiza sozinho pra não precisar puxar pra atualizar só
+    // pra ver um pedido virar "atrasado".
+    _timerUrgencia = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timerUrgencia?.cancel();
+    super.dispose();
+  }
+
+  _Urgencia _urgenciaPedido(Venda venda, DateTime agora) {
+    // Pedido concluído/cancelado não tem mais "atraso" — já acabou.
+    if (!venda.emAndamento || venda.agendado || !venda.temEntrega) return _Urgencia.neutro;
+    final fim = venda.previsaoEntregaFim;
+    if (fim == null) return _Urgencia.neutro;
+    if (agora.isAfter(fim)) return _Urgencia.atrasado;
+
+    // "Atenção" quando o tempo que falta até o prazo da zona é só o
+    // suficiente pra rodar a rota real até esse cliente (Google Maps,
+    // calculado no checkout) — a partir daí, sair agora é o que garante
+    // chegar dentro do prazo.
+    final tempoRealMin = venda.cliente.estimativaEntrega;
+    if (tempoRealMin != null) {
+      final restante = fim.difference(agora);
+      if (restante <= Duration(minutes: tempoRealMin)) return _Urgencia.atencao;
+    }
+    return _Urgencia.neutro;
+  }
+
+  /// Sinal independente da urgência acima: o prazo que a própria iFood
+  /// prometeu ao cliente dela já estourou — pode estar tudo bem pela
+  /// margem interna da loja e mesmo assim já pesar na avaliação/SLA da
+  /// plataforma.
+  bool _prazoIfoodEstourado(Venda venda, DateTime agora) {
+    if (!venda.emAndamento) return false;
+    final prazo = venda.entregaPrevistaFim;
+    return venda.ehMarketplace && prazo != null && agora.isAfter(prazo);
+  }
+
+  Widget _chipInfo(BuildContext context, IconData icone, String texto) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icone, size: 12, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(texto, style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+
+  /// Chips informativos pra decisão de despacho/rota: retirada x entrega,
+  /// bairro, zona, faixa de estimativa configurada na zona (min-max —
+  /// reconstruída a partir de `previsaoEntregaInicio/Fim`, já que a Venda
+  /// não guarda a `ZonaEntrega` em si), distância/tempo real da rota
+  /// (Google Maps, calculado no checkout — ver `OpcaoEntregaScreen`) e se
+  /// já foi pago ou precisa cobrar na entrega (relevante pra iFood, que
+  /// às vezes já paga o pedido pela própria plataforma).
+  List<Widget> _chipsInfo(BuildContext context, Venda venda) {
+    final chips = <Widget>[];
+
+    if (venda.retirada) {
+      chips.add(_chipInfo(context, Icons.storefront, 'Retirada'));
+    } else {
+      final bairro = venda.cliente.bairro;
+      if (bairro.isNotEmpty) chips.add(_chipInfo(context, Icons.location_on_outlined, bairro));
+
+      final zona = venda.entregaSelecionada;
+      if (zona.isNotEmpty) chips.add(_chipInfo(context, Icons.map_outlined, zona));
+
+      final previsaoInicio = venda.previsaoEntregaInicio;
+      final previsaoFim = venda.previsaoEntregaFim;
+      if (previsaoInicio != null && previsaoFim != null) {
+        final min = previsaoInicio.difference(venda.dataVenda).inMinutes;
+        final max = previsaoFim.difference(venda.dataVenda).inMinutes;
+        chips.add(_chipInfo(context, Icons.schedule_outlined, 'Zona: $min-$max min'));
+      }
+
+      final distancia = venda.cliente.rangeDistancia;
+      final estimativa = venda.cliente.estimativaEntrega;
+      if (distancia != null && estimativa != null) {
+        chips.add(_chipInfo(context, Icons.route_outlined, '${distancia.toStringAsFixed(1)}km • $estimativa min rota'));
+      }
+    }
+
+    if (venda.ehMarketplace) {
+      chips.add(_chipInfo(
+        context,
+        venda.pagoPeloMarketplace ? Icons.check_circle_outline : Icons.payments_outlined,
+        venda.pagoPeloMarketplace ? 'Pago' : 'Cobrar na entrega',
+      ));
+    }
+
+    return chips;
+  }
+
+  Widget _selo(String texto, Color cor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: cor.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        texto,
+        style: TextStyle(color: cor, fontWeight: FontWeight.bold, fontSize: 11),
+      ),
+    );
+  }
+
+  Color _corUrgencia(_Urgencia urgencia) {
+    switch (urgencia) {
+      case _Urgencia.atrasado:
+        return Colors.red;
+      case _Urgencia.atencao:
+        return Colors.orange;
+      case _Urgencia.neutro:
+        return Colors.transparent;
+    }
+  }
+
+  String _rotuloCanal(String canal) {
+    switch (canal) {
+      case 'whatsapp':
+        return 'WhatsApp';
+      case 'ifood':
+        return 'iFood';
+      case 'site':
+        return 'Site';
+      default:
+        return 'Loja Física';
+    }
   }
 
   IconData _iconeCanal(String canal) {
@@ -47,10 +206,16 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         return Colors.blue;
       case StatusPedido.saiuParaEntrega:
         return Colors.purple;
+      case StatusPedido.entregue:
+        return Colors.green;
+      case StatusPedido.cancelado:
+        return Colors.red;
       default:
         return Colors.grey;
     }
   }
+
+  bool _mesmoDia(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
   Future<void> _avancarStatus(Venda venda) async {
     final proximo = venda.proximoStatus;
@@ -59,14 +224,14 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     try {
       await Provider.of<HistoricoVendasProvider>(context, listen: false)
           .avancarStatusPedido(venda.idVenda!, proximo);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pedido marcado como "${StatusPedido.rotulo(proximo)}".')),
-      );
+      // Sem SnackBar de sucesso — o próprio card já muda de cor/texto na
+      // hora, avisar de novo só atrapalhava (principalmente marcando vários
+      // pedidos em sequência).
     } catch (e) {
       if (!mounted) return;
+      final mensagem = e is PostgrestException ? e.message : e.toString();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Não foi possível atualizar o pedido: $e')),
+        SnackBar(content: Text('Não foi possível atualizar o pedido: $mensagem')),
       );
     }
   }
@@ -77,9 +242,20 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
     final agora = DateTime.now();
 
-    var pedidos = provider.pedidosAtivos;
-    if (_filtroStatus != null) {
-      pedidos = pedidos.where((v) => v.status == _filtroStatus).toList();
+    // "Em andamento" (padrão) e os status individuais dele usam
+    // `pedidosAtivos` (ordem FIFO — mais antigo primeiro, faz sentido pra
+    // atender por ordem de chegada). Concluídos/Cancelados são consultados
+    // à parte, só do dia — isso aqui é a fila operacional de hoje, não um
+    // histórico (esse já existe em Histórico de Vendas).
+    final List<Venda> pedidos;
+    if (_filtroStatus == StatusPedido.entregue || _filtroStatus == StatusPedido.cancelado) {
+      pedidos = provider.vendas
+          .where((v) => v.status == _filtroStatus && _mesmoDia(v.dataVenda, agora))
+          .toList();
+    } else if (_filtroStatus != null) {
+      pedidos = provider.pedidosAtivos.where((v) => v.status == _filtroStatus).toList();
+    } else {
+      pedidos = provider.pedidosAtivos;
     }
 
     return Scaffold(
@@ -101,7 +277,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
               child: Row(
                 children: [
                   ChoiceChip(
-                    label: const Text('Todos'),
+                    label: const Text('Em andamento'),
                     selected: _filtroStatus == null,
                     onSelected: (_) => setState(() => _filtroStatus = null),
                   ),
@@ -114,6 +290,19 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                           onSelected: (_) => setState(() => _filtroStatus = status),
                         ),
                       )),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: const Text('Concluídos'),
+                      selected: _filtroStatus == StatusPedido.entregue,
+                      onSelected: (_) => setState(() => _filtroStatus = StatusPedido.entregue),
+                    ),
+                  ),
+                  ChoiceChip(
+                    label: const Text('Cancelados'),
+                    selected: _filtroStatus == StatusPedido.cancelado,
+                    onSelected: (_) => setState(() => _filtroStatus = StatusPedido.cancelado),
+                  ),
                 ],
               ),
             ),
@@ -136,9 +325,12 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                         const SizedBox(height: 16),
                         Center(
                           child: Text(
-                            _filtroStatus == null
-                                ? 'Nenhum pedido em andamento.'
-                                : 'Nenhum pedido nesse status.',
+                            switch (_filtroStatus) {
+                              null => 'Nenhum pedido em andamento.',
+                              StatusPedido.entregue => 'Nenhum pedido concluído hoje ainda.',
+                              StatusPedido.cancelado => 'Nenhum pedido cancelado hoje.',
+                              _ => 'Nenhum pedido nesse status.',
+                            },
                             style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
                           ),
                         ),
@@ -156,9 +348,19 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                         final tempoDecorrido = minutos < 60
                             ? 'há $minutos min'
                             : 'há ${(minutos / 60).floor()}h${minutos % 60}min';
+                        final urgencia = _urgenciaPedido(venda, agora);
+                        final ifoodEstourado = _prazoIfoodEstourado(venda, agora);
+                        final corUrgencia = _corUrgencia(urgencia);
+                        final chipsInfo = _chipsInfo(context, venda);
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: urgencia == _Urgencia.neutro
+                                ? BorderSide.none
+                                : BorderSide(color: corUrgencia, width: 1.5),
+                          ),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Column(
@@ -170,6 +372,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                     MaterialPageRoute(builder: (_) => VendaDetalhesScreen(venda: venda)),
                                   ),
                                   child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Icon(_iconeCanal(venda.canalVenda), color: Theme.of(context).colorScheme.onSurfaceVariant),
                                       const SizedBox(width: 8),
@@ -177,10 +380,23 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(venda.cliente.nome,
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Text(venda.cliente.nome,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                CategoriaClienteBadge(categoria: venda.cliente.categoriaCliente),
+                                              ],
+                                            ),
                                             Text(
-                                              '${venda.itens.length} itens • ${currencyFormat.format(venda.valorTotal)} • $tempoDecorrido',
+                                              '#${venda.numeroSequencial ?? '-'} • ${_rotuloCanal(venda.canalVenda)} • $tempoDecorrido',
+                                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                                            ),
+                                            Text(
+                                              '${venda.itens.length} itens • ${currencyFormat.format(venda.valorTotal)}',
                                               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                                             ),
                                           ],
@@ -204,6 +420,56 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                     ],
                                   ),
                                 ),
+                                if (chipsInfo.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Wrap(spacing: 6, runSpacing: 4, children: chipsInfo),
+                                  ),
+                                if (venda.agendado &&
+                                    venda.entregaPrevistaInicio != null &&
+                                    venda.entregaPrevistaFim != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.event_outlined,
+                                            size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Agendado: ${DateFormat('dd/MM HH:mm').format(venda.entregaPrevistaInicio!)}'
+                                          ' - ${DateFormat('HH:mm').format(venda.entregaPrevistaFim!)}',
+                                          style: TextStyle(
+                                              fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                if (venda.observacao.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Text(
+                                      '"${venda.observacao}"',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontStyle: FontStyle.italic,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                if (urgencia != _Urgencia.neutro || ifoodEstourado) ...[
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: [
+                                      if (urgencia == _Urgencia.atrasado) _selo('Atrasado', Colors.red),
+                                      if (urgencia == _Urgencia.atencao) _selo('Atenção', Colors.orange),
+                                      if (ifoodEstourado) _selo('Prazo iFood estourado', Colors.red.shade900),
+                                    ],
+                                  ),
+                                ],
                                 if (venda.proximoStatus != null) ...[
                                   const SizedBox(height: 8),
                                   Align(

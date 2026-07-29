@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 
 import '../models/marketplace_pedido_financeiro.dart';
 import '../repositories/dashboard_marketplace_repository.dart';
+import '../widgets/aviso_banner.dart';
+import '../widgets/metric_card.dart';
 
 const _rotulosStatusMarketplace = {
   'PLACED': 'Recebido',
@@ -159,9 +161,15 @@ class _DashboardMarketplaceScreenState extends State<DashboardMarketplaceScreen>
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _carregar,
-              child: ListView(
-                padding: const EdgeInsets.all(12),
-                children: [
+              // Center + maxWidth: mesmo ajuste do painel Início/Estatísticas
+              // — sem isso, em tela larga (barra lateral sempre visível) o
+              // conteúdo esticava até a borda e ficava "colado" à esquerda.
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: ListView(
+                    padding: const EdgeInsets.all(12),
+                    children: [
                   _seletorPeriodo(),
                   const SizedBox(height: 12),
                   if (_pedidos.isEmpty)
@@ -192,7 +200,9 @@ class _DashboardMarketplaceScreenState extends State<DashboardMarketplaceScreen>
                     ),
                   ],
                   const SizedBox(height: 12),
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
     );
@@ -227,80 +237,43 @@ class _DashboardMarketplaceScreenState extends State<DashboardMarketplaceScreen>
 
   Widget _gradeKpis(NumberFormat format, double faturamentoBruto, int numPedidos, double ticketMedio,
       double taxaServicoTotal, Map<String, _AgregadoCanal> porCanal) {
-    final corPrimaria = Theme.of(context).colorScheme.primary;
-
     final tempos = porCanal.values.where((c) => c.comTempoConfirmacao > 0);
     final somaTempos = tempos.fold<Duration>(Duration.zero, (s, c) => s + c.somaTempoConfirmacao);
     final qtdTempos = tempos.fold<int>(0, (s, c) => s + c.comTempoConfirmacao);
     final tempoMedioConfirmacao = qtdTempos > 0 ? Duration(seconds: somaTempos.inSeconds ~/ qtdTempos) : null;
 
-    final itens = [
-      ('Faturamento bruto', format.format(faturamentoBruto), corPrimaria),
-      ('Pedidos', '$numPedidos', corPrimaria),
-      ('Ticket médio', format.format(ticketMedio), corPrimaria),
-      ('Taxa de serviço (cliente)', format.format(taxaServicoTotal), Colors.orange),
+    // Wrap de cartões de largura fixa, não GridView.count com childAspectRatio
+    // fixo — mesmo ajuste feito em estatisticas_screen.dart (rótulos longos
+    // como "Taxa de serviço (cliente)" quebravam em 2 linhas numa coluna
+    // estreita e estouravam a altura fixa da célula).
+    final itens = <(IconData, String, String, Color?)>[
+      (Icons.payments_outlined, 'Faturamento bruto', format.format(faturamentoBruto), null),
+      (Icons.receipt_long_outlined, 'Pedidos', '$numPedidos', null),
+      (Icons.confirmation_number_outlined, 'Ticket médio', format.format(ticketMedio), null),
+      (Icons.percent, 'Taxa de serviço (cliente)', format.format(taxaServicoTotal), Colors.orange),
       (
+        Icons.timer_outlined,
         'Tempo médio p/ confirmar',
         tempoMedioConfirmacao != null ? _formatarDuracao(tempoMedioConfirmacao) : '—',
         Colors.blueGrey,
       ),
     ];
 
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 2.4,
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      children: itens.map((item) {
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(item.$1, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 4),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(item.$2, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: item.$3)),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
+    return MetricGrid(
+      cartoes: itens
+          .map((item) => MetricCard(icone: item.$1, titulo: item.$2, valor: item.$3, corIcone: item.$4))
+          .toList(),
     );
   }
 
   Widget _calloutComissaoBloqueada() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.amber.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border(left: BorderSide(color: Colors.amber.shade700, width: 3)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline, color: Colors.amber.shade800, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Comissão e valor repassado ainda não aparecem aqui: a iFood não libera esses dados '
-              'enquanto a loja estiver em sandbox/verificação de CNPJ pendente. Assim que for liberado, '
-              'os valores passam a entrar automaticamente.',
-              style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurface),
-            ),
-          ),
-        ],
+    return const Padding(
+      padding: EdgeInsets.only(bottom: 12),
+      child: AvisoBanner(
+        tipo: TipoAviso.alerta,
+        texto: 'Comissão e valor repassado ainda não aparecem aqui: a iFood não libera esses dados '
+            'enquanto a loja estiver em sandbox/verificação de CNPJ pendente. Assim que for liberado, '
+            'os valores passam a entrar automaticamente.',
       ),
     );
   }

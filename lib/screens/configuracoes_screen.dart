@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'aparencia_screen.dart';
 import 'configuracao_entrega_screen.dart';
+import 'configuracao_notificacoes_screen.dart';
 import 'dados_loja_screen.dart';
 import 'catalogo_online_screen.dart';
 import 'horario_funcionamento_screen.dart';
@@ -9,6 +10,7 @@ import 'meu_recibo_screen.dart';
 import 'opcoes_pagamento_screen.dart';
 import 'regras_venda_screen.dart';
 import 'exportar_relatorios_screen.dart';
+import 'importar_nota_fiscal_screen.dart';
 import 'integrar_plataformas_screen.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
@@ -53,6 +55,7 @@ class ConfiguracoesScreen extends StatelessWidget {
               MenuItem('Aparência e Marca', Icons.palette_outlined, const AparenciaScreen()),
               MenuItem('Catálogo Online', Icons.storefront_outlined, const CatalogoOnlineScreen()),
               MenuItem('Meu Recibo', Icons.receipt_long_outlined, const MeuReciboScreen()),
+              MenuItem('Notificações', Icons.notifications_outlined, const ConfiguracaoNotificacoesScreen()),
             ],
           ),
           const SizedBox(height: 20),
@@ -68,6 +71,7 @@ class ConfiguracoesScreen extends StatelessWidget {
           MenuSecao(
             titulo: 'Dados e integrações',
             itens: [
+              MenuItem('Importar Nota Fiscal', Icons.upload_file_outlined, const ImportarNotaFiscalScreen()),
               MenuItem('Exportar Relatórios', Icons.file_download_outlined, const ExportarRelatoriosScreen()),
               MenuItem(
                   'Integrar com Plataformas', Icons.integration_instructions_outlined, const IntegrarPlataformasScreen()),

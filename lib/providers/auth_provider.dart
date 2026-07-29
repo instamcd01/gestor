@@ -23,6 +23,17 @@ class AuthProvider with ChangeNotifier {
   bool get carregando => _carregando;
   String? get erro => _erro;
 
+  // Papéis: dono (acesso total), gerente (tudo exceto gestão de usuários/
+  // convites), vendedor (vender/pedidos/produtos/clientes, sem financeiro,
+  // sem excluir nada — reforçado também no banco via RLS/triggers, isto
+  // aqui só controla o que a UI mostra).
+  bool get isDono => _papel == 'dono';
+  bool get isGerente => _papel == 'gerente';
+  bool get isVendedor => _papel == 'vendedor';
+  bool get podeVerFinancas => isDono || isGerente;
+  bool get podeExcluir => isDono || isGerente;
+  bool get podeGerenciarUsuarios => isDono;
+
   /// true quando o usuário está logado mas ainda não tem empresa vinculada
   /// (precisa passar pelo onboarding antes de usar o resto do app).
   bool get precisaOnboarding => estaLogado && _empresaId == null && !_carregando;
@@ -88,12 +99,17 @@ class AuthProvider with ChangeNotifier {
   }
 
   /// Cria a empresa (tenant) e o vínculo de dono, usado só no onboarding
-  /// do primeiro acesso.
-  Future<bool> criarEmpresa(String nomeEmpresa) async {
+  /// do primeiro acesso. `nomeDono`/`telefone` são o cadastro pessoal de
+  /// quem está criando a empresa — antes não eram perguntados em lugar
+  /// nenhum, então o dono ficava sem nome/telefone salvos pra sempre.
+  Future<bool> criarEmpresa(String nomeEmpresa, {String? nomeDono, String? telefone}) async {
     _erro = null;
     try {
-      await supabase.rpc('criar_empresa_e_usuario_dono',
-          params: {'p_nome_empresa': nomeEmpresa});
+      await supabase.rpc('criar_empresa_e_usuario_dono', params: {
+        'p_nome_empresa': nomeEmpresa,
+        if (nomeDono != null && nomeDono.isNotEmpty) 'p_nome_dono': nomeDono,
+        if (telefone != null && telefone.isNotEmpty) 'p_telefone': telefone,
+      });
       await _verificarUsuario();
       return true;
     } on PostgrestException catch (e) {
@@ -105,10 +121,15 @@ class AuthProvider with ChangeNotifier {
 
   /// Entra numa empresa já existente usando um código de convite gerado
   /// por um "dono" — alternativa ao onboarding de criar empresa nova.
-  Future<bool> entrarComConvite(String codigo) async {
+  /// `nome`/`telefone` são o cadastro pessoal de quem está entrando.
+  Future<bool> entrarComConvite(String codigo, {String? nome, String? telefone}) async {
     _erro = null;
     try {
-      await supabase.rpc('entrar_empresa_com_convite', params: {'p_codigo': codigo});
+      await supabase.rpc('entrar_empresa_com_convite', params: {
+        'p_codigo': codigo,
+        if (nome != null && nome.isNotEmpty) 'p_nome': nome,
+        if (telefone != null && telefone.isNotEmpty) 'p_telefone': telefone,
+      });
       await _verificarUsuario();
       return true;
     } on PostgrestException catch (e) {

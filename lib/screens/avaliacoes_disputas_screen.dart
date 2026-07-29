@@ -65,11 +65,16 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
     final controller = TextEditingController();
     final resposta = await showDialog<String>(
       context: context,
+      // Sem autofocus + sem fechar tocando fora: com o teclado aberto (via
+      // autofocus) e o diálogo fechando por barrier-dismiss no mesmo frame,
+      // bate num bug conhecido do framework do Flutter (assert
+      // `_dependents.isEmpty` ao desativar o Overlay/IME) — só os botões
+      // fecham o diálogo agora.
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text('Responder avaliação'),
         content: TextField(
           controller: controller,
-          autofocus: true,
           maxLines: 4,
           decoration: const InputDecoration(hintText: 'Escreva sua resposta ao cliente'),
         ),
@@ -188,11 +193,16 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
       final controller = TextEditingController();
       final confirmado = await showDialog<bool>(
         context: context,
+        // Sem autofocus + sem fechar tocando fora: com o teclado aberto (via
+        // autofocus) e o diálogo fechando por barrier-dismiss no mesmo frame,
+        // bate num bug conhecido do framework do Flutter (assert
+        // `_dependents.isEmpty` ao desativar o Overlay/IME) — só os botões
+        // fecham o diálogo agora.
+        barrierDismissible: false,
         builder: (ctx) => AlertDialog(
           title: const Text('Rejeitar disputa'),
           content: TextField(
             controller: controller,
-            autofocus: true,
             maxLines: 3,
             decoration: const InputDecoration(hintText: 'Motivo (opcional)'),
           ),
@@ -290,9 +300,15 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
                     return Icon(preenchida ? Icons.star : Icons.star_border, color: Colors.amber, size: 18);
                   }),
                 ),
-                Text(
-                  '${avaliacao.marketplaceNome} · ${dateFormat.format(avaliacao.dataPedido)}',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    '${avaliacao.marketplaceNome} · ${dateFormat.format(avaliacao.dataPedido)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
                 ),
               ],
             ),
@@ -371,7 +387,15 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(disputa.tipo ?? 'Contestação', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Flexible(
+                  child: Text(
+                    disputa.tipo ?? 'Contestação',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(color: corStatus.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(100)),

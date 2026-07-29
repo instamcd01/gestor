@@ -5,9 +5,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/cliente.dart';
 import '../models/movimentacao_saldo.dart';
 import '../models/venda.dart';
+import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
 import '../repositories/saldo_repository.dart';
 import '../repositories/venda_repository.dart';
+import '../utils/telefone_utils.dart';
 import '../widgets/categoria_cliente_badge.dart';
 import '../widgets/form_section.dart';
 import 'editar_cliente_screen.dart';
@@ -43,16 +45,19 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
         appBar: AppBar(
           title: Text(cliente.nome),
           actions: [
-            IconButton(
-              icon: _excluindo
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.primary),
-                    )
-                  : const Icon(Icons.delete),
-              onPressed: _excluindo ? null : () => _confirmarDelecao(cliente),
-            ),
+            // Reforça na UI o que já é bloqueado no banco (trigger) —
+            // vendedor não exclui cliente.
+            if (context.watch<AuthProvider>().podeExcluir)
+              IconButton(
+                icon: _excluindo
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.primary),
+                      )
+                    : const Icon(Icons.delete),
+                onPressed: _excluindo ? null : () => _confirmarDelecao(cliente),
+              ),
           ],
           bottom: const TabBar(
             tabs: [
@@ -281,11 +286,12 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
   }
 
   Future<void> _abrirWhatsApp(String numero) async {
-    final numeroLimpo = numero.replaceAll(RegExp(r'[^0-9]'), '');
-    if (numeroLimpo.isEmpty) return;
-    final uri = Uri.parse('https://wa.me/55$numeroLimpo');
+    if (normalizarTelefoneBr(numero).isEmpty) return;
+    final uri = Uri.parse(linkWhatsApp(numero));
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+      // Sem isso, em alguns aparelhos o link abre numa webview dentro do
+      // próprio Gestor em vez de abrir o WhatsApp de verdade.
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -452,6 +458,12 @@ class _ContaClienteTabState extends State<_ContaClienteTab> {
 
     final confirmou = await showDialog<bool>(
       context: context,
+      // Sem autofocus + sem fechar tocando fora: com o teclado aberto (via
+      // autofocus) e o diálogo fechando por barrier-dismiss no mesmo frame,
+      // bate num bug conhecido do framework do Flutter (assert
+      // `_dependents.isEmpty` ao desativar o Overlay/IME) — só os botões
+      // fecham o diálogo agora.
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: Text(tipo == 'credito' ? 'Adicionar Crédito' : 'Registrar Débito'),
         content: Column(
@@ -461,7 +473,6 @@ class _ContaClienteTabState extends State<_ContaClienteTab> {
               controller: valorController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(labelText: 'Valor (R\$)'),
-              autofocus: true,
             ),
             const SizedBox(height: 8),
             TextField(
@@ -524,23 +535,34 @@ class _ContaClienteTabState extends State<_ContaClienteTab> {
                   currencyFormat.format(widget.cliente.saldo),
                   style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => _abrirDialogoMovimentacao('credito'),
-                      icon: const Icon(Icons.add, color: Colors.green),
-                      label: const Text('Adicionar Crédito'),
-                    ),
-                    const SizedBox(width: 12),
-                    OutlinedButton.icon(
-                      onPressed: () => _abrirDialogoMovimentacao('debito'),
-                      icon: const Icon(Icons.remove, color: Colors.red),
-                      label: const Text('Registrar Débito'),
-                    ),
-                  ],
-                ),
+                // Ajustar saldo é ação financeira — vendedor só enxerga o
+                // saldo atual (precisa pra aplicar como pagamento numa
+                // venda), não pode criar/remover crédito por conta própria.
+                if (context.watch<AuthProvider>().podeVerFinancas) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      // Sem Expanded, os dois botões (ícone + texto) somados
+                      // ultrapassavam a largura da tela em telas estreitas —
+                      // esse era o overflow reportado na aba Conta.
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _abrirDialogoMovimentacao('credito'),
+                          icon: const Icon(Icons.add, color: Colors.green),
+                          label: const Text('Adicionar Crédito'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _abrirDialogoMovimentacao('debito'),
+                          icon: const Icon(Icons.remove, color: Colors.red),
+                          label: const Text('Registrar Débito'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),

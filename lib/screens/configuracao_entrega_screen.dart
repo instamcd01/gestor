@@ -159,6 +159,11 @@ class _ConfiguracaoEntregaScreenState extends State<ConfiguracaoEntregaScreen> {
                             'Frete grátis a partir de R\$ ${zona.valorMinimoFreteGratis!.toStringAsFixed(2)}',
                             style: const TextStyle(color: Colors.green, fontSize: 12),
                           ),
+                        if (zona.estimativaMinMin != null && zona.estimativaMinMax != null)
+                          Text(
+                            'Estimativa: ${zona.estimativaMinMin} a ${zona.estimativaMinMax} min',
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+                          ),
                         if (!zona.ativo)
                           const Text('Desativada', style: TextStyle(color: Colors.red, fontSize: 12)),
                       ],
@@ -202,6 +207,8 @@ class _FormularioZonaEntregaState extends State<_FormularioZonaEntrega> {
   late final TextEditingController _maxController;
   late final TextEditingController _valorController;
   late final TextEditingController _minimoFreteGratisController;
+  late final TextEditingController _estimativaMinController;
+  late final TextEditingController _estimativaMaxController;
   late bool _ativo;
   bool _salvando = false;
 
@@ -217,6 +224,8 @@ class _FormularioZonaEntregaState extends State<_FormularioZonaEntrega> {
     _valorController = TextEditingController(text: ClienteValidators.formatarMoeda(zona?.valor));
     _minimoFreteGratisController =
         TextEditingController(text: ClienteValidators.formatarMoeda(zona?.valorMinimoFreteGratis));
+    _estimativaMinController = TextEditingController(text: zona?.estimativaMinMin?.toString() ?? '');
+    _estimativaMaxController = TextEditingController(text: zona?.estimativaMinMax?.toString() ?? '');
     _ativo = zona?.ativo ?? true;
   }
 
@@ -227,6 +236,8 @@ class _FormularioZonaEntregaState extends State<_FormularioZonaEntrega> {
     _maxController.dispose();
     _valorController.dispose();
     _minimoFreteGratisController.dispose();
+    _estimativaMinController.dispose();
+    _estimativaMaxController.dispose();
     super.dispose();
   }
 
@@ -252,12 +263,32 @@ class _FormularioZonaEntregaState extends State<_FormularioZonaEntrega> {
     return null;
   }
 
+  /// null = ambos em branco (zona sem estimativa configurada, permitido).
+  /// Senão, exige os dois preenchidos e máximo >= mínimo.
+  String? _validarEstimativa() {
+    final minTexto = _estimativaMinController.text.trim();
+    final maxTexto = _estimativaMaxController.text.trim();
+    if (minTexto.isEmpty && maxTexto.isEmpty) return null;
+
+    final min = int.tryParse(minTexto);
+    final max = int.tryParse(maxTexto);
+    if (min == null || max == null) return 'Informe os dois campos de estimativa de entrega, ou deixe os dois em branco';
+    if (max < min) return 'Estimativa "até" deve ser maior ou igual à "de"';
+    return null;
+  }
+
   Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
 
     final sobreposicao = _validarSobreposicao();
     if (sobreposicao != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(sobreposicao)));
+      return;
+    }
+
+    final erroEstimativa = _validarEstimativa();
+    if (erroEstimativa != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erroEstimativa)));
       return;
     }
 
@@ -271,6 +302,8 @@ class _FormularioZonaEntregaState extends State<_FormularioZonaEntrega> {
         valor: ClienteValidators.parseNumero(_valorController.text) ?? 0,
         valorMinimoFreteGratis: ClienteValidators.parseNumero(_minimoFreteGratisController.text),
         ativo: _ativo,
+        estimativaMinMin: int.tryParse(_estimativaMinController.text.trim()),
+        estimativaMinMax: int.tryParse(_estimativaMaxController.text.trim()),
       );
 
       final provider = context.read<ZonaEntregaProvider>();
@@ -376,6 +409,38 @@ class _FormularioZonaEntregaState extends State<_FormularioZonaEntrega> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [MoedaInputFormatter()],
             ),
+            const SizedBox(height: 12),
+            Text(
+              'Estimativa de entrega (opcional)',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            Text(
+              'Usada pra avisar quando um pedido dessa faixa estiver atrasado — deixe uma margem que caiba juntar vários pedidos numa rota.',
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _estimativaMinController,
+                    decoration: const InputDecoration(labelText: 'De (min)'),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [InteiroInputFormatter()],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    controller: _estimativaMaxController,
+                    decoration: const InputDecoration(labelText: 'Até (min)'),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [InteiroInputFormatter()],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Ativa'),

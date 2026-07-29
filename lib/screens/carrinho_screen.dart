@@ -229,6 +229,7 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                                 desconto: carrinhoProvider.desconto,
                                 valorEntrega: carrinhoProvider.valorEntregaCalculado,
                                 entregaSelecionada: carrinhoProvider.entregaSelecionadaId,
+                                zonaEntrega: carrinhoProvider.zonaEntregaSelecionada,
                               ),
                             ),
                           );

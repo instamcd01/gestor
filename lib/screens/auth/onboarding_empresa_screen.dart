@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../utils/formatadores_input.dart';
 
 /// Primeiro acesso: o usuário ainda não tem empresa vinculada. Ou ele cria
 /// uma empresa nova (dono), ou entra numa já existente com um código de
-/// convite gerado por um dono (funcionário).
+/// convite gerado por um dono (funcionário). Também é aqui que o cadastro
+/// pessoal (nome, telefone) é preenchido pela primeira vez — antes esses
+/// dados nunca eram perguntados em lugar nenhum do app, então todo mundo
+/// (dono incluso) ficava com "nome" null pra sempre.
 class OnboardingEmpresaScreen extends StatefulWidget {
   const OnboardingEmpresaScreen({super.key});
 
@@ -13,14 +17,18 @@ class OnboardingEmpresaScreen extends StatefulWidget {
 }
 
 class _OnboardingEmpresaScreenState extends State<OnboardingEmpresaScreen> {
-  final _nomeController = TextEditingController();
+  final _nomePessoalController = TextEditingController();
+  final _telefoneController = TextEditingController();
+  final _nomeEmpresaController = TextEditingController();
   final _codigoController = TextEditingController();
   bool _temConvite = false;
   bool _carregando = false;
 
   @override
   void dispose() {
-    _nomeController.dispose();
+    _nomePessoalController.dispose();
+    _telefoneController.dispose();
+    _nomeEmpresaController.dispose();
     _codigoController.dispose();
     super.dispose();
   }
@@ -29,9 +37,12 @@ class _OnboardingEmpresaScreenState extends State<OnboardingEmpresaScreen> {
     final auth = context.read<AuthProvider>();
     setState(() => _carregando = true);
 
+    final nome = _nomePessoalController.text.trim();
+    final telefone = _telefoneController.text.trim();
+
     final sucesso = _temConvite
-        ? await auth.entrarComConvite(_codigoController.text.trim())
-        : await auth.criarEmpresa(_nomeController.text.trim());
+        ? await auth.entrarComConvite(_codigoController.text.trim(), nome: nome, telefone: telefone)
+        : await auth.criarEmpresa(_nomeEmpresaController.text.trim(), nomeDono: nome, telefone: telefone);
 
     if (!mounted) return;
     setState(() => _carregando = false);
@@ -43,9 +54,12 @@ class _OnboardingEmpresaScreenState extends State<OnboardingEmpresaScreen> {
     }
   }
 
-  bool get _podeConfirmar => _temConvite
-      ? _codigoController.text.trim().isNotEmpty
-      : _nomeController.text.trim().isNotEmpty;
+  bool get _podeConfirmar {
+    if (_nomePessoalController.text.trim().isEmpty) return false;
+    return _temConvite
+        ? _codigoController.text.trim().isNotEmpty
+        : _nomeEmpresaController.text.trim().isNotEmpty;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +100,26 @@ class _OnboardingEmpresaScreenState extends State<OnboardingEmpresaScreen> {
                         ),
                   ),
                   const SizedBox(height: 28),
+                  TextField(
+                    controller: _nomePessoalController,
+                    textCapitalization: TextCapitalization.words,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'Seu nome completo',
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _telefoneController,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [TelefoneInputFormatter()],
+                    decoration: const InputDecoration(
+                      labelText: 'Seu telefone (opcional)',
+                      prefixIcon: Icon(Icons.phone_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   if (_temConvite)
                     TextField(
                       controller: _codigoController,
@@ -99,7 +133,7 @@ class _OnboardingEmpresaScreenState extends State<OnboardingEmpresaScreen> {
                     )
                   else
                     TextField(
-                      controller: _nomeController,
+                      controller: _nomeEmpresaController,
                       onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
                         labelText: 'Nome da empresa',

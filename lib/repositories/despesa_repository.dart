@@ -14,11 +14,11 @@ class DespesaRepository {
     return (data as List).map((row) => Despesa.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 
-  Future<Despesa> criar(Despesa despesa, {required String empresaId, String? criadoPor}) async {
+  Future<Despesa> criar(Despesa despesa, {required String empresaId, String? criadoPor, String? fornecedorId}) async {
     final row = await supabase
         .from('despesas')
         .insert({
-          ...despesa.toSupabaseMap(),
+          ...despesa.toSupabaseMap(fornecedorId: fornecedorId),
           'empresa_id': empresaId,
           'criado_por': criadoPor,
         })
@@ -43,7 +43,10 @@ class DespesaRepository {
   }
 
   Future<void> cancelar(String despesaId) async {
-    await supabase.from('despesas').update({'status': StatusDespesa.cancelado}).eq('id', despesaId);
+    await supabase.from('despesas').update({
+      'status': StatusDespesa.cancelado,
+      'data_cancelamento': DateTime.now().toIso8601String(),
+    }).eq('id', despesaId);
   }
 
   Future<void> excluir(String despesaId) async {

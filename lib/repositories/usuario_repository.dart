@@ -20,8 +20,15 @@ class UsuarioRepository {
     await supabase.from('usuarios').update({'ativo': ativo}).eq('id', usuarioId);
   }
 
-  Future<void> atualizarNome(String usuarioId, String nome) async {
-    await supabase.from('usuarios').update({'nome': nome}).eq('id', usuarioId);
+  /// Atualiza nome/telefone de um usuário. Cada um só entra no UPDATE se
+  /// foi informado — permite editar só um dos dois sem sobrescrever o outro
+  /// com null.
+  Future<void> atualizarDados(String usuarioId, {String? nome, String? telefone}) async {
+    final dados = <String, dynamic>{};
+    if (nome != null) dados['nome'] = nome;
+    if (telefone != null) dados['telefone'] = telefone;
+    if (dados.isEmpty) return;
+    await supabase.from('usuarios').update(dados).eq('id', usuarioId);
   }
 
   Future<List<ConviteEmpresa>> listarConvites() async {

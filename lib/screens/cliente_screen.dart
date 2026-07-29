@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:gestor/screens/adicionar_cliente_screen.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
 import '../widgets/categoria_cliente_badge.dart';
+import '../widgets/importar_clientes_planilha.dart';
 import 'cliente_detalhes_screen.dart';
 import '../models/cliente.dart';
 
@@ -30,6 +32,15 @@ class _ClientesScreenState extends State<ClientesScreen> {
         builder: (context) => AdicionarClienteScreen(),
       ),
     );
+  }
+
+  Future<void> _importarClientes() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (context) => const ImportarClientesScreen(),
+    ));
+    if (mounted) {
+      Provider.of<ClientProvider>(context, listen: false).carregarClientes();
+    }
   }
 
   void _aplicarFiltro() {
@@ -106,11 +117,24 @@ class _ClientesScreenState extends State<ClientesScreen> {
     final clientProvider = Provider.of<ClientProvider>(context);
     final clientesFiltrados = clientProvider.clientes;
     final colorScheme = Theme.of(context).colorScheme;
+    final auth = context.watch<AuthProvider>();
+    // Reforça na UI o que já é bloqueado no banco (trigger) — vendedor não
+    // exclui cliente.
+    final podeExcluir = auth.podeExcluir;
 
     return Scaffold(
       appBar: AppBar(
         title: Text('Clientes (${clientesFiltrados.length})'),
         actions: [
+          // Importar/exportar mexe na base de clientes inteira (telefone,
+          // endereço, CPF, saldo) de uma vez só — bulk admin, não venda do
+          // dia a dia. Vendedor não deveria conseguir baixar isso.
+          if (!auth.isVendedor)
+            IconButton(
+              icon: const Icon(Icons.upload_file),
+              onPressed: _importarClientes,
+              tooltip: 'Importar/Exportar Planilha',
+            ),
           IconButton(
             icon: Icon(Icons.person_add),
             onPressed: _cadastrarNovoCliente,
@@ -182,11 +206,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                   ..._iconesDePets(cliente),
                                 ],
                               ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete_outline),
-                                tooltip: 'Excluir',
-                                onPressed: () => _confirmarExclusao(clientProvider, cliente),
-                              ),
+                              trailing: podeExcluir
+                                  ? IconButton(
+                                      icon: const Icon(Icons.delete_outline),
+                                      tooltip: 'Excluir',
+                                      onPressed: () => _confirmarExclusao(clientProvider, cliente),
+                                    )
+                                  : null,
                             ),
                           );
                         },

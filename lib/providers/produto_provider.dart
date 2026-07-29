@@ -93,4 +93,33 @@ class ProdutoProvider with ChangeNotifier {
       rethrow;
     }
   }
+
+  List<Produto> _excluidos = [];
+  List<Produto> get excluidos => _excluidos;
+
+  Future<void> carregarExcluidos() async {
+    try {
+      _excluidos = await _repository.listarExcluidos();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Erro ao carregar produtos excluídos: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> restaurarProduto(String id) async {
+    await _repository.restaurar(id);
+    _excluidos.removeWhere((p) => p.id == id);
+    notifyListeners();
+    await carregarProdutos();
+  }
+
+  Future<void> marcarPrecoRevisado(String id) async {
+    await _repository.marcarPrecoRevisado(id);
+    final index = _produtos.indexWhere((p) => p.id == id);
+    if (index != -1) {
+      _produtos[index].revisarPreco = false;
+      notifyListeners();
+    }
+  }
 }

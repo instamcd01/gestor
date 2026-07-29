@@ -22,7 +22,7 @@ class ConviteEmpresa {
     return ConviteEmpresa(
       id: row['id'] as String,
       codigo: row['codigo']?.toString() ?? '',
-      papel: row['papel']?.toString() ?? 'funcionario',
+      papel: row['papel']?.toString() ?? 'vendedor',
       expiraEm: DateTime.tryParse(row['expira_em'].toString())?.toLocal() ?? DateTime.now(),
       usadoEm: row['usado_em'] != null ? DateTime.tryParse(row['usado_em'].toString())?.toLocal() : null,
       criadoEm: DateTime.tryParse(row['created_at'].toString())?.toLocal() ?? DateTime.now(),

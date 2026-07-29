@@ -108,4 +108,24 @@ class ProdutoRepository {
         .update({'deleted_at': DateTime.now().toIso8601String()})
         .eq('id', produtoId);
   }
+
+  Future<List<Produto>> listarExcluidos() async {
+    final data = await supabase
+        .from('produtos')
+        .select(_selectComEstoque)
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', ascending: false);
+
+    return (data as List)
+        .map((row) => Produto.fromSupabase(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> restaurar(String produtoId) async {
+    await supabase.from('produtos').update({'deleted_at': null}).eq('id', produtoId);
+  }
+
+  Future<void> marcarPrecoRevisado(String produtoId) async {
+    await supabase.from('produtos').update({'revisar_preco': false}).eq('id', produtoId);
+  }
 }

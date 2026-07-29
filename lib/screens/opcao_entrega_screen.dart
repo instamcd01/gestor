@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,6 +9,7 @@ import '../models/zona_entrega.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
 import '../providers/zona_entrega_provider.dart';
+import '../repositories/cliente_repository.dart';
 import '../services/distancia_service.dart';
 import 'adicionar_cliente_screen.dart';
 import 'configuracao_entrega_screen.dart';
@@ -109,7 +112,28 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
         setState(() {
           _distanciaKm = rota.distanciaKm;
           _estimativaMin = rota.duracaoMin;
+          // Atualiza o cliente em memória também — sem isso, quem confirma
+          // a entrega logo em seguida ainda carregava a versão antiga (sem
+          // distância) pro resto do checkout.
+          if (_clienteSelecionado?.idCliente == cliente.idCliente) {
+            _clienteSelecionado = _clienteSelecionado!.copyWith(
+              rangeDistancia: rota.distanciaKm,
+              estimativaEntrega: rota.duracaoMin,
+            );
+          }
         });
+        // Salva no cadastro do cliente pra não precisar recalcular (chamada
+        // paga à API) no próximo checkout — best-effort, não trava a venda
+        // se falhar.
+        if (cliente.idCliente != null) {
+          unawaited(
+            ClienteRepository().atualizarDistancia(
+              cliente.idCliente!,
+              rangeDistancia: rota.distanciaKm,
+              estimativaEntrega: rota.duracaoMin,
+            ),
+          );
+        }
       }
     }
     if (!mounted) return;
@@ -154,23 +178,33 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
   Widget build(BuildContext context) {
     final clienteProvider = context.watch<ClientProvider>();
     final todosClientes = clienteProvider.clientes;
-    final clientesParaMostrar =
-        _buscaClienteController.text.isEmpty && _clientesFiltrados.isEmpty
-            ? todosClientes.take(5).toList()
-            : _clientesFiltrados;
+    // A lista geral vem em ordem alfabética (certo pra buscar por nome),
+    // mas o atalho "sem busca" faz mais sentido mostrar quem foi cadastrado
+    // por último — é o caso mais comum de quem acabou de criar o cliente
+    // durante a venda e precisa achá-lo rápido.
+    final clientesParaMostrar = _buscaClienteController.text.isEmpty && _clientesFiltrados.isEmpty
+        ? (List<Cliente>.from(todosClientes)
+              ..sort((a, b) => (b.dataCadastro ?? DateTime(0)).compareTo(a.dataCadastro ?? DateTime(0))))
+            .take(5)
+            .toList()
+        : _clientesFiltrados;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Entrega'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Configurar zonas de entrega',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ConfiguracaoEntregaScreen()),
+          // Atalho pra configuração de zonas/preço de entrega — pulava o
+          // menu Configurações (já restrito a dono/gerente) inteiro, então
+          // vendedor conseguia mexer em preço de frete por aqui.
+          if (context.watch<AuthProvider>().podeVerFinancas)
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Configurar zonas de entrega',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ConfiguracaoEntregaScreen()),
+              ),
             ),
-          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -222,13 +256,20 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
                   icon: const Icon(Icons.person_add),
                   label: const Text('Cadastrar novo cliente'),
                   onPressed: () async {
-                    await Navigator.push(
+                    // Antes só recarregava a lista e deixava a pessoa achar
+                    // o cliente recém-criado na mão (lista é alfabética,
+                    // então ele quase nunca aparecia nos 5 primeiros) —
+                    // agora seleciona direto, sem precisar procurar.
+                    final novoCliente = await Navigator.push<Cliente>(
                       context,
                       MaterialPageRoute(
                         builder: (_) => AdicionarClienteScreen(),
                       ),
                     );
-                    _carregarClientes();
+                    await _carregarClientes();
+                    if (novoCliente != null && mounted) {
+                      _selecionarCliente(novoCliente);
+                    }
                   },
                 ),
               ),

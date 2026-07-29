@@ -1,6 +1,7 @@
 // pagamento_cartao_debito_screen.dart
 import 'package:flutter/material.dart';
 import '../models/cliente.dart';
+import '../models/zona_entrega.dart';
 import '../widgets/itens_compra_card.dart';
 import '../widgets/resumo_pagamento_card.dart';
 import 'conclusao_venda_screen.dart';
@@ -15,6 +16,7 @@ class PagamentoCartaoDebitoScreen extends StatefulWidget {
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
+  final ZonaEntrega? zonaEntrega;
 
   PagamentoCartaoDebitoScreen({
     required this.valorTotal,
@@ -26,6 +28,7 @@ class PagamentoCartaoDebitoScreen extends StatefulWidget {
     required this.valorEntrega,
     required this.entregaSelecionada,
     required this.saldoUsado,
+    this.zonaEntrega,
   });
 
   @override
@@ -49,6 +52,7 @@ class _PagamentoCartaoDebitoScreenState
           valorEntrega: widget.valorEntrega,
           entregaSelecionada: widget.entregaSelecionada,
           saldoUsado: widget.saldoUsado,
+          zonaEntrega: widget.zonaEntrega,
         ),
       ),
     );

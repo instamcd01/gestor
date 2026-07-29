@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -17,8 +18,13 @@ const _metodosPagamentoDespesa = ['Dinheiro', 'Pix', 'Transferência', 'Boleto',
 /// já que são a mesma tabela só com um recorte diferente.
 class DespesasScreen extends StatefulWidget {
   final bool apenasPendentes;
+  /// Abre já numa aba específica ('Pendentes'/'Atrasadas'/'Pagas') — usado
+  /// pela tela de métricas pra levar direto pro recorte que foi tocado,
+  /// sem precisar escolher o chip de novo. Tem prioridade sobre
+  /// `apenasPendentes` quando os dois são passados.
+  final String? filtroInicial;
 
-  const DespesasScreen({super.key, this.apenasPendentes = false});
+  const DespesasScreen({super.key, this.apenasPendentes = false, this.filtroInicial});
 
   @override
   State<DespesasScreen> createState() => _DespesasScreenState();
@@ -30,7 +36,7 @@ class _DespesasScreenState extends State<DespesasScreen> {
   @override
   void initState() {
     super.initState();
-    _filtro = widget.apenasPendentes ? 'Pendentes' : 'Todas';
+    _filtro = widget.filtroInicial ?? (widget.apenasPendentes ? 'Pendentes' : 'Todas');
     Provider.of<DespesaProvider>(context, listen: false).carregar();
   }
 
@@ -194,6 +200,27 @@ class _DespesasScreenState extends State<DespesasScreen> {
                           children: [
                             Text('${despesa.categoria}${despesa.fornecedor != null ? ' • ${despesa.fornecedor!.nome}' : ''}'),
                             Text('Vencimento: ${dateFormat.format(despesa.dataVencimento)}'),
+                            if (despesa.codigoBarrasBoleto != null && despesa.codigoBarrasBoleto!.isNotEmpty)
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Boleto: ${despesa.codigoBarrasBoleto}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                  ),
+                                  InkWell(
+                                    onTap: () {
+                                      Clipboard.setData(ClipboardData(text: despesa.codigoBarrasBoleto!));
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(const SnackBar(content: Text('Código de barras copiado.')));
+                                    },
+                                    child: const Icon(Icons.copy_outlined, size: 14),
+                                  ),
+                                ],
+                              ),
                           ],
                         ),
                         isThreeLine: true,
@@ -282,8 +309,14 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
   late final TextEditingController _valorController;
   late final TextEditingController _vencimentoController;
   late final TextEditingController _observacoesController;
+  late final TextEditingController _codigoBarrasBoletoController;
   late String _categoria;
-  Fornecedor? _fornecedorSelecionado;
+  // Guardado por id, não pela instância de `Despesa.fornecedor` (essa vem
+  // de uma consulta separada da lista usada no dropdown) — senão o
+  // DropdownButtonFormField quebra ("There should be exactly one item
+  // with [DropdownButton]'s value") por não achar objeto igual por
+  // referência entre as duas listas.
+  String? _fornecedorIdSelecionado;
   bool _salvando = false;
 
   bool get _editando => widget.despesa != null;
@@ -298,8 +331,9 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
       text: d != null ? DateFormatUtilsLocal.formatar(d.dataVencimento) : '',
     );
     _observacoesController = TextEditingController(text: d?.observacoes ?? '');
+    _codigoBarrasBoletoController = TextEditingController(text: d?.codigoBarrasBoleto ?? '');
     _categoria = d?.categoria ?? categoriasDespesaSugeridas.first;
-    _fornecedorSelecionado = d?.fornecedor;
+    _fornecedorIdSelecionado = d?.fornecedor?.id;
 
     Provider.of<FornecedorProvider>(context, listen: false).carregar();
   }
@@ -310,7 +344,19 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
     _valorController.dispose();
     _vencimentoController.dispose();
     _observacoesController.dispose();
+    _codigoBarrasBoletoController.dispose();
     super.dispose();
+  }
+
+  /// Sempre busca de novo na lista atual do provider em vez de guardar a
+  /// instância — garante a mesma referência usada nos `items` do dropdown
+  /// (ver comentário em `_fornecedorIdSelecionado`).
+  Fornecedor? _resolverFornecedor(List<Fornecedor> fornecedores) {
+    if (_fornecedorIdSelecionado == null) return null;
+    for (final f in fornecedores) {
+      if (f.id == _fornecedorIdSelecionado) return f;
+    }
+    return null;
   }
 
   Future<void> _salvar() async {
@@ -326,7 +372,7 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
 
     final despesa = Despesa(
       id: widget.despesa?.id,
-      fornecedor: _fornecedorSelecionado,
+      fornecedor: _resolverFornecedor(context.read<FornecedorProvider>().fornecedores),
       descricao: _descricaoController.text.trim(),
       categoria: _categoria,
       valor: ClienteValidators.parseNumero(_valorController.text) ?? 0.0,
@@ -335,6 +381,7 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
       status: widget.despesa?.status ?? StatusDespesa.pendente,
       metodoPagamento: widget.despesa?.metodoPagamento,
       observacoes: _observacoesController.text.trim(),
+      codigoBarrasBoleto: _codigoBarrasBoletoController.text.trim().isEmpty ? null : _codigoBarrasBoletoController.text.trim(),
     );
 
     try {
@@ -381,14 +428,29 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
                     items: categoriasDespesaSugeridas.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                     onChanged: (v) => setState(() => _categoria = v!),
                   ),
-                  DropdownButtonFormField<Fornecedor?>(
-                    initialValue: _fornecedorSelecionado,
+                  // `DropdownButton` puro (não `...FormField`) de propósito:
+                  // o `value` é recalculado a cada build a partir da lista
+                  // atual do provider, então sempre bate com a mesma
+                  // referência de objeto usada em `items` — um FormField
+                  // guarda o `initialValue` só na primeira vez e não
+                  // reage quando a lista de fornecedores termina de
+                  // carregar depois, o que causava a tela vermelha.
+                  InputDecorator(
                     decoration: const InputDecoration(labelText: 'Fornecedor (Opcional)'),
-                    items: [
-                      const DropdownMenuItem<Fornecedor?>(value: null, child: Text('Nenhum')),
-                      ...fornecedorProvider.fornecedores.map((f) => DropdownMenuItem(value: f, child: Text(f.nome))),
-                    ],
-                    onChanged: (v) => setState(() => _fornecedorSelecionado = v),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<Fornecedor?>(
+                        isExpanded: true,
+                        value: _resolverFornecedor(fornecedorProvider.fornecedores),
+                        items: [
+                          const DropdownMenuItem<Fornecedor?>(value: null, child: Text('Nenhum')),
+                          ...fornecedorProvider.fornecedores.map((f) => DropdownMenuItem(
+                                value: f,
+                                child: Text(f.nome, overflow: TextOverflow.ellipsis),
+                              )),
+                        ],
+                        onChanged: (v) => setState(() => _fornecedorIdSelecionado = v?.id),
+                      ),
+                    ),
                   ),
                   Row(
                     children: [
@@ -413,6 +475,13 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  TextFormField(
+                    controller: _codigoBarrasBoletoController,
+                    decoration: const InputDecoration(
+                      labelText: 'Código de barras do boleto (Opcional)',
+                      helperText: 'Linha digitável, pra facilitar identificar/pagar depois',
+                    ),
                   ),
                   TextFormField(
                     controller: _observacoesController,

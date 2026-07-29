@@ -1,8 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/supabase_config.dart';
 import '../models/modelo_visual.dart';
 import '../repositories/modelo_visual_repository.dart';
 import '../theme/app_theme.dart';
+
+const _chaveCacheCorPrimaria = 'branding_cache_cor_primaria';
+const _chaveCacheCorSecundaria = 'branding_cache_cor_secundaria';
+const _chaveCacheTema = 'branding_cache_tema';
+const _chaveCacheLayoutSidebar = 'branding_cache_layout_sidebar';
 
 /// Controla a identidade visual da empresa logada: qual modelo/tema
 /// (`ModeloVisual`) ela escolheu, mais a personalização por cima (cor
@@ -25,15 +33,25 @@ class BrandingProvider with ChangeNotifier {
   Color? _corPrimariaOverride;
   Color? _corSecundariaOverride;
   String? _logoUrl;
-  ThemeMode _temaModo = ThemeMode.system;
+  // Escuro até `carregarBranding` trazer a preferência real da empresa: a
+  // tela de login é a primeira impressão do app e não deve piscar claro
+  // (ou depender do tema do sistema) antes do login acontecer.
+  ThemeMode _temaModo = ThemeMode.dark;
   bool _carregando = false;
+
+  // Preenchido por `carregarCachePrevio` a partir do último branding
+  // carregado com sucesso NESTE aparelho (SharedPreferences) — só usado
+  // enquanto `_modelo` ainda não chegou de verdade do Supabase. Sem isso,
+  // toda abertura do app mostrava a cor/layout padrão por um instante antes
+  // de "pular" pra cor real da empresa.
+  LayoutNavegacao? _layoutCache;
 
   ModeloVisual? get modelo => _modelo;
   List<ModeloVisual> get modelosDisponiveis => _modelosDisponiveis;
   String? get logoUrl => _logoUrl;
   ThemeMode get temaModo => _temaModo;
   bool get carregando => _carregando;
-  LayoutNavegacao get layoutNavegacao => _modelo?.layoutNavegacao ?? LayoutNavegacao.drawer;
+  LayoutNavegacao get layoutNavegacao => _modelo?.layoutNavegacao ?? _layoutCache ?? LayoutNavegacao.drawer;
 
   Color get corPrimaria =>
       _corPrimariaOverride ??
@@ -58,6 +76,52 @@ class BrandingProvider with ChangeNotifier {
         cardElevado: _modelo?.cardElevado ?? false,
         densidadeCompacta: _modelo?.densidadeCompacta ?? false,
       );
+
+  /// Restaura, a partir do cache local deste aparelho, a cor/tema/layout do
+  /// último branding carregado com sucesso — chamado em `main()` ANTES do
+  /// primeiro frame, pra já nascer com a cor real da empresa em vez da cor
+  /// padrão. `carregarBranding` continua rodando normalmente depois (via
+  /// AuthGate) pra confirmar/atualizar contra o Supabase; se os valores não
+  /// mudaram desde o último uso (caso comum), a troca é invisível.
+  Future<void> carregarCachePrevio() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      final corPrimariaHex = prefs.getString(_chaveCacheCorPrimaria);
+      if (corPrimariaHex != null) _corPrimariaOverride = AppTheme.hexParaColor(corPrimariaHex);
+
+      final corSecundariaHex = prefs.getString(_chaveCacheCorSecundaria);
+      if (corSecundariaHex != null) _corSecundariaOverride = AppTheme.hexParaColor(corSecundariaHex);
+
+      final temaSalvo = prefs.getString(_chaveCacheTema);
+      if (temaSalvo != null) _temaModo = _temaModoFromString(temaSalvo);
+
+      final layoutSidebar = prefs.getBool(_chaveCacheLayoutSidebar);
+      if (layoutSidebar != null) _layoutCache = layoutSidebar ? LayoutNavegacao.sidebar : LayoutNavegacao.drawer;
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Erro ao carregar cache local de branding: $e');
+      // Sem cache disponível (primeira instalação, erro de leitura) — segue
+      // com os valores padrão normalmente, `carregarBranding` corrige assim
+      // que a rede/autenticação estiverem prontas.
+    }
+  }
+
+  /// Guarda localmente (neste aparelho) o branding resolvido, pra
+  /// `carregarCachePrevio` usar na próxima abertura do app. Best-effort —
+  /// falha aqui não deve impedir nada, por isso não é aguardado/propagado.
+  Future<void> _salvarCacheLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_chaveCacheCorPrimaria, AppTheme.colorParaHex(corPrimaria));
+      await prefs.setString(_chaveCacheCorSecundaria, AppTheme.colorParaHex(corSecundaria));
+      await prefs.setString(_chaveCacheTema, _temaModoToString(_temaModo));
+      await prefs.setBool(_chaveCacheLayoutSidebar, layoutNavegacao == LayoutNavegacao.sidebar);
+    } catch (e) {
+      debugPrint('Erro ao salvar cache local de branding: $e');
+    }
+  }
 
   /// Busca o branding salvo da empresa e o catálogo de modelos disponíveis.
   Future<void> carregarBranding(String empresaId) async {
@@ -90,6 +154,8 @@ class BrandingProvider with ChangeNotifier {
         }
       }
       _modelo = modeloEncontrado ?? (_modelosDisponiveis.isNotEmpty ? _modelosDisponiveis.first : null);
+
+      unawaited(_salvarCacheLocal());
     } catch (e) {
       debugPrint('Erro ao carregar branding da empresa: $e');
       // Mantém os valores padrão em caso de falha — o app nunca deve
@@ -114,6 +180,7 @@ class BrandingProvider with ChangeNotifier {
 
     _modelo = novoModelo;
     notifyListeners();
+    unawaited(_salvarCacheLocal());
 
     if (_empresaId == null) return;
     try {
@@ -132,6 +199,7 @@ class BrandingProvider with ChangeNotifier {
     if (corPrimaria != null) _corPrimariaOverride = corPrimaria;
     if (corSecundaria != null) _corSecundariaOverride = corSecundaria;
     notifyListeners();
+    unawaited(_salvarCacheLocal());
 
     if (_empresaId == null) return;
 
@@ -158,6 +226,7 @@ class BrandingProvider with ChangeNotifier {
   Future<void> atualizarTemaPreferido(ThemeMode modo) async {
     _temaModo = modo;
     notifyListeners();
+    unawaited(_salvarCacheLocal());
 
     if (_empresaId == null) return;
     await supabase.from('empresas').update({
@@ -171,6 +240,7 @@ class BrandingProvider with ChangeNotifier {
     _corPrimariaOverride = null;
     _corSecundariaOverride = null;
     notifyListeners();
+    unawaited(_salvarCacheLocal());
 
     if (_empresaId == null) return;
     await supabase.from('empresas').update({

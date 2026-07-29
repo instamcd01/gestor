@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../widgets/importar_produtos_planilha.dart';
 import '../models/produto.dart';
 import 'cadastro_produto_screen.dart';
+import 'detalhes_produto_screen.dart';
 import 'editar_produto_screen.dart';
+import 'produtos_excluidos_screen.dart';
 
 class ProdutosScreen extends StatefulWidget {
   const ProdutosScreen({super.key});
@@ -35,6 +38,10 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   @override
   Widget build(BuildContext context) {
     final produtoProvider = context.watch<ProdutoProvider>();
+    // Vendedor só consulta o catálogo (ver detalhesProdutoScreen) — criar,
+    // importar/exportar e restaurar produto excluído é gestão de catálogo,
+    // não venda.
+    final isVendedor = context.watch<AuthProvider>().isVendedor;
 
     final produtosFiltrados = produtoProvider.produtos.where((p) {
       final termo = _busca.toLowerCase();
@@ -47,11 +54,20 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
       appBar: AppBar(
         title: Text('Produtos (${produtoProvider.produtos.length})'),
         actions: [
-          IconButton(
-            tooltip: 'Importar planilha',
-            icon: const Icon(Icons.upload_file_outlined),
-            onPressed: _importarProdutos,
-          ),
+          if (!isVendedor) ...[
+            IconButton(
+              tooltip: 'Produtos excluídos',
+              icon: const Icon(Icons.restore_from_trash_outlined),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const ProdutosExcluidosScreen(),
+              )),
+            ),
+            IconButton(
+              tooltip: 'Importar planilha',
+              icon: const Icon(Icons.upload_file_outlined),
+              onPressed: _importarProdutos,
+            ),
+          ],
           IconButton(
             tooltip: 'Atualizar',
             icon: const Icon(Icons.refresh),
@@ -59,15 +75,17 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.of(context).push(MaterialPageRoute(
-            builder: (ctx) => CadastroProdutoScreen(),
-          ));
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Novo produto'),
-      ),
+      floatingActionButton: isVendedor
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (ctx) => CadastroProdutoScreen(),
+                ));
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Novo produto'),
+            ),
       body: Column(
         children: [
           Padding(
@@ -107,9 +125,12 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                               final produto = produtosFiltrados[i];
                               return _ProdutoCard(
                                 produto: produto,
+                                isVendedor: isVendedor,
                                 onTap: () {
                                   Navigator.of(context).push(MaterialPageRoute(
-                                    builder: (context) => EditarProdutoScreen(produto: produto),
+                                    builder: (context) => isVendedor
+                                        ? DetalhesProdutoScreen(produto: produto)
+                                        : EditarProdutoScreen(produto: produto),
                                   ));
                                 },
                               );
@@ -125,8 +146,29 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
 class _ProdutoCard extends StatelessWidget {
   final Produto produto;
   final VoidCallback onTap;
+  final bool isVendedor;
 
-  const _ProdutoCard({required this.produto, required this.onTap});
+  const _ProdutoCard({required this.produto, required this.onTap, required this.isVendedor});
+
+  Future<void> _confirmarRevisado(BuildContext context) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Marcar como revisado'),
+        content: Text(
+          'O custo de "${produto.nome}" mudou (agora R\$ ${produto.custo.toStringAsFixed(2)}). '
+          'Marcar como revisado indica que você já conferiu o preço de venda (R\$ ${produto.preco.toStringAsFixed(2)}) e decidiu mantê-lo assim.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Marcar como revisado')),
+        ],
+      ),
+    );
+    if (confirmou == true && context.mounted) {
+      await context.read<ProdutoProvider>().marcarPrecoRevisado(produto.id!);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -184,20 +226,39 @@ class _ProdutoCard extends StatelessWidget {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Text(
-                          'R\$ ${produto.preco.toStringAsFixed(2)}',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: colorScheme.primary,
-                              ),
+                        // Flexible nos dois — sem isso, numa coluna estreita
+                        // (ex: barra lateral sempre visível tirando espaço)
+                        // essa linha estourava (RenderFlex overflow).
+                        Flexible(
+                          child: Text(
+                            'R\$ ${produto.preco.toStringAsFixed(2)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: colorScheme.primary,
+                                ),
+                          ),
                         ),
                         const SizedBox(width: 12),
-                        _BadgeEstoque(
-                          quantidade: produto.estoqueAtual,
-                          baixo: estoqueBaixo,
+                        Flexible(
+                          child: _BadgeEstoque(
+                            quantidade: produto.estoqueAtual,
+                            baixo: estoqueBaixo,
+                          ),
                         ),
                       ],
                     ),
+                    if (produto.revisarPreco && !isVendedor) ...[
+                      const SizedBox(height: 8),
+                      ActionChip(
+                        avatar: const Icon(Icons.price_change_outlined, size: 16, color: Colors.orange),
+                        label: const Text('Custo mudou — revisar preço', style: TextStyle(fontSize: 12)),
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: Color.alphaBlend(Colors.orange.withValues(alpha: 0.15), colorScheme.surface),
+                        onPressed: () => _confirmarRevisado(context),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -236,9 +297,13 @@ class _BadgeEstoque extends StatelessWidget {
             color: cor,
           ),
           const SizedBox(width: 4),
-          Text(
-            '$quantidade em estoque',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: cor),
+          Flexible(
+            child: Text(
+              '$quantidade em estoque',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: cor),
+            ),
           ),
         ],
       ),

@@ -11,6 +11,12 @@ class ZonaEntrega {
   final bool ativo;
   final int ordem;
 
+  // Faixa de tempo estimado (minutos) — dá margem pra juntar vários pedidos
+  // numa mesma rota sem virar "atrasado" assim que o mínimo passa. Nula
+  // quando a zona ainda não tem faixa configurada (não gera previsão).
+  final int? estimativaMinMin;
+  final int? estimativaMinMax;
+
   ZonaEntrega({
     this.id,
     required this.nome,
@@ -20,6 +26,8 @@ class ZonaEntrega {
     this.valorMinimoFreteGratis,
     this.ativo = true,
     this.ordem = 0,
+    this.estimativaMinMin,
+    this.estimativaMinMax,
   });
 
   factory ZonaEntrega.fromSupabase(Map<String, dynamic> row) {
@@ -32,6 +40,8 @@ class ZonaEntrega {
       valorMinimoFreteGratis: (row['valor_minimo_frete_gratis'] as num?)?.toDouble(),
       ativo: row['ativo'] as bool? ?? true,
       ordem: (row['ordem'] as num?)?.toInt() ?? 0,
+      estimativaMinMin: (row['estimativa_min_min'] as num?)?.toInt(),
+      estimativaMinMax: (row['estimativa_min_max'] as num?)?.toInt(),
     );
   }
 
@@ -44,6 +54,8 @@ class ZonaEntrega {
       'valor_minimo_frete_gratis': valorMinimoFreteGratis,
       'ativo': ativo,
       'ordem': ordem,
+      'estimativa_min_min': estimativaMinMin,
+      'estimativa_min_max': estimativaMinMax,
     };
   }
 

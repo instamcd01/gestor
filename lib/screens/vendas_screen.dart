@@ -53,12 +53,9 @@ class _VendasScreenState extends State<VendasScreen> {
   void _adicionarAoCarrinho(Produto produto) {
     try {
       context.read<CarrinhoProvider>().adicionarProduto(produto);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${produto.nome} adicionado ao carrinho'),
-          duration: const Duration(seconds: 1),
-        ),
-      );
+      // Sem SnackBar de sucesso — a barra fixa embaixo já mostra a
+      // contagem de itens atualizada na hora; avisar de novo a cada toque
+      // só atrapalhava quem tocava vários produtos em sequência.
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Não foi possível adicionar: estoque insuficiente de ${produto.nome}.')),
@@ -352,16 +349,31 @@ class _VendasScreenState extends State<VendasScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.shopping_bag_outlined, size: 20),
-                      const SizedBox(width: 8),
-                      Text('${carrinhoProvider.totalUnidades} ite${carrinhoProvider.totalUnidades == 1 ? 'm' : 'ns'}'),
-                    ],
+                  Flexible(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.shopping_bag_outlined, size: 20),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            '${carrinhoProvider.totalUnidades} ite${carrinhoProvider.totalUnidades == 1 ? 'm' : 'ns'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  Text(
-                    'R\$ ${carrinhoProvider.totalCarrinho.toStringAsFixed(2)}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'R\$ ${carrinhoProvider.totalCarrinho.toStringAsFixed(2)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
                   ),
                 ],
               ),

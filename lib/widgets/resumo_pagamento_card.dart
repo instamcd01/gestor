@@ -79,12 +79,18 @@ class ResumoPagamentoCard extends StatelessWidget {
             rotulo,
             style: TextStyle(fontSize: tamanho, fontWeight: negrito ? FontWeight.bold : FontWeight.w500),
           ),
-          Text(
-            texto,
-            style: TextStyle(
-              fontSize: tamanho,
-              fontWeight: negrito ? FontWeight.bold : FontWeight.normal,
-              color: corFinal,
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              texto,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: tamanho,
+                fontWeight: negrito ? FontWeight.bold : FontWeight.normal,
+                color: corFinal,
+              ),
             ),
           ),
         ],

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/venda.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../widgets/metric_card.dart';
 
 class _AgregadoProduto {
   final String nome;
@@ -170,9 +171,16 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: provider.carregarVendas,
-              child: ListView(
-                padding: const EdgeInsets.all(12),
-                children: [
+              // Center + maxWidth: mesmo ajuste do painel Início — em tela
+              // larga (barra lateral sempre visível) o conteúdo não deve
+              // esticar até a borda, senão fica "colado" no canto esquerdo
+              // com um vão vazio grande à direita.
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: ListView(
+                    padding: const EdgeInsets.all(12),
+                    children: [
                   _seletorPeriodo(),
                   const SizedBox(height: 12),
                   if (numVendas == 0)
@@ -214,7 +222,9 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                     ),
                   ],
                   const SizedBox(height: 12),
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
     );
@@ -249,45 +259,23 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
 
   Widget _gradeKpis(NumberFormat format, double faturamento, int numVendas, double ticketMedio, double lucro,
       double margem, double pctComEntrega) {
-    final corPrimaria = Theme.of(context).colorScheme.primary;
-    final itens = [
-      ('Faturamento', format.format(faturamento), corPrimaria),
-      ('Vendas', '$numVendas', corPrimaria),
-      ('Ticket Médio', format.format(ticketMedio), corPrimaria),
-      ('Lucro Bruto', format.format(lucro), Colors.green),
-      ('Margem', '${margem.toStringAsFixed(1)}%', Colors.green),
-      ('Com entrega', '${pctComEntrega.toStringAsFixed(0)}%', Colors.orange),
+    // Cartões de largura fixa que refluem via Wrap, em vez de GridView.count
+    // com childAspectRatio fixo — numa coluna estreita (ex: barra lateral
+    // sempre visível tirando espaço da tela) um rótulo mais longo quebrava
+    // em 2 linhas e estourava a altura fixa da célula (bottom overflow).
+    final itens = <(IconData, String, String, Color?)>[
+      (Icons.payments_outlined, 'Faturamento', format.format(faturamento), null),
+      (Icons.receipt_long_outlined, 'Vendas', '$numVendas', null),
+      (Icons.confirmation_number_outlined, 'Ticket Médio', format.format(ticketMedio), null),
+      (Icons.trending_up, 'Lucro Bruto', format.format(lucro), Colors.green),
+      (Icons.percent, 'Margem', '${margem.toStringAsFixed(1)}%', Colors.green),
+      (Icons.delivery_dining_outlined, 'Com entrega', '${pctComEntrega.toStringAsFixed(0)}%', Colors.orange),
     ];
 
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 2.4,
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      children: itens.map((item) {
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(item.$1, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 4),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(item.$2, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: item.$3)),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
+    return MetricGrid(
+      cartoes: itens
+          .map((item) => MetricCard(icone: item.$1, titulo: item.$2, valor: item.$3, corIcone: item.$4))
+          .toList(),
     );
   }
 

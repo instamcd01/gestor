@@ -12,6 +12,8 @@ class VendaRepository {
       'marketplace_pedidos(id, rastreio_latitude, rastreio_longitude, rastreio_eta_entrega, rastreio_atualizado_em, '
       'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
       'codigo_retirada_exibicao, agendado, entrega_prevista_inicio, entrega_prevista_fim)';
+  // previsao_entrega_inicio/fim já vêm no '*' de pedidos (coluna própria,
+  // não de marketplace_pedidos) — sem precisar listar explicitamente.
 
   Future<List<Venda>> listar() async {
     final data = await supabase
@@ -49,59 +51,62 @@ class VendaRepository {
     // de Pedidos até ser marcada como entregue de fato.
     final statusInicial = venda.temEntrega ? StatusPedido.pendente : StatusPedido.entregue;
 
-    final pedidoInserido = await supabase
-        .from('pedidos')
-        .insert({
-          'empresa_id': empresaId,
-          'cliente_id': venda.cliente.idCliente,
-          'status': statusInicial,
-          'origem': 'app',
-          'origem_tipo': 'proprio',
-          'canal_venda': 'loja_fisica',
-          'tipo_pagamento': venda.metodoPagamento,
-          'status_pagamento': 'pago',
-          'valor_produtos': venda.subtotal,
-          'valor_entrega': venda.valorEntrega,
-          'desconto': venda.desconto,
-          'valor_total': venda.valorTotal,
-          'custo_total': venda.custoTotal,
-          'lucro_bruto': lucroTotal,
-          'margem_percentual': margemPercentual,
-          'observacoes': venda.observacao,
-          'metadata': {
-            'valorPago': venda.valorPago,
-            'troco': venda.troco,
-            'saldoUsado': venda.saldoUsado,
-            'entregaSelecionada': venda.entregaSelecionada,
-            'pagamentosDetalhados': venda.pagamentosDetalhados,
-          },
-        })
-        .select()
-        .single();
+    final itensPayload = venda.itens.map((item) {
+      final margemItem = item.precoUnitario > 0
+          ? ((item.precoUnitario - item.custoUnitario) / item.precoUnitario * 100)
+          : 0.0;
+      return {
+        'produto_id': item.produto.id,
+        'quantidade': item.quantidade,
+        'preco_unitario': item.precoUnitario,
+        'custo_unitario': item.custoUnitario,
+        'subtotal': item.precoTotal,
+        'margem_item': margemItem,
+      };
+    }).toList();
+
+    // pedido + itens numa transação só (função `registrar_pedido_completo`)
+    // — antes eram dois inserts separados, e se o dos itens falhasse (ex:
+    // trigger de estoque negativo, carrinho com item que ficou sem estoque
+    // entre a seleção e o fechamento da venda), o pedido já criado ficava
+    // órfão pra sempre na Fila de Pedidos com 0 itens.
+    final pedidoInserido = await supabase.rpc('registrar_pedido_completo', params: {
+      'p_pedido': {
+        'empresa_id': empresaId,
+        'cliente_id': venda.cliente.idCliente,
+        'vendedor_id': supabase.auth.currentUser?.id,
+        'status': statusInicial,
+        'origem': 'app',
+        'origem_tipo': 'proprio',
+        'canal_venda': 'loja_fisica',
+        'tipo_pagamento': venda.metodoPagamento,
+        'status_pagamento': 'pago',
+        'valor_produtos': venda.subtotal,
+        'valor_entrega': venda.valorEntrega,
+        'desconto': venda.desconto,
+        'valor_total': venda.valorTotal,
+        'custo_total': venda.custoTotal,
+        'lucro_bruto': lucroTotal,
+        'margem_percentual': margemPercentual,
+        'previsao_entrega_inicio': venda.previsaoEntregaInicio?.toIso8601String(),
+        'previsao_entrega_fim': venda.previsaoEntregaFim?.toIso8601String(),
+        'observacoes': venda.observacao,
+        'metadata': {
+          'valorPago': venda.valorPago,
+          'troco': venda.troco,
+          'saldoUsado': venda.saldoUsado,
+          'entregaSelecionada': venda.entregaSelecionada,
+          'pagamentosDetalhados': venda.pagamentosDetalhados,
+        },
+      },
+      'p_itens': itensPayload,
+    }) as Map<String, dynamic>;
 
     final pedidoId = pedidoInserido['id'] as String;
 
-    if (venda.itens.isNotEmpty) {
-      final itensPayload = venda.itens.map((item) {
-        final margemItem = item.precoUnitario > 0
-            ? ((item.precoUnitario - item.custoUnitario) / item.precoUnitario * 100)
-            : 0.0;
-        return {
-          'pedido_id': pedidoId,
-          'produto_id': item.produto.id,
-          'quantidade': item.quantidade,
-          'preco_unitario': item.precoUnitario,
-          'custo_unitario': item.custoUnitario,
-          'subtotal': item.precoTotal,
-          'margem_item': margemItem,
-        };
-      }).toList();
-
-      await supabase.from('itens_pedido').insert(itensPayload);
-    }
-
     return Venda(
       idVenda: pedidoId,
+      numeroSequencial: (pedidoInserido['numero_sequencial'] as num?)?.toInt(),
       cliente: venda.cliente,
       dataVenda: DateTime.tryParse(pedidoInserido['created_at'].toString())?.toLocal() ?? DateTime.now(),
       subtotal: venda.subtotal,
@@ -121,6 +126,9 @@ class VendaRepository {
       pagamentosDetalhados: venda.pagamentosDetalhados,
       status: pedidoInserido['status']?.toString() ?? StatusPedido.entregue,
       canalVenda: pedidoInserido['canal_venda']?.toString() ?? 'loja_fisica',
+      vendedorId: pedidoInserido['vendedor_id'] as String?,
+      previsaoEntregaInicio: venda.previsaoEntregaInicio,
+      previsaoEntregaFim: venda.previsaoEntregaFim,
     );
   }
 
@@ -234,6 +242,7 @@ class VendaRepository {
 
     return Venda(
       idVenda: row['id'] as String?,
+      numeroSequencial: (row['numero_sequencial'] as num?)?.toInt(),
       cliente: cliente,
       dataVenda: DateTime.tryParse(row['created_at'].toString())?.toLocal() ?? DateTime.now(),
       subtotal: (row['valor_produtos'] as num?)?.toDouble() ?? 0.0,
@@ -253,6 +262,7 @@ class VendaRepository {
       itens: itens,
       status: row['status']?.toString() ?? StatusPedido.entregue,
       canalVenda: row['canal_venda']?.toString() ?? 'loja_fisica',
+      vendedorId: row['vendedor_id'] as String?,
       marketplacePedidoId: marketplacePedidoRow?['id'] as String?,
       tipoEntregaMarketplace: row['tipo_entrega_marketplace']?.toString(),
       codigoConfirmacaoStatus: row['codigo_confirmacao_status']?.toString(),
@@ -275,6 +285,8 @@ class VendaRepository {
           DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_inicio']?.toString() ?? '')?.toLocal(),
       entregaPrevistaFim:
           DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_fim']?.toString() ?? '')?.toLocal(),
+      previsaoEntregaInicio: DateTime.tryParse(row['previsao_entrega_inicio']?.toString() ?? '')?.toLocal(),
+      previsaoEntregaFim: DateTime.tryParse(row['previsao_entrega_fim']?.toString() ?? '')?.toLocal(),
     );
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/cliente.dart';
+import '../models/zona_entrega.dart';
+import '../theme/app_theme.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/itens_compra_card.dart';
@@ -17,6 +19,7 @@ class PagamentoDinheiroScreen extends StatefulWidget {
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
+  final ZonaEntrega? zonaEntrega;
 
   PagamentoDinheiroScreen({
     required this.valorTotal,
@@ -28,6 +31,7 @@ class PagamentoDinheiroScreen extends StatefulWidget {
     required this.valorEntrega,
     required this.entregaSelecionada,
     required this.saldoUsado,
+    this.zonaEntrega,
   });
 
   @override
@@ -87,6 +91,7 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
           valorEntrega: widget.valorEntrega,
           entregaSelecionada: widget.entregaSelecionada,
           saldoUsado: widget.saldoUsado,
+          zonaEntrega: widget.zonaEntrega,
         ),
       ),
     );
@@ -160,7 +165,10 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: _troco > 0 ? Colors.green[800] : Colors.red[800],
+                      color: AppTheme.tomAdaptavel(
+                        _troco > 0 ? Colors.green : Colors.red,
+                        Theme.of(context).brightness,
+                      ),
                     ),
                   ),
                 ),

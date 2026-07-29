@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
 import '../models/cliente.dart';
+import '../models/zona_entrega.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/itens_compra_card.dart';
 import '../widgets/resumo_pagamento_card.dart';
@@ -18,6 +19,7 @@ class PagamentoPixScreen extends StatefulWidget {
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
+  final ZonaEntrega? zonaEntrega;
 
   PagamentoPixScreen({
     required this.valorTotal,
@@ -28,6 +30,7 @@ class PagamentoPixScreen extends StatefulWidget {
     required this.valorEntrega,
     required this.entregaSelecionada,
     this.saldoUsado = 0.0,
+    this.zonaEntrega,
   });
 
   @override
@@ -147,6 +150,7 @@ class _PagamentoPixScreenState extends State<PagamentoPixScreen> {
                     valorEntrega: widget.valorEntrega,
                     entregaSelecionada: widget.entregaSelecionada,
                     saldoUsado: widget.saldoUsado,
+                    zonaEntrega: widget.zonaEntrega,
                   ),
                 ),
               );
