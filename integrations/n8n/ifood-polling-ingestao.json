@@ -440,7 +440,31 @@
     },
     {
       "parameters": {
-        "jsCode": "const ev = $('Switch por tipo de evento').item.json;\nconst order = $json;\nconst phone = order.customer?.phone?.number || '';\n// Endereço real vem aninhado em order.delivery.deliveryAddress, não em\n// order.deliveryAddress (esse caminho nunca existe na resposta da iFood).\nconst address = order.delivery?.deliveryAddress || {};\nconst doc = order.customer?.documentType === 'CPF' ? order.customer?.documentNumber : null;\nreturn [{\n  json: {\n    empresa_id: ev.empresa_id,\n    orderId: ev.orderId,\n    access_token: ev.access_token,\n    order,\n    cliente: {\n      nome: order.customer?.name || 'Cliente iFood',\n      telefone: phone,\n      // customer.id é estável por cliente real (confirmado: pedidos com\n      // telefones mascarados diferentes compartilham o mesmo customer.id)\n      // - chave de casamento, não o telefone (que a iFood reaproveita entre\n      // pedidos/clientes diferentes).\n      idExternoIfood: order.customer?.id || null,\n      cpf: doc,\n      endereco: address.streetName || '',\n      numero: address.streetNumber || '',\n      bairro: address.neighborhood || '',\n      cidade: address.city || '',\n      estado: address.state || '',\n      cep: address.postalCode || '',\n      complemento: address.complement || null,\n      latitude: address.coordinates?.latitude ?? null,\n      longitude: address.coordinates?.longitude ?? null,\n    },\n  },\n}];"
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/order/v1.0/orders/{{$('Switch por tipo de evento').item.json.orderId}}/virtual-bag",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Switch por tipo de evento').item.json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "n16b",
+      "name": "Buscar virtual-bag",
+      "position": [
+        3300,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ev = $('Switch por tipo de evento').item.json;\nconst order = $('Buscar detalhes do pedido').item.json;\n// virtual-bag é um endpoint oficial separado (GET /orders/{id}/virtual-bag),\n// mais completo pra pedidos de Mercado - traz email/data de nascimento do\n// cliente e sugestões de substituição por item que /orders/{id} não tem.\n// Confirmado com pedido real 2026-07-29 que os dois endpoints concordam\n// nos campos que já usávamos (benefícios, valores) - isso só complementa.\nconst vbag = $json;\nconst phone = order.customer?.phone?.number || '';\n// Endereço real vem aninhado em order.delivery.deliveryAddress, não em\n// order.deliveryAddress (esse caminho nunca existe na resposta da iFood).\nconst address = order.delivery?.deliveryAddress || {};\nconst doc = order.customer?.documentType === 'CPF' ? order.customer?.documentNumber : null;\nreturn [{\n  json: {\n    empresa_id: ev.empresa_id,\n    orderId: ev.orderId,\n    access_token: ev.access_token,\n    order,\n    vbag,\n    cliente: {\n      nome: order.customer?.name || 'Cliente iFood',\n      telefone: phone,\n      // customer.id é estável por cliente real (confirmado: pedidos com\n      // telefones mascarados diferentes compartilham o mesmo customer.id)\n      // - chave de casamento, não o telefone (que a iFood reaproveita entre\n      // pedidos/clientes diferentes).\n      idExternoIfood: order.customer?.id || null,\n      cpf: doc,\n      // email/data de nascimento só existem no virtual-bag, e mesmo lá a\n      // iFood diz que só vêm preenchidos \"em casos excepcionais\" por LGPD -\n      // normalmente ficam null, o que é esperado, não um erro de captura.\n      email: vbag.customer?.email || null,\n      dataNascimento: vbag.customer?.birthDate || null,\n      endereco: address.streetName || '',\n      numero: address.streetNumber || '',\n      bairro: address.neighborhood || '',\n      cidade: address.city || '',\n      estado: address.state || '',\n      cep: address.postalCode || '',\n      complemento: address.complement || null,\n      latitude: address.coordinates?.latitude ?? null,\n      longitude: address.coordinates?.longitude ?? null,\n    },\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -539,6 +563,8 @@
             "longitude": "={{$('Preparar dados do cliente').item.json.cliente.longitude}}",
             "cpf": "={{$('Preparar dados do cliente').item.json.cliente.cpf}}",
             "id_externo_ifood": "={{$('Preparar dados do cliente').item.json.cliente.idExternoIfood}}",
+            "email": "={{$('Preparar dados do cliente').item.json.cliente.email}}",
+            "data_nascimento": "={{$('Preparar dados do cliente').item.json.cliente.dataNascimento}}",
             "canal_origem": "ifood"
           },
           "matchingColumns": [],
@@ -564,9 +590,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "update clientes set\n  nome = coalesce(nullif($2, ''), nome),\n  telefone = coalesce(nullif($3, ''), telefone),\n  endereco = coalesce(nullif($4, ''), endereco),\n  numero = coalesce(nullif($5, ''), numero),\n  bairro = coalesce(nullif($6, ''), bairro),\n  cidade = coalesce(nullif($7, ''), cidade),\n  estado = coalesce(nullif($8, ''), estado),\n  cep = coalesce(nullif($9, ''), cep),\n  complemento = coalesce($10, complemento),\n  latitude = coalesce($11, latitude),\n  longitude = coalesce($12, longitude),\n  cpf = coalesce($13, cpf),\n  updated_at = now()\nwhere id = $1\nreturning id;",
+        "query": "update clientes set\n  nome = coalesce(nullif($2, ''), nome),\n  telefone = coalesce(nullif($3, ''), telefone),\n  endereco = coalesce(nullif($4, ''), endereco),\n  numero = coalesce(nullif($5, ''), numero),\n  bairro = coalesce(nullif($6, ''), bairro),\n  cidade = coalesce(nullif($7, ''), cidade),\n  estado = coalesce(nullif($8, ''), estado),\n  cep = coalesce(nullif($9, ''), cep),\n  complemento = coalesce($10, complemento),\n  latitude = coalesce($11, latitude),\n  longitude = coalesce($12, longitude),\n  cpf = coalesce($13, cpf),\n  email = coalesce(nullif($14, ''), email),\n  data_nascimento = coalesce($15::date, data_nascimento),\n  updated_at = now()\nwhere id = $1\nreturning id;",
         "options": {
-          "queryReplacement": "={{ [$json.id, $('Preparar dados do cliente').item.json.cliente.nome, $('Preparar dados do cliente').item.json.cliente.telefone, $('Preparar dados do cliente').item.json.cliente.endereco, $('Preparar dados do cliente').item.json.cliente.numero, $('Preparar dados do cliente').item.json.cliente.bairro, $('Preparar dados do cliente').item.json.cliente.cidade, $('Preparar dados do cliente').item.json.cliente.estado, $('Preparar dados do cliente').item.json.cliente.cep, $('Preparar dados do cliente').item.json.cliente.complemento, $('Preparar dados do cliente').item.json.cliente.latitude, $('Preparar dados do cliente').item.json.cliente.longitude, $('Preparar dados do cliente').item.json.cliente.cpf] }}"
+          "queryReplacement": "={{ [$json.id, $('Preparar dados do cliente').item.json.cliente.nome, $('Preparar dados do cliente').item.json.cliente.telefone, $('Preparar dados do cliente').item.json.cliente.endereco, $('Preparar dados do cliente').item.json.cliente.numero, $('Preparar dados do cliente').item.json.cliente.bairro, $('Preparar dados do cliente').item.json.cliente.cidade, $('Preparar dados do cliente').item.json.cliente.estado, $('Preparar dados do cliente').item.json.cliente.cep, $('Preparar dados do cliente').item.json.cliente.complemento, $('Preparar dados do cliente').item.json.cliente.latitude, $('Preparar dados do cliente').item.json.cliente.longitude, $('Preparar dados do cliente').item.json.cliente.cpf, $('Preparar dados do cliente').item.json.cliente.email, $('Preparar dados do cliente').item.json.cliente.dataNascimento] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -599,7 +625,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst items = ctx.order.items || [];\nreturn items.map(it => ({\n  json: {\n    empresa_id: ctx.empresa_id,\n    cliente_id: ctx.cliente_id,\n    orderId: ctx.orderId,\n    order: ctx.order,\n    item_externo_id: String(it.id),\n    uniqueid_marketplace: it.uniqueId,\n    nome_item: it.name,\n    quantidade: it.quantity,\n    preco_unitario: (it.totalPrice ?? it.unitPrice ?? 0) / (it.quantity || 1),\n    subtotal: it.totalPrice ?? ((it.unitPrice || 0) * (it.quantity || 1)),\n    observacao_cliente: it.observations || null,\n  },\n}));"
+        "jsCode": "const ctx = $json;\nconst items = ctx.order.items || [];\n// Sugestões de substituição só existem no virtual-bag (bag.items[].replacement.list),\n// casadas pelo mesmo uniqueId do item - a separação de pedido oferece isso\n// em vez de busca manual no catálogo inteiro.\nconst vbagItems = ctx.vbag?.bag?.items || [];\nreturn items.map(it => {\n  const vbagItem = vbagItems.find(vi => vi.uniqueId === it.uniqueId);\n  const sugestoes = vbagItem?.replacement?.list;\n  return {\n    json: {\n      empresa_id: ctx.empresa_id,\n      cliente_id: ctx.cliente_id,\n      orderId: ctx.orderId,\n      order: ctx.order,\n      vbag: ctx.vbag,\n      item_externo_id: String(it.id),\n      uniqueid_marketplace: it.uniqueId,\n      nome_item: it.name,\n      quantidade: it.quantity,\n      preco_unitario: (it.totalPrice ?? it.unitPrice ?? 0) / (it.quantity || 1),\n      subtotal: it.totalPrice ?? ((it.unitPrice || 0) * (it.quantity || 1)),\n      observacao_cliente: it.observations || null,\n      sugestoes_substituicao: sugestoes && sugestoes.length ? JSON.stringify(sugestoes) : null,\n    },\n  };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -797,7 +823,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\n// Múltiplos métodos de pagamento num só pedido (ex: parte prepago no app\n// + parte em dinheiro na entrega) nunca visto num pedido real ainda -\n// generalização defensiva, não confirmada contra payload real. Rótulo\n// concatena os tipos únicos em vez de só olhar methods[0].\nconst methods = order.payments?.methods || [];\nconst allPrepaid = methods.length > 0 && methods.every(m => m.type === 'PREPAID');\nconst anyOffline = methods.some(m => m.type === 'OFFLINE');\nconst tipoPagamento = methods.length === 0 ? 'Outros'\n  : allPrepaid ? 'iFood'\n  : [...new Set(methods.map(m => m.type === 'PREPAID' ? 'iFood' : (metodoMap[m.method] || 'Outros')))].join(' + ');\nconst statusPagamento = anyOffline ? 'pendente' : 'pago';\nconst cashMethod = methods.find(m => m.method === 'CASH');\nconst total = order.total || {};\n// Confirmado com pedido TAKEOUT real 2026-07-29: order.takeout tem forma\n// bem diferente de order.delivery (mode/location/takeoutDateTime, sem\n// pickupCode - o código de retirada do courier só existe em DELIVERY).\nconst isTakeout = order.orderType === 'TAKEOUT';\nconst pickupCodeEntrega = order.delivery?.pickupCode ?? null;\nconst dataHoraImediata = isTakeout ? (order.takeout?.takeoutDateTime ?? null) : (order.delivery?.deliveryDateTime ?? null);\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = cashMethod?.cash?.changeFor ?? null;\n// pending = valor real a cobrar fora do app da iFood - correto mesmo em\n// pagamento misto (prepago + dinheiro); só coincide com orderAmount\n// inteiro quando o pedido inteiro é pago em dinheiro (caso observado\n// até agora).\nconst valorPendente = order.payments?.pending ?? (total.orderAmount ?? 0);\nconst troco = changeFor != null ? Math.max(0, changeFor - valorPendente) : null;\nconst taxaServicoCliente = (order.additionalFees || []).reduce((acc, f) => acc + (f.value || 0), 0);\n// Cupom/campanha: order.benefits[] (confirmado com pedido real 2026-07-29,\n// campaign.id/name + sponsorshipValues por patrocinador IFOOD/MERCHANT/\n// EXTERNAL/CHAIN). Só o primeiro benefício vira campanha/cupom nomeados;\n// o array completo fica em metadata pra qualquer auditoria financeira.\nconst beneficios = order.benefits || [];\nconst primeiroBeneficio = beneficios[0] || null;\nconst campanhaMarketplace = primeiroBeneficio?.campaign?.name ?? null;\nconst cupomMarketplace = primeiroBeneficio?.campaign?.id ?? null;\n// Regra de substituição do pedido (order.picking.replacementOptions) -\n// relevante pra separação de pedido saber se pode oferecer substituto.\nconst politicaSubstituicao = order.picking?.replacementOptions ?? null;\nconst agendado = order.orderTiming === 'SCHEDULED';\nconst entregaPrevistaInicio = agendado ? (order.schedule?.deliveryDateTimeStart ?? null) : null;\nconst entregaPrevistaFim = agendado ? (order.schedule?.deliveryDateTimeEnd ?? null) : dataHoraImediata;\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.benefits ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n    tipo_entrega_marketplace: order.orderType ?? null,\n    telefone_localizador: order.customer?.phone?.localizer ?? null,\n    telefone_localizador_expira_em: order.customer?.phone?.localizerExpiration ?? null,\n    codigo_retirada_exibicao: pickupCodeEntrega,\n    agendado,\n    entrega_prevista_inicio: entregaPrevistaInicio,\n    entrega_prevista_fim: entregaPrevistaFim,\n    taxa_servico_cliente: taxaServicoCliente,\n    campanha_marketplace: campanhaMarketplace,\n    cupom_marketplace: cupomMarketplace,\n    politica_substituicao: politicaSubstituicao,\n    marketplace_metadata: JSON.stringify(beneficios.length ? { beneficios } : {}),\n  },\n}];"
+        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\n// Múltiplos métodos de pagamento num só pedido (ex: parte prepago no app\n// + parte em dinheiro na entrega) nunca visto num pedido real ainda -\n// generalização defensiva, não confirmada contra payload real. Rótulo\n// concatena os tipos únicos em vez de só olhar methods[0].\nconst methods = order.payments?.methods || [];\nconst allPrepaid = methods.length > 0 && methods.every(m => m.type === 'PREPAID');\nconst anyOffline = methods.some(m => m.type === 'OFFLINE');\nconst tipoPagamento = methods.length === 0 ? 'Outros'\n  : allPrepaid ? 'iFood'\n  : [...new Set(methods.map(m => m.type === 'PREPAID' ? 'iFood' : (metodoMap[m.method] || 'Outros')))].join(' + ');\nconst statusPagamento = anyOffline ? 'pendente' : 'pago';\nconst cashMethod = methods.find(m => m.method === 'CASH');\nconst total = order.total || {};\n// Confirmado com pedido TAKEOUT real 2026-07-29: order.takeout tem forma\n// bem diferente de order.delivery (mode/location/takeoutDateTime, sem\n// pickupCode - o código de retirada do courier só existe em DELIVERY).\nconst isTakeout = order.orderType === 'TAKEOUT';\nconst pickupCodeEntrega = order.delivery?.pickupCode ?? null;\nconst dataHoraImediata = isTakeout ? (order.takeout?.takeoutDateTime ?? null) : (order.delivery?.deliveryDateTime ?? null);\n// deliveredBy já vinha no payload que já buscamos (order.delivery), nunca\n// era capturado - MERCHANT = a própria loja entrega, sem rastreio da\n// iFood; IFOOD = entregador da própria iFood, é quando o rastreio existe.\nconst entregadorTipo = order.delivery?.deliveredBy ?? null;\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = cashMethod?.cash?.changeFor ?? null;\n// pending = valor real a cobrar fora do app da iFood - correto mesmo em\n// pagamento misto (prepago + dinheiro); só coincide com orderAmount\n// inteiro quando o pedido inteiro é pago em dinheiro (caso observado\n// até agora).\nconst valorPendente = order.payments?.pending ?? (total.orderAmount ?? 0);\nconst troco = changeFor != null ? Math.max(0, changeFor - valorPendente) : null;\nconst taxaServicoCliente = (order.additionalFees || []).reduce((acc, f) => acc + (f.value || 0), 0);\n// Cupom/campanha: order.benefits[] (confirmado com pedido real 2026-07-29,\n// campaign.id/name + sponsorshipValues por patrocinador IFOOD/MERCHANT/\n// EXTERNAL/CHAIN). Só o primeiro benefício vira campanha/cupom nomeados;\n// o array completo fica em metadata pra qualquer auditoria financeira.\nconst beneficios = order.benefits || [];\nconst primeiroBeneficio = beneficios[0] || null;\nconst campanhaMarketplace = primeiroBeneficio?.campaign?.name ?? null;\nconst cupomMarketplace = primeiroBeneficio?.campaign?.id ?? null;\n// Regra de substituição do pedido (order.picking.replacementOptions) -\n// relevante pra separação de pedido saber se pode oferecer substituto.\nconst politicaSubstituicao = order.picking?.replacementOptions ?? null;\nconst agendado = order.orderTiming === 'SCHEDULED';\nconst entregaPrevistaInicio = agendado ? (order.schedule?.deliveryDateTimeStart ?? null) : null;\nconst entregaPrevistaFim = agendado ? (order.schedule?.deliveryDateTimeEnd ?? null) : dataHoraImediata;\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.benefits ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n    tipo_entrega_marketplace: order.orderType ?? null,\n    telefone_localizador: order.customer?.phone?.localizer ?? null,\n    telefone_localizador_expira_em: order.customer?.phone?.localizerExpiration ?? null,\n    codigo_retirada_exibicao: pickupCodeEntrega,\n    agendado,\n    entrega_prevista_inicio: entregaPrevistaInicio,\n    entrega_prevista_fim: entregaPrevistaFim,\n    taxa_servico_cliente: taxaServicoCliente,\n    campanha_marketplace: campanhaMarketplace,\n    cupom_marketplace: cupomMarketplace,\n    politica_substituicao: politicaSubstituicao,\n    entregador_tipo: entregadorTipo,\n    marketplace_metadata: JSON.stringify(beneficios.length ? { beneficios } : {}),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -863,7 +889,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const pedidoId = $json.id;\nconst itens = $('Agregar itens resolvidos').item.json.itens;\nreturn itens.map(it => ({\n  json: {\n    pedido_id: pedidoId,\n    produto_id: it.produto_id,\n    quantidade: it.quantidade,\n    preco_unitario: it.preco_unitario,\n    subtotal: it.subtotal,\n    uniqueid_marketplace: it.uniqueid_marketplace,\n    observacao_cliente: it.observacao_cliente,\n  },\n}));"
+        "jsCode": "const pedidoId = $json.id;\nconst itens = $('Agregar itens resolvidos').item.json.itens;\nreturn itens.map(it => ({\n  json: {\n    pedido_id: pedidoId,\n    produto_id: it.produto_id,\n    quantidade: it.quantidade,\n    preco_unitario: it.preco_unitario,\n    subtotal: it.subtotal,\n    uniqueid_marketplace: it.uniqueid_marketplace,\n    observacao_cliente: it.observacao_cliente,\n    sugestoes_substituicao: it.sugestoes_substituicao,\n  },\n}));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -896,7 +922,8 @@
             "preco_unitario": "={{$json.preco_unitario}}",
             "subtotal": "={{$json.subtotal}}",
             "uniqueid_marketplace": "={{$json.uniqueid_marketplace}}",
-            "observacao_cliente": "={{$json.observacao_cliente}}"
+            "observacao_cliente": "={{$json.observacao_cliente}}",
+            "sugestoes_substituicao": "={{$json.sugestoes_substituicao}}"
           },
           "matchingColumns": [],
           "schema": []
@@ -950,6 +977,7 @@
             "campanha_marketplace": "={{$('Mapear pagamento e montar pedido').item.json.campanha_marketplace}}",
             "cupom_marketplace": "={{$('Mapear pagamento e montar pedido').item.json.cupom_marketplace}}",
             "politica_substituicao": "={{$('Mapear pagamento e montar pedido').item.json.politica_substituicao}}",
+            "entregador_tipo": "={{$('Mapear pagamento e montar pedido').item.json.entregador_tipo}}",
             "metadata": "={{$('Mapear pagamento e montar pedido').item.json.marketplace_metadata}}"
           },
           "matchingColumns": [],
@@ -1630,6 +1658,17 @@
       ]
     },
     "Buscar detalhes do pedido": {
+      "main": [
+        [
+          {
+            "node": "Buscar virtual-bag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar virtual-bag": {
       "main": [
         [
           {

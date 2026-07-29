@@ -511,7 +511,9 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             const SizedBox(height: 10),
           ] else
             Text(
-              'Rastreio ainda não disponível — só aparece quando a entrega usa entregador da própria iFood.',
+              venda.entregadorTipo == 'MERCHANT'
+                  ? 'Esse pedido é entregue pela própria loja — não tem rastreio da iFood.'
+                  : 'Rastreio ainda não disponível — só aparece quando a entrega usa entregador da própria iFood.',
               style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           const SizedBox(height: 10),

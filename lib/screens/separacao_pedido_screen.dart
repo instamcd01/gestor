@@ -95,6 +95,33 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
               height: 360,
               child: Column(
                 children: [
+                  if (item.sugestoesSubstituicao != null && item.sugestoesSubstituicao!.isNotEmpty) ...[
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Sugestões da iFood', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      height: 32,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: item.sugestoesSubstituicao!.map((s) {
+                          final nome = s['name']?.toString() ?? '';
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ActionChip(
+                              label: Text(nome, style: const TextStyle(fontSize: 12)),
+                              onPressed: () {
+                                buscaController.text = nome;
+                                setDialogState(() {});
+                              },
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   TextField(
                     controller: buscaController,
                     decoration: const InputDecoration(labelText: 'Buscar produto', prefixIcon: Icon(Icons.search)),

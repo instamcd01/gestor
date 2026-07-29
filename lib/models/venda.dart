@@ -79,6 +79,7 @@ class Venda {
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
   final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
   final String? politicaSubstituicao; // order.picking.replacementOptions - se o cliente autoriza substituir item em falta
+  final String? entregadorTipo; // order.delivery.deliveredBy - MERCHANT (loja entrega) ou IFOOD (só aí existe rastreio)
   final bool agendado;
   final DateTime? entregaPrevistaInicio; // início da janela prometida, só quando agendado
   final DateTime? entregaPrevistaFim; // fim da janela (agendado) ou estimativa única (pedido imediato)
@@ -133,6 +134,7 @@ class Venda {
     this.campanhaMarketplace,
     this.cupomMarketplace,
     this.politicaSubstituicao,
+    this.entregadorTipo,
     this.agendado = false,
     this.entregaPrevistaInicio,
     this.entregaPrevistaFim,
@@ -189,6 +191,7 @@ class ItemVenda {
   final int quantidade;
   final double precoUnitario; // preço de venda aplicado no momento da venda
   final String? observacaoCliente; // ex: "sem cebola" (order.items[].observations da iFood)
+  final List<Map<String, dynamic>>? sugestoesSubstituicao; // bag.items[].replacement.list do virtual-bag
 
   // Custo do produto NO MOMENTO da venda (vem de itens_pedido.custo_unitario
   // ao reidratar do banco). Se não informado, cai pro custo atual do produto
@@ -202,6 +205,7 @@ class ItemVenda {
     required this.quantidade,
     required this.precoUnitario,
     this.observacaoCliente,
+    this.sugestoesSubstituicao,
     double? custoUnitario,
   }) : _custoUnitarioNoMomento = custoUnitario;
 

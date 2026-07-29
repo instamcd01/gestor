@@ -12,7 +12,7 @@ class VendaRepository {
       'marketplace_pedidos(id, rastreio_latitude, rastreio_longitude, rastreio_eta_entrega, rastreio_atualizado_em, '
       'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
       'codigo_retirada_exibicao, agendado, entrega_prevista_inicio, entrega_prevista_fim, '
-      'taxa_servico_cliente, campanha_marketplace, cupom_marketplace, politica_substituicao)';
+      'taxa_servico_cliente, campanha_marketplace, cupom_marketplace, politica_substituicao, entregador_tipo)';
   // previsao_entrega_inicio/fim já vêm no '*' de pedidos (coluna própria,
   // não de marketplace_pedidos) — sem precisar listar explicitamente.
 
@@ -231,6 +231,7 @@ class VendaRepository {
         // do produto, que pode ter mudado desde então.
         custoUnitario: (itemRow['custo_unitario'] as num?)?.toDouble(),
         observacaoCliente: itemRow['observacao_cliente']?.toString(),
+        sugestoesSubstituicao: (itemRow['sugestoes_substituicao'] as List?)?.cast<Map<String, dynamic>>(),
       );
     }).toList();
 
@@ -286,6 +287,7 @@ class VendaRepository {
       campanhaMarketplace: marketplacePedidoRow?['campanha_marketplace']?.toString(),
       cupomMarketplace: marketplacePedidoRow?['cupom_marketplace']?.toString(),
       politicaSubstituicao: marketplacePedidoRow?['politica_substituicao']?.toString(),
+      entregadorTipo: marketplacePedidoRow?['entregador_tipo']?.toString(),
       agendado: marketplacePedidoRow?['agendado'] as bool? ?? false,
       entregaPrevistaInicio:
           DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_inicio']?.toString() ?? '')?.toLocal(),
