@@ -769,7 +769,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst payment = (order.payments?.methods || [])[0] || {};\nconst isPrepaid = payment.type === 'PREPAID';\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\nconst tipoPagamento = isPrepaid ? 'iFood' : (metodoMap[payment.method] || 'Outros');\nconst statusPagamento = isPrepaid ? 'pago' : 'pendente';\nconst total = order.total || {};\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.discount ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n  },\n}];"
+        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst payment = (order.payments?.methods || [])[0] || {};\nconst isPrepaid = payment.type === 'PREPAID';\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\nconst tipoPagamento = isPrepaid ? 'iFood' : (metodoMap[payment.method] || 'Outros');\nconst statusPagamento = isPrepaid ? 'pago' : 'pendente';\nconst total = order.total || {};\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = payment.method === 'CASH' ? payment.cash?.changeFor : null;\nconst troco = changeFor != null ? Math.max(0, changeFor - (total.orderAmount ?? 0)) : null;\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.discount ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -809,7 +809,8 @@
             "valor_entrega": "={{$json.valor_entrega}}",
             "desconto": "={{$json.desconto}}",
             "valor_total": "={{$json.valor_total}}",
-            "observacoes": "={{$json.observacoes}}"
+            "observacoes": "={{$json.observacoes}}",
+            "metadata": "={{$json.metadata}}"
           },
           "matchingColumns": [],
           "schema": []
@@ -906,7 +907,8 @@
             "marketplace_id": "d4811153-e210-47b0-b910-ee0440914f60",
             "marketplace_order_id": "={{$('Switch por tipo de evento').item.json.orderId}}",
             "status_marketplace": "PLACED",
-            "valor_bruto_marketplace": "={{$('Mapear pagamento e montar pedido').item.json.valor_total}}"
+            "valor_bruto_marketplace": "={{$('Mapear pagamento e montar pedido').item.json.valor_total}}",
+            "numero_exibicao": "={{$('Mapear pagamento e montar pedido').item.json.numero_exibicao}}"
           },
           "matchingColumns": [],
           "schema": []

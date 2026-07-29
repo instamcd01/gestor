@@ -12,6 +12,7 @@ class TipoNotificacao {
   static const disputaRecebida = 'disputa_recebida';
   static const syncFalhou = 'sync_falhou';
   static const custoAlterado = 'custo_alterado';
+  static const novoPedido = 'novo_pedido';
 }
 
 /// Uma categoria configurável no painel de preferências de notificação —
@@ -27,6 +28,11 @@ class CategoriaNotificacao {
 }
 
 const categoriasNotificacaoDisponiveis = [
+  CategoriaNotificacao(
+    chave: TipoNotificacao.novoPedido,
+    titulo: 'Novo pedido',
+    descricao: 'Quando um pedido é recebido, de qualquer canal (loja, iFood, site, WhatsApp).',
+  ),
   CategoriaNotificacao(
     chave: TipoNotificacao.estoqueBaixo,
     titulo: 'Estoque baixo ou zerado',
