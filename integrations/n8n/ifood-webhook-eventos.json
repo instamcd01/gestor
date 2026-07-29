@@ -1278,6 +1278,215 @@
           "name": "Postgres cloud"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "kalv1",
+              "leftValue": "={{$json.fullCode}}",
+              "rightValue": "KEEPALIVE",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "n48keepalive",
+      "name": "É KEEPALIVE?",
+      "position": [
+        4100,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ev = $json;\nconst meta = ev.metadata || {};\nreturn [{\n  json: {\n    orderId: ev.orderId || meta.orderId,\n    empresa_id: ev.empresa_id,\n    disputa_id_externo: meta.disputeId || ev.disputeId || ev.id,\n    tipo: meta.handshakeType || meta.action || null,\n    mensagem: meta.message || null,\n    alternativas: meta.alternatives ? JSON.stringify(meta.alternatives) : null,\n    prazo_expiracao: meta.expiresAt || ev.expiresAt || null,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "d1",
+      "name": "Extrair dados da disputa",
+      "position": [
+        1120,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select pedido_id from marketplace_pedidos where marketplace_order_id = $1 limit 1;",
+        "options": {
+          "queryReplacement": "={{$json.orderId}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d2",
+      "name": "Resolver pedido da disputa",
+      "position": [
+        1360,
+        900
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d2a",
+              "leftValue": "={{$json.pedido_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true,
+                "name": "filter.operator.notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "d3",
+      "name": "Disputa: pedido encontrado?",
+      "position": [
+        1600,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into marketplace_disputas (pedido_id, marketplace_id, disputa_id_externo, tipo, mensagem, alternativas, prazo_expiracao)\nvalues ($1, 'd4811153-e210-47b0-b910-ee0440914f60', $2, $3, $4, $5::jsonb, $6::timestamptz)\non conflict (disputa_id_externo) do update set\n  mensagem = excluded.mensagem,\n  alternativas = excluded.alternativas,\n  prazo_expiracao = excluded.prazo_expiracao,\n  updated_at = now()\nreturning id, pedido_id;",
+        "options": {
+          "queryReplacement": "={{ [$('Resolver pedido da disputa').item.json.pedido_id, $('Extrair dados da disputa').item.json.disputa_id_externo, $('Extrair dados da disputa').item.json.tipo, $('Extrair dados da disputa').item.json.mensagem, $('Extrair dados da disputa').item.json.alternativas, $('Extrair dados da disputa').item.json.prazo_expiracao] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d4",
+      "name": "Inserir disputa",
+      "position": [
+        1840,
+        860
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_disputa_recebida",
+            "tabela_origem": "pedidos",
+            "registro_id": "={{$('Inserir disputa').item.json.pedido_id}}",
+            "dados": "={{ JSON.stringify($('Extrair dados da disputa').item.json) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d5",
+      "name": "Registrar evento disputa recebida",
+      "position": [
+        2080,
+        860
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_disputa_sem_pedido",
+            "tabela_origem": "marketplace_disputas",
+            "dados": "={{ JSON.stringify($('Extrair dados da disputa').item.json) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d6",
+      "name": "Registrar disputa sem pedido",
+      "position": [
+        1840,
+        980
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
     }
   ],
   "connections": {
@@ -1797,6 +2006,69 @@
     "Registrar evento genérico": {
       "main": [
         []
+      ]
+    },
+    "É KEEPALIVE?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Registrar evento genérico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair dados da disputa": {
+      "main": [
+        [
+          {
+            "node": "Resolver pedido da disputa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver pedido da disputa": {
+      "main": [
+        [
+          {
+            "node": "Disputa: pedido encontrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Disputa: pedido encontrado?": {
+      "main": [
+        [
+          {
+            "node": "Inserir disputa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar disputa sem pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inserir disputa": {
+      "main": [
+        [
+          {
+            "node": "Registrar evento disputa recebida",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
