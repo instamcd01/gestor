@@ -83,6 +83,29 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     return venda.ehMarketplace && prazo != null && agora.isAfter(prazo);
   }
 
+  /// Chip com cor de destaque (fundo na cor primária), diferente do
+  /// `_chipInfo` neutro — usado só pro número do pedido na plataforma
+  /// (ex: iFood), que o funcionário precisa achar rápido pra falar com o
+  /// entregador/cliente ou conferir contra o painel da plataforma.
+  Widget _chipDestaque(BuildContext context, IconData icone, String texto) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colorScheme.primary,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icone, size: 12, color: colorScheme.onPrimary),
+          const SizedBox(width: 4),
+          Text(texto, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: colorScheme.onPrimary)),
+        ],
+      ),
+    );
+  }
+
   Widget _chipInfo(BuildContext context, IconData icone, String texto) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
@@ -111,6 +134,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   /// às vezes já paga o pedido pela própria plataforma).
   List<Widget> _chipsInfo(BuildContext context, Venda venda) {
     final chips = <Widget>[];
+
+    if (venda.ehMarketplace && venda.numeroExibicaoMarketplace != null) {
+      chips.add(_chipDestaque(context, Icons.confirmation_number_outlined, '#${venda.numeroExibicaoMarketplace}'));
+    }
 
     if (venda.retirada) {
       chips.add(_chipInfo(context, Icons.storefront, 'Retirada'));
