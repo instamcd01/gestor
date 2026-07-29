@@ -199,34 +199,6 @@
     },
     {
       "parameters": {
-        "method": "={{ $json.primeiro_envio ? \"POST\" : \"PATCH\" }}",
-        "url": "={{ \"https://merchant-api.ifood.com.br/item/v1.0/ingestion/\" + $(\"Buscar credenciais empresa\").item.json.id_loja_plataforma + ($json.primeiro_envio ? \"?reset=false\" : \"\") }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$json.access_token}}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ [ { barcode: $('Webhook').item.json.body.codigo_barras, name: $('Webhook').item.json.body.nome, plu: $('Webhook').item.json.body.plu || undefined, active: $('Webhook').item.json.body.disponivel, details: { categorization: { category: $('Webhook').item.json.body.categoria, subCategory: $('Webhook').item.json.body.subcategoria }, brand: $('Webhook').item.json.body.marca, volume: $('Webhook').item.json.body.volume ? String($('Webhook').item.json.body.volume) : undefined, unit: ($('Webhook').item.json.body.unidade_medida || 'UN').toUpperCase(), description: $('Webhook').item.json.body.descricao, imageUrl: $('Webhook').item.json.body.imagem_url || undefined }, prices: { price: $('Webhook').item.json.body.preco, promotionPrice: $('Webhook').item.json.body.preco_promocional || undefined }, inventory: { stock: $('Webhook').item.json.body.estoque }, channels: ['ifood-app'] } ] }}",
-        "options": {}
-      },
-      "onError": "continueErrorOutput",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "id": "c1",
-      "name": "Enviar produto para iFood",
-      "position": [
-        1120,
-        -80
-      ]
-    },
-    {
-      "parameters": {
         "operation": "insert",
         "schema": {
           "__rl": true,
@@ -308,7 +280,7 @@
             "tipo_evento": "ifood_catalogo_sync_erro",
             "tabela_origem": "produtos",
             "registro_id": "={{$('Webhook').item.json.body.produto_id}}",
-            "dados": "={{ JSON.stringify({ payload: $('Webhook').item.json.body, erro: (($('Enviar produto para iFood').item.json.error && $('Enviar produto para iFood').item.json.error.message) || 'Erro desconhecido ao sincronizar com a iFood') }) }}"
+            "dados": "={{ JSON.stringify({ payload: $('Webhook').item.json.body, erro: (($('Atualizar item iFood').item.json.error && $('Atualizar item iFood').item.json.error.message) || 'Erro desconhecido ao atualizar item na iFood') }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -335,7 +307,7 @@
         "operation": "executeQuery",
         "query": "update produto_canal\nset ultima_sincronizacao_em = now(),\n    sincronizacao_status = 'erro',\n    sincronizacao_erro = $3\nwhere produto_id = $1 and marketplace_id = $2;",
         "options": {
-          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, (($('Enviar produto para iFood').item.json.error && $('Enviar produto para iFood').item.json.error.message) || 'Erro desconhecido ao sincronizar com a iFood')] }}"
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, (($('Atualizar item iFood').item.json.error && $('Atualizar item iFood').item.json.error.message) || 'Erro desconhecido ao atualizar item na iFood')] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -391,6 +363,358 @@
         "postgres": {
           "id": "GEzDAcb9DFtH5ozo",
           "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "caab686e-73ae-4b36-b9bc-cdb7df86b27d",
+      "name": "Buscar categoria mapeada",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        880,
+        -260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select coalesce((select category_id_externo from categoria_marketplace_config where empresa_id = $1 and marketplace_id = $2 and categoria_normalizada = $3 limit 1), '6ffa1c75-3474-4d6c-9c15-efe00b7ac27c') as category_id_externo;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.empresa_id, $('Webhook').item.json.body.marketplace_id, $('Webhook').item.json.body.categoria_normalizada] }}"
+        }
+      }
+    },
+    {
+      "id": "56d2d33e-f154-4ead-8503-7b12e28694c8",
+      "name": "Item ja existe no iFood?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1100,
+        -260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$('Webhook').item.json.body.primeiro_envio}}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "5c5fc12c-dd09-48ff-b7f2-535282ff7727",
+      "name": "Atualizar item iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1340,
+        -380
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/items/{{$('Webhook').item.json.body.item_externo_id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { status: $('Webhook').item.json.body.status_calculado, price: { value: $('Webhook').item.json.body.preco_promocional || $('Webhook').item.json.body.preco, originalValue: $('Webhook').item.json.body.preco_promocional ? $('Webhook').item.json.body.preco : undefined } } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "59529c91-7f55-4091-9583-3626a22a7706",
+      "name": "Atualizar estoque (update)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2060,
+        -380
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/inventory",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { productId: $('Webhook').item.json.body.item_externo_id, amount: $('Webhook').item.json.body.estoque } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "fbc67be9-1ab9-4c42-a21e-3e6bc443efae",
+      "name": "Gerar item id",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1340,
+        -140
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gen_random_uuid() as novo_item_id;",
+        "options": {}
+      }
+    },
+    {
+      "id": "fe85edd5-6e22-496f-bb6f-b3abaccaebbf",
+      "name": "Baixar imagem base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        -140
+      ],
+      "parameters": {
+        "jsCode": "const url = $('Webhook').item.json.body.imagem_url;\nlet imagemBase64 = null;\nif (url) {\n  try {\n    const resp = await this.helpers.httpRequest({ url, encoding: 'arraybuffer', returnFullResponse: true });\n    const contentType = (resp.headers['content-type'] || 'image/jpeg').split(';')[0];\n    const base64 = Buffer.from(resp.body).toString('base64');\n    imagemBase64 = `data:${contentType};base64,${base64}`;\n  } catch (e) {\n    imagemBase64 = null;\n  }\n}\nreturn [{ json: { ...$json, imagem_base64: imagemBase64 } }];"
+      }
+    },
+    {
+      "id": "30d1a328-b08d-46df-b6a1-097289e57a68",
+      "name": "Tem imagem?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1780,
+        -140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.imagem_base64}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals",
+                "name": "filter.operator.notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4a1bb0a7-cf1a-406b-99c6-e31ec2d91762",
+      "name": "Upload imagem iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2000,
+        -220
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/image/upload",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { image: $json.imagem_base64 } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "56cb26a4-f5de-4868-b3c1-1a9877679754",
+      "name": "Criar item iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2240,
+        -140
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/items",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { item: { id: $('Gerar item id').item.json.novo_item_id, type: 'DEFAULT', categoryId: $('Buscar categoria mapeada').item.json.category_id_externo, status: $('Webhook').item.json.body.status_calculado, price: { value: $('Webhook').item.json.body.preco_promocional || $('Webhook').item.json.body.preco, originalValue: $('Webhook').item.json.body.preco_promocional ? $('Webhook').item.json.body.preco : undefined }, externalCode: $('Webhook').item.json.body.produto_id, productId: $('Gerar item id').item.json.novo_item_id }, products: [ { id: $('Gerar item id').item.json.novo_item_id, name: $('Webhook').item.json.body.nome, description: $('Webhook').item.json.body.descricao || $('Webhook').item.json.body.nome, ean: $('Webhook').item.json.body.codigo_barras, imagePath: $json.imagePath || undefined, industrialized: true } ] } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "80acc12e-865d-4e85-9248-6766918c3927",
+      "name": "Salvar item criado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2480,
+        -260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update produto_canal set item_externo_id = $3 where produto_id = $1 and marketplace_id = $2;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, $('Gerar item id').item.json.novo_item_id] }}"
+        }
+      }
+    },
+    {
+      "id": "14fe26e3-fc98-484f-9f02-55c336855031",
+      "name": "Atualizar estoque (criacao)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3200,
+        -260
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/inventory",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { productId: $('Gerar item id').item.json.novo_item_id, amount: $('Webhook').item.json.body.estoque } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "725a5843-864b-4b20-87e1-4a8cbea4d949",
+      "name": "Log erro sync catalogo (criacao)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2480,
+        -20
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_catalogo_sync_erro",
+            "tabela_origem": "produtos",
+            "registro_id": "={{$('Webhook').item.json.body.produto_id}}",
+            "dados": "={{ JSON.stringify({ payload: $('Webhook').item.json.body, erro: (($('Criar item iFood').item.json.error && $('Criar item iFood').item.json.error.message) || 'Erro desconhecido ao criar item na iFood') }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "82efc6e7-72f4-4d5c-a48c-d2ece0a6f3f6",
+      "name": "Marcar canal com erro (criacao)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2720,
+        -20
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update produto_canal\nset ultima_sincronizacao_em = now(),\n    sincronizacao_status = 'erro',\n    sincronizacao_erro = $3\nwhere produto_id = $1 and marketplace_id = $2;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, (($('Criar item iFood').item.json.error && $('Criar item iFood').item.json.error.message) || 'Erro desconhecido ao criar item na iFood')] }}"
         }
       }
     }
@@ -484,7 +808,7 @@
       "main": [
         [
           {
-            "node": "Enviar produto para iFood",
+            "node": "Buscar categoria mapeada",
             "type": "main",
             "index": 0
           }
@@ -492,24 +816,6 @@
         [
           {
             "node": "Log marketplace nao suportado",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Enviar produto para iFood": {
-      "main": [
-        [
-          {
-            "node": "Log sync catalogo",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Log erro sync catalogo",
             "type": "main",
             "index": 0
           }
@@ -532,6 +838,192 @@
         [
           {
             "node": "Marcar canal com erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar categoria mapeada": {
+      "main": [
+        [
+          {
+            "node": "Item ja existe no iFood?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Item ja existe no iFood?": {
+      "main": [
+        [
+          {
+            "node": "Atualizar item iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gerar item id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar item iFood": {
+      "main": [
+        [
+          {
+            "node": "Atualizar estoque (update)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log erro sync catalogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar canal sincronizado": {
+      "main": [
+        []
+      ]
+    },
+    "Gerar item id": {
+      "main": [
+        [
+          {
+            "node": "Baixar imagem base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixar imagem base64": {
+      "main": [
+        [
+          {
+            "node": "Tem imagem?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem imagem?": {
+      "main": [
+        [
+          {
+            "node": "Upload imagem iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Criar item iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload imagem iFood": {
+      "main": [
+        [
+          {
+            "node": "Criar item iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Criar item iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar item iFood": {
+      "main": [
+        [
+          {
+            "node": "Salvar item criado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log erro sync catalogo (criacao)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar item criado": {
+      "main": [
+        [
+          {
+            "node": "Atualizar estoque (criacao)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log erro sync catalogo (criacao)": {
+      "main": [
+        [
+          {
+            "node": "Marcar canal com erro (criacao)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar estoque (update)": {
+      "main": [
+        [
+          {
+            "node": "Log sync catalogo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log sync catalogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar estoque (criacao)": {
+      "main": [
+        [
+          {
+            "node": "Log sync catalogo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log sync catalogo",
             "type": "main",
             "index": 0
           }
