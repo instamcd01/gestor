@@ -571,7 +571,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst items = ctx.order.items || [];\nreturn items.map(it => ({\n  json: {\n    empresa_id: ctx.empresa_id,\n    cliente_id: ctx.cliente_id,\n    orderId: ctx.orderId,\n    order: ctx.order,\n    item_externo_id: String(it.id),\n    nome_item: it.name,\n    quantidade: it.quantity,\n    preco_unitario: (it.totalPrice ?? it.unitPrice ?? 0) / (it.quantity || 1),\n    subtotal: it.totalPrice ?? ((it.unitPrice || 0) * (it.quantity || 1)),\n  },\n}));"
+        "jsCode": "const ctx = $json;\nconst items = ctx.order.items || [];\nreturn items.map(it => ({\n  json: {\n    empresa_id: ctx.empresa_id,\n    cliente_id: ctx.cliente_id,\n    orderId: ctx.orderId,\n    order: ctx.order,\n    item_externo_id: String(it.id),\n    uniqueid_marketplace: it.uniqueId,\n    nome_item: it.name,\n    quantidade: it.quantity,\n    preco_unitario: (it.totalPrice ?? it.unitPrice ?? 0) / (it.quantity || 1),\n    subtotal: it.totalPrice ?? ((it.unitPrice || 0) * (it.quantity || 1)),\n  },\n}));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -769,7 +769,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst payment = (order.payments?.methods || [])[0] || {};\nconst isPrepaid = payment.type === 'PREPAID';\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\nconst tipoPagamento = isPrepaid ? 'iFood' : (metodoMap[payment.method] || 'Outros');\nconst statusPagamento = isPrepaid ? 'pago' : 'pendente';\nconst total = order.total || {};\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = payment.method === 'CASH' ? payment.cash?.changeFor : null;\nconst troco = changeFor != null ? Math.max(0, changeFor - (total.orderAmount ?? 0)) : null;\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.discount ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n  },\n}];"
+        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst payment = (order.payments?.methods || [])[0] || {};\nconst isPrepaid = payment.type === 'PREPAID';\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\nconst tipoPagamento = isPrepaid ? 'iFood' : (metodoMap[payment.method] || 'Outros');\nconst statusPagamento = isPrepaid ? 'pago' : 'pendente';\nconst total = order.total || {};\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = payment.method === 'CASH' ? payment.cash?.changeFor : null;\nconst troco = changeFor != null ? Math.max(0, changeFor - (total.orderAmount ?? 0)) : null;\nconst agendado = order.orderTiming === 'SCHEDULED';\nconst entregaPrevistaInicio = agendado ? (order.schedule?.deliveryDateTimeStart ?? null) : null;\nconst entregaPrevistaFim = agendado ? (order.schedule?.deliveryDateTimeEnd ?? null) : (order.delivery?.deliveryDateTime ?? null);\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.discount ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n    tipo_entrega_marketplace: order.orderType ?? null,\n    telefone_localizador: order.customer?.phone?.localizer ?? null,\n    telefone_localizador_expira_em: order.customer?.phone?.localizerExpiration ?? null,\n    codigo_retirada_exibicao: order.delivery?.pickupCode ?? null,\n    agendado,\n    entrega_prevista_inicio: entregaPrevistaInicio,\n    entrega_prevista_fim: entregaPrevistaFim,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -810,7 +810,8 @@
             "desconto": "={{$json.desconto}}",
             "valor_total": "={{$json.valor_total}}",
             "observacoes": "={{$json.observacoes}}",
-            "metadata": "={{$json.metadata}}"
+            "metadata": "={{$json.metadata}}",
+            "tipo_entrega_marketplace": "={{$json.tipo_entrega_marketplace}}"
           },
           "matchingColumns": [],
           "schema": []
@@ -834,7 +835,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const pedidoId = $json.id;\nconst itens = $('Agregar itens resolvidos').item.json.itens;\nreturn itens.map(it => ({\n  json: {\n    pedido_id: pedidoId,\n    produto_id: it.produto_id,\n    quantidade: it.quantidade,\n    preco_unitario: it.preco_unitario,\n    subtotal: it.subtotal,\n  },\n}));"
+        "jsCode": "const pedidoId = $json.id;\nconst itens = $('Agregar itens resolvidos').item.json.itens;\nreturn itens.map(it => ({\n  json: {\n    pedido_id: pedidoId,\n    produto_id: it.produto_id,\n    quantidade: it.quantidade,\n    preco_unitario: it.preco_unitario,\n    subtotal: it.subtotal,\n    uniqueid_marketplace: it.uniqueid_marketplace,\n  },\n}));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -865,7 +866,8 @@
             "produto_id": "={{$json.produto_id}}",
             "quantidade": "={{$json.quantidade}}",
             "preco_unitario": "={{$json.preco_unitario}}",
-            "subtotal": "={{$json.subtotal}}"
+            "subtotal": "={{$json.subtotal}}",
+            "uniqueid_marketplace": "={{$json.uniqueid_marketplace}}"
           },
           "matchingColumns": [],
           "schema": []
@@ -908,7 +910,13 @@
             "marketplace_order_id": "={{$('Switch por tipo de evento').item.json.orderId}}",
             "status_marketplace": "PLACED",
             "valor_bruto_marketplace": "={{$('Mapear pagamento e montar pedido').item.json.valor_total}}",
-            "numero_exibicao": "={{$('Mapear pagamento e montar pedido').item.json.numero_exibicao}}"
+            "numero_exibicao": "={{$('Mapear pagamento e montar pedido').item.json.numero_exibicao}}",
+            "telefone_localizador": "={{$('Mapear pagamento e montar pedido').item.json.telefone_localizador}}",
+            "telefone_localizador_expira_em": "={{$('Mapear pagamento e montar pedido').item.json.telefone_localizador_expira_em}}",
+            "codigo_retirada_exibicao": "={{$('Mapear pagamento e montar pedido').item.json.codigo_retirada_exibicao}}",
+            "agendado": "={{$('Mapear pagamento e montar pedido').item.json.agendado}}",
+            "entrega_prevista_inicio": "={{$('Mapear pagamento e montar pedido').item.json.entrega_prevista_inicio}}",
+            "entrega_prevista_fim": "={{$('Mapear pagamento e montar pedido').item.json.entrega_prevista_fim}}"
           },
           "matchingColumns": [],
           "schema": []
