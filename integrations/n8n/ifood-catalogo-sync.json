@@ -1,0 +1,558 @@
+{
+  "name": "iFood - Catalogo Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Catalogo Sync (iFood)\n\nDisparado pelos triggers trg_notificar_catalogo_produto_canal (preco/disponivel) e trg_notificar_catalogo_estoque (quantidade) via pg_net, sempre que um produto ligado a um marketplace ativo muda.\n\nEnvia para POST /item/v1.0/ingestion/{merchantId} (upsert por barcode). Produtos sem codigo_barras nao disparam o trigger no banco.\n\nO resultado (sucesso ou erro) e gravado de volta em produto_canal.sincronizacao_status para o app mostrar.",
+        "height": 300,
+        "width": 460
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "sticky1",
+      "name": "LEIA-ME",
+      "position": [
+        -700,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "catalogo-sync",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "w1",
+      "name": "Webhook",
+      "position": [
+        -700,
+        0
+      ],
+      "webhookId": "a3f0c9e2-5d41-4b7a-9c3e-1f8b6d4a2e70"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere empresa_id = $1 and marketplace_id = $2 and ativo = true\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.empresa_id, $json.body.marketplace_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "s2",
+      "name": "Buscar credenciais empresa",
+      "position": [
+        -460,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "s3",
+      "name": "Checar token em cache",
+      "position": [
+        -220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "s4",
+      "name": "Token válido?",
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "s5",
+      "name": "Obter token OAuth",
+      "position": [
+        220,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "s6",
+      "name": "Salvar token em cache",
+      "position": [
+        440,
+        120
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "s7",
+      "name": "Token pronto",
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{$('Webhook').item.json.body.marketplace_id}}",
+              "rightValue": "d4811153-e210-47b0-b910-ee0440914f60",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "s8",
+      "name": "É iFood?",
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.primeiro_envio ? \"POST\" : \"PATCH\" }}",
+        "url": "={{ \"https://merchant-api.ifood.com.br/item/v1.0/ingestion/\" + $(\"Buscar credenciais empresa\").item.json.id_loja_plataforma + ($json.primeiro_envio ? \"?reset=false\" : \"\") }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ [ { barcode: $('Webhook').item.json.body.codigo_barras, name: $('Webhook').item.json.body.nome, plu: $('Webhook').item.json.body.plu || undefined, active: $('Webhook').item.json.body.disponivel, details: { categorization: { category: $('Webhook').item.json.body.categoria, subCategory: $('Webhook').item.json.body.subcategoria }, brand: $('Webhook').item.json.body.marca, volume: $('Webhook').item.json.body.volume ? String($('Webhook').item.json.body.volume) : undefined, unit: ($('Webhook').item.json.body.unidade_medida || 'UN').toUpperCase(), description: $('Webhook').item.json.body.descricao, imageUrl: $('Webhook').item.json.body.imagem_url || undefined }, prices: { price: $('Webhook').item.json.body.preco, promotionPrice: $('Webhook').item.json.body.preco_promocional || undefined }, inventory: { stock: $('Webhook').item.json.body.estoque }, channels: ['ifood-app'] } ] }}",
+        "options": {}
+      },
+      "onError": "continueErrorOutput",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "c1",
+      "name": "Enviar produto para iFood",
+      "position": [
+        1120,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_catalogo_sync",
+            "tabela_origem": "produtos",
+            "registro_id": "={{$('Webhook').item.json.body.produto_id}}",
+            "dados": "={{ JSON.stringify($('Webhook').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c2",
+      "name": "Log sync catalogo",
+      "position": [
+        1360,
+        -160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update produto_canal\nset ultima_sincronizacao_em = now(),\n    sincronizacao_status = 'sucesso',\n    sincronizacao_erro = null\nwhere produto_id = $1 and marketplace_id = $2;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c4",
+      "name": "Marcar canal sincronizado",
+      "position": [
+        1600,
+        -160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_catalogo_sync_erro",
+            "tabela_origem": "produtos",
+            "registro_id": "={{$('Webhook').item.json.body.produto_id}}",
+            "dados": "={{ JSON.stringify({ payload: $('Webhook').item.json.body, erro: (($('Enviar produto para iFood').item.json.error && $('Enviar produto para iFood').item.json.error.message) || 'Erro desconhecido ao sincronizar com a iFood') }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c5",
+      "name": "Log erro sync catalogo",
+      "position": [
+        1360,
+        40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update produto_canal\nset ultima_sincronizacao_em = now(),\n    sincronizacao_status = 'erro',\n    sincronizacao_erro = $3\nwhere produto_id = $1 and marketplace_id = $2;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, (($('Enviar produto para iFood').item.json.error && $('Enviar produto para iFood').item.json.error.message) || 'Erro desconhecido ao sincronizar com a iFood')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c6",
+      "name": "Marcar canal com erro",
+      "position": [
+        1600,
+        40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "catalogo_sync_marketplace_nao_suportado",
+            "tabela_origem": "produtos",
+            "registro_id": "={{$('Webhook').item.json.body.produto_id}}",
+            "dados": "={{ JSON.stringify($('Webhook').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c3",
+      "name": "Log marketplace nao suportado",
+      "position": [
+        1120,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais empresa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais empresa": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido?": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto": {
+      "main": [
+        [
+          {
+            "node": "É iFood?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É iFood?": {
+      "main": [
+        [
+          {
+            "node": "Enviar produto para iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log marketplace nao suportado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar produto para iFood": {
+      "main": [
+        [
+          {
+            "node": "Log sync catalogo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log erro sync catalogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log sync catalogo": {
+      "main": [
+        [
+          {
+            "node": "Marcar canal sincronizado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log erro sync catalogo": {
+      "main": [
+        [
+          {
+            "node": "Marcar canal com erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "global": {
+      "ifoodTokens": {
+        "3bce0e24-2868-49f3-a9dd-eed921ffc8e4": {
+          "accessToken": "eyJraWQiOiJlZGI4NWY2Mi00ZWY5LTExZTktODY0Ny1kNjYzYmQ4NzNkOTMiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzUxMiJ9.eyJzdWIiOiIwZmQ4MDY1MS0wM2U2LTQ0NDItYWU3Ny0xNTdmZjg0NTZjODgiLCJvd25lcl9uYW1lIjoibHVjYXMtbWFjaGFkby12aWVpcmEiLCJpc3MiOiJpRm9vZCIsImNsaWVudF9pZCI6IjBmZDgwNjUxLTAzZTYtNDQ0Mi1hZTc3LTE1N2ZmODQ1NmM4OCIsImF1ZCI6WyJpdGVtIiwiY2F0YWxvZyIsImZpbmFuY2lhbCIsIm1lcmNoYW50IiwibG9naXN0aWNzIiwicGlja2luZyIsIm9hdXRoLXNlcnZlciIsInNoaXBwaW5nIiwicmV2aWV3IiwiZ3JvY2VyaWVzIiwiZXZlbnRzIiwib3JkZXIiLCJwcm9tb3Rpb24iXSwiYXBwX25hbWUiOiJsdWNhcy1tYWNoYWRvLXZpZWlyYS10ZXN0ZS1jIiwic2NvcGUiOlsiaXRlbSIsInNoaXBwaW5nIiwiY2F0YWxvZyIsInJldmlldyIsIm1lcmNoYW50IiwibG9naXN0aWNzIiwiZ3JvY2VyaWVzIiwicGlja2luZyIsImV2ZW50cyIsIm9yZGVyIiwiY29uY2lsaWF0b3IiLCJwcm9tb3Rpb24iXSwidHZlciI6InYyIiwibWVyY2hhbnRfc2NvcGUiOlsiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5OmNhdGFsb2ciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6bWVyY2hhbnQiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6cmV2aWV3IiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5Oml0ZW0iLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6b3JkZXIiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6Y29uY2lsaWF0b3IiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6ZXZlbnRzIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5OmxvZ2lzdGljcyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpncm9jZXJpZXMiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6cHJvbW90aW9uIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5OnNoaXBwaW5nIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5OnBpY2tpbmciXSwiZXhwIjoxNzg1MzY0ODI3LCJpYXQiOjE3ODUzNDMyMjcsImp0aSI6IjBmZDgwNjUxLTAzZTYtNDQ0Mi1hZTc3LTE1N2ZmODQ1NmM4OCIsIm1lcmNoYW50X3Njb3BlZCI6dHJ1ZX0.L1y-iYPdYynMwktpp8BsjR3FVfx7047Ov3zUXK3KEJqpMegB99PlU6yqKOHKUtPeUcFfoGPabo7PCaIenDstvnpEqAiimezSw9XR2VmlHBK6SS2JNkkHEZFFSHzu3jdobyYVioA6_9NXRxr2xCS8HZ-RoOksdjHOW7FOiBF9ag4",
+          "expiresAt": 1785364826886
+        }
+      }
+    }
+  },
+  "pinData": {}
+}
