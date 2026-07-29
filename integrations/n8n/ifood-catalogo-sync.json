@@ -416,6 +416,16 @@
                 "operation": "equals",
                 "name": "filter.operator.equals"
               }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{$('Webhook').item.json.body.motivo_sync}}",
+              "rightValue": "preco_estoque",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
             }
           ],
           "combinator": "and"
@@ -447,7 +457,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { status: $('Webhook').item.json.body.status_calculado, price: { value: $('Webhook').item.json.body.preco_promocional || $('Webhook').item.json.body.preco, originalValue: $('Webhook').item.json.body.preco_promocional ? $('Webhook').item.json.body.preco : undefined } } }}",
+        "jsonBody": "={{ { status: $('Buscar dados atuais').item.json.status_atual, price: { value: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) || Number($('Buscar dados atuais').item.json.preco_atual), originalValue: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) ? Number($('Buscar dados atuais').item.json.preco_atual) : undefined } } }}",
         "options": {}
       }
     },
@@ -475,13 +485,13 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { productId: $('Webhook').item.json.body.item_externo_id, amount: $('Webhook').item.json.body.estoque } }}",
+        "jsonBody": "={{ { productId: $('Webhook').item.json.body.item_externo_id, amount: Number($('Buscar dados atuais').item.json.estoque_atual) } }}",
         "options": {}
       }
     },
     {
       "id": "fbc67be9-1ab9-4c42-a21e-3e6bc443efae",
-      "name": "Gerar item id",
+      "name": "Determinar item id",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
@@ -496,8 +506,10 @@
       },
       "parameters": {
         "operation": "executeQuery",
-        "query": "select gen_random_uuid() as novo_item_id;",
-        "options": {}
+        "query": "select coalesce($1::uuid, gen_random_uuid()) as novo_item_id;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.item_externo_id] }}"
+        }
       }
     },
     {
@@ -599,7 +611,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { item: { id: $('Gerar item id').item.json.novo_item_id, type: 'DEFAULT', categoryId: $('Buscar categoria mapeada').item.json.category_id_externo, status: $('Webhook').item.json.body.status_calculado, price: { value: $('Webhook').item.json.body.preco_promocional || $('Webhook').item.json.body.preco, originalValue: $('Webhook').item.json.body.preco_promocional ? $('Webhook').item.json.body.preco : undefined }, externalCode: $('Webhook').item.json.body.produto_id, productId: $('Gerar item id').item.json.novo_item_id }, products: [ { id: $('Gerar item id').item.json.novo_item_id, name: $('Webhook').item.json.body.nome, description: $('Webhook').item.json.body.descricao || $('Webhook').item.json.body.nome, ean: $('Webhook').item.json.body.codigo_barras, imagePath: $json.imagePath || undefined, industrialized: true } ] } }}",
+        "jsonBody": "={{ { item: { id: $('Determinar item id').item.json.novo_item_id, type: 'DEFAULT', categoryId: $('Buscar categoria mapeada').item.json.category_id_externo, status: $('Buscar dados atuais').item.json.status_atual, price: { value: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) || Number($('Buscar dados atuais').item.json.preco_atual), originalValue: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) ? Number($('Buscar dados atuais').item.json.preco_atual) : undefined }, externalCode: $('Webhook').item.json.body.produto_id, productId: $('Determinar item id').item.json.novo_item_id }, products: [ { id: $('Determinar item id').item.json.novo_item_id, name: $('Webhook').item.json.body.nome, description: $('Webhook').item.json.body.descricao || $('Webhook').item.json.body.nome, ean: $('Webhook').item.json.body.codigo_barras, imagePath: $json.imagePath || undefined, industrialized: true } ] } }}",
         "options": {}
       }
     },
@@ -622,7 +634,7 @@
         "operation": "executeQuery",
         "query": "update produto_canal set item_externo_id = $3 where produto_id = $1 and marketplace_id = $2;",
         "options": {
-          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, $('Gerar item id').item.json.novo_item_id] }}"
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, $('Determinar item id').item.json.novo_item_id] }}"
         }
       }
     },
@@ -650,7 +662,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { productId: $('Gerar item id').item.json.novo_item_id, amount: $('Webhook').item.json.body.estoque } }}",
+        "jsonBody": "={{ { productId: $('Determinar item id').item.json.novo_item_id, amount: Number($('Buscar dados atuais').item.json.estoque_atual) } }}",
         "options": {}
       }
     },
@@ -715,6 +727,29 @@
         "query": "update produto_canal\nset ultima_sincronizacao_em = now(),\n    sincronizacao_status = 'erro',\n    sincronizacao_erro = $3\nwhere produto_id = $1 and marketplace_id = $2;",
         "options": {
           "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, (($('Criar item iFood').item.json.error && $('Criar item iFood').item.json.error.message) || 'Erro desconhecido ao criar item na iFood')] }}"
+        }
+      }
+    },
+    {
+      "id": "765519f0-5c3c-4d63-8209-253ef135c0fb",
+      "name": "Buscar dados atuais",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        880,
+        -100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select\n  coalesce(pc.preco, p.preco) as preco_atual,\n  p.preco_promocional as preco_promocional_atual,\n  pc.disponivel as disponivel_atual,\n  coalesce((select sum(e.quantidade_atual) from estoque e where e.produto_id = p.id), 0) as estoque_atual,\n  case when pc.disponivel and coalesce((select sum(e.quantidade_atual) from estoque e where e.produto_id = p.id), 0) > 0 then 'AVAILABLE' else 'UNAVAILABLE' end as status_atual\nfrom produtos p\njoin produto_canal pc on pc.produto_id = p.id and pc.marketplace_id = $2\nwhere p.id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id] }}"
         }
       }
     }
@@ -848,7 +883,7 @@
       "main": [
         [
           {
-            "node": "Item ja existe no iFood?",
+            "node": "Buscar dados atuais",
             "type": "main",
             "index": 0
           }
@@ -866,7 +901,7 @@
         ],
         [
           {
-            "node": "Gerar item id",
+            "node": "Determinar item id",
             "type": "main",
             "index": 0
           }
@@ -894,17 +929,6 @@
     "Marcar canal sincronizado": {
       "main": [
         []
-      ]
-    },
-    "Gerar item id": {
-      "main": [
-        [
-          {
-            "node": "Baixar imagem base64",
-            "type": "main",
-            "index": 0
-          }
-        ]
       ]
     },
     "Baixar imagem base64": {
@@ -1029,6 +1053,28 @@
           }
         ]
       ]
+    },
+    "Determinar item id": {
+      "main": [
+        [
+          {
+            "node": "Baixar imagem base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar dados atuais": {
+      "main": [
+        [
+          {
+            "node": "Item ja existe no iFood?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -1040,8 +1086,8 @@
     "global": {
       "ifoodTokens": {
         "3bce0e24-2868-49f3-a9dd-eed921ffc8e4": {
-          "accessToken": "eyJraWQiOiJlZGI4NWY2Mi00ZWY5LTExZTktODY0Ny1kNjYzYmQ4NzNkOTMiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzUxMiJ9.eyJzdWIiOiIwZmQ4MDY1MS0wM2U2LTQ0NDItYWU3Ny0xNTdmZjg0NTZjODgiLCJvd25lcl9uYW1lIjoibHVjYXMtbWFjaGFkby12aWVpcmEiLCJpc3MiOiJpRm9vZCIsImNsaWVudF9pZCI6IjBmZDgwNjUxLTAzZTYtNDQ0Mi1hZTc3LTE1N2ZmODQ1NmM4OCIsImF1ZCI6WyJpdGVtIiwiY2F0YWxvZyIsImZpbmFuY2lhbCIsIm1lcmNoYW50IiwibG9naXN0aWNzIiwicGlja2luZyIsIm9hdXRoLXNlcnZlciIsInNoaXBwaW5nIiwicmV2aWV3IiwiZ3JvY2VyaWVzIiwiZXZlbnRzIiwib3JkZXIiLCJwcm9tb3Rpb24iXSwiYXBwX25hbWUiOiJsdWNhcy1tYWNoYWRvLXZpZWlyYS10ZXN0ZS1jIiwic2NvcGUiOlsiaXRlbSIsInNoaXBwaW5nIiwiY2F0YWxvZyIsInJldmlldyIsIm1lcmNoYW50IiwibG9naXN0aWNzIiwiZ3JvY2VyaWVzIiwicGlja2luZyIsImV2ZW50cyIsIm9yZGVyIiwiY29uY2lsaWF0b3IiLCJwcm9tb3Rpb24iXSwidHZlciI6InYyIiwibWVyY2hhbnRfc2NvcGUiOlsiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5OmNhdGFsb2ciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6bWVyY2hhbnQiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6cmV2aWV3IiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5Oml0ZW0iLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6b3JkZXIiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6Y29uY2lsaWF0b3IiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6ZXZlbnRzIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5OmxvZ2lzdGljcyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpncm9jZXJpZXMiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6cHJvbW90aW9uIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5OnNoaXBwaW5nIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5OnBpY2tpbmciXSwiZXhwIjoxNzg1MzY0ODI3LCJpYXQiOjE3ODUzNDMyMjcsImp0aSI6IjBmZDgwNjUxLTAzZTYtNDQ0Mi1hZTc3LTE1N2ZmODQ1NmM4OCIsIm1lcmNoYW50X3Njb3BlZCI6dHJ1ZX0.L1y-iYPdYynMwktpp8BsjR3FVfx7047Ov3zUXK3KEJqpMegB99PlU6yqKOHKUtPeUcFfoGPabo7PCaIenDstvnpEqAiimezSw9XR2VmlHBK6SS2JNkkHEZFFSHzu3jdobyYVioA6_9NXRxr2xCS8HZ-RoOksdjHOW7FOiBF9ag4",
-          "expiresAt": 1785364826886
+          "accessToken": "eyJraWQiOiJlZGI4NWY2Mi00ZWY5LTExZTktODY0Ny1kNjYzYmQ4NzNkOTMiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzUxMiJ9.eyJzdWIiOiIwZmQ4MDY1MS0wM2U2LTQ0NDItYWU3Ny0xNTdmZjg0NTZjODgiLCJvd25lcl9uYW1lIjoibHVjYXMtbWFjaGFkby12aWVpcmEiLCJpc3MiOiJpRm9vZCIsImNsaWVudF9pZCI6IjBmZDgwNjUxLTAzZTYtNDQ0Mi1hZTc3LTE1N2ZmODQ1NmM4OCIsImF1ZCI6WyJpdGVtIiwiY2F0YWxvZyIsImZpbmFuY2lhbCIsIm1lcmNoYW50IiwibG9naXN0aWNzIiwicGlja2luZyIsIm9hdXRoLXNlcnZlciIsInNoaXBwaW5nIiwicmV2aWV3IiwiZ3JvY2VyaWVzIiwiZXZlbnRzIiwib3JkZXIiLCJwcm9tb3Rpb24iXSwiYXBwX25hbWUiOiJkZWxpdmVyeS1wZXQtcmoiLCJzY29wZSI6WyJpdGVtIiwic2hpcHBpbmciLCJjYXRhbG9nIiwicmV2aWV3IiwibWVyY2hhbnQiLCJsb2dpc3RpY3MiLCJncm9jZXJpZXMiLCJwaWNraW5nIiwiZXZlbnRzIiwib3JkZXIiLCJjb25jaWxpYXRvciIsInByb21vdGlvbiJdLCJ0dmVyIjoidjIiLCJtZXJjaGFudF9zY29wZSI6WyIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6Y2F0YWxvZyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTptZXJjaGFudCIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpyZXZpZXciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6aXRlbSIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpvcmRlciIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpjb25jaWxpYXRvciIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpldmVudHMiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6bG9naXN0aWNzIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5Omdyb2NlcmllcyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpwcm9tb3Rpb24iLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6c2hpcHBpbmciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6cGlja2luZyJdLCJleHAiOjE3ODUzODY1ODIsImlhdCI6MTc4NTM2NDk4MiwianRpIjoiMGZkODA2NTEtMDNlNi00NDQyLWFlNzctMTU3ZmY4NDU2Yzg4IiwibWVyY2hhbnRfc2NvcGVkIjp0cnVlfQ.POeVL7CaIpwB1YzbBkZ5tIopQBr3-sjobWrFGg2Wp5mLgatjXxhGOvpI5wL041NDxW0e5gFGyJaZIfbe_Dd2u31iaMJ3xQ3jBCFuJF0GQMYiNRteIrCUo-gI8Gw4UUOIXSxSyEF-5oqOkkDlOCTOAHL0bUizumJh_pSh8GIttWM",
+          "expiresAt": 1785386581099
         }
       }
     }
