@@ -611,7 +611,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { item: { id: $('Determinar item id').item.json.novo_item_id, type: 'DEFAULT', categoryId: $('Buscar categoria mapeada').item.json.category_id_externo, status: $('Buscar dados atuais').item.json.status_atual, price: { value: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) || Number($('Buscar dados atuais').item.json.preco_atual), originalValue: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) ? Number($('Buscar dados atuais').item.json.preco_atual) : undefined }, externalCode: $('Webhook').item.json.body.produto_id, productId: $('Determinar item id').item.json.novo_item_id }, products: [ { id: $('Determinar item id').item.json.novo_item_id, name: $('Webhook').item.json.body.nome, externalCode: $('Webhook').item.json.body.plu || undefined, description: $('Webhook').item.json.body.descricao || $('Webhook').item.json.body.nome, ean: $('Webhook').item.json.body.codigo_barras, imagePath: $json.imagePath || undefined, industrialized: true } ] } }}",
+        "jsonBody": "={{ { item: { id: $('Determinar item id').item.json.novo_item_id, type: 'DEFAULT', categoryId: $('Buscar categoria mapeada').item.json.category_id_externo, status: $('Buscar dados atuais').item.json.status_atual, price: { value: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) || Number($('Buscar dados atuais').item.json.preco_atual), originalValue: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) ? Number($('Buscar dados atuais').item.json.preco_atual) : undefined }, externalCode: $('Webhook').item.json.body.produto_id, productId: ($('Buscar item existente').item.json.productId || $('Determinar item id').item.json.novo_item_id) }, products: [ { id: ($('Buscar item existente').item.json.productId || $('Determinar item id').item.json.novo_item_id), name: $('Webhook').item.json.body.nome, externalCode: $('Webhook').item.json.body.plu || undefined, description: $('Webhook').item.json.body.descricao || $('Webhook').item.json.body.nome, ean: $('Webhook').item.json.body.codigo_barras, imagePath: $json.imagePath || undefined, industrialized: true } ] } }}",
         "options": {}
       }
     },
@@ -751,6 +751,31 @@
         "options": {
           "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id] }}"
         }
+      }
+    },
+    {
+      "id": "61e1fda3-d311-4bc9-bc5a-3bd2a7c8ea98",
+      "name": "Buscar item existente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1560,
+        -260
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/items/{{$('Webhook').item.json.body.item_externo_id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
       }
     }
   ],
@@ -1058,7 +1083,7 @@
       "main": [
         [
           {
-            "node": "Baixar imagem base64",
+            "node": "Buscar item existente",
             "type": "main",
             "index": 0
           }
@@ -1070,6 +1095,24 @@
         [
           {
             "node": "Item ja existe no iFood?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar item existente": {
+      "main": [
+        [
+          {
+            "node": "Baixar imagem base64",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Baixar imagem base64",
             "type": "main",
             "index": 0
           }
