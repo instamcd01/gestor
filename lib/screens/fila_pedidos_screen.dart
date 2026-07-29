@@ -144,6 +144,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       ));
     }
 
+    if (venda.troco > 0) {
+      chips.add(_chipInfo(context, Icons.money_outlined, 'Troco: R\$ ${venda.troco.toStringAsFixed(2)}'));
+    }
+
     return chips;
   }
 

@@ -440,7 +440,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ev = $('Switch por tipo de evento').item.json;\nconst order = $json;\nconst phone = order.customer?.phone?.number || '';\n// Endereço real vem aninhado em order.delivery.deliveryAddress, não em\n// order.deliveryAddress (esse caminho nunca existe na resposta da iFood).\nconst address = order.delivery?.deliveryAddress || {};\nconst doc = order.customer?.documentType === 'CPF' ? order.customer?.documentNumber : null;\nreturn [{\n  json: {\n    empresa_id: ev.empresa_id,\n    orderId: ev.orderId,\n    access_token: ev.access_token,\n    order,\n    cliente: {\n      nome: order.customer?.name || 'Cliente iFood',\n      telefone: phone,\n      cpf: doc,\n      endereco: address.streetName || '',\n      numero: address.streetNumber || '',\n      bairro: address.neighborhood || '',\n      cidade: address.city || '',\n      estado: address.state || '',\n      cep: address.postalCode || '',\n      complemento: address.complement || null,\n      latitude: address.coordinates?.latitude ?? null,\n      longitude: address.coordinates?.longitude ?? null,\n    },\n  },\n}];"
+        "jsCode": "const ev = $('Switch por tipo de evento').item.json;\nconst order = $json;\nconst phone = order.customer?.phone?.number || '';\n// Endereço real vem aninhado em order.delivery.deliveryAddress, não em\n// order.deliveryAddress (esse caminho nunca existe na resposta da iFood).\nconst address = order.delivery?.deliveryAddress || {};\nconst doc = order.customer?.documentType === 'CPF' ? order.customer?.documentNumber : null;\nreturn [{\n  json: {\n    empresa_id: ev.empresa_id,\n    orderId: ev.orderId,\n    access_token: ev.access_token,\n    order,\n    cliente: {\n      nome: order.customer?.name || 'Cliente iFood',\n      telefone: phone,\n      // customer.id é estável por cliente real (confirmado: pedidos com\n      // telefones mascarados diferentes compartilham o mesmo customer.id)\n      // - chave de casamento, não o telefone (que a iFood reaproveita entre\n      // pedidos/clientes diferentes).\n      idExternoIfood: order.customer?.id || null,\n      cpf: doc,\n      endereco: address.streetName || '',\n      numero: address.streetNumber || '',\n      bairro: address.neighborhood || '',\n      cidade: address.city || '',\n      estado: address.state || '',\n      cep: address.postalCode || '',\n      complemento: address.complement || null,\n      latitude: address.coordinates?.latitude ?? null,\n      longitude: address.coordinates?.longitude ?? null,\n    },\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -454,9 +454,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "select (select id from clientes where empresa_id = $1 and telefone = $2 limit 1) as id;",
+        "query": "select (select id from clientes where empresa_id = $1 and id_externo_ifood = $2 and deleted_at is null limit 1) as id;",
         "options": {
-          "queryReplacement": "={{$json.empresa_id}}, {{$json.cliente.telefone}}"
+          "queryReplacement": "={{$json.empresa_id}}, {{$json.cliente.idExternoIfood}}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -538,6 +538,7 @@
             "latitude": "={{$('Preparar dados do cliente').item.json.cliente.latitude}}",
             "longitude": "={{$('Preparar dados do cliente').item.json.cliente.longitude}}",
             "cpf": "={{$('Preparar dados do cliente').item.json.cliente.cpf}}",
+            "id_externo_ifood": "={{$('Preparar dados do cliente').item.json.cliente.idExternoIfood}}",
             "canal_origem": "ifood"
           },
           "matchingColumns": [],
@@ -552,6 +553,29 @@
       "position": [
         4140,
         -40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update clientes set\n  nome = coalesce(nullif($2, ''), nome),\n  telefone = coalesce(nullif($3, ''), telefone),\n  endereco = coalesce(nullif($4, ''), endereco),\n  numero = coalesce(nullif($5, ''), numero),\n  bairro = coalesce(nullif($6, ''), bairro),\n  cidade = coalesce(nullif($7, ''), cidade),\n  estado = coalesce(nullif($8, ''), estado),\n  cep = coalesce(nullif($9, ''), cep),\n  complemento = coalesce($10, complemento),\n  latitude = coalesce($11, latitude),\n  longitude = coalesce($12, longitude),\n  cpf = coalesce($13, cpf),\n  updated_at = now()\nwhere id = $1\nreturning id;",
+        "options": {
+          "queryReplacement": "={{ [$json.id, $('Preparar dados do cliente').item.json.cliente.nome, $('Preparar dados do cliente').item.json.cliente.telefone, $('Preparar dados do cliente').item.json.cliente.endereco, $('Preparar dados do cliente').item.json.cliente.numero, $('Preparar dados do cliente').item.json.cliente.bairro, $('Preparar dados do cliente').item.json.cliente.cidade, $('Preparar dados do cliente').item.json.cliente.estado, $('Preparar dados do cliente').item.json.cliente.cep, $('Preparar dados do cliente').item.json.cliente.complemento, $('Preparar dados do cliente').item.json.cliente.latitude, $('Preparar dados do cliente').item.json.cliente.longitude, $('Preparar dados do cliente').item.json.cliente.cpf] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n20b",
+      "name": "Atualizar cliente existente",
+      "position": [
+        3900,
+        -240
       ],
       "credentials": {
         "postgres": {
@@ -773,7 +797,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\n// Múltiplos métodos de pagamento num só pedido (ex: parte prepago no app\n// + parte em dinheiro na entrega) nunca visto num pedido real ainda -\n// generalização defensiva, não confirmada contra payload real. Rótulo\n// concatena os tipos únicos em vez de só olhar methods[0].\nconst methods = order.payments?.methods || [];\nconst allPrepaid = methods.length > 0 && methods.every(m => m.type === 'PREPAID');\nconst anyOffline = methods.some(m => m.type === 'OFFLINE');\nconst tipoPagamento = methods.length === 0 ? 'Outros'\n  : allPrepaid ? 'iFood'\n  : [...new Set(methods.map(m => m.type === 'PREPAID' ? 'iFood' : (metodoMap[m.method] || 'Outros')))].join(' + ');\nconst statusPagamento = anyOffline ? 'pendente' : 'pago';\nconst cashMethod = methods.find(m => m.method === 'CASH');\nconst total = order.total || {};\n// order.delivery só existe pra orderType DELIVERY; TAKEOUT/INDOOR devem\n// ter seções próprias (order.takeout/order.indoor) com campos análogos\n// (pickupCode, deliveryDateTime) - nunca visto um pedido real desses\n// tipos ainda, então isso é inferido por analogia de nomenclatura da\n// iFood, não confirmado. Se um pedido TAKEOUT/INDOOR real vier com nomes\n// de campo diferentes, ajustar aqui.\nconst logistics = order.delivery || order.takeout || order.indoor || {};\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = cashMethod?.cash?.changeFor ?? null;\n// pending = valor real a cobrar fora do app da iFood - correto mesmo em\n// pagamento misto (prepago + dinheiro); só coincide com orderAmount\n// inteiro quando o pedido inteiro é pago em dinheiro (caso observado\n// até agora).\nconst valorPendente = order.payments?.pending ?? (total.orderAmount ?? 0);\nconst troco = changeFor != null ? Math.max(0, changeFor - valorPendente) : null;\nconst taxaServicoCliente = (order.additionalFees || []).reduce((acc, f) => acc + (f.value || 0), 0);\n// Cupom/campanha: order.benefits[] (confirmado com pedido real 2026-07-29,\n// campaign.id/name + sponsorshipValues por patrocinador IFOOD/MERCHANT/\n// EXTERNAL/CHAIN). Só o primeiro benefício vira campanha/cupom nomeados;\n// o array completo fica em metadata pra qualquer auditoria financeira.\nconst beneficios = order.benefits || [];\nconst primeiroBeneficio = beneficios[0] || null;\nconst campanhaMarketplace = primeiroBeneficio?.campaign?.name ?? null;\nconst cupomMarketplace = primeiroBeneficio?.campaign?.id ?? null;\n// Regra de substituição do pedido (order.picking.replacementOptions) -\n// relevante pra separação de pedido saber se pode oferecer substituto.\nconst politicaSubstituicao = order.picking?.replacementOptions ?? null;\nconst agendado = order.orderTiming === 'SCHEDULED';\nconst entregaPrevistaInicio = agendado ? (order.schedule?.deliveryDateTimeStart ?? null) : null;\nconst entregaPrevistaFim = agendado ? (order.schedule?.deliveryDateTimeEnd ?? null) : (logistics.deliveryDateTime ?? null);\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.benefits ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n    tipo_entrega_marketplace: order.orderType ?? null,\n    telefone_localizador: order.customer?.phone?.localizer ?? null,\n    telefone_localizador_expira_em: order.customer?.phone?.localizerExpiration ?? null,\n    codigo_retirada_exibicao: logistics.pickupCode ?? null,\n    agendado,\n    entrega_prevista_inicio: entregaPrevistaInicio,\n    entrega_prevista_fim: entregaPrevistaFim,\n    taxa_servico_cliente: taxaServicoCliente,\n    campanha_marketplace: campanhaMarketplace,\n    cupom_marketplace: cupomMarketplace,\n    politica_substituicao: politicaSubstituicao,\n    marketplace_metadata: JSON.stringify(beneficios.length ? { beneficios } : {}),\n  },\n}];"
+        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\n// Múltiplos métodos de pagamento num só pedido (ex: parte prepago no app\n// + parte em dinheiro na entrega) nunca visto num pedido real ainda -\n// generalização defensiva, não confirmada contra payload real. Rótulo\n// concatena os tipos únicos em vez de só olhar methods[0].\nconst methods = order.payments?.methods || [];\nconst allPrepaid = methods.length > 0 && methods.every(m => m.type === 'PREPAID');\nconst anyOffline = methods.some(m => m.type === 'OFFLINE');\nconst tipoPagamento = methods.length === 0 ? 'Outros'\n  : allPrepaid ? 'iFood'\n  : [...new Set(methods.map(m => m.type === 'PREPAID' ? 'iFood' : (metodoMap[m.method] || 'Outros')))].join(' + ');\nconst statusPagamento = anyOffline ? 'pendente' : 'pago';\nconst cashMethod = methods.find(m => m.method === 'CASH');\nconst total = order.total || {};\n// Confirmado com pedido TAKEOUT real 2026-07-29: order.takeout tem forma\n// bem diferente de order.delivery (mode/location/takeoutDateTime, sem\n// pickupCode - o código de retirada do courier só existe em DELIVERY).\nconst isTakeout = order.orderType === 'TAKEOUT';\nconst pickupCodeEntrega = order.delivery?.pickupCode ?? null;\nconst dataHoraImediata = isTakeout ? (order.takeout?.takeoutDateTime ?? null) : (order.delivery?.deliveryDateTime ?? null);\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = cashMethod?.cash?.changeFor ?? null;\n// pending = valor real a cobrar fora do app da iFood - correto mesmo em\n// pagamento misto (prepago + dinheiro); só coincide com orderAmount\n// inteiro quando o pedido inteiro é pago em dinheiro (caso observado\n// até agora).\nconst valorPendente = order.payments?.pending ?? (total.orderAmount ?? 0);\nconst troco = changeFor != null ? Math.max(0, changeFor - valorPendente) : null;\nconst taxaServicoCliente = (order.additionalFees || []).reduce((acc, f) => acc + (f.value || 0), 0);\n// Cupom/campanha: order.benefits[] (confirmado com pedido real 2026-07-29,\n// campaign.id/name + sponsorshipValues por patrocinador IFOOD/MERCHANT/\n// EXTERNAL/CHAIN). Só o primeiro benefício vira campanha/cupom nomeados;\n// o array completo fica em metadata pra qualquer auditoria financeira.\nconst beneficios = order.benefits || [];\nconst primeiroBeneficio = beneficios[0] || null;\nconst campanhaMarketplace = primeiroBeneficio?.campaign?.name ?? null;\nconst cupomMarketplace = primeiroBeneficio?.campaign?.id ?? null;\n// Regra de substituição do pedido (order.picking.replacementOptions) -\n// relevante pra separação de pedido saber se pode oferecer substituto.\nconst politicaSubstituicao = order.picking?.replacementOptions ?? null;\nconst agendado = order.orderTiming === 'SCHEDULED';\nconst entregaPrevistaInicio = agendado ? (order.schedule?.deliveryDateTimeStart ?? null) : null;\nconst entregaPrevistaFim = agendado ? (order.schedule?.deliveryDateTimeEnd ?? null) : dataHoraImediata;\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.benefits ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n    tipo_entrega_marketplace: order.orderType ?? null,\n    telefone_localizador: order.customer?.phone?.localizer ?? null,\n    telefone_localizador_expira_em: order.customer?.phone?.localizerExpiration ?? null,\n    codigo_retirada_exibicao: pickupCodeEntrega,\n    agendado,\n    entrega_prevista_inicio: entregaPrevistaInicio,\n    entrega_prevista_fim: entregaPrevistaFim,\n    taxa_servico_cliente: taxaServicoCliente,\n    campanha_marketplace: campanhaMarketplace,\n    cupom_marketplace: cupomMarketplace,\n    politica_substituicao: politicaSubstituicao,\n    marketplace_metadata: JSON.stringify(beneficios.length ? { beneficios } : {}),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1642,7 +1666,7 @@
       "main": [
         [
           {
-            "node": "Selecionar id do cliente",
+            "node": "Atualizar cliente existente",
             "type": "main",
             "index": 0
           }
@@ -1650,6 +1674,17 @@
         [
           {
             "node": "Inserir cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar cliente existente": {
+      "main": [
+        [
+          {
+            "node": "Selecionar id do cliente",
             "type": "main",
             "index": 0
           }
