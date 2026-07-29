@@ -436,7 +436,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ev = $('Switch por tipo de evento').item.json;\nconst order = $json;\nconst phone = order.customer?.phone?.number || '';\nconst address = order.deliveryAddress || {};\nreturn [{\n  json: {\n    empresa_id: ev.empresa_id,\n    orderId: ev.orderId,\n    access_token: ev.access_token,\n    order,\n    cliente: {\n      nome: order.customer?.name || 'Cliente iFood',\n      telefone: phone,\n      endereco: address.streetName || '',\n      numero: address.streetNumber || '',\n      bairro: address.neighborhood || '',\n      cidade: address.city || '',\n      estado: address.state || '',\n      cep: address.postalCode || '',\n    },\n  },\n}];"
+        "jsCode": "const ev = $('Switch por tipo de evento').item.json;\nconst order = $json;\nconst phone = order.customer?.phone?.number || '';\n// Endereço real vem aninhado em order.delivery.deliveryAddress, não em\n// order.deliveryAddress (esse caminho nunca existe na resposta da iFood).\nconst address = order.delivery?.deliveryAddress || {};\nconst doc = order.customer?.documentType === 'CPF' ? order.customer?.documentNumber : null;\nreturn [{\n  json: {\n    empresa_id: ev.empresa_id,\n    orderId: ev.orderId,\n    access_token: ev.access_token,\n    order,\n    cliente: {\n      nome: order.customer?.name || 'Cliente iFood',\n      telefone: phone,\n      cpf: doc,\n      endereco: address.streetName || '',\n      numero: address.streetNumber || '',\n      bairro: address.neighborhood || '',\n      cidade: address.city || '',\n      estado: address.state || '',\n      cep: address.postalCode || '',\n      complemento: address.complement || null,\n      latitude: address.coordinates?.latitude ?? null,\n      longitude: address.coordinates?.longitude ?? null,\n    },\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -530,6 +530,10 @@
             "cidade": "={{$('Preparar dados do cliente').item.json.cliente.cidade}}",
             "estado": "={{$('Preparar dados do cliente').item.json.cliente.estado}}",
             "cep": "={{$('Preparar dados do cliente').item.json.cliente.cep}}",
+            "complemento": "={{$('Preparar dados do cliente').item.json.cliente.complemento}}",
+            "latitude": "={{$('Preparar dados do cliente').item.json.cliente.latitude}}",
+            "longitude": "={{$('Preparar dados do cliente').item.json.cliente.longitude}}",
+            "cpf": "={{$('Preparar dados do cliente').item.json.cliente.cpf}}",
             "canal_origem": "ifood"
           },
           "matchingColumns": [],
@@ -567,7 +571,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst items = ctx.order.items || [];\nreturn items.map(it => ({\n  json: {\n    empresa_id: ctx.empresa_id,\n    cliente_id: ctx.cliente_id,\n    orderId: ctx.orderId,\n    order: ctx.order,\n    item_externo_id: String(it.id),\n    uniqueid_marketplace: it.uniqueId,\n    nome_item: it.name,\n    quantidade: it.quantity,\n    preco_unitario: (it.totalPrice ?? it.unitPrice ?? 0) / (it.quantity || 1),\n    subtotal: it.totalPrice ?? ((it.unitPrice || 0) * (it.quantity || 1)),\n  },\n}));"
+        "jsCode": "const ctx = $json;\nconst items = ctx.order.items || [];\nreturn items.map(it => ({\n  json: {\n    empresa_id: ctx.empresa_id,\n    cliente_id: ctx.cliente_id,\n    orderId: ctx.orderId,\n    order: ctx.order,\n    item_externo_id: String(it.id),\n    uniqueid_marketplace: it.uniqueId,\n    nome_item: it.name,\n    quantidade: it.quantity,\n    preco_unitario: (it.totalPrice ?? it.unitPrice ?? 0) / (it.quantity || 1),\n    subtotal: it.totalPrice ?? ((it.unitPrice || 0) * (it.quantity || 1)),\n    observacao_cliente: it.observations || null,\n  },\n}));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -765,7 +769,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst payment = (order.payments?.methods || [])[0] || {};\nconst isPrepaid = payment.type === 'PREPAID';\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\nconst tipoPagamento = isPrepaid ? 'iFood' : (metodoMap[payment.method] || 'Outros');\nconst statusPagamento = isPrepaid ? 'pago' : 'pendente';\nconst total = order.total || {};\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = payment.method === 'CASH' ? payment.cash?.changeFor : null;\nconst troco = changeFor != null ? Math.max(0, changeFor - (total.orderAmount ?? 0)) : null;\nconst agendado = order.orderTiming === 'SCHEDULED';\nconst entregaPrevistaInicio = agendado ? (order.schedule?.deliveryDateTimeStart ?? null) : null;\nconst entregaPrevistaFim = agendado ? (order.schedule?.deliveryDateTimeEnd ?? null) : (order.delivery?.deliveryDateTime ?? null);\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.discount ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n    tipo_entrega_marketplace: order.orderType ?? null,\n    telefone_localizador: order.customer?.phone?.localizer ?? null,\n    telefone_localizador_expira_em: order.customer?.phone?.localizerExpiration ?? null,\n    codigo_retirada_exibicao: order.delivery?.pickupCode ?? null,\n    agendado,\n    entrega_prevista_inicio: entregaPrevistaInicio,\n    entrega_prevista_fim: entregaPrevistaFim,\n  },\n}];"
+        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst payment = (order.payments?.methods || [])[0] || {};\nconst isPrepaid = payment.type === 'PREPAID';\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\nconst tipoPagamento = isPrepaid ? 'iFood' : (metodoMap[payment.method] || 'Outros');\nconst statusPagamento = isPrepaid ? 'pago' : 'pendente';\nconst total = order.total || {};\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = payment.method === 'CASH' ? payment.cash?.changeFor : null;\nconst troco = changeFor != null ? Math.max(0, changeFor - (total.orderAmount ?? 0)) : null;\nconst taxaServicoCliente = (order.additionalFees || []).reduce((acc, f) => acc + (f.value || 0), 0);\n// Cupom/campanha: order.benefits[] (confirmado com pedido real 2026-07-29,\n// campaign.id/name + sponsorshipValues por patrocinador IFOOD/MERCHANT/\n// EXTERNAL/CHAIN). Só o primeiro benefício vira campanha/cupom nomeados;\n// o array completo fica em metadata pra qualquer auditoria financeira.\nconst beneficios = order.benefits || [];\nconst primeiroBeneficio = beneficios[0] || null;\nconst campanhaMarketplace = primeiroBeneficio?.campaign?.name ?? null;\nconst cupomMarketplace = primeiroBeneficio?.campaign?.id ?? null;\n// Regra de substituição do pedido (order.picking.replacementOptions) -\n// relevante pra separação de pedido saber se pode oferecer substituto.\nconst politicaSubstituicao = order.picking?.replacementOptions ?? null;\nconst agendado = order.orderTiming === 'SCHEDULED';\nconst entregaPrevistaInicio = agendado ? (order.schedule?.deliveryDateTimeStart ?? null) : null;\nconst entregaPrevistaFim = agendado ? (order.schedule?.deliveryDateTimeEnd ?? null) : (order.delivery?.deliveryDateTime ?? null);\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.benefits ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n    tipo_entrega_marketplace: order.orderType ?? null,\n    telefone_localizador: order.customer?.phone?.localizer ?? null,\n    telefone_localizador_expira_em: order.customer?.phone?.localizerExpiration ?? null,\n    codigo_retirada_exibicao: order.delivery?.pickupCode ?? null,\n    agendado,\n    entrega_prevista_inicio: entregaPrevistaInicio,\n    entrega_prevista_fim: entregaPrevistaFim,\n    taxa_servico_cliente: taxaServicoCliente,\n    campanha_marketplace: campanhaMarketplace,\n    cupom_marketplace: cupomMarketplace,\n    politica_substituicao: politicaSubstituicao,\n    marketplace_metadata: JSON.stringify(beneficios.length ? { beneficios } : {}),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -831,7 +835,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const pedidoId = $json.id;\nconst itens = $('Agregar itens resolvidos').item.json.itens;\nreturn itens.map(it => ({\n  json: {\n    pedido_id: pedidoId,\n    produto_id: it.produto_id,\n    quantidade: it.quantidade,\n    preco_unitario: it.preco_unitario,\n    subtotal: it.subtotal,\n    uniqueid_marketplace: it.uniqueid_marketplace,\n  },\n}));"
+        "jsCode": "const pedidoId = $json.id;\nconst itens = $('Agregar itens resolvidos').item.json.itens;\nreturn itens.map(it => ({\n  json: {\n    pedido_id: pedidoId,\n    produto_id: it.produto_id,\n    quantidade: it.quantidade,\n    preco_unitario: it.preco_unitario,\n    subtotal: it.subtotal,\n    uniqueid_marketplace: it.uniqueid_marketplace,\n    observacao_cliente: it.observacao_cliente,\n  },\n}));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -863,7 +867,8 @@
             "quantidade": "={{$json.quantidade}}",
             "preco_unitario": "={{$json.preco_unitario}}",
             "subtotal": "={{$json.subtotal}}",
-            "uniqueid_marketplace": "={{$json.uniqueid_marketplace}}"
+            "uniqueid_marketplace": "={{$json.uniqueid_marketplace}}",
+            "observacao_cliente": "={{$json.observacao_cliente}}"
           },
           "matchingColumns": [],
           "schema": []
@@ -912,7 +917,12 @@
             "codigo_retirada_exibicao": "={{$('Mapear pagamento e montar pedido').item.json.codigo_retirada_exibicao}}",
             "agendado": "={{$('Mapear pagamento e montar pedido').item.json.agendado}}",
             "entrega_prevista_inicio": "={{$('Mapear pagamento e montar pedido').item.json.entrega_prevista_inicio}}",
-            "entrega_prevista_fim": "={{$('Mapear pagamento e montar pedido').item.json.entrega_prevista_fim}}"
+            "entrega_prevista_fim": "={{$('Mapear pagamento e montar pedido').item.json.entrega_prevista_fim}}",
+            "taxa_servico_cliente": "={{$('Mapear pagamento e montar pedido').item.json.taxa_servico_cliente}}",
+            "campanha_marketplace": "={{$('Mapear pagamento e montar pedido').item.json.campanha_marketplace}}",
+            "cupom_marketplace": "={{$('Mapear pagamento e montar pedido').item.json.cupom_marketplace}}",
+            "politica_substituicao": "={{$('Mapear pagamento e montar pedido').item.json.politica_substituicao}}",
+            "metadata": "={{$('Mapear pagamento e montar pedido').item.json.marketplace_metadata}}"
           },
           "matchingColumns": [],
           "schema": []
