@@ -194,6 +194,23 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                       'esse recurso ainda não esteja habilitado pra essa loja.',
                 ),
               ),
+              if (widget.venda.politicaSubstituicao == 'STORE_REMOVE_ITEMS')
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: AvisoBanner(
+                    tipo: TipoAviso.erro,
+                    negrito: true,
+                    texto: 'Cliente NÃO autoriza substituição — só remova itens em falta, não troque por outro produto.',
+                  ),
+                )
+              else if (widget.venda.politicaSubstituicao != null)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: AvisoBanner(
+                    tipo: TipoAviso.sucesso,
+                    texto: 'Cliente autoriza substituição de item em falta.',
+                  ),
+                ),
               if (_status == null)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -249,6 +266,9 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                     ),
                   ),
                   Text('${item.quantidade}x', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  if (item.observacaoCliente != null && item.observacaoCliente!.isNotEmpty)
+                    Text('"${item.observacaoCliente}"',
+                        style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.orange)),
                   if (acao == _AcaoItem.removido)
                     const Text('Removido', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
                   if (acao == _AcaoItem.substituido && substituto != null)

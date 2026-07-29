@@ -75,6 +75,10 @@ class Venda {
   final DateTime? telefoneLocalizadorExpiraEm;
   final String? codigoRetiradaExibicao; // pickupCode informativo da iFood (não é o código que o lojista digita)
   final String? statusPagamento; // 'pago' (já cobrado pelo marketplace) / 'pendente' (cobrar na entrega)
+  final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
+  final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
+  final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
+  final String? politicaSubstituicao; // order.picking.replacementOptions - se o cliente autoriza substituir item em falta
   final bool agendado;
   final DateTime? entregaPrevistaInicio; // início da janela prometida, só quando agendado
   final DateTime? entregaPrevistaFim; // fim da janela (agendado) ou estimativa única (pedido imediato)
@@ -125,6 +129,10 @@ class Venda {
     this.telefoneLocalizadorExpiraEm,
     this.codigoRetiradaExibicao,
     this.statusPagamento,
+    this.taxaServicoCliente,
+    this.campanhaMarketplace,
+    this.cupomMarketplace,
+    this.politicaSubstituicao,
     this.agendado = false,
     this.entregaPrevistaInicio,
     this.entregaPrevistaFim,
@@ -180,6 +188,7 @@ class ItemVenda {
   final Produto produto;
   final int quantidade;
   final double precoUnitario; // preço de venda aplicado no momento da venda
+  final String? observacaoCliente; // ex: "sem cebola" (order.items[].observations da iFood)
 
   // Custo do produto NO MOMENTO da venda (vem de itens_pedido.custo_unitario
   // ao reidratar do banco). Se não informado, cai pro custo atual do produto
@@ -192,6 +201,7 @@ class ItemVenda {
     required this.produto,
     required this.quantidade,
     required this.precoUnitario,
+    this.observacaoCliente,
     double? custoUnitario,
   }) : _custoUnitarioNoMomento = custoUnitario;
 

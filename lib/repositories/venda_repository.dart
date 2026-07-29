@@ -11,7 +11,8 @@ class VendaRepository {
       '*, cliente:clientes(*), itens_pedido(*, produtos(*)), '
       'marketplace_pedidos(id, rastreio_latitude, rastreio_longitude, rastreio_eta_entrega, rastreio_atualizado_em, '
       'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
-      'codigo_retirada_exibicao, agendado, entrega_prevista_inicio, entrega_prevista_fim)';
+      'codigo_retirada_exibicao, agendado, entrega_prevista_inicio, entrega_prevista_fim, '
+      'taxa_servico_cliente, campanha_marketplace, cupom_marketplace, politica_substituicao)';
   // previsao_entrega_inicio/fim já vêm no '*' de pedidos (coluna própria,
   // não de marketplace_pedidos) — sem precisar listar explicitamente.
 
@@ -229,6 +230,7 @@ class VendaRepository {
         // Custo histórico gravado no momento da venda — não o custo atual
         // do produto, que pode ter mudado desde então.
         custoUnitario: (itemRow['custo_unitario'] as num?)?.toDouble(),
+        observacaoCliente: itemRow['observacao_cliente']?.toString(),
       );
     }).toList();
 
@@ -280,6 +282,10 @@ class VendaRepository {
           DateTime.tryParse(marketplacePedidoRow?['telefone_localizador_expira_em']?.toString() ?? '')?.toLocal(),
       codigoRetiradaExibicao: marketplacePedidoRow?['codigo_retirada_exibicao']?.toString(),
       statusPagamento: row['status_pagamento']?.toString(),
+      taxaServicoCliente: (marketplacePedidoRow?['taxa_servico_cliente'] as num?)?.toDouble(),
+      campanhaMarketplace: marketplacePedidoRow?['campanha_marketplace']?.toString(),
+      cupomMarketplace: marketplacePedidoRow?['cupom_marketplace']?.toString(),
+      politicaSubstituicao: marketplacePedidoRow?['politica_substituicao']?.toString(),
       agendado: marketplacePedidoRow?['agendado'] as bool? ?? false,
       entregaPrevistaInicio:
           DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_inicio']?.toString() ?? '')?.toLocal(),

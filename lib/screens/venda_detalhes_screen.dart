@@ -404,7 +404,14 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                     children: [
                       _linhaValor('Subtotal', venda.subtotal, currencyFormat),
                       if (venda.desconto > 0)
-                        _linhaValor('Desconto', -venda.desconto, currencyFormat, cor: Colors.red),
+                        _linhaValor(
+                          venda.campanhaMarketplace != null
+                              ? 'Desconto (${venda.campanhaMarketplace})'
+                              : 'Desconto',
+                          -venda.desconto,
+                          currencyFormat,
+                          cor: Colors.red,
+                        ),
                       if (venda.saldoUsado > 0)
                         _linhaValor('Saldo utilizado', -venda.saldoUsado, currencyFormat, cor: Colors.red),
                       if (temEntrega)
@@ -421,6 +428,15 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                     ],
                   ),
                 ),
+                if (venda.taxaServicoCliente != null && venda.taxaServicoCliente! > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 8),
+                    child: Text(
+                      'Taxa de serviço da iFood: ${currencyFormat.format(venda.taxaServicoCliente)} '
+                      '(receita da iFood, não da loja)',
+                      style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ),
 
                 if (venda.ehMarketplace && !venda.cancelada && !venda.finalizada) _cardMarketplaceAcompanhamento(venda),
 
@@ -525,8 +541,47 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 ),
             ],
           ),
+          if (venda.codigoRetiradaExibicao != null && venda.codigoRetiradaExibicao!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.qr_code_2, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Text(
+                  'Código de retirada: ${venda.codigoRetiradaExibicao}',
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ],
           if (venda.marketplacePedidoId != null) ...[
             const Divider(height: 20),
+            if (venda.politicaSubstituicao != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      venda.politicaSubstituicao == 'STORE_REMOVE_ITEMS' ? Icons.block : Icons.swap_horiz,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        venda.politicaSubstituicao == 'STORE_REMOVE_ITEMS'
+                            ? 'Cliente NÃO autoriza substituição — só remover item em falta'
+                            : 'Cliente autoriza substituição de item em falta',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Row(
               children: [
                 Expanded(
@@ -756,6 +811,17 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                       : '${item.quantidade}x ${currencyFormat.format(item.precoUnitario)}',
                   style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
+                if (item.observacaoCliente != null && item.observacaoCliente!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '"${item.observacaoCliente}"',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                      color: AppTheme.tomAdaptavel(Colors.orange, Theme.of(context).brightness),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
