@@ -1,0 +1,422 @@
+{
+  "name": "iFood - Financeiro Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Financeiro Sync (iFood)\n\nRoda a cada 6h. Busca GET /financial/v3.0/merchants/{id}/sales dos ultimos 8 dias (limite da API) por empresa ativa, e atualiza marketplace_pedidos com valor bruto, status, tempos de confirmacao/preparo e o billingSummary bruto.\n\nIMPORTANTE: comissao/repasse reais (taxa_comissao etc.) NAO existem ainda para merchants sandbox - a iFood so preenche billingSummary.billingEntries quando a loja e producao de verdade. Por enquanto isso fica gravado cru em metadata.billingSummary, pronto pra quando a iFood comecar a mandar - nao tentamos mapear campos de comissao especificos ainda porque nunca vimos um exemplo real preenchido.\n\n--- Atualizado 2026-07-23: comissao/repasse ---\n'Processar vendas' agora tenta extrair taxa_comissao/taxa_gateway/taxa_entrega_marketplace/outras_taxas de billingSummary.billingEntries e valor_liquido_recebido de billingSummary.saleBalance. NUNCA testado contra billingEntries real (sempre [] nessa loja sandbox) -- nomes de campo e regexes de categorizacao sao a melhor inferencia da documentacao publica, nao confirmados. Quando a loja for liberada e a primeira venda trouxer billingEntries != [], conferir marketplace_pedidos.metadata->billingSummary (guarda o JSON bruto sempre) contra o que caiu em taxa_comissao/taxa_gateway/outras_taxas -- se a categorizacao errou, so ajustar os regexes em 'Processar vendas', o resto (coalesce, escrita no banco) ja esta certo. data_repassado ainda NAO e preenchido por esse workflow -- nao ha campo de data de repasse na resposta de /sales, só em /settlements, que tambem esta bloqueado pro sandbox.",
+        "height": 340,
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "sticky1",
+      "name": "LEIA-ME",
+      "position": [
+        -700,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "id": "t1",
+      "name": "A cada 6h",
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere marketplace_id = 'd4811153-e210-47b0-b910-ee0440914f60' and ativo = true;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "s2",
+      "name": "Buscar credenciais ativas",
+      "position": [
+        -460,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "s3",
+      "name": "Checar token em cache",
+      "position": [
+        -220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "s4",
+      "name": "Token válido?",
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "s5",
+      "name": "Obter token OAuth",
+      "position": [
+        220,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "s6",
+      "name": "Salvar token em cache",
+      "position": [
+        440,
+        120
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "s7",
+      "name": "Token pronto",
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst end = new Date(now.getTime() - 1*24*60*60*1000);\nconst begin = new Date(end.getTime() - 7*24*60*60*1000);\nconst fmt = (d) => d.toISOString().slice(0,10);\nreturn [{ json: { ...$json, beginSalesDate: fmt(begin), endSalesDate: fmt(end) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "s9",
+      "name": "Montar periodo",
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/financial/v3.0/merchants/{{$json.id_loja_plataforma}}/sales?beginSalesDate={{$json.beginSalesDate}}&endSalesDate={{$json.endSalesDate}}&size=200",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "s10",
+      "name": "Buscar vendas iFood",
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_financeiro_sync",
+            "dados": "={{ JSON.stringify({ empresa_id: $json.empresa_id, beginSalesDate: $json.beginSalesDate, endSalesDate: $json.endSalesDate, total: $json.total }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c7",
+      "name": "Log execucao",
+      "position": [
+        1340,
+        -140
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sales = $json.sales || [];\nreturn sales.map(sale => {\n  const events = sale.orderEvents || [];\n  const findEvent = (code) => events.find(e => e.fullCode === code);\n  const confirmedEvt = findEvent('CONFIRMED');\n  const prepStartedEvt = findEvent('PREPARATION_STARTED');\n  const gross = sale.saleGrossValue || {};\n\n  // Comissao/repasse: billingEntries sempre veio [] pra essa loja sandbox,\n  // entao os nomes de campo (type vs entryType, os valores do enum de tipo)\n  // e o parseamento abaixo sao inferidos da documentacao, NAO confirmados\n  // contra um payload real. Assim que a primeira venda com billingEntries\n  // nao-vazio chegar, conferir em marketplace_pedidos.metadata->billingSummary\n  // (guarda o JSON bruto) se a categorizacao abaixo bateu; se nao bateu,\n  // so ajustar os regexes/nomes de campo aqui, sem redesenhar nada.\n  const billing = sale.billingSummary || {};\n  const entries = Array.isArray(billing.billingEntries) ? billing.billingEntries : [];\n  const temEntries = entries.length > 0;\n  const textoEntry = (e) => `${e.type || e.entryType || ''} ${e.description || e.desc || ''}`.toUpperCase();\n  // abs(): as colunas taxa_* representam o TAMANHO da taxa (pra somar/exibir\n  // como custo positivo no dashboard), nao um lancamento contabil com sinal --\n  // billingEntries provavelmente vem negativo (debito da loja); se algum tipo\n  // vier como credito de verdade isso vai inflar 'outrasTaxas' por engano,\n  // outro ponto pra conferir no primeiro payload real.\n  const valorEntry = (e) => Math.abs(Number(e.amount ?? e.value ?? 0));\n  const somaSe = (regex) => entries.filter(e => regex.test(textoEntry(e))).reduce((s, e) => s + valorEntry(e), 0);\n  const taxaComissao = somaSe(/COMISS|COMMISSION/);\n  const taxaGateway = somaSe(/GATEWAY|PAGAMENTO|PROCESSING/);\n  const taxaEntrega = somaSe(/ENTREGA|DELIVERY|LOGISTIC/);\n  const somaConhecida = taxaComissao + taxaGateway + taxaEntrega;\n  const somaTotal = entries.reduce((s, e) => s + valorEntry(e), 0);\n  const outrasTaxas = temEntries ? (somaTotal - somaConhecida) : null;\n  // saleBalance = valor liquido a repassar pra loja, unico campo de repasse\n  // confirmado (por nome) na documentacao publica -- pode estar em\n  // billingSummary.saleBalance ou direto em sale.saleBalance, tenta os dois.\n  const valorLiquido = billing.saleBalance ?? sale.saleBalance ?? null;\n\n  return {\n    json: {\n      marketplace_order_id: sale.id,\n      valor_bruto: (gross.bag || 0) + (gross.deliveryFee || 0) + (gross.serviceFee || 0),\n      status_marketplace: sale.currentStatus || null,\n      criado_em: sale.createdAt || null,\n      confirmado_em: confirmedEvt ? confirmedEvt.createdAt : null,\n      preparo_iniciado_em: prepStartedEvt ? prepStartedEvt.createdAt : null,\n      billing_summary: JSON.stringify(sale.billingSummary || null),\n      payments: JSON.stringify(sale.payments || null),\n      taxa_comissao: temEntries ? taxaComissao : null,\n      taxa_gateway: temEntries ? taxaGateway : null,\n      taxa_entrega_marketplace: temEntries ? taxaEntrega : null,\n      outras_taxas: outrasTaxas,\n      valor_liquido_recebido: valorLiquido,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "c8",
+      "name": "Processar vendas",
+      "position": [
+        1340,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_pedidos\nset valor_bruto_marketplace = $2,\n    status_marketplace = coalesce($3, status_marketplace),\n    tempo_confirmacao_marketplace = case when $4::timestamptz is not null and $5::timestamptz is not null\n      then $4::timestamptz - $5::timestamptz else tempo_confirmacao_marketplace end,\n    tempo_preparo_marketplace = case when $6::timestamptz is not null and $4::timestamptz is not null\n      then $6::timestamptz - $4::timestamptz else tempo_preparo_marketplace end,\n    metadata = coalesce(metadata,'{}'::jsonb) || jsonb_build_object('billingSummary', $7::jsonb, 'payments', $8::jsonb),\n    taxa_comissao = coalesce($9::numeric, taxa_comissao),\n    taxa_gateway = coalesce($10::numeric, taxa_gateway),\n    taxa_entrega_marketplace = coalesce($11::numeric, taxa_entrega_marketplace),\n    outras_taxas = coalesce($12::numeric, outras_taxas),\n    valor_liquido_recebido = coalesce($13::numeric, valor_liquido_recebido),\n    updated_at = now()\nwhere marketplace_order_id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$json.marketplace_order_id, $json.valor_bruto, $json.status_marketplace, $json.confirmado_em, $json.criado_em, $json.preparo_iniciado_em, $json.billing_summary, $json.payments, $json.taxa_comissao, $json.taxa_gateway, $json.taxa_entrega_marketplace, $json.outras_taxas, $json.valor_liquido_recebido] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c9",
+      "name": "Atualizar marketplace_pedidos",
+      "position": [
+        1580,
+        80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "A cada 6h": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais ativas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais ativas": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido?": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto": {
+      "main": [
+        [
+          {
+            "node": "Montar periodo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar periodo": {
+      "main": [
+        [
+          {
+            "node": "Buscar vendas iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar vendas iFood": {
+      "main": [
+        [
+          {
+            "node": "Log execucao",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Processar vendas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar vendas": {
+      "main": [
+        [
+          {
+            "node": "Atualizar marketplace_pedidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:A cada 6h": {
+      "recurrenceRules": [
+        18
+      ]
+    },
+    "global": {
+      "ifoodTokens": {
+        "3bce0e24-2868-49f3-a9dd-eed921ffc8e4": {
+          "accessToken": "eyJraWQiOiJlZGI4NWY2Mi00ZWY5LTExZTktODY0Ny1kNjYzYmQ4NzNkOTMiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzUxMiJ9.eyJzdWIiOiIwZmQ4MDY1MS0wM2U2LTQ0NDItYWU3Ny0xNTdmZjg0NTZjODgiLCJvd25lcl9uYW1lIjoibHVjYXMtbWFjaGFkby12aWVpcmEiLCJpc3MiOiJpRm9vZCIsImNsaWVudF9pZCI6IjBmZDgwNjUxLTAzZTYtNDQ0Mi1hZTc3LTE1N2ZmODQ1NmM4OCIsImF1ZCI6WyJpdGVtIiwiY2F0YWxvZyIsImZpbmFuY2lhbCIsIm1lcmNoYW50IiwibG9naXN0aWNzIiwicGlja2luZyIsIm9hdXRoLXNlcnZlciIsInNoaXBwaW5nIiwicmV2aWV3IiwiZ3JvY2VyaWVzIiwiZXZlbnRzIiwib3JkZXIiLCJwcm9tb3Rpb24iXSwiYXBwX25hbWUiOiJkZWxpdmVyeS1wZXQtcmoiLCJzY29wZSI6WyJpdGVtIiwic2hpcHBpbmciLCJjYXRhbG9nIiwicmV2aWV3IiwibWVyY2hhbnQiLCJsb2dpc3RpY3MiLCJncm9jZXJpZXMiLCJwaWNraW5nIiwiZXZlbnRzIiwib3JkZXIiLCJjb25jaWxpYXRvciIsInByb21vdGlvbiJdLCJ0dmVyIjoidjIiLCJtZXJjaGFudF9zY29wZSI6WyIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6Y2F0YWxvZyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTptZXJjaGFudCIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpyZXZpZXciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6aXRlbSIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpvcmRlciIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpjb25jaWxpYXRvciIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpldmVudHMiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6bG9naXN0aWNzIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5Omdyb2NlcmllcyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpwcm9tb3Rpb24iLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6c2hpcHBpbmciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6cGlja2luZyJdLCJleHAiOjE3ODUzODQwNDMsImlhdCI6MTc4NTM2MjQ0MywianRpIjoiMGZkODA2NTEtMDNlNi00NDQyLWFlNzctMTU3ZmY4NDU2Yzg4IiwibWVyY2hhbnRfc2NvcGVkIjp0cnVlfQ.O0gpQdL-BGSQ1xcrJPCeT7a9oZ5IGGU5L3wCycQcmYvwgTvDdr2hMIb3JfUfPPHv6Cx6bReagf1xctmc67LHDJbAMzYxal3coKmqtVfgbzBqoxIIzi2w7sUabUjJ5H3MQyItySF4d5krosuenGm9tpqSht-J-JQzeP4PDh1ad6s",
+          "expiresAt": 1785384042889
+        }
+      }
+    }
+  },
+  "pinData": {}
+}
