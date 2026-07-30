@@ -272,6 +272,205 @@
           "name": "Postgres cloud"
         }
       }
+    },
+    {
+      "id": "6efccc77-626c-4521-9b25-945ef8c58bf2",
+      "name": "Buscar eventos financeiros",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1360,
+        -160
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/financial/v3.0/merchants/{{$json.id_loja_plataforma}}/financial-events?beginDate={{$json.beginSalesDate}}&endDate={{$json.endSalesDate}}&size=200",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "84dcee91-47bc-480e-8768-2174abee6ffc",
+      "name": "Processar eventos financeiros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        -160
+      ],
+      "parameters": {
+        "jsCode": "// Agrupa financial-events por pedido (reference.id) e soma por tipo de taxa.\n// NAO CONFIRMADO contra payload real - essa loja sandbox nunca teve\n// financial-events preenchido (testado ao vivo em 2026-07-30, retornou []).\n// Assim que o primeiro periodo com eventos reais chegar, conferir em\n// marketplace_pedidos.metadata->financialEventsRaw se a categorizacao por\n// 'name' abaixo bateu; se nao bateu, so ajustar o switch, sem redesenhar nada.\nconst events = $json.financialEvents || [];\nconst porPedido = {};\nfor (const e of events) {\n  if (!e.reference || e.reference.type !== 'ORDER') continue;\n  const orderId = e.reference.id;\n  if (!porPedido[orderId]) {\n    porPedido[orderId] = {\n      marketplace_order_id: orderId,\n      taxa_comissao: 0,\n      taxa_gateway: 0,\n      taxa_entrega_marketplace: 0,\n      outras_taxas: 0,\n      data_prevista_repassado: null,\n      eventosRaw: [],\n    };\n  }\n  const p = porPedido[orderId];\n  const abs = Math.abs(Number((e.amount && e.amount.value) || 0));\n  switch (e.name) {\n    case 'ORDER_COMMISSION': p.taxa_comissao += abs; break;\n    case 'PAYMENT_TRANSACTION_FEE': p.taxa_gateway += abs; break;\n    case 'DELIVERY_FEE_IFOOD': p.taxa_entrega_marketplace += abs; break;\n    case 'ORDER_PAYMENT': break; // valor do pedido em si, nao e taxa\n    default: p.outras_taxas += abs;\n  }\n  const expected = e.settlement && e.settlement.expectedDate;\n  if (expected && (!p.data_prevista_repassado || expected > p.data_prevista_repassado)) {\n    p.data_prevista_repassado = expected;\n  }\n  p.eventosRaw.push(e);\n}\nreturn Object.values(porPedido).map((p) => ({ json: p }));"
+      }
+    },
+    {
+      "id": "3af145f5-8053-4969-bf06-7c595a702248",
+      "name": "Atualizar taxas marketplace_pedidos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1800,
+        -160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_pedidos mp\nset taxa_comissao = $2::numeric,\n    taxa_gateway = $3::numeric,\n    taxa_entrega_marketplace = $4::numeric,\n    outras_taxas = $5::numeric,\n    data_prevista_repassado = $6::date,\n    valor_liquido_recebido = greatest(coalesce(mp.valor_bruto_marketplace,0) - ($2::numeric + $3::numeric + $4::numeric + $5::numeric), 0),\n    metadata = coalesce(mp.metadata,'{}'::jsonb) || jsonb_build_object('financialEventsRaw', $7::jsonb),\n    margem_real_canal = case when p.custo_total is not null and coalesce(mp.valor_bruto_marketplace,0) - ($2::numeric+$3::numeric+$4::numeric+$5::numeric) > 0\n      then round(((coalesce(mp.valor_bruto_marketplace,0) - ($2::numeric+$3::numeric+$4::numeric+$5::numeric) - p.custo_total) / (coalesce(mp.valor_bruto_marketplace,0) - ($2::numeric+$3::numeric+$4::numeric+$5::numeric))) * 100, 2)\n      else mp.margem_real_canal end,\n    lucro_real_canal = case when p.custo_total is not null\n      then (coalesce(mp.valor_bruto_marketplace,0) - ($2::numeric+$3::numeric+$4::numeric+$5::numeric)) - p.custo_total\n      else mp.lucro_real_canal end\nfrom pedidos p\nwhere mp.marketplace_order_id = $1\n  and mp.pedido_id = p.id;",
+        "options": {
+          "queryReplacement": "={{ [$json.marketplace_order_id, $json.taxa_comissao, $json.taxa_gateway, $json.taxa_entrega_marketplace, $json.outras_taxas, $json.data_prevista_repassado, JSON.stringify($json.eventosRaw)] }}"
+        }
+      }
+    },
+    {
+      "id": "a74a78d7-8dd0-40c7-be1d-052b53e33980",
+      "name": "Buscar settlements",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1360,
+        40
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/financial/v3.0/merchants/{{$json.id_loja_plataforma}}/settlements?beginCalculationDate={{$json.beginSalesDate}}&endCalculationDate={{$json.endSalesDate}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "79bdc74d-c5a8-4798-94b0-ff0bee01b3aa",
+      "name": "Processar settlements",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        40
+      ],
+      "parameters": {
+        "jsCode": "// Achata os settlements - podem vir como item direto no array raiz\n// (RENEGOCIADA/REGISTRO_RECEBIVEIS/REPASSE/BOLETO) ou agrupados por periodo\n// com closingItems aninhados (varios REPASSE de uma vez).\n// NAO CONFIRMADO contra payload real - settlements sempre veio vazio\n// (balance:0) pra essa loja sandbox (testado ao vivo em 2026-07-30).\nconst data = $json;\nconst out = [];\nfor (const grupo of (data.settlements || [])) {\n  if (Array.isArray(grupo.closingItems)) {\n    for (const item of grupo.closingItems) {\n      out.push({\n        json: {\n          transaction_id: item.transactionId || item.id || null,\n          tipo: item.type || 'REPASSE',\n          status: item.status || null,\n          valor: Number(item.amount ?? item.anticipatedPaymentAmount ?? item.originalPaymentAmount ?? 0),\n          data_pagamento: item.paymentDate || item.anticipatedPaymentDate || null,\n          data_inicio_periodo: grupo.startDateCalculation || null,\n          data_fim_periodo: grupo.endDateCalculation || null,\n          raw: item,\n        },\n      });\n    }\n  } else {\n    out.push({\n      json: {\n        transaction_id: grupo.transactionId || grupo.id || null,\n        tipo: grupo.type || null,\n        status: grupo.status || null,\n        valor: Number(grupo.amount ?? 0),\n        data_pagamento: grupo.paymentDate || null,\n        data_inicio_periodo: null,\n        data_fim_periodo: null,\n        raw: grupo,\n      },\n    });\n  }\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "942dbd75-8066-4174-a58c-7dd32d10173a",
+      "name": "Inserir repasses",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1800,
+        40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into repasses_marketplace\n  (empresa_id, marketplace_id, transaction_id, tipo, status, valor, data_pagamento, data_inicio_periodo, data_fim_periodo, metadata)\nvalues ($1, 'd4811153-e210-47b0-b910-ee0440914f60'::uuid, $2, $3, $4, $5::numeric, $6::date, $7::date, $8::date, $9::jsonb)\non conflict (empresa_id, marketplace_id, transaction_id) do update set\n  status = excluded.status,\n  valor = excluded.valor,\n  data_pagamento = excluded.data_pagamento,\n  metadata = excluded.metadata;",
+        "options": {
+          "queryReplacement": "={{ [$('Montar periodo').item.json.empresa_id, $json.transaction_id, $json.tipo, $json.status, $json.valor, $json.data_pagamento, $json.data_inicio_periodo, $json.data_fim_periodo, JSON.stringify($json.raw)] }}"
+        }
+      }
+    },
+    {
+      "id": "ccf88e8c-e27f-4eb8-9ed7-c200e42887ad",
+      "name": "Atribuir repasse aos pedidos do periodo",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2020,
+        40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- marketplace_pedidos.valor_repassado/data_repassado sao POR PEDIDO,\n-- mas /settlements da iFood so da dado agregado por lote/periodo, nao\n-- por pedido individual. Aproximacao deliberada: quando um repasse do\n-- tipo REPASSE* com status SUCCEED e confirmado pra um periodo, atribui\n-- a data desse repasse a todo pedido daquele canal cujo pedido ja tem\n-- valor_liquido_recebido calculado e cuja data de criacao cai dentro\n-- do periodo de calculo (startDateCalculation/endDateCalculation).\n-- Isso e uma ATRIBUICAO, nao um valor reportado pedido-a-pedido pela\n-- iFood - nunca testado contra payload real (settlements sempre veio\n-- vazio nessa loja sandbox).\nupdate marketplace_pedidos mp\nset valor_repassado = coalesce(mp.valor_repassado, mp.valor_liquido_recebido),\n    data_repassado = $1::date\nfrom pedidos p\nwhere mp.pedido_id = p.id\n  and p.empresa_id = $2::uuid\n  and mp.valor_liquido_recebido is not null\n  and mp.data_repassado is null\n  and p.created_at::date between $3::date and $4::date;",
+        "options": {
+          "queryReplacement": "={{ [$json.data_pagamento, $('Montar periodo').item.json.empresa_id, $json.data_inicio_periodo, $json.data_fim_periodo] }}"
+        }
+      }
+    },
+    {
+      "id": "66e5a907-e197-4d1d-a62a-d50a3d12734d",
+      "name": "E repasse confirmado com periodo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2020,
+        140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.tipo}}",
+              "rightValue": "REPASSE",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith",
+                "name": "filter.operator.startsWith"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "SUCCEED",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "c3",
+              "leftValue": "={{$json.data_inicio_periodo}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals",
+                "name": "filter.operator.notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -366,6 +565,16 @@
             "node": "Buscar vendas iFood",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Buscar eventos financeiros",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Buscar settlements",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -395,6 +604,75 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "Buscar eventos financeiros": {
+      "main": [
+        [
+          {
+            "node": "Processar eventos financeiros",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Processar eventos financeiros": {
+      "main": [
+        [
+          {
+            "node": "Atualizar taxas marketplace_pedidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar settlements": {
+      "main": [
+        [
+          {
+            "node": "Processar settlements",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Processar settlements": {
+      "main": [
+        [
+          {
+            "node": "Inserir repasses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inserir repasses": {
+      "main": [
+        [
+          {
+            "node": "E repasse confirmado com periodo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E repasse confirmado com periodo?": {
+      "main": [
+        [
+          {
+            "node": "Atribuir repasse aos pedidos do periodo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   },
