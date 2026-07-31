@@ -13,6 +13,7 @@ import '../providers/entrada_provider.dart';
 import '../providers/fornecedor_provider.dart';
 import '../providers/produto_provider.dart';
 import '../services/nfe_xml_parser.dart';
+import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/aviso_banner.dart';
@@ -787,7 +788,7 @@ class _BuscarProdutoDialogState extends State<_BuscarProdutoDialog> {
   Widget build(BuildContext context) {
     final filtrados = _busca.isEmpty
         ? widget.produtos
-        : widget.produtos.where((p) => p.nome.toLowerCase().contains(_busca.toLowerCase())).toList();
+        : widget.produtos.where((p) => contemTodasPalavras(p.nome, _busca)).toList();
 
     return AlertDialog(
       title: const Text('Vincular a um produto'),

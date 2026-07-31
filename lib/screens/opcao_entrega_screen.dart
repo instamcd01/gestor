@@ -11,6 +11,7 @@ import '../providers/cliente_provider.dart';
 import '../providers/zona_entrega_provider.dart';
 import '../repositories/cliente_repository.dart';
 import '../services/distancia_service.dart';
+import '../utils/busca_utils.dart';
 import 'adicionar_cliente_screen.dart';
 import 'configuracao_entrega_screen.dart';
 
@@ -66,12 +67,10 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
 
   void _filtrarClientes(String texto, List<Cliente> todosClientes) {
     setState(() {
-      _clientesFiltrados = todosClientes
-          .where((c) =>
-              c.nome.toLowerCase().contains(texto.toLowerCase()) ||
-              c.celular.toLowerCase().contains(texto.toLowerCase()) ||
-              c.enderecoCompleto.toLowerCase().contains(texto.toLowerCase()))
-          .toList();
+      _clientesFiltrados = todosClientes.where((c) {
+        final textoCompleto = [c.nome, c.celular, c.enderecoCompleto].join(' ');
+        return contemTodasPalavras(textoCompleto, texto);
+      }).toList();
     });
   }
 

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
+import '../utils/busca_utils.dart';
 import '../widgets/importar_produtos_planilha.dart';
 import '../models/produto.dart';
+import 'adicionar_imagens_lote_screen.dart';
 import 'cadastro_produto_screen.dart';
 import 'detalhes_produto_screen.dart';
 import 'editar_produto_screen.dart';
@@ -44,10 +46,9 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     final isVendedor = context.watch<AuthProvider>().isVendedor;
 
     final produtosFiltrados = produtoProvider.produtos.where((p) {
-      final termo = _busca.toLowerCase();
-      return p.nome.toLowerCase().contains(termo) ||
-          p.codigoBarras.toLowerCase().contains(termo) ||
-          p.categoria.toLowerCase().contains(termo);
+      return contemTodasPalavras(p.nome, _busca) ||
+          p.codigoBarras.toLowerCase().contains(normalizarBusca(_busca)) ||
+          contemTodasPalavras(p.categoria, _busca);
     }).toList();
 
     return Scaffold(
@@ -66,6 +67,13 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
               tooltip: 'Importar planilha',
               icon: const Icon(Icons.upload_file_outlined),
               onPressed: _importarProdutos,
+            ),
+            IconButton(
+              tooltip: 'Adicionar imagens em massa',
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const AdicionarImagensLoteScreen(),
+              )),
             ),
           ],
           IconButton(

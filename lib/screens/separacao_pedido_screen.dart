@@ -4,6 +4,7 @@ import '../models/produto.dart';
 import '../models/venda.dart';
 import '../repositories/produto_repository.dart';
 import '../repositories/separacao_pedido_repository.dart';
+import '../utils/busca_utils.dart';
 import '../widgets/aviso_banner.dart';
 
 enum _AcaoItem { removido, substituido }
@@ -84,10 +85,10 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final busca = buscaController.text.trim().toLowerCase();
+          final busca = buscaController.text.trim();
           final filtrados = busca.isEmpty
               ? _catalogo.take(20).toList()
-              : _catalogo.where((p) => p.nome.toLowerCase().contains(busca)).take(20).toList();
+              : _catalogo.where((p) => contemTodasPalavras(p.nome, busca)).take(20).toList();
           return AlertDialog(
             title: Text('Substituir "${item.produto.nome}"'),
             content: SizedBox(

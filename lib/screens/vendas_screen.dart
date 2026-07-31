@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/produto_provider.dart';
 import '../providers/carrinho_provider.dart';
 import '../models/produto.dart';
+import '../utils/busca_utils.dart';
 import '../widgets/preco_com_desconto.dart';
 import 'cadastro_produto_screen.dart';
 import 'carrinho_screen.dart';
@@ -70,11 +71,9 @@ class _VendasScreenState extends State<VendasScreen> {
 
   void _pesquisarProdutos(String query) {
     final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
-    final queryNormalized = normalizeString(query);
     setState(() {
       produtosFiltrados = produtoProvider.produtos.where((produto) {
-        final nomeNormalizado = normalizeString(produto.nome);
-        return nomeNormalizado.contains(queryNormalized);
+        return contemTodasPalavras(produto.nome, query);
       }).toList();
     });
   }

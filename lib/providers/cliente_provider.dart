@@ -1,8 +1,8 @@
-import 'package:diacritic/diacritic.dart';
 import 'package:flutter/material.dart';
 import '../config/supabase_config.dart';
 import '../models/cliente.dart';
 import '../repositories/cliente_repository.dart';
+import '../utils/busca_utils.dart';
 
 class ClientProvider with ChangeNotifier {
   final ClienteRepository _repository = ClienteRepository();
@@ -107,26 +107,21 @@ class ClientProvider with ChangeNotifier {
     if (texto.isEmpty) {
       _clientesFiltrados = List.from(_clientes);
     } else {
-      String textoNormalizado = removeDiacritics(texto).toLowerCase();
-
+      // Todos os campos buscáveis viram um único texto — assim uma busca com
+      // várias palavras pode bater em campos diferentes (ex: "joao 999"
+      // encontrando pelo nome + parte do celular), não só um campo por vez.
       _clientesFiltrados = _clientes.where((cliente) {
-        final nome = removeDiacritics(cliente.nome).toLowerCase();
-        final celular = removeDiacritics(cliente.celular).toLowerCase();
-        final email = removeDiacritics(cliente.email).toLowerCase();
-        final endereco = removeDiacritics(cliente.enderecoCompleto).toLowerCase();
-        final complemento = removeDiacritics(cliente.complemento).toLowerCase();
-        final cpf = removeDiacritics(cliente.cpf).toLowerCase();
-        final pet = removeDiacritics(cliente.especies.join(" ")).toLowerCase();
-        final observacao = removeDiacritics(cliente.observacao).toLowerCase();
-
-        return nome.contains(textoNormalizado) ||
-            celular.contains(textoNormalizado) ||
-            email.contains(textoNormalizado) ||
-            endereco.contains(textoNormalizado) ||
-            complemento.contains(textoNormalizado) ||
-            cpf.contains(textoNormalizado) ||
-            pet.contains(textoNormalizado) ||
-            observacao.contains(textoNormalizado);
+        final textoCompleto = [
+          cliente.nome,
+          cliente.celular,
+          cliente.email,
+          cliente.enderecoCompleto,
+          cliente.complemento,
+          cliente.cpf,
+          cliente.especies.join(' '),
+          cliente.observacao,
+        ].join(' ');
+        return contemTodasPalavras(textoCompleto, texto);
       }).toList();
     }
 
