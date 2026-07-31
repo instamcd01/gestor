@@ -27,6 +27,14 @@ class Produto {
   String? empresa;
   double? precoConcorrencia;
 
+  /// Fabricante/laboratório real do produto — distinto de `empresa` (mapeado
+  /// pra coluna `marca`, que neste banco historicamente guarda o
+  /// fornecedor/distribuidor, não o fabricante; ver memória "Padrão de nome
+  /// de produto" do projeto). Campo estruturado, preenchido manualmente —
+  /// usado como fonte confiável pra organizar imagens de produto por
+  /// fabricante no Storage, em vez de tentar extrair do texto do nome.
+  String? fabricante;
+
   // Campos novos do schema multi-tenant/estoque
   final String? estoqueId;
   final String? unidadeMedida;
@@ -64,6 +72,7 @@ class Produto {
     this.lucro,
     this.empresa,
     this.precoConcorrencia,
+    this.fabricante,
     this.estoqueId,
     this.unidadeMedida = 'un',
     this.permiteFracionamento = false,
@@ -107,6 +116,7 @@ class Produto {
       destacar: row['destaque'] as bool? ?? false,
       exibirNoCatalogo: row['exibir_no_catalogo'] as bool? ?? true,
       empresa: row['marca']?.toString(),
+      fabricante: row['fabricante']?.toString(),
       estoqueId: estoqueId,
       unidadeMedida: row['unidade_medida']?.toString() ?? 'un',
       permiteFracionamento: row['permite_fracionamento'] as bool? ?? false,
@@ -134,6 +144,7 @@ class Produto {
       'volume': volume,
       'ativo': ativo,
       'marca': empresa,
+      'fabricante': fabricante,
       'preco': preco,
       'custo': custo,
       'destaque': destacar,

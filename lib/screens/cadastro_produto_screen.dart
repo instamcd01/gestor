@@ -49,6 +49,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   final _lucroController = TextEditingController();
   final _validadeController = TextEditingController();
   final _empresaController = TextEditingController();
+  final _fabricanteController = TextEditingController();
   final _precoConcorrenciaController = TextEditingController();
 
   bool _destacarProduto = false;
@@ -146,6 +147,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     _lucroController.dispose();
     _validadeController.dispose();
     _empresaController.dispose();
+    _fabricanteController.dispose();
     _precoConcorrenciaController.dispose();
     super.dispose();
   }
@@ -184,6 +186,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       precoConcorrencia: ProdutoValidators.parseNumero(_precoConcorrenciaController.text),
       validade: _validadeController.text.isNotEmpty ? _validadeController.text : null,
       empresa: _empresaController.text.isNotEmpty ? _empresaController.text : null,
+      fabricante: _fabricanteController.text.isNotEmpty ? _fabricanteController.text : null,
     );
 
     try {
@@ -519,6 +522,13 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                   TextFormField(
                     controller: _empresaController,
                     decoration: const InputDecoration(labelText: 'Empresa/Fornecedor (Opcional)'),
+                  ),
+                  TextFormField(
+                    controller: _fabricanteController,
+                    decoration: const InputDecoration(
+                      labelText: 'Fabricante (Opcional)',
+                      helperText: 'Laboratório/marca que fabrica o produto — pode ser diferente do fornecedor',
+                    ),
                   ),
                 ],
               ),

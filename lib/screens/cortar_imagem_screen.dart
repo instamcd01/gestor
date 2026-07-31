@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +20,30 @@ class CortarImagemScreen extends StatefulWidget {
 class _CortarImagemScreenState extends State<CortarImagemScreen> {
   final _controller = CropController();
   bool _processando = false;
+  double? _proporcaoImagem;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarProporcao();
+  }
+
+  /// O pacote `crop_your_image` inicia o recorte como um quadrado (aspect
+  /// ratio 1.0) por padrão quando nenhum `aspectRatio` é passado — pra uma
+  /// foto retangular isso deixa o recorte inicial menor que a imagem
+  /// inteira, obrigando a arrastar até o máximo manualmente. Descobrir a
+  /// proporção real da imagem e passá-la só pro tamanho inicial (não pro
+  /// `Crop.aspectRatio`, que travaria o recorte nessa proporção) resolve:
+  /// começa cobrindo a imagem inteira, mas o usuário ainda pode arrastar
+  /// livremente pra qualquer formato depois.
+  Future<void> _carregarProporcao() async {
+    final codec = await ui.instantiateImageCodec(widget.imagem);
+    final frame = await codec.getNextFrame();
+    if (!mounted) return;
+    setState(() {
+      _proporcaoImagem = frame.image.width / frame.image.height;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,23 +71,29 @@ class _CortarImagemScreenState extends State<CortarImagemScreen> {
                 ),
         ],
       ),
-      body: Crop(
-        image: widget.imagem,
-        controller: _controller,
-        interactive: true,
-        onCropped: (result) {
-          if (!mounted) return;
-          switch (result) {
-            case CropSuccess(:final croppedImage):
-              Navigator.of(context).pop(croppedImage);
-            case CropFailure():
-              setState(() => _processando = false);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Erro ao recortar a imagem. Tente novamente.')),
-              );
-          }
-        },
-      ),
+      body: _proporcaoImagem == null
+          ? const Center(child: CircularProgressIndicator())
+          : Crop(
+              image: widget.imagem,
+              controller: _controller,
+              interactive: true,
+              initialRectBuilder: InitialRectBuilder.withSizeAndRatio(
+                size: 1,
+                aspectRatio: _proporcaoImagem,
+              ),
+              onCropped: (result) {
+                if (!mounted) return;
+                switch (result) {
+                  case CropSuccess(:final croppedImage):
+                    Navigator.of(context).pop(croppedImage);
+                  case CropFailure():
+                    setState(() => _processando = false);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Erro ao recortar a imagem. Tente novamente.')),
+                    );
+                }
+              },
+            ),
     );
   }
 }

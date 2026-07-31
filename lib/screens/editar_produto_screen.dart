@@ -46,6 +46,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _lucroController;
   late TextEditingController _validadeController;
   late TextEditingController _empresaController;
+  late TextEditingController _fabricanteController;
   late TextEditingController _precoConcorrenciaController;
 
   late final CalculadoraPrecoMarkup _calculadora;
@@ -113,6 +114,8 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
         TextEditingController(text: ProdutoValidators.formatarValidade(widget.produto.validade));
     _empresaController =
         TextEditingController(text: widget.produto.empresa ?? '');
+    _fabricanteController =
+        TextEditingController(text: widget.produto.fabricante ?? '');
     _precoConcorrenciaController = TextEditingController(
         text: ProdutoValidators.formatarMoeda(widget.produto.precoConcorrencia));
 
@@ -160,6 +163,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _lucroController.dispose();
     _validadeController.dispose();
     _empresaController.dispose();
+    _fabricanteController.dispose();
     _precoConcorrenciaController.dispose();
     super.dispose();
   }
@@ -278,6 +282,9 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       empresa: _empresaController.text.isNotEmpty
           ? _empresaController.text
           : widget.produto.empresa,
+      fabricante: _fabricanteController.text.isNotEmpty
+          ? _fabricanteController.text
+          : widget.produto.fabricante,
       precoConcorrencia: ProdutoValidators.parseNumero(_precoConcorrenciaController.text) ??
           widget.produto.precoConcorrencia,
       estoqueId: widget.produto.estoqueId,
@@ -650,6 +657,13 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                   TextFormField(
                     controller: _empresaController,
                     decoration: const InputDecoration(labelText: 'Empresa/Fornecedor (Opcional)'),
+                  ),
+                  TextFormField(
+                    controller: _fabricanteController,
+                    decoration: const InputDecoration(
+                      labelText: 'Fabricante (Opcional)',
+                      helperText: 'Laboratório/marca que fabrica o produto — pode ser diferente do fornecedor',
+                    ),
                   ),
                 ],
               ),

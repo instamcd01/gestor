@@ -4,11 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import '../models/produto_midia.dart';
+import '../providers/produto_provider.dart';
 import '../repositories/produto_midia_repository.dart';
 import '../utils/empresa_atual.dart';
 import '../utils/upload_imagem_produto.dart';
@@ -74,13 +75,6 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
     }
   }
 
-  Future<File> _salvarBytesEmArquivoTemp(Uint8List bytes) async {
-    final dir = await getTemporaryDirectory();
-    final arquivo = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}_produto.jpg');
-    await arquivo.writeAsBytes(bytes);
-    return arquivo;
-  }
-
   Future<void> _adicionarImagem() async {
     if (_imagens.length >= _maxImagens) return;
 
@@ -112,10 +106,26 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       return;
     }
 
+    final produto = context.read<ProdutoProvider>().getProdutoPorId(widget.produtoId);
+    if (produto == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Produto não encontrado.')),
+      );
+      return;
+    }
+
     setState(() => _processando = true);
     try {
-      final arquivoTemp = await _salvarBytesEmArquivoTemp(bytesRecortados);
-      final url = await uploadImagemProduto(arquivoTemp);
+      final url = await uploadImagemProduto(
+        bytes: bytesRecortados,
+        empresaId: _empresaId!,
+        nomeProduto: produto.nome,
+        codigoBarras: produto.codigoBarras,
+        fabricante: produto.fabricante,
+        marca: produto.empresa,
+        ordem: _imagens.length + 1,
+      );
       await _repo.inserir(
         produtoId: widget.produtoId,
         empresaId: _empresaId!,
@@ -148,8 +158,23 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       );
       if (bytesRecortados == null || !mounted) return;
 
-      final arquivoTemp = await _salvarBytesEmArquivoTemp(bytesRecortados);
-      final novaUrl = await uploadImagemProduto(arquivoTemp);
+      if (_empresaId == null) {
+        throw Exception('Empresa não identificada.');
+      }
+      final produto = context.read<ProdutoProvider>().getProdutoPorId(widget.produtoId);
+      if (produto == null) {
+        throw Exception('Produto não encontrado.');
+      }
+
+      final novaUrl = await uploadImagemProduto(
+        bytes: bytesRecortados,
+        empresaId: _empresaId!,
+        nomeProduto: produto.nome,
+        codigoBarras: produto.codigoBarras,
+        fabricante: produto.fabricante,
+        marca: produto.empresa,
+        ordem: midia.ordem,
+      );
       await _repo.atualizarUrl(midia.id, novaUrl);
       await _carregar();
     } catch (e) {
