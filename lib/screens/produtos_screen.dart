@@ -7,6 +7,7 @@ import '../widgets/importar_produtos_planilha.dart';
 import '../models/produto.dart';
 import 'adicionar_imagens_lote_screen.dart';
 import 'cadastro_produto_screen.dart';
+import 'configuracoes_produto_screen.dart';
 import 'detalhes_produto_screen.dart';
 import 'editar_produto_screen.dart';
 import 'produtos_excluidos_screen.dart';
@@ -73,6 +74,13 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
               icon: const Icon(Icons.add_photo_alternate_outlined),
               onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const AdicionarImagensLoteScreen(),
+              )),
+            ),
+            IconButton(
+              tooltip: 'Configurações do Produto',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const ConfiguracoesProdutoScreen(),
               )),
             ),
           ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gestor/screens/produto_categorias_screen.dart';
+import 'package:gestor/screens/fabricante_screen.dart';
 import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
@@ -60,6 +61,12 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   List<String> _categorias = []; // categorias cadastradas na empresa
   bool _categoriasCarregadas = false;
 
+  List<String> _subcategorias = []; // subcategorias da categoria selecionada
+  bool _subcategoriasCarregadas = false;
+
+  List<String> _fabricantes = [];
+  bool _fabricantesCarregadas = false;
+
   late final CalculadoraPrecoMarkup _calculadora;
   late final CalculadoraDesconto _calculadoraDesconto;
 
@@ -75,6 +82,8 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       }
     }
     _carregarCategorias();
+    _carregarSubcategorias();
+    _carregarFabricantes();
     _calculadora = CalculadoraPrecoMarkup(
       precoController: _precoVendaController,
       custoController: _custoController,
@@ -122,6 +131,67 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       if (mounted) {
         setState(() => _categoriasCarregadas = true);
       }
+    }
+  }
+
+  /// Recarrega as subcategorias da categoria atualmente selecionada — o
+  /// mesmo texto de subcategoria (ex. "Adultos") significa coisas
+  /// diferentes em categorias diferentes, então a lista é sempre escopada.
+  Future<void> _carregarSubcategorias() async {
+    final categoriaNome = _categoriaController.text;
+    if (categoriaNome.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _subcategorias = [];
+        _subcategoriaController.clear();
+        _subcategoriasCarregadas = true;
+      });
+      return;
+    }
+    try {
+      final categoria =
+          await supabase.from('categorias').select('id').eq('nome', categoriaNome).maybeSingle();
+      final lista = categoria == null
+          ? <String>[]
+          : ((await supabase
+                      .from('subcategorias')
+                      .select('nome')
+                      .eq('categoria_id', categoria['id'])
+                      .order('ordem')) as List)
+              .map((row) => row['nome'] as String)
+              .toList();
+      if (!mounted) return;
+      setState(() {
+        _subcategorias = lista;
+        _subcategoriasCarregadas = true;
+        if (!_subcategorias.contains(_subcategoriaController.text)) {
+          _subcategoriaController.clear();
+        }
+      });
+    } catch (e) {
+      debugPrint("Erro ao carregar subcategorias: $e");
+      if (mounted) setState(() => _subcategoriasCarregadas = true);
+    }
+  }
+
+  Future<void> _carregarFabricantes() async {
+    try {
+      final data = await supabase.from('fabricantes').select('nome').order('ordem');
+      final fabricantes = (data as List).map((row) => row['nome'] as String? ?? '').where((f) => f.isNotEmpty).toSet();
+
+      final produtosData = await supabase.from('produtos').select('fabricante');
+      fabricantes.addAll(
+        (produtosData as List).map((p) => (p['fabricante'] as String?) ?? '').where((f) => f.isNotEmpty),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _fabricantes = fabricantes.toList()..sort();
+        _fabricantesCarregadas = true;
+      });
+    } catch (e) {
+      debugPrint("Erro ao carregar fabricantes: $e");
+      if (mounted) setState(() => _fabricantesCarregadas = true);
     }
   }
 
@@ -311,9 +381,8 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                                       );
                                     }).toList(),
                                     onChanged: (value) {
-                                      setState(() {
-                                        _categoriaController.text = value!;
-                                      });
+                                      setState(() => _categoriaController.text = value!);
+                                      _carregarSubcategorias();
                                     },
                                     validator: ProdutoValidators.categoria,
                                   ),
@@ -333,18 +402,29 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                           );
                           await _carregarCategorias();
                           if (categoriaEscolhida != null && categoriaEscolhida.isNotEmpty) {
-                            setState(() {
-                              _categoriaController.text = categoriaEscolhida;
-                            });
+                            setState(() => _categoriaController.text = categoriaEscolhida);
+                            await _carregarSubcategorias();
                           }
                         },
                       ),
                     ],
                   ),
-                  TextFormField(
-                    controller: _subcategoriaController,
-                    decoration: const InputDecoration(labelText: 'Subcategoria (Opcional)'),
-                  ),
+                  !_subcategoriasCarregadas
+                      ? const Center(child: CircularProgressIndicator())
+                      : DropdownButtonFormField<String>(
+                          decoration: const InputDecoration(labelText: 'Subcategoria (Opcional)'),
+                          value: _subcategorias.contains(_subcategoriaController.text)
+                              ? _subcategoriaController.text
+                              : '',
+                          items: [
+                            const DropdownMenuItem(value: '', child: Text('Nenhuma')),
+                            for (final subcategoria in _subcategorias)
+                              DropdownMenuItem(value: subcategoria, child: Text(subcategoria)),
+                          ],
+                          onChanged: (value) {
+                            setState(() => _subcategoriaController.text = value ?? '');
+                          },
+                        ),
                   TextFormField(
                     controller: _descricaoController,
                     decoration: const InputDecoration(labelText: 'Descrição'),
@@ -523,12 +603,48 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                     controller: _empresaController,
                     decoration: const InputDecoration(labelText: 'Empresa/Fornecedor (Opcional)'),
                   ),
-                  TextFormField(
-                    controller: _fabricanteController,
-                    decoration: const InputDecoration(
-                      labelText: 'Fabricante (Opcional)',
-                      helperText: 'Laboratório/marca que fabrica o produto — pode ser diferente do fornecedor',
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: !_fabricantesCarregadas
+                            ? const Center(child: CircularProgressIndicator())
+                            : DropdownButtonFormField<String>(
+                                decoration: const InputDecoration(
+                                  labelText: 'Fabricante (Opcional)',
+                                  helperText:
+                                      'Laboratório/marca que fabrica o produto — pode ser diferente do fornecedor',
+                                ),
+                                value: _fabricantes.contains(_fabricanteController.text)
+                                    ? _fabricanteController.text
+                                    : null,
+                                items: [
+                                  for (final fabricante in _fabricantes)
+                                    DropdownMenuItem(value: fabricante, child: Text(fabricante)),
+                                ],
+                                onChanged: (value) {
+                                  setState(() => _fabricanteController.text = value ?? '');
+                                },
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        tooltip: 'Gerenciar fabricantes',
+                        icon: const Icon(Icons.add),
+                        onPressed: () async {
+                          final fabricanteEscolhido = await Navigator.push<String>(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) => FabricanteScreen(
+                                      fabricanteSelecionado: _fabricanteController.text,
+                                    )),
+                          );
+                          await _carregarFabricantes();
+                          if (fabricanteEscolhido != null && fabricanteEscolhido.isNotEmpty) {
+                            setState(() => _fabricanteController.text = fabricanteEscolhido);
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
