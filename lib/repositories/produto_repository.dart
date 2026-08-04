@@ -1,5 +1,6 @@
 import '../config/supabase_config.dart';
 import '../models/produto.dart';
+import '../models/sugestao_variante.dart';
 
 /// Camada de acesso a dados de produtos. Fala diretamente com o Supabase.
 /// O isolamento por empresa é garantido pelo RLS no banco — não precisamos
@@ -127,5 +128,65 @@ class ProdutoRepository {
 
   Future<void> marcarPrecoRevisado(String produtoId) async {
     await supabase.from('produtos').update({'revisar_preco': false}).eq('id', produtoId);
+  }
+
+  Future<List<SugestaoVariante>> listarSugestoesVariantePendentes() async {
+    final data = await supabase
+        .from('sugestoes_variante')
+        .select()
+        .eq('status', 'pendente')
+        .order('criado_em');
+
+    return (data as List)
+        .map((row) => SugestaoVariante.fromSupabase(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Aprova a sugestão via RPC `aprovar_sugestao_variante` — resolve o pai
+  /// real da família no servidor, priorizando quem já pertence (ou já é)
+  /// uma família existente. Precisa ser atômico no servidor porque um
+  /// produto pode ter mais de uma sugestão pendente (3+ variantes): resolver
+  /// só no cliente arriscava a segunda aprovação sobrescrever o vínculo já
+  /// criado pela primeira em vez de somar o candidato à mesma família.
+  Future<void> aprovarSugestaoVariante({
+    required SugestaoVariante sugestao,
+    required String tipoVariacao,
+    required String varianteLabelProduto,
+    required String varianteLabelCandidato,
+  }) async {
+    await supabase.rpc('aprovar_sugestao_variante', params: {
+      'p_sugestao_id': sugestao.id,
+      'p_tipo_variacao': tipoVariacao,
+      'p_variante_label_produto': varianteLabelProduto,
+      'p_variante_label_candidato': varianteLabelCandidato,
+    });
+  }
+
+  Future<void> rejeitarSugestaoVariante(String sugestaoId) async {
+    await supabase.from('sugestoes_variante').update({
+      'status': 'rejeitado',
+      'revisado_em': DateTime.now().toIso8601String(),
+    }).eq('id', sugestaoId);
+  }
+
+  Future<List<SugestaoVariante>> listarSugestoesVarianteRejeitadas() async {
+    final data = await supabase
+        .from('sugestoes_variante')
+        .select()
+        .eq('status', 'rejeitado')
+        .order('revisado_em', ascending: false);
+
+    return (data as List)
+        .map((row) => SugestaoVariante.fromSupabase(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Volta a sugestão pra `pendente` — deixa aparecer de novo pro usuário
+  /// reconsiderar sem precisar esperar o trigger gerá-la de novo.
+  Future<void> reconsiderarSugestaoVariante(String sugestaoId) async {
+    await supabase.from('sugestoes_variante').update({
+      'status': 'pendente',
+      'revisado_em': null,
+    }).eq('id', sugestaoId);
   }
 }

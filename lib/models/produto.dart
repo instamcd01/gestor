@@ -46,6 +46,30 @@ class Produto {
   /// valor desatualizado (ver `ProdutoRepository.marcarPrecoRevisado`).
   bool revisarPreco;
 
+  // Cadastro estruturado (variantes de produto) — todos opcionais. Quando
+  // nomeComercial está preenchido, o trigger `gerar_nome_produto_estruturado`
+  // no banco recompõe `nome` automaticamente a partir destes campos (a menos
+  // que nomeManualOverride seja true). Ver docs/superpowers/specs/2026-08-03-variantes-produto-design.md.
+  String? nomeComercial;
+  String? especie;
+  String? fase;
+  String? porte;
+  String? sabor;
+  String? dose;
+  String? composicao;
+  String? apresentacao;
+  bool nomeManualOverride;
+
+  /// Produto "pai" da família de variantes (self-referência em `produtos`,
+  /// já existia no schema antes desta feature). `null` = produto não faz
+  /// parte de nenhuma família, ou é ele mesmo o produto âncora.
+  final String? produtoPaiId;
+
+  /// Eixo (`"peso"`, `"dose"`, `"sabor"`...) e valor desta variante dentro
+  /// da família — preenchidos ao aprovar uma sugestão em `sugestoes_variante`.
+  final String? tipoVariacao;
+  final String? varianteLabel;
+
   Produto({
     this.id,
     required this.nome,
@@ -77,6 +101,18 @@ class Produto {
     this.unidadeMedida = 'un',
     this.permiteFracionamento = false,
     this.revisarPreco = false,
+    this.nomeComercial,
+    this.especie,
+    this.fase,
+    this.porte,
+    this.sabor,
+    this.dose,
+    this.composicao,
+    this.apresentacao,
+    this.nomeManualOverride = false,
+    this.produtoPaiId,
+    this.tipoVariacao,
+    this.varianteLabel,
   });
 
   /// Monta o Produto a partir de uma linha do Supabase.
@@ -125,6 +161,18 @@ class Produto {
       precoConcorrencia: (row['preco_concorrencia'] as num?)?.toDouble(),
       validade: row['validade']?.toString(),
       revisarPreco: row['revisar_preco'] as bool? ?? false,
+      nomeComercial: row['nome_comercial']?.toString(),
+      especie: row['especie']?.toString(),
+      fase: row['fase']?.toString(),
+      porte: row['porte']?.toString(),
+      sabor: row['sabor']?.toString(),
+      dose: row['dose']?.toString(),
+      composicao: row['composicao']?.toString(),
+      apresentacao: row['apresentacao']?.toString(),
+      nomeManualOverride: row['nome_manual_override'] as bool? ?? false,
+      produtoPaiId: row['produto_pai_id'] as String?,
+      tipoVariacao: row['tipo_variacao']?.toString(),
+      varianteLabel: row['variante_label']?.toString(),
       // Derivados (não são colunas próprias no banco, calculados aqui pra
       // manter compatibilidade com as telas que já exibem markup/lucro).
       markup: margem != null ? '${margem.toStringAsFixed(1)}%' : null,
@@ -158,6 +206,15 @@ class Produto {
       'preco_ifood': precoIfood,
       'preco_concorrencia': precoConcorrencia,
       'validade': validade,
+      'nome_comercial': nomeComercial,
+      'especie': especie,
+      'fase': fase,
+      'porte': porte,
+      'sabor': sabor,
+      'dose': dose,
+      'composicao': composicao,
+      'apresentacao': apresentacao,
+      'nome_manual_override': nomeManualOverride,
     };
   }
 }

@@ -11,6 +11,7 @@ import '../utils/calculadora_desconto.dart';
 import '../utils/calculadora_preco.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
+import '../widgets/campos_estruturados_variante.dart';
 import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
 import 'gerenciar_midias_produto_screen.dart';
@@ -49,6 +50,15 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _empresaController;
   late TextEditingController _fabricanteController;
   late TextEditingController _precoConcorrenciaController;
+  late TextEditingController _nomeComercialController;
+  late TextEditingController _especieController;
+  late TextEditingController _faseController;
+  late TextEditingController _porteController;
+  late TextEditingController _saborController;
+  late TextEditingController _doseController;
+  late TextEditingController _composicaoController;
+  late TextEditingController _apresentacaoController;
+  bool _nomeManualOverride = false;
 
   late final CalculadoraPrecoMarkup _calculadora;
   late final CalculadoraDesconto _calculadoraDesconto;
@@ -74,6 +84,8 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
 
   List<String> _fabricantes = [];
   bool _fabricantesCarregadas = false;
+
+  Map<String, Set<String>> _camposPorCategoria = {};
 
   @override
   void initState() {
@@ -125,6 +137,15 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
         TextEditingController(text: widget.produto.fabricante ?? '');
     _precoConcorrenciaController = TextEditingController(
         text: ProdutoValidators.formatarMoeda(widget.produto.precoConcorrencia));
+    _nomeComercialController = TextEditingController(text: widget.produto.nomeComercial ?? '');
+    _especieController = TextEditingController(text: widget.produto.especie ?? '');
+    _faseController = TextEditingController(text: widget.produto.fase ?? '');
+    _porteController = TextEditingController(text: widget.produto.porte ?? '');
+    _saborController = TextEditingController(text: widget.produto.sabor ?? '');
+    _doseController = TextEditingController(text: widget.produto.dose ?? '');
+    _composicaoController = TextEditingController(text: widget.produto.composicao ?? '');
+    _apresentacaoController = TextEditingController(text: widget.produto.apresentacao ?? '');
+    _nomeManualOverride = widget.produto.nomeManualOverride;
 
     _destacarProduto = widget.produto.destacar;
     _exibirNoCatalogo = widget.produto.exibirNoCatalogo;
@@ -148,6 +169,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _carregarCategoriasDoSupabase();
     _carregarSubcategorias();
     _carregarFabricantes();
+    _carregarCamposPorCategoria();
   }
 
   @override
@@ -174,6 +196,14 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _empresaController.dispose();
     _fabricanteController.dispose();
     _precoConcorrenciaController.dispose();
+    _nomeComercialController.dispose();
+    _especieController.dispose();
+    _faseController.dispose();
+    _porteController.dispose();
+    _saborController.dispose();
+    _doseController.dispose();
+    _composicaoController.dispose();
+    _apresentacaoController.dispose();
     super.dispose();
   }
 
@@ -275,6 +305,16 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     }
   }
 
+  Future<void> _carregarCamposPorCategoria() async {
+    try {
+      final mapa = await carregarCamposEstruturadosPorCategoria();
+      if (!mounted) return;
+      setState(() => _camposPorCategoria = mapa);
+    } catch (e) {
+      debugPrint("Erro ao carregar campos por categoria: $e");
+    }
+  }
+
   // Abre a galeria de imagens/vídeos do produto — as alterações lá são
   // salvas direto no banco (imediatas, não dependem do botão "Salvar" desta
   // tela). Ao voltar, recarrega a capa/verso porque podem ter mudado.
@@ -360,6 +400,18 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       estoqueId: widget.produto.estoqueId,
       unidadeMedida: widget.produto.unidadeMedida,
       permiteFracionamento: widget.produto.permiteFracionamento,
+      nomeComercial: _nomeComercialController.text.isNotEmpty ? _nomeComercialController.text : null,
+      especie: _especieController.text.isNotEmpty ? _especieController.text : null,
+      fase: _faseController.text.isNotEmpty ? _faseController.text : null,
+      porte: _porteController.text.isNotEmpty ? _porteController.text : null,
+      sabor: _saborController.text.isNotEmpty ? _saborController.text : null,
+      dose: _doseController.text.isNotEmpty ? _doseController.text : null,
+      composicao: _composicaoController.text.isNotEmpty ? _composicaoController.text : null,
+      apresentacao: _apresentacaoController.text.isNotEmpty ? _apresentacaoController.text : null,
+      nomeManualOverride: _nomeManualOverride,
+      produtoPaiId: widget.produto.produtoPaiId,
+      tipoVariacao: widget.produto.tipoVariacao,
+      varianteLabel: widget.produto.varianteLabel,
     );
 
     if (!mounted) return;
@@ -578,6 +630,21 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 16.0),
+
+              CamposEstruturadosVariante(
+                nomeComercialController: _nomeComercialController,
+                especieController: _especieController,
+                faseController: _faseController,
+                porteController: _porteController,
+                saborController: _saborController,
+                doseController: _doseController,
+                composicaoController: _composicaoController,
+                apresentacaoController: _apresentacaoController,
+                nomeManualOverride: _nomeManualOverride,
+                onNomeManualOverrideChanged: (value) => setState(() => _nomeManualOverride = value),
+                camposVisiveis: _camposPorCategoria[_categoriaController.text],
               ),
               const SizedBox(height: 16.0),
 

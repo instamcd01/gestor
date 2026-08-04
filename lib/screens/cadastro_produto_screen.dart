@@ -11,6 +11,7 @@ import '../utils/calculadora_desconto.dart';
 import '../utils/calculadora_preco.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
+import '../widgets/campos_estruturados_variante.dart';
 import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
 import 'gerenciar_midias_produto_screen.dart';
@@ -52,6 +53,15 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   final _empresaController = TextEditingController();
   final _fabricanteController = TextEditingController();
   final _precoConcorrenciaController = TextEditingController();
+  final _nomeComercialController = TextEditingController();
+  final _especieController = TextEditingController();
+  final _faseController = TextEditingController();
+  final _porteController = TextEditingController();
+  final _saborController = TextEditingController();
+  final _doseController = TextEditingController();
+  final _composicaoController = TextEditingController();
+  final _apresentacaoController = TextEditingController();
+  bool _nomeManualOverride = false;
 
   bool _destacarProduto = false;
   bool _exibirNoCatalogo = true;
@@ -66,6 +76,8 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
 
   List<String> _fabricantes = [];
   bool _fabricantesCarregadas = false;
+
+  Map<String, Set<String>> _camposPorCategoria = {};
 
   late final CalculadoraPrecoMarkup _calculadora;
   late final CalculadoraDesconto _calculadoraDesconto;
@@ -84,6 +96,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     _carregarCategorias();
     _carregarSubcategorias();
     _carregarFabricantes();
+    _carregarCamposPorCategoria();
     _calculadora = CalculadoraPrecoMarkup(
       precoController: _precoVendaController,
       custoController: _custoController,
@@ -195,6 +208,16 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     }
   }
 
+  Future<void> _carregarCamposPorCategoria() async {
+    try {
+      final mapa = await carregarCamposEstruturadosPorCategoria();
+      if (!mounted) return;
+      setState(() => _camposPorCategoria = mapa);
+    } catch (e) {
+      debugPrint("Erro ao carregar campos por categoria: $e");
+    }
+  }
+
   @override
   void dispose() {
     _calculadora.dispose();
@@ -219,6 +242,14 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     _empresaController.dispose();
     _fabricanteController.dispose();
     _precoConcorrenciaController.dispose();
+    _nomeComercialController.dispose();
+    _especieController.dispose();
+    _faseController.dispose();
+    _porteController.dispose();
+    _saborController.dispose();
+    _doseController.dispose();
+    _composicaoController.dispose();
+    _apresentacaoController.dispose();
     super.dispose();
   }
 
@@ -257,6 +288,15 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       validade: _validadeController.text.isNotEmpty ? _validadeController.text : null,
       empresa: _empresaController.text.isNotEmpty ? _empresaController.text : null,
       fabricante: _fabricanteController.text.isNotEmpty ? _fabricanteController.text : null,
+      nomeComercial: _nomeComercialController.text.isNotEmpty ? _nomeComercialController.text : null,
+      especie: _especieController.text.isNotEmpty ? _especieController.text : null,
+      fase: _faseController.text.isNotEmpty ? _faseController.text : null,
+      porte: _porteController.text.isNotEmpty ? _porteController.text : null,
+      sabor: _saborController.text.isNotEmpty ? _saborController.text : null,
+      dose: _doseController.text.isNotEmpty ? _doseController.text : null,
+      composicao: _composicaoController.text.isNotEmpty ? _composicaoController.text : null,
+      apresentacao: _apresentacaoController.text.isNotEmpty ? _apresentacaoController.text : null,
+      nomeManualOverride: _nomeManualOverride,
     );
 
     try {
@@ -446,6 +486,21 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 16.0),
+
+              CamposEstruturadosVariante(
+                nomeComercialController: _nomeComercialController,
+                especieController: _especieController,
+                faseController: _faseController,
+                porteController: _porteController,
+                saborController: _saborController,
+                doseController: _doseController,
+                composicaoController: _composicaoController,
+                apresentacaoController: _apresentacaoController,
+                nomeManualOverride: _nomeManualOverride,
+                onNomeManualOverrideChanged: (value) => setState(() => _nomeManualOverride = value),
+                camposVisiveis: _camposPorCategoria[_categoriaController.text],
               ),
               const SizedBox(height: 16.0),
 

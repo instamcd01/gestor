@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'gerenciar_categorias_screen.dart';
+import 'gerenciar_termos_variacao_screen.dart';
 import 'fabricante_screen.dart';
 import '../widgets/menu_secao.dart';
 
@@ -30,6 +31,11 @@ class ConfiguracoesProdutoScreen extends StatelessWidget {
                 'Fabricantes',
                 Icons.factory_outlined,
                 const FabricanteScreen(),
+              ),
+              MenuItem(
+                'Termos de variante',
+                Icons.style_outlined,
+                const GerenciarTermosVariacaoScreen(),
               ),
             ],
           ),
