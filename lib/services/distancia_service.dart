@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/supabase_config.dart';
+import 'web/distancia_maps_stub.dart' if (dart.library.html) 'web/distancia_maps_web.dart' as maps_web;
 
 class RotaCalculada {
   final double distanciaKm;
@@ -110,6 +111,14 @@ class DistanciaService {
   }) async {
     if (origem.trim().isEmpty || destino.trim().isEmpty) return null;
 
+    // No navegador, a API REST (chamada abaixo via http.get) não manda
+    // cabeçalho CORS — o navegador bloqueia a resposta antes do Dart
+    // conseguir lê-la. A biblioteca Google Maps JavaScript (carregada em
+    // web/index.html) não tem essa restrição, então usa ela via interop.
+    if (kIsWeb) {
+      return maps_web.calcularRotaViaJs(origem: origem, destino: destino);
+    }
+
     try {
       final uri = Uri.https('maps.googleapis.com', '/maps/api/distancematrix/json', {
         'origins': origem,
@@ -165,10 +174,15 @@ class DistanciaService {
       if ((estadoReferencia ?? '').isNotEmpty) estadoReferencia!.trim(),
       'Brasil',
     ];
+    final enderecoCompleto = partes.join(', ');
+
+    if (kIsWeb) {
+      return maps_web.buscarEnderecoPorEnderecoViaJs(enderecoCompleto, region: 'br');
+    }
 
     try {
       final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
-        'address': partes.join(', '),
+        'address': enderecoCompleto,
         'region': 'br',
         'key': _apiKey,
       });
@@ -198,6 +212,10 @@ class DistanciaService {
     required double latitude,
     required double longitude,
   }) async {
+    if (kIsWeb) {
+      return maps_web.buscarEnderecoPorCoordenadasViaJs(latitude, longitude);
+    }
+
     try {
       final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
         'latlng': '$latitude,$longitude',

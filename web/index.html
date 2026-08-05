@@ -38,6 +38,14 @@
   </script>
   <!-- This script adds the flutter initialization JS code -->
   <script src="flutter.js" defer></script>
+
+  <!-- google_maps_flutter_web precisa da Maps JavaScript API carregada
+       manualmente aqui — o plugin não injeta esse script sozinho. Sem
+       isso, a tela "Selecionar Localização" (mapa embutido no cadastro
+       de cliente) quebra com "Cannot read properties of undefined
+       (reading 'maps')" ao rodar no navegador. Mesma chave usada no
+       resto do projeto (DistanciaService, Maps SDK Android/iOS). -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDKmbywF7XdgUI3LWJ0-c83-tSaEl5EqPU"></script>
 </head>
 <body>
   <script>

@@ -438,7 +438,7 @@ packages:
     source: hosted
     version: "6.3.3"
   google_maps:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: google_maps
       sha256: "5d410c32112d7c6eb7858d359275b2aa04778eed3e36c745aeae905fb2fa6468"
