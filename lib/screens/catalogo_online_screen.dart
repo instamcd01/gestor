@@ -32,6 +32,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
 
   bool _catalogoAtivo = false;
   bool _aceitaPedidosOnline = false;
+  bool _aceitaRetirada = true;
   String _modelo = 'classico';
 
   bool _carregando = true;
@@ -63,7 +64,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
     try {
       final data = await supabase
           .from('empresas')
-          .select('catalogo_slug, catalogo_ativo, aceita_pedidos_online, catalogo_modelo, '
+          .select('catalogo_slug, catalogo_ativo, aceita_pedidos_online, aceita_retirada, catalogo_modelo, '
               'whatsapp_catalogo, instagram, facebook, catalogo_info_extra')
           .eq('id', empresaId)
           .single();
@@ -75,6 +76,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
       _infoExtraController.text = data['catalogo_info_extra']?.toString() ?? '';
       _catalogoAtivo = data['catalogo_ativo'] as bool? ?? false;
       _aceitaPedidosOnline = data['aceita_pedidos_online'] as bool? ?? false;
+      _aceitaRetirada = data['aceita_retirada'] as bool? ?? true;
       _modelo = data['catalogo_modelo']?.toString() ?? 'classico';
 
       if (mounted) {
@@ -116,6 +118,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
         'catalogo_slug': _slugController.text.trim().isEmpty ? null : _slugController.text.trim(),
         'catalogo_ativo': _catalogoAtivo,
         'aceita_pedidos_online': _aceitaPedidosOnline,
+        'aceita_retirada': _aceitaRetirada,
         'catalogo_modelo': _modelo,
         'whatsapp_catalogo': _whatsappController.text.trim(),
         'instagram': _instagramController.text.trim(),
@@ -198,6 +201,13 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                           subtitle: const Text('Desligado = catálogo é só vitrine, cliente compra por WhatsApp/telefone'),
                           value: _aceitaPedidosOnline,
                           onChanged: (v) => setState(() => _aceitaPedidosOnline = v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Aceitar retirada na loja'),
+                          subtitle: const Text('Desligado = cliente só pode escolher entrega no checkout do site'),
+                          value: _aceitaRetirada,
+                          onChanged: (v) => setState(() => _aceitaRetirada = v),
                         ),
                         TextFormField(
                           controller: _slugController,
