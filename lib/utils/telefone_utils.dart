@@ -13,4 +13,15 @@ String normalizarTelefoneBr(String texto) {
 /// salvo no banco. Sem normalizar primeiro, um número já salvo com o "55"
 /// (comum em dados vindos de outras origens) virava "5555..." no link e o
 /// WhatsApp não encontrava o contato.
-String linkWhatsApp(String telefone) => 'https://wa.me/55${normalizarTelefoneBr(telefone)}';
+///
+/// Um "+" no início marca "já é internacional, não mexe" — usado pra
+/// clientes de outros países (chegam assim via integração do WhatsApp,
+/// ver telefone.replace('+','') condicional no n8n). Sem essa saída, todo
+/// telefone levava "55" na frente e o link saía errado pra quem não é
+/// do Brasil.
+String linkWhatsApp(String telefone) {
+  if (telefone.trim().startsWith('+')) {
+    return 'https://wa.me/${telefone.replaceAll(RegExp(r'[^0-9]'), '')}';
+  }
+  return 'https://wa.me/55${normalizarTelefoneBr(telefone)}';
+}
