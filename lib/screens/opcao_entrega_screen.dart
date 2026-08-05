@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../config/supabase_config.dart';
 import '../models/cliente.dart';
 import '../models/zona_entrega.dart';
 import '../providers/auth_provider.dart';
@@ -11,6 +12,7 @@ import '../providers/cliente_provider.dart';
 import '../providers/zona_entrega_provider.dart';
 import '../repositories/cliente_repository.dart';
 import '../services/distancia_service.dart';
+import '../utils/agendamento_utils.dart';
 import '../utils/busca_utils.dart';
 import 'adicionar_cliente_screen.dart';
 import 'configuracao_entrega_screen.dart';
@@ -41,10 +43,37 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
   bool _calculandoDistancia = false;
   ZonaEntrega? _zonaEncontrada;
 
+  Map<String, dynamic>? _horarioFuncionamento;
+  bool _agendando = false;
+  OpcaoDataAgendamento? _dataEscolhida;
+  JanelaHorarioAgendamento? _janelaEscolhida;
+
   @override
   void initState() {
     super.initState();
     _carregarClientes();
+    _carregarHorarioFuncionamento();
+  }
+
+  Future<void> _carregarHorarioFuncionamento() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    try {
+      final data = await supabase
+          .from('empresas')
+          .select('horario_funcionamento')
+          .eq('id', empresaId)
+          .single();
+      if (mounted) {
+        setState(() {
+          _horarioFuncionamento = data['horario_funcionamento'] as Map<String, dynamic>?;
+          final opcoes = gerarOpcoesData(_horarioFuncionamento);
+          _dataEscolhida = opcoes.isNotEmpty ? opcoes.first : null;
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar horário de funcionamento: $e');
+    }
   }
 
   @override
@@ -161,6 +190,7 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
 
   bool get _podeConfirmar {
     if (_clienteSelecionado == null) return false;
+    if (_agendando && _janelaEscolhida == null) return false;
     if (_retirarNaLoja) return true;
     return _zonaEncontrada != null;
   }
@@ -170,6 +200,7 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
     Navigator.pop(context, {
       'cliente': _clienteSelecionado,
       'zona': _retirarNaLoja ? null : _zonaEncontrada,
+      'agendamento': _agendando ? _janelaEscolhida : null,
     });
   }
 
@@ -283,6 +314,8 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
                   onChanged: (v) => setState(() => _retirarNaLoja = v),
                 ),
                 if (!_retirarNaLoja) _buildResumoEntrega(),
+                const Divider(),
+                _buildAgendamento(),
               ],
 
               const SizedBox(height: 24),
@@ -297,6 +330,86 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// "Quero agora" (padrão) vs "Agendar" — mesmas janelas de 1h dentro do
+  /// horário de funcionamento oferecidas no checkout do site, pro vendedor
+  /// marcar hora quando o cliente pede por telefone/WhatsApp. Vale tanto
+  /// pra entrega quanto pra retirada.
+  Widget _buildAgendamento() {
+    final opcoesData = gerarOpcoesData(_horarioFuncionamento);
+    if (opcoesData.isEmpty) return const SizedBox.shrink();
+
+    final janelasHorario = _dataEscolhida != null
+        ? gerarJanelasHorario(_dataEscolhida!.data, _dataEscolhida!.diaSemana, _horarioFuncionamento)
+        : <JanelaHorarioAgendamento>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Text('Quando?', style: TextStyle(fontWeight: FontWeight.w600)),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: ChoiceChip(
+                label: const Text('Quero agora'),
+                selected: !_agendando,
+                onSelected: (_) => setState(() {
+                  _agendando = false;
+                  _janelaEscolhida = null;
+                }),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ChoiceChip(
+                label: const Text('Agendar'),
+                selected: _agendando,
+                onSelected: (_) => setState(() => _agendando = true),
+              ),
+            ),
+          ],
+        ),
+        if (_agendando) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: opcoesData.map((opcao) {
+              return ChoiceChip(
+                label: Text(opcao.label),
+                selected: _dataEscolhida?.data == opcao.data,
+                onSelected: (_) => setState(() {
+                  _dataEscolhida = opcao;
+                  _janelaEscolhida = null;
+                }),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          if (janelasHorario.isEmpty)
+            Text(
+              'Sem horários disponíveis nesse dia.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+            )
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: janelasHorario.map((janela) {
+                return ChoiceChip(
+                  label: Text(janela.label),
+                  selected: _janelaEscolhida?.inicio == janela.inicio,
+                  onSelected: (_) => setState(() => _janelaEscolhida = janela),
+                );
+              }).toList(),
+            ),
+        ],
+      ],
     );
   }
 

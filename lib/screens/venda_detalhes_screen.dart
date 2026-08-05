@@ -78,10 +78,10 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
 
   /// Mesma distinção do fila_pedidos_screen: iFood usa agendado/entregaPrevista*,
   /// pedido com checkout do app (loja física/WhatsApp/site) usa
-  /// agendadoPeloCliente/previsaoEntrega* — ver comentário no model Venda.
+  /// agendadoManualmente/previsaoEntrega* — ver comentário no model Venda.
   DateTime? _previsaoInicio(Venda venda) => venda.previsaoEntregaInicio ?? venda.entregaPrevistaInicio;
   DateTime? _previsaoFim(Venda venda) => venda.previsaoEntregaFim ?? venda.entregaPrevistaFim;
-  bool _ehAgendado(Venda venda) => venda.agendado || venda.agendadoPeloCliente;
+  bool _ehAgendado(Venda venda) => venda.agendado || venda.agendadoManualmente;
 
   bool _temPrevisaoEntrega(Venda venda) => _previsaoFim(venda) != null;
 

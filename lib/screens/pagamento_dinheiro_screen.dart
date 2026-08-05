@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/cliente.dart';
 import '../models/zona_entrega.dart';
 import '../theme/app_theme.dart';
+import '../utils/agendamento_utils.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/itens_compra_card.dart';
@@ -21,6 +22,7 @@ class PagamentoDinheiroScreen extends StatefulWidget {
   final String entregaSelecionada;
   final double saldoUsado;
   final ZonaEntrega? zonaEntrega;
+  final JanelaHorarioAgendamento? agendamento;
 
   PagamentoDinheiroScreen({
     required this.valorTotal,
@@ -34,6 +36,7 @@ class PagamentoDinheiroScreen extends StatefulWidget {
     required this.entregaSelecionada,
     required this.saldoUsado,
     this.zonaEntrega,
+    this.agendamento,
   });
 
   @override
@@ -95,6 +98,7 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
           entregaSelecionada: widget.entregaSelecionada,
           saldoUsado: widget.saldoUsado,
           zonaEntrega: widget.zonaEntrega,
+          agendamento: widget.agendamento,
         ),
       ),
     );

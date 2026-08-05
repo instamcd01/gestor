@@ -10,6 +10,7 @@ import '../models/cliente.dart';
 import '../models/zona_entrega.dart';
 import '../providers/auth_provider.dart';
 import '../providers/carrinho_provider.dart';
+import '../utils/agendamento_utils.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/itens_compra_card.dart';
@@ -31,6 +32,7 @@ class PagamentoScreen extends StatefulWidget {
   final double valorEntrega;
   final String entregaSelecionada;
   final ZonaEntrega? zonaEntrega;
+  final JanelaHorarioAgendamento? agendamento;
 
   PagamentoScreen({
     required this.valorTotal,
@@ -42,6 +44,7 @@ class PagamentoScreen extends StatefulWidget {
     required this.valorEntrega,
     required this.entregaSelecionada,
     this.zonaEntrega,
+    this.agendamento,
   });
 
   @override
@@ -71,6 +74,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   late double _valorEntrega;
   late String _entregaSelecionada;
   ZonaEntrega? _zonaEntrega;
+  JanelaHorarioAgendamento? _agendamento;
 
   List<String> _metodosAtivos = List.from(metodosPagamentoDisponiveis);
 
@@ -87,6 +91,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     _valorEntrega = widget.valorEntrega;
     _entregaSelecionada = widget.entregaSelecionada;
     _zonaEntrega = widget.zonaEntrega;
+    _agendamento = widget.agendamento;
     _carregarMetodosAtivos();
   }
 
@@ -224,6 +229,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
 
     final novoCliente = resultado['cliente'] as Cliente;
     final novaZona = resultado['zona'] as ZonaEntrega?;
+    final novoAgendamento = resultado['agendamento'] as JanelaHorarioAgendamento?;
     final novoValorEntrega = _calcularValorEntrega(novaZona);
 
     setState(() {
@@ -231,6 +237,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
       _valorEntrega = novoValorEntrega;
       _entregaSelecionada = novaZona?.nome ?? 'Retirada na Loja';
       _zonaEntrega = novaZona;
+      _agendamento = novoAgendamento;
       // O saldo já aplicado não pode passar a exceder o novo valor devido.
       if (saldoUsado > _valorAntesDoSaldo) {
         saldoUsado = _valorAntesDoSaldo;
@@ -240,6 +247,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     // Mantém o carrinho em sincronia — caso a pessoa volte pra ele.
     context.read<CarrinhoProvider>().selecionarCliente(novoCliente);
     context.read<CarrinhoProvider>().selecionarZonaEntrega(novaZona);
+    context.read<CarrinhoProvider>().selecionarAgendamento(novoAgendamento);
   }
 
   double _calcularValorEntrega(ZonaEntrega? zona) {
@@ -268,6 +276,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
+            agendamento: _agendamento,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -286,6 +295,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
+            agendamento: _agendamento,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -304,6 +314,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
+            agendamento: _agendamento,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -322,6 +333,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
+            agendamento: _agendamento,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -340,6 +352,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
+            agendamento: _agendamento,
             saldoUsado: saldoUsado,
           ),
         ),
@@ -357,6 +370,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
+            agendamento: _agendamento,
             saldoUsado: saldoUsado,
           ),
         ),

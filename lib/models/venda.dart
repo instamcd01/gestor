@@ -87,13 +87,14 @@ class Venda {
 
   // Previsão de entrega/retirada em previsaoEntregaInicio/Fim abaixo —
   // pra pedido imediato é calculada pela LOJA (zona de entrega + hora do
-  // pedido); pra pedido com agendadoPeloCliente=true é a janela que o
-  // CLIENTE escolheu no checkout do site (entrega ou retirada), gravada
-  // nas mesmas duas colunas por finalizar_pedido_site. Só existe pra
-  // pedidos com checkout do app (loja física/WhatsApp/site) — pedidos
-  // iFood ainda não têm endereço/coordenadas suficientes pra calcular a
-  // zona, e usam agendado/entregaPrevista* (acima) em vez disso.
-  final bool agendadoPeloCliente;
+  // pedido); pra pedido com agendadoManualmente=true é a janela escolhida
+  // explicitamente (pelo cliente no checkout do site, ou pelo vendedor no
+  // app pra pedido por telefone/WhatsApp), gravada nas mesmas duas colunas
+  // (por finalizar_pedido_site no site, por registrar_pedido_completo no
+  // app). Só existe pra pedidos com checkout do app (loja física/WhatsApp/
+  // site) — pedidos iFood ainda não têm endereço/coordenadas suficientes
+  // pra calcular a zona, e usam agendado/entregaPrevista* (acima) em vez disso.
+  final bool agendadoManualmente;
   final DateTime? previsaoEntregaInicio;
   final DateTime? previsaoEntregaFim;
 
@@ -144,7 +145,7 @@ class Venda {
     this.agendado = false,
     this.entregaPrevistaInicio,
     this.entregaPrevistaFim,
-    this.agendadoPeloCliente = false,
+    this.agendadoManualmente = false,
     this.previsaoEntregaInicio,
     this.previsaoEntregaFim,
   });

@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
+import '../utils/agendamento_utils.dart';
 
 class CarrinhoScreen extends StatefulWidget {
   final String idVenda;
@@ -70,8 +71,10 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
     if (resultado != null && resultado is Map<String, dynamic>) {
       final Cliente cliente = resultado['cliente'];
       final ZonaEntrega? zona = resultado['zona'];
+      final JanelaHorarioAgendamento? agendamento = resultado['agendamento'];
       carrinhoProvider.selecionarCliente(cliente);
       carrinhoProvider.selecionarZonaEntrega(zona);
+      carrinhoProvider.selecionarAgendamento(agendamento);
     }
   }
 
@@ -248,6 +251,7 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                                 valorEntrega: carrinhoProvider.valorEntregaCalculado,
                                 entregaSelecionada: carrinhoProvider.entregaSelecionadaId,
                                 zonaEntrega: carrinhoProvider.zonaEntregaSelecionada,
+                                agendamento: carrinhoProvider.agendamentoSelecionado,
                               ),
                             ),
                           );

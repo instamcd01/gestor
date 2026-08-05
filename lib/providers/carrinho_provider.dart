@@ -5,6 +5,7 @@ import '../models/cupom.dart';
 import '../models/produto.dart'; // Seu modelo de Produto
 import '../models/zona_entrega.dart';
 import '../repositories/cupom_repository.dart';
+import '../utils/agendamento_utils.dart';
 
 // Modelo para um item no carrinho (mais robusto que Map<String, dynamic>)
 class ItemCarrinho {
@@ -42,6 +43,7 @@ class CarrinhoProvider with ChangeNotifier {
   Cupom? _cupomAplicado;
   bool _validandoCupom = false;
   String? _erroCupom;
+  JanelaHorarioAgendamento? _agendamentoSelecionado; // null = "quero agora" (previsão automática)
 
   // Getters
   List<ItemCarrinho> get itens => [..._itens]; // Retorna uma cópia para evitar modificação externa
@@ -51,6 +53,7 @@ class CarrinhoProvider with ChangeNotifier {
   Cupom? get cupomAplicado => _cupomAplicado;
   bool get validandoCupom => _validandoCupom;
   String? get erroCupom => _erroCupom;
+  JanelaHorarioAgendamento? get agendamentoSelecionado => _agendamentoSelecionado;
 
   /// Nome pra exibição/registro da venda — mantém esse getter (usado em
   /// vários lugares como rótulo descritivo) mesmo não sendo mais um ID
@@ -221,6 +224,14 @@ class CarrinhoProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Define a janela agendada pelo vendedor (entrega ou retirada, escolhida
+  /// na tela de Entrega) — null = "quero agora" (previsão automática pela
+  /// zona, calculada no fechamento da venda).
+  void selecionarAgendamento(JanelaHorarioAgendamento? agendamento) {
+    _agendamentoSelecionado = agendamento;
+    notifyListeners();
+  }
+
   void limparCarrinho() {
     _itens.clear();
     _desconto = 0.0;
@@ -229,6 +240,7 @@ class CarrinhoProvider with ChangeNotifier {
     _idVenda = const Uuid().v4();
     _cupomAplicado = null;
     _erroCupom = null;
+    _agendamentoSelecionado = null;
     notifyListeners();
   }
 }

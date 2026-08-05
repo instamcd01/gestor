@@ -104,6 +104,7 @@ class VendaRepository {
           'saldoUsado': venda.saldoUsado,
           'entregaSelecionada': venda.entregaSelecionada,
           'pagamentosDetalhados': venda.pagamentosDetalhados,
+          if (venda.agendadoManualmente) 'agendado': true,
         },
       },
       'p_itens': itensPayload,
@@ -136,6 +137,7 @@ class VendaRepository {
       vendedorId: pedidoInserido['vendedor_id'] as String?,
       previsaoEntregaInicio: venda.previsaoEntregaInicio,
       previsaoEntregaFim: venda.previsaoEntregaFim,
+      agendadoManualmente: venda.agendadoManualmente,
     );
   }
 
@@ -299,7 +301,7 @@ class VendaRepository {
           DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_inicio']?.toString() ?? '')?.toLocal(),
       entregaPrevistaFim:
           DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_fim']?.toString() ?? '')?.toLocal(),
-      agendadoPeloCliente: metadata['agendado'] as bool? ?? false,
+      agendadoManualmente: metadata['agendado'] as bool? ?? false,
       previsaoEntregaInicio: DateTime.tryParse(row['previsao_entrega_inicio']?.toString() ?? '')?.toLocal(),
       previsaoEntregaFim: DateTime.tryParse(row['previsao_entrega_fim']?.toString() ?? '')?.toLocal(),
     );

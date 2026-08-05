@@ -8,6 +8,7 @@ import '../models/zona_entrega.dart';
 import '../providers/carrinho_provider.dart';
 import '../providers/produto_provider.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../utils/agendamento_utils.dart';
 import 'recibo_screen.dart';
 
 class ConclusaoVendaScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class ConclusaoVendaScreen extends StatefulWidget {
   final double saldoUsado;
   final Map<String, double>? pagamentosDetalhados;
   final ZonaEntrega? zonaEntrega;
+  final JanelaHorarioAgendamento? agendamento;
 
   ConclusaoVendaScreen({
     required this.valorTotal,
@@ -41,6 +43,7 @@ class ConclusaoVendaScreen extends StatefulWidget {
     required this.saldoUsado,
     this.pagamentosDetalhados,
     this.zonaEntrega,
+    this.agendamento,
   });
 
   @override
@@ -79,12 +82,16 @@ class _ConclusaoVendaScreenState extends State<ConclusaoVendaScreen> {
       final totalItens = itensVenda.fold<int>(0, (soma, i) => soma + i.quantidade);
       final dataVenda = DateTime.now();
 
-      // Previsão calculada pela LOJA: zona escolhida no checkout + faixa de
-      // minutos configurada nela, ancorada no exato momento do pedido — só
-      // quando a zona tem faixa configurada (não é obrigatório).
+      // Previsão automática: zona escolhida no checkout + faixa de minutos
+      // configurada nela, ancorada no exato momento do pedido — só quando
+      // a zona tem faixa configurada (não é obrigatório). Sobrescrita pela
+      // janela explícita quando o vendedor agendou (tela de Entrega).
+      final agendamento = widget.agendamento;
       final zona = widget.zonaEntrega;
-      final previsaoInicio = zona?.estimativaMinMin != null ? dataVenda.add(Duration(minutes: zona!.estimativaMinMin!)) : null;
-      final previsaoFim = zona?.estimativaMinMax != null ? dataVenda.add(Duration(minutes: zona!.estimativaMinMax!)) : null;
+      final previsaoInicio = agendamento?.inicio ??
+          (zona?.estimativaMinMin != null ? dataVenda.add(Duration(minutes: zona!.estimativaMinMin!)) : null);
+      final previsaoFim = agendamento?.fim ??
+          (zona?.estimativaMinMax != null ? dataVenda.add(Duration(minutes: zona!.estimativaMinMax!)) : null);
 
       final venda = Venda(
         cliente: widget.cliente,
@@ -106,6 +113,7 @@ class _ConclusaoVendaScreenState extends State<ConclusaoVendaScreen> {
         itens: itensVenda,
         previsaoEntregaInicio: previsaoInicio,
         previsaoEntregaFim: previsaoFim,
+        agendadoManualmente: agendamento != null,
       );
 
       final historicoProvider = Provider.of<HistoricoVendasProvider>(context, listen: false);

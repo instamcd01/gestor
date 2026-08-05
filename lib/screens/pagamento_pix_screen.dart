@@ -6,6 +6,7 @@ import '../config/supabase_config.dart';
 import '../models/cliente.dart';
 import '../models/zona_entrega.dart';
 import '../providers/auth_provider.dart';
+import '../utils/agendamento_utils.dart';
 import '../widgets/itens_compra_card.dart';
 import '../widgets/resumo_pagamento_card.dart';
 import 'conclusao_venda_screen.dart';
@@ -21,6 +22,7 @@ class PagamentoPixScreen extends StatefulWidget {
   final String entregaSelecionada;
   final double saldoUsado;
   final ZonaEntrega? zonaEntrega;
+  final JanelaHorarioAgendamento? agendamento;
 
   PagamentoPixScreen({
     required this.valorTotal,
@@ -33,6 +35,7 @@ class PagamentoPixScreen extends StatefulWidget {
     required this.entregaSelecionada,
     this.saldoUsado = 0.0,
     this.zonaEntrega,
+    this.agendamento,
   });
 
   @override
@@ -154,6 +157,7 @@ class _PagamentoPixScreenState extends State<PagamentoPixScreen> {
                     entregaSelecionada: widget.entregaSelecionada,
                     saldoUsado: widget.saldoUsado,
                     zonaEntrega: widget.zonaEntrega,
+                    agendamento: widget.agendamento,
                   ),
                 ),
               );

@@ -55,26 +55,27 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   }
 
   /// Início/fim da janela agendada, seja ela do iFood (agendado +
-  /// entregaPrevista*) ou escolhida pelo cliente no site (agendadoPeloCliente
-  /// + previsaoEntrega*, mesmas colunas que pra pedido imediato guardam a
-  /// previsão calculada pela loja — ver comentário no model Venda).
+  /// entregaPrevista*) ou escolhida manualmente — pelo cliente no site ou
+  /// pelo vendedor no app (agendadoManualmente + previsaoEntrega*, mesmas
+  /// colunas que pra pedido imediato guardam a previsão calculada pela
+  /// loja — ver comentário no model Venda).
   DateTime? _agendadoInicio(Venda venda) {
     if (venda.agendado) return venda.entregaPrevistaInicio;
-    if (venda.agendadoPeloCliente) return venda.previsaoEntregaInicio;
+    if (venda.agendadoManualmente) return venda.previsaoEntregaInicio;
     return null;
   }
 
   DateTime? _agendadoFim(Venda venda) {
     if (venda.agendado) return venda.entregaPrevistaFim;
-    if (venda.agendadoPeloCliente) return venda.previsaoEntregaFim;
+    if (venda.agendadoManualmente) return venda.previsaoEntregaFim;
     return null;
   }
 
   _Urgencia _urgenciaPedido(Venda venda, DateTime agora) {
     // Pedido concluído/cancelado não tem mais "atraso" — já acabou. Pedido
-    // agendado (iFood ou cliente no site) também não — a janela é escolhida,
-    // não uma promessa de "o quanto antes" que possa "atrasar".
-    if (!venda.emAndamento || venda.agendado || venda.agendadoPeloCliente || !venda.temEntrega) {
+    // agendado (iFood ou escolhido manualmente) também não — a janela é
+    // escolhida, não uma promessa de "o quanto antes" que possa "atrasar".
+    if (!venda.emAndamento || venda.agendado || venda.agendadoManualmente || !venda.temEntrega) {
       return _Urgencia.neutro;
     }
     final fim = venda.previsaoEntregaFim;
@@ -476,7 +477,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                     padding: const EdgeInsets.only(top: 8),
                                     child: Wrap(spacing: 6, runSpacing: 4, children: chipsInfo),
                                   ),
-                                if ((venda.agendado || venda.agendadoPeloCliente) &&
+                                if ((venda.agendado || venda.agendadoManualmente) &&
                                     _agendadoInicio(venda) != null &&
                                     _agendadoFim(venda) != null)
                                   Padding(
