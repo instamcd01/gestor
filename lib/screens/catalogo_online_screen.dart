@@ -33,6 +33,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
   bool _catalogoAtivo = false;
   bool _aceitaPedidosOnline = false;
   bool _aceitaRetirada = true;
+  bool _mostrarEstoqueBaixo = false;
   String _modelo = 'classico';
 
   bool _carregando = true;
@@ -64,7 +65,8 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
     try {
       final data = await supabase
           .from('empresas')
-          .select('catalogo_slug, catalogo_ativo, aceita_pedidos_online, aceita_retirada, catalogo_modelo, '
+          .select('catalogo_slug, catalogo_ativo, aceita_pedidos_online, aceita_retirada, '
+              'mostrar_estoque_baixo, catalogo_modelo, '
               'whatsapp_catalogo, instagram, facebook, catalogo_info_extra')
           .eq('id', empresaId)
           .single();
@@ -77,6 +79,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
       _catalogoAtivo = data['catalogo_ativo'] as bool? ?? false;
       _aceitaPedidosOnline = data['aceita_pedidos_online'] as bool? ?? false;
       _aceitaRetirada = data['aceita_retirada'] as bool? ?? true;
+      _mostrarEstoqueBaixo = data['mostrar_estoque_baixo'] as bool? ?? false;
       _modelo = data['catalogo_modelo']?.toString() ?? 'classico';
 
       if (mounted) {
@@ -119,6 +122,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
         'catalogo_ativo': _catalogoAtivo,
         'aceita_pedidos_online': _aceitaPedidosOnline,
         'aceita_retirada': _aceitaRetirada,
+        'mostrar_estoque_baixo': _mostrarEstoqueBaixo,
         'catalogo_modelo': _modelo,
         'whatsapp_catalogo': _whatsappController.text.trim(),
         'instagram': _instagramController.text.trim(),
@@ -208,6 +212,14 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                           subtitle: const Text('Desligado = cliente só pode escolher entrega no checkout do site'),
                           value: _aceitaRetirada,
                           onChanged: (v) => setState(() => _aceitaRetirada = v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Mostrar estoque baixo no produto'),
+                          subtitle: const Text('Liga o aviso "Só restam X em estoque" — desligado por padrão, '
+                              'pode passar imagem de loja pequena com pouco de cada item'),
+                          value: _mostrarEstoqueBaixo,
+                          onChanged: (v) => setState(() => _mostrarEstoqueBaixo = v),
                         ),
                         TextFormField(
                           controller: _slugController,
