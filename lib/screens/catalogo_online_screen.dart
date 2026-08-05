@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
+import '../utils/formatadores_input.dart';
 import '../widgets/aviso_banner.dart';
 import '../widgets/form_section.dart';
 
@@ -239,6 +240,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                                 'começando com "+" (ex: +1 555 154 1583, número de teste da Meta)',
                           ),
                           keyboardType: TextInputType.phone,
+                          inputFormatters: [TelefoneInputFormatter()],
                         ),
                         TextFormField(
                           controller: _instagramController,

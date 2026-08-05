@@ -88,12 +88,27 @@ class DataInputFormatter extends TextInputFormatter {
 
 /// Máscara de telefone BR: adapta pra (XX) XXXX-XXXX (fixo, 10 dígitos)
 /// ou (XX) XXXXX-XXXX (celular, 11 dígitos) conforme a quantidade digitada.
+///
+/// Um "+" no início desliga a máscara brasileira — só mantém dígitos, sem
+/// limite de 11 nem parênteses/hífen. Mesma convenção de "+"="já é
+/// internacional, não mexe" usada em linkWhatsApp, no site (gestor-loja)
+/// e no n8n, pra quem eventualmente cadastrar um contato de fora do
+/// Brasil (cliente, fornecedor, WhatsApp da loja, etc.) em qualquer tela.
 class TelefoneInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
+    if (newValue.text.trim().startsWith('+')) {
+      final digitos = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+      final texto = '+$digitos';
+      return TextEditingValue(
+        text: texto,
+        selection: TextSelection.collapsed(offset: texto.length),
+      );
+    }
+
     var digitos = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digitos.length > 11) digitos = digitos.substring(0, 11);
 
