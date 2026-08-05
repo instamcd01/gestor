@@ -76,14 +76,23 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     }
   }
 
-  bool _temPrevisaoEntrega(Venda venda) => venda.entregaPrevistaFim != null;
+  /// Mesma distinção do fila_pedidos_screen: iFood usa agendado/entregaPrevista*,
+  /// pedido com checkout do app (loja física/WhatsApp/site) usa
+  /// agendadoPeloCliente/previsaoEntrega* — ver comentário no model Venda.
+  DateTime? _previsaoInicio(Venda venda) => venda.previsaoEntregaInicio ?? venda.entregaPrevistaInicio;
+  DateTime? _previsaoFim(Venda venda) => venda.previsaoEntregaFim ?? venda.entregaPrevistaFim;
+  bool _ehAgendado(Venda venda) => venda.agendado || venda.agendadoPeloCliente;
+
+  bool _temPrevisaoEntrega(Venda venda) => _previsaoFim(venda) != null;
 
   String _formatarPrevisaoEntrega(Venda venda) {
     final formato = DateFormat('dd/MM HH:mm');
-    if (venda.agendado && venda.entregaPrevistaInicio != null) {
-      return '${formato.format(venda.entregaPrevistaInicio!)} - ${formato.format(venda.entregaPrevistaFim!)}';
+    final inicio = _previsaoInicio(venda);
+    final fim = _previsaoFim(venda)!;
+    if (_ehAgendado(venda) && inicio != null) {
+      return '${formato.format(inicio)} - ${formato.format(fim)}';
     }
-    return '~${formato.format(venda.entregaPrevistaFim!)}';
+    return '~${formato.format(fim)}';
   }
 
   void _verRecibo() {
@@ -339,9 +348,14 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                             ? '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}'
                             : venda.metodoPagamento,
                       ),
-                      if (venda.ehMarketplace && _temPrevisaoEntrega(venda))
-                        _linhaInfo(Icons.schedule, venda.agendado ? 'Entrega agendada' : 'Previsão de entrega',
-                            _formatarPrevisaoEntrega(venda)),
+                      if (_temPrevisaoEntrega(venda))
+                        _linhaInfo(
+                          Icons.schedule,
+                          _ehAgendado(venda)
+                              ? (venda.retirada ? 'Retirada agendada' : 'Entrega agendada')
+                              : 'Previsão de entrega',
+                          _formatarPrevisaoEntrega(venda),
+                        ),
                       if (venda.cliente.celular.isNotEmpty)
                         _linhaComAcao(
                           icon: Icons.phone,

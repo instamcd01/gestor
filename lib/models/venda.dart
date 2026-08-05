@@ -85,11 +85,15 @@ class Venda {
   final DateTime? entregaPrevistaInicio; // início da janela prometida, só quando agendado
   final DateTime? entregaPrevistaFim; // fim da janela (agendado) ou estimativa única (pedido imediato)
 
-  // Previsão calculada pela LOJA (zona escolhida no checkout + hora do
-  // pedido) — independente do prazo que a iFood promete ao cliente dela
-  // (os dois campos acima). Só existe pra pedidos com entrega feitos pelo
-  // checkout do app (loja física/WhatsApp/site); pedidos iFood ainda não
-  // têm endereço/coordenadas suficientes pra calcular a zona.
+  // Previsão de entrega/retirada em previsaoEntregaInicio/Fim abaixo —
+  // pra pedido imediato é calculada pela LOJA (zona de entrega + hora do
+  // pedido); pra pedido com agendadoPeloCliente=true é a janela que o
+  // CLIENTE escolheu no checkout do site (entrega ou retirada), gravada
+  // nas mesmas duas colunas por finalizar_pedido_site. Só existe pra
+  // pedidos com checkout do app (loja física/WhatsApp/site) — pedidos
+  // iFood ainda não têm endereço/coordenadas suficientes pra calcular a
+  // zona, e usam agendado/entregaPrevista* (acima) em vez disso.
+  final bool agendadoPeloCliente;
   final DateTime? previsaoEntregaInicio;
   final DateTime? previsaoEntregaFim;
 
@@ -140,6 +144,7 @@ class Venda {
     this.agendado = false,
     this.entregaPrevistaInicio,
     this.entregaPrevistaFim,
+    this.agendadoPeloCliente = false,
     this.previsaoEntregaInicio,
     this.previsaoEntregaFim,
   });

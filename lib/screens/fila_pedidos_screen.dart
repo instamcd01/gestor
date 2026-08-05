@@ -54,9 +54,29 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     super.dispose();
   }
 
+  /// Início/fim da janela agendada, seja ela do iFood (agendado +
+  /// entregaPrevista*) ou escolhida pelo cliente no site (agendadoPeloCliente
+  /// + previsaoEntrega*, mesmas colunas que pra pedido imediato guardam a
+  /// previsão calculada pela loja — ver comentário no model Venda).
+  DateTime? _agendadoInicio(Venda venda) {
+    if (venda.agendado) return venda.entregaPrevistaInicio;
+    if (venda.agendadoPeloCliente) return venda.previsaoEntregaInicio;
+    return null;
+  }
+
+  DateTime? _agendadoFim(Venda venda) {
+    if (venda.agendado) return venda.entregaPrevistaFim;
+    if (venda.agendadoPeloCliente) return venda.previsaoEntregaFim;
+    return null;
+  }
+
   _Urgencia _urgenciaPedido(Venda venda, DateTime agora) {
-    // Pedido concluído/cancelado não tem mais "atraso" — já acabou.
-    if (!venda.emAndamento || venda.agendado || !venda.temEntrega) return _Urgencia.neutro;
+    // Pedido concluído/cancelado não tem mais "atraso" — já acabou. Pedido
+    // agendado (iFood ou cliente no site) também não — a janela é escolhida,
+    // não uma promessa de "o quanto antes" que possa "atrasar".
+    if (!venda.emAndamento || venda.agendado || venda.agendadoPeloCliente || !venda.temEntrega) {
+      return _Urgencia.neutro;
+    }
     final fim = venda.previsaoEntregaFim;
     if (fim == null) return _Urgencia.neutro;
     if (agora.isAfter(fim)) return _Urgencia.atrasado;
@@ -456,9 +476,9 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                     padding: const EdgeInsets.only(top: 8),
                                     child: Wrap(spacing: 6, runSpacing: 4, children: chipsInfo),
                                   ),
-                                if (venda.agendado &&
-                                    venda.entregaPrevistaInicio != null &&
-                                    venda.entregaPrevistaFim != null)
+                                if ((venda.agendado || venda.agendadoPeloCliente) &&
+                                    _agendadoInicio(venda) != null &&
+                                    _agendadoFim(venda) != null)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 6),
                                     child: Row(
@@ -467,8 +487,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                             size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                         const SizedBox(width: 4),
                                         Text(
-                                          'Agendado: ${DateFormat('dd/MM HH:mm').format(venda.entregaPrevistaInicio!)}'
-                                          ' - ${DateFormat('HH:mm').format(venda.entregaPrevistaFim!)}',
+                                          'Agendado: ${DateFormat('dd/MM HH:mm').format(_agendadoInicio(venda)!)}'
+                                          ' - ${DateFormat('HH:mm').format(_agendadoFim(venda)!)}',
                                           style: TextStyle(
                                               fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                         ),

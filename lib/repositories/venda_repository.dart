@@ -299,6 +299,7 @@ class VendaRepository {
           DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_inicio']?.toString() ?? '')?.toLocal(),
       entregaPrevistaFim:
           DateTime.tryParse(marketplacePedidoRow?['entrega_prevista_fim']?.toString() ?? '')?.toLocal(),
+      agendadoPeloCliente: metadata['agendado'] as bool? ?? false,
       previsaoEntregaInicio: DateTime.tryParse(row['previsao_entrega_inicio']?.toString() ?? '')?.toLocal(),
       previsaoEntregaFim: DateTime.tryParse(row['previsao_entrega_fim']?.toString() ?? '')?.toLocal(),
     );
