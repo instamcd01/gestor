@@ -13,6 +13,7 @@ class PagamentoCartaoCreditoScreen extends StatelessWidget {
   final String metodoPagamento;
   final Cliente cliente;
   final double desconto;
+  final String? cupomId;
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
@@ -25,6 +26,7 @@ class PagamentoCartaoCreditoScreen extends StatelessWidget {
     required this.metodoPagamento,
     required this.cliente,
     required this.desconto,
+    this.cupomId,
     required this.valorEntrega,
     required this.entregaSelecionada,
     required this.saldoUsado,
@@ -90,6 +92,7 @@ class PagamentoCartaoCreditoScreen extends StatelessWidget {
                     metodoPagamento: metodoPagamento,
                     cliente: cliente,
                     desconto: desconto,
+                    cupomId: cupomId,
                     valorEntrega: valorEntrega,
                     entregaSelecionada: entregaSelecionada,
                     saldoUsado: saldoUsado,

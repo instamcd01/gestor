@@ -13,6 +13,7 @@ class PagamentoCartaoDebitoScreen extends StatefulWidget {
   final String metodoPagamento;
   final Cliente cliente;
   final double desconto;
+  final String? cupomId;
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
@@ -25,6 +26,7 @@ class PagamentoCartaoDebitoScreen extends StatefulWidget {
     required this.metodoPagamento,
     required this.cliente,
     required this.desconto,
+    this.cupomId,
     required this.valorEntrega,
     required this.entregaSelecionada,
     required this.saldoUsado,
@@ -49,6 +51,7 @@ class _PagamentoCartaoDebitoScreenState
           metodoPagamento: widget.metodoPagamento,
           cliente: widget.cliente,
           desconto: widget.desconto,
+          cupomId: widget.cupomId,
           valorEntrega: widget.valorEntrega,
           entregaSelecionada: widget.entregaSelecionada,
           saldoUsado: widget.saldoUsado,

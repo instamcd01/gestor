@@ -26,6 +26,13 @@ class CarrinhoScreen extends StatefulWidget {
 class _CarrinhoScreenState extends State<CarrinhoScreen> {
   late String idVenda;
   double? _valorMinimoPedido;
+  final TextEditingController _cupomController = TextEditingController();
+
+  @override
+  void dispose() {
+    _cupomController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -176,7 +183,17 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                     ),
                   ),
 
+                _cupomSection(context, carrinhoProvider),
+                const SizedBox(height: 8),
+
                 _linhaResumo(context, 'Subtotal', 'R\$ ${carrinhoProvider.subtotal.toStringAsFixed(2)}'),
+                if (carrinhoProvider.desconto > 0)
+                  _linhaResumo(
+                    context,
+                    carrinhoProvider.cupomAplicado != null ? 'Cupom (${carrinhoProvider.cupomAplicado!.codigo})' : 'Desconto',
+                    '- R\$ ${carrinhoProvider.desconto.toStringAsFixed(2)}',
+                    cor: Colors.green,
+                  ),
                 _linhaResumo(
                   context,
                   'Entrega',
@@ -227,6 +244,7 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                                 carrinho: carrinhoProvider.itens.map((item) => item.toMap()).toList(),
                                 cliente: carrinhoProvider.clienteSelecionado!,
                                 desconto: carrinhoProvider.desconto,
+                                cupomId: carrinhoProvider.cupomAplicado?.id,
                                 valorEntrega: carrinhoProvider.valorEntregaCalculado,
                                 entregaSelecionada: carrinhoProvider.entregaSelecionadaId,
                                 zonaEntrega: carrinhoProvider.zonaEntregaSelecionada,
@@ -342,6 +360,80 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _cupomSection(BuildContext context, CarrinhoProvider carrinhoProvider) {
+    final cupom = carrinhoProvider.cupomAplicado;
+
+    if (cupom != null) {
+      return Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.green.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.local_offer, color: Colors.green, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '"${cupom.codigo}" aplicado',
+                style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.green),
+              ),
+            ),
+            TextButton(
+              onPressed: carrinhoProvider.removerCupom,
+              child: const Text('Remover'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _cupomController,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Cupom de desconto',
+                  isDense: true,
+                ),
+              ),
+              if (carrinhoProvider.erroCupom != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    carrinhoProvider.erroCupom!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: OutlinedButton(
+            onPressed: carrinhoProvider.validandoCupom
+                ? null
+                : () {
+                    final empresaId = context.read<AuthProvider>().empresaId;
+                    if (empresaId == null) return;
+                    carrinhoProvider.aplicarCupom(empresaId, _cupomController.text);
+                  },
+            child: Text(carrinhoProvider.validandoCupom ? '...' : 'Aplicar'),
+          ),
+        ),
+      ],
     );
   }
 }

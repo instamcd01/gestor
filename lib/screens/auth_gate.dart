@@ -8,6 +8,7 @@ import '../providers/historico_vendas_provider.dart';
 import '../providers/usuario_provider.dart';
 import '../providers/zona_entrega_provider.dart';
 import '../providers/fornecedor_provider.dart';
+import '../providers/cupom_provider.dart';
 import '../providers/despesa_provider.dart';
 import '../providers/notificacao_provider.dart';
 import '../providers/entrada_provider.dart';
@@ -59,6 +60,7 @@ class _AuthGateState extends State<AuthGate> {
         context.read<FornecedorProvider>().definirEmpresa(empresaId);
         context.read<DespesaProvider>().definirEmpresa(empresaId);
         context.read<EntradaProvider>().definirEmpresa(empresaId);
+        context.read<CupomProvider>().definirEmpresa(empresaId);
         context.read<ZonaEntregaProvider>()
           ..definirEmpresa(empresaId)
           ..carregarZonas();

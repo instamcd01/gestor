@@ -13,6 +13,7 @@ class PagamentoOutrosScreen extends StatefulWidget {
   final List<Map<String, dynamic>> carrinho;
   final Cliente cliente;
   final double desconto;
+  final String? cupomId;
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
@@ -23,6 +24,7 @@ class PagamentoOutrosScreen extends StatefulWidget {
     required this.carrinho,
     required this.cliente,
     required this.desconto,
+    this.cupomId,
     required this.valorEntrega,
     required this.entregaSelecionada,
     this.saldoUsado = 0.0,
@@ -132,6 +134,7 @@ class _PagamentoOutrosScreenState extends State<PagamentoOutrosScreen> {
           cliente: widget.cliente,
           metodoPagamento: 'Outros', // indicando pagamento dividido
           desconto: widget.desconto,
+          cupomId: widget.cupomId,
           valorEntrega: widget.valorEntrega,
           entregaSelecionada: widget.entregaSelecionada,
           saldoUsado: saldoUsadoTotal,

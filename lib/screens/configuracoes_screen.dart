@@ -9,6 +9,9 @@ import 'horario_funcionamento_screen.dart';
 import 'meu_recibo_screen.dart';
 import 'opcoes_pagamento_screen.dart';
 import 'regras_venda_screen.dart';
+import 'cupons_screen.dart';
+import 'config_cupom_automatico_screen.dart';
+import 'metricas_cupons_screen.dart';
 import 'exportar_relatorios_screen.dart';
 import 'importar_nota_fiscal_screen.dart';
 import 'integrar_plataformas_screen.dart';
@@ -65,6 +68,9 @@ class ConfiguracoesScreen extends StatelessWidget {
               MenuItem('Opções de Pagamento', Icons.payment_outlined, const OpcoesPagamentoScreen()),
               MenuItem('Pedidos e Vendas', Icons.shopping_cart_outlined, const PedidosVendasScreen()),
               MenuItem('Opções de Entrega', Icons.local_shipping_outlined, const ConfiguracaoEntregaScreen()),
+              MenuItem('Cupons de Desconto', Icons.local_offer_outlined, const CuponsScreen()),
+              MenuItem('Métricas de Cupons', Icons.bar_chart_outlined, const MetricasCuponsScreen()),
+              MenuItem('Cupom Automático', Icons.auto_awesome_outlined, const ConfigCupomAutomaticoScreen()),
             ],
           ),
           const SizedBox(height: 20),

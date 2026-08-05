@@ -19,6 +19,7 @@ class ConclusaoVendaScreen extends StatefulWidget {
   final double? valorPago;
   final double? troco;
   final double desconto;
+  final String? cupomId;
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
@@ -34,6 +35,7 @@ class ConclusaoVendaScreen extends StatefulWidget {
     this.valorPago,
     this.troco,
     required this.desconto,
+    this.cupomId,
     required this.valorEntrega,
     required this.entregaSelecionada,
     required this.saldoUsado,
@@ -89,6 +91,7 @@ class _ConclusaoVendaScreenState extends State<ConclusaoVendaScreen> {
         dataVenda: dataVenda,
         subtotal: subtotal,
         desconto: widget.desconto,
+        cupomId: widget.cupomId,
         saldoUsado: widget.saldoUsado,
         valorEntrega: widget.valorEntrega,
         entregaSelecionada: widget.entregaSelecionada,

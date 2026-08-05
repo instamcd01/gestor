@@ -11,6 +11,7 @@ class PagamentoLinkScreen extends StatefulWidget {
   final String metodoPagamento;
   final Cliente cliente;
   final double desconto;
+  final String? cupomId;
   final double valorEntrega;
   final String entregaSelecionada;
   final double saldoUsado;
@@ -22,6 +23,7 @@ class PagamentoLinkScreen extends StatefulWidget {
     required this.metodoPagamento,
     required this.cliente,
     required this.desconto,
+    this.cupomId,
     required this.valorEntrega,
     required this.entregaSelecionada,
     this.saldoUsado = 0.0,
@@ -85,6 +87,7 @@ class _PagamentoLinkScreenState extends State<PagamentoLinkScreen> {
                     cliente: widget.cliente,
                     metodoPagamento: widget.metodoPagamento,
                     desconto: widget.desconto,
+                    cupomId: widget.cupomId,
                     valorEntrega: widget.valorEntrega,
                     entregaSelecionada: widget.entregaSelecionada,
                     saldoUsado: widget.saldoUsado,

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/cliente.dart';
+import '../models/cupom.dart';
 import '../models/produto.dart'; // Seu modelo de Produto
 import '../models/zona_entrega.dart';
+import '../repositories/cupom_repository.dart';
 
 // Modelo para um item no carrinho (mais robusto que Map<String, dynamic>)
 class ItemCarrinho {
@@ -30,17 +32,25 @@ class ItemCarrinho {
 }
 
 class CarrinhoProvider with ChangeNotifier {
+  final CupomRepository _cupomRepository = CupomRepository();
+
   final List<ItemCarrinho> _itens = [];
   Cliente? _clienteSelecionado;
   double _desconto = 0.0;
   ZonaEntrega? _zonaSelecionada; // null = retirada na loja (sem frete)
   String _idVenda = const Uuid().v4();
+  Cupom? _cupomAplicado;
+  bool _validandoCupom = false;
+  String? _erroCupom;
 
   // Getters
   List<ItemCarrinho> get itens => [..._itens]; // Retorna uma cópia para evitar modificação externa
   Cliente? get clienteSelecionado => _clienteSelecionado;
   double get desconto => _desconto;
   ZonaEntrega? get zonaEntregaSelecionada => _zonaSelecionada;
+  Cupom? get cupomAplicado => _cupomAplicado;
+  bool get validandoCupom => _validandoCupom;
+  String? get erroCupom => _erroCupom;
 
   /// Nome pra exibição/registro da venda — mantém esse getter (usado em
   /// vários lugares como rótulo descritivo) mesmo não sendo mais um ID
@@ -135,6 +145,67 @@ class CarrinhoProvider with ChangeNotifier {
     } else {
       _desconto = valor;
     }
+    // Desconto manual substitui um cupom já aplicado — evita mandar um
+    // cupom_id junto de um valor de desconto que não é mais o dele.
+    _cupomAplicado = null;
+    notifyListeners();
+  }
+
+  /// Valida via validar_cupom() no Postgres (mesma função usada pelo
+  /// site) e, se válido, aplica o desconto retornado — nunca calcula o
+  /// valor no Dart. empresaId vem de fora (AuthProvider) porque esse
+  /// provider não conhece a empresa sozinho.
+  Future<void> aplicarCupom(String empresaId, String codigo) async {
+    if (codigo.trim().isEmpty) return;
+    _validandoCupom = true;
+    _erroCupom = null;
+    notifyListeners();
+
+    try {
+      final itensPayload = _itens.map((item) => {
+        'produto_id': item.produto.id,
+        'categoria': item.produto.categoria,
+        'subcategoria': item.produto.subcategoria,
+        'marca': item.produto.fabricante,
+        'subtotal': item.precoTotalItem,
+      }).toList();
+
+      final resultado = await _cupomRepository.validar(
+        empresaId: empresaId,
+        codigo: codigo.trim(),
+        clienteId: _clienteSelecionado?.idCliente,
+        subtotal: subtotal,
+        itens: itensPayload,
+      );
+
+      if (!resultado.valido) {
+        _erroCupom = resultado.motivo ?? 'Cupom inválido';
+        _validandoCupom = false;
+        notifyListeners();
+        return;
+      }
+
+      _cupomAplicado = Cupom(
+        id: resultado.cupomId,
+        codigo: codigo.trim().toUpperCase(),
+        tipoDesconto: TipoDescontoCupom.fixo,
+        valor: resultado.valorDesconto,
+        vendedorId: resultado.vendedorId,
+      );
+      _desconto = resultado.valorDesconto;
+    } catch (e) {
+      _erroCupom = 'Não foi possível validar o cupom agora.';
+      debugPrint('Erro ao validar cupom: $e');
+    } finally {
+      _validandoCupom = false;
+      notifyListeners();
+    }
+  }
+
+  void removerCupom() {
+    _cupomAplicado = null;
+    _desconto = 0.0;
+    _erroCupom = null;
     notifyListeners();
   }
 
@@ -156,6 +227,8 @@ class CarrinhoProvider with ChangeNotifier {
     _clienteSelecionado = null;
     _zonaSelecionada = null;
     _idVenda = const Uuid().v4();
+    _cupomAplicado = null;
+    _erroCupom = null;
     notifyListeners();
   }
 }

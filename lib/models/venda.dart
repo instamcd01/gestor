@@ -39,6 +39,7 @@ class Venda {
 
   final double subtotal;          // valor dos produtos antes de frete/desconto
   final double desconto;          // desconto aplicado
+  final String? cupomId;          // cupons.id quando o desconto veio de um cupom (não de desconto manual)
   final double saldoUsado;
   final double valorEntrega;      // frete efetivo
   final String entregaSelecionada; // faixa de entrega ex: '0-2km'
@@ -99,6 +100,7 @@ class Venda {
     required this.dataVenda,
     required this.subtotal,
     required this.desconto,
+    this.cupomId,
     required this.saldoUsado,
     required this.valorEntrega,
     required this.entregaSelecionada,

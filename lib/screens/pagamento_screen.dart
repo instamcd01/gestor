@@ -27,6 +27,7 @@ class PagamentoScreen extends StatefulWidget {
   final Cliente cliente;
   final List<Map<String, dynamic>> carrinho;
   final double desconto;
+  final String? cupomId;
   final double valorEntrega;
   final String entregaSelecionada;
   final ZonaEntrega? zonaEntrega;
@@ -37,6 +38,7 @@ class PagamentoScreen extends StatefulWidget {
     required this.carrinho,
     required this.cliente,
     required this.desconto,
+    this.cupomId,
     required this.valorEntrega,
     required this.entregaSelecionada,
     this.zonaEntrega,
@@ -55,6 +57,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   // dela sempre a partir do zero, no getter `valorTotal`.
   late final double _subtotal;
   double desconto = 0.0;
+  String? cupomId;
   double saldoUsado = 0.0;
 
   // Cliente da venda em andamento — mutável porque "Trocar Cliente" durante
@@ -79,6 +82,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
       (soma, item) => soma + ((item['precoTotalItem'] as num?)?.toDouble() ?? 0.0),
     );
     desconto = widget.desconto;
+    cupomId = widget.cupomId;
     _cliente = widget.cliente;
     _valorEntrega = widget.valorEntrega;
     _entregaSelecionada = widget.entregaSelecionada;
@@ -184,6 +188,10 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     if (novoValorComDesconto != null) {
       setState(() {
         desconto = (baseSemDesconto - novoValorComDesconto).clamp(0, baseSemDesconto);
+        // Desconto manual substitui um cupom já aplicado antes (ver
+        // CarrinhoProvider.aplicarCupom) — evita mandar um cupom_id junto
+        // de um valor que não é mais o dele.
+        cupomId = null;
         // O saldo já aplicado não pode passar a exceder o novo valor devido.
         if (saldoUsado > _valorAntesDoSaldo) {
           saldoUsado = _valorAntesDoSaldo;
@@ -195,6 +203,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   void limparDesconto() {
     setState(() {
       desconto = 0.0;
+      cupomId = null;
       if (saldoUsado > _valorAntesDoSaldo) {
         saldoUsado = _valorAntesDoSaldo;
       }
@@ -255,6 +264,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
+            cupomId: cupomId,
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
@@ -272,6 +282,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
+            cupomId: cupomId,
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
@@ -289,6 +300,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
+            cupomId: cupomId,
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
@@ -306,6 +318,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
+            cupomId: cupomId,
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
@@ -323,6 +336,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             metodoPagamento: metodoPagamentoSelecionado,
             cliente: _cliente,
             desconto: desconto,
+            cupomId: cupomId,
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,
@@ -339,6 +353,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
             carrinho: widget.carrinho,
             cliente: _cliente,
             desconto: desconto,
+            cupomId: cupomId,
             valorEntrega: _valorEntrega,
             entregaSelecionada: _entregaSelecionada,
             zonaEntrega: _zonaEntrega,

@@ -85,6 +85,12 @@ class VendaRepository {
         'valor_produtos': venda.subtotal,
         'valor_entrega': venda.valorEntrega,
         'desconto': venda.desconto,
+        // Cupom: o app já validou via CarrinhoProvider.aplicarCupom antes
+        // de chegar aqui (mesmo momento em que já confia no desconto
+        // manual digitado pelo atendente) — registrar_pedido_completo só
+        // loga o uso atomicamente com a criação do pedido.
+        'cupom_id': venda.cupomId,
+        'valor_desconto_cupom': venda.cupomId != null ? venda.desconto : null,
         'valor_total': venda.valorTotal,
         'custo_total': venda.custoTotal,
         'lucro_bruto': lucroTotal,
