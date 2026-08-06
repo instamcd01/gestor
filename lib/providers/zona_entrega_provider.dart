@@ -4,7 +4,9 @@ import '../models/zona_entrega.dart';
 import '../repositories/zona_entrega_repository.dart';
 
 class ZonaEntregaProvider with ChangeNotifier {
-  final _repository = ZonaEntregaRepository();
+  ZonaEntregaProvider({String tabela = 'zonas_entrega'}) : _repository = ZonaEntregaRepository(tabela: tabela);
+
+  final ZonaEntregaRepository _repository;
 
   List<ZonaEntrega> _zonas = [];
   bool _carregando = false;

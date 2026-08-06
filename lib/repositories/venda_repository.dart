@@ -11,7 +11,7 @@ class VendaRepository {
       '*, cliente:clientes(*), itens_pedido(*, produtos(*)), '
       'marketplace_pedidos(id, rastreio_latitude, rastreio_longitude, rastreio_eta_entrega, rastreio_atualizado_em, '
       'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
-      'codigo_retirada_exibicao, agendado, entrega_prevista_inicio, entrega_prevista_fim, '
+      'codigo_retirada_exibicao, link_confirmacao_entrega, agendado, entrega_prevista_inicio, entrega_prevista_fim, '
       'taxa_servico_cliente, campanha_marketplace, cupom_marketplace, politica_substituicao, entregador_tipo)';
   // previsao_entrega_inicio/fim já vêm no '*' de pedidos (coluna própria,
   // não de marketplace_pedidos) — sem precisar listar explicitamente.
@@ -290,6 +290,7 @@ class VendaRepository {
       telefoneLocalizadorExpiraEm:
           DateTime.tryParse(marketplacePedidoRow?['telefone_localizador_expira_em']?.toString() ?? '')?.toLocal(),
       codigoRetiradaExibicao: marketplacePedidoRow?['codigo_retirada_exibicao']?.toString(),
+      linkConfirmacaoEntrega: marketplacePedidoRow?['link_confirmacao_entrega']?.toString(),
       statusPagamento: row['status_pagamento']?.toString(),
       taxaServicoCliente: (marketplacePedidoRow?['taxa_servico_cliente'] as num?)?.toDouble(),
       campanhaMarketplace: marketplacePedidoRow?['campanha_marketplace']?.toString(),

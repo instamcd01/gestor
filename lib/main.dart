@@ -11,6 +11,7 @@ import 'providers/branding_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/usuario_provider.dart';
 import 'providers/zona_entrega_provider.dart';
+import 'providers/zona_entrega_99food_provider.dart';
 import 'providers/fornecedor_provider.dart';
 import 'providers/despesa_provider.dart';
 import 'providers/preferencias_provider.dart';
@@ -53,6 +54,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => UsuarioProvider()),
         ChangeNotifierProvider(create: (_) => ZonaEntregaProvider()),
+        ChangeNotifierProvider(create: (_) => ZonaEntrega99FoodProvider()),
         ChangeNotifierProvider(create: (_) => FornecedorProvider()),
         ChangeNotifierProvider(create: (_) => DespesaProvider()),
         ChangeNotifierProvider(create: (_) => PreferenciasProvider()),

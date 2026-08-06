@@ -10,6 +10,7 @@ import '../repositories/interrupcao_marketplace_repository.dart';
 import '../repositories/marketplace_config_repository.dart';
 import '../repositories/marketplace_repository.dart';
 import '../widgets/aviso_banner.dart';
+import 'configuracao_entrega_99food_screen.dart';
 
 /// Configurações > Integrar com Plataformas: onde ficam guardadas as
 /// credenciais de cada marketplace (iFood, 99Food, Rappi...), restrito ao
@@ -385,6 +386,17 @@ class _MarketplaceConfigCardState extends State<_MarketplaceConfigCard> {
                       );
                     }).toList(),
                   ),
+                  if (widget.marketplace.nome == '99Food') ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ConfiguracaoEntrega99FoodScreen()),
+                      ),
+                      icon: const Icon(Icons.map_outlined),
+                      label: const Text('Configurar zonas de entrega da 99Food'),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextField(
                     controller: _observacoesController,

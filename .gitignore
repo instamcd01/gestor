@@ -48,3 +48,8 @@ android/app/google-services.json
 ios/firebase_app_id_file.json
 ios/Runner/GoogleServices-Info.plist
 lib/firebase_options.dart
+
+# Claude Code — settings.json é compartilhado (permissões do projeto),
+# settings.local.json e worktrees/ são estado pessoal/local da sessão.
+.claude/settings.local.json
+.claude/worktrees/
