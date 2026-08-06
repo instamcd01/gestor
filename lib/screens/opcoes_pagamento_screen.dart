@@ -49,6 +49,7 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
   final Map<int, TextEditingController> _jurosControllers = {
     for (var n = 1; n <= _parcelaMaxima; n++) n: TextEditingController(text: n == 1 ? '0' : ''),
   };
+  final _valorMinimoParcelaController = TextEditingController(text: '5');
   bool _carregando = true;
   bool _salvando = false;
 
@@ -64,6 +65,7 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
     for (final c in _jurosControllers.values) {
       c.dispose();
     }
+    _valorMinimoParcelaController.dispose();
     super.dispose();
   }
 
@@ -77,7 +79,7 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
     try {
       final data = await supabase
           .from('empresas')
-          .select('metodos_pagamento_ativos, chave_pix, bandeiras_aceitas, taxas_parcelamento')
+          .select('metodos_pagamento_ativos, chave_pix, bandeiras_aceitas, taxas_parcelamento, valor_minimo_parcela')
           .eq('id', empresaId)
           .single();
 
@@ -106,6 +108,11 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
           _jurosControllers[n]!.text = ClienteValidators.formatarMoeda((entry.value as num).toDouble());
         }
       }
+
+      final valorMinimoParcela = data['valor_minimo_parcela'] as num?;
+      if (valorMinimoParcela != null) {
+        _valorMinimoParcelaController.text = ClienteValidators.formatarMoeda(valorMinimoParcela.toDouble());
+      }
     } catch (e) {
       debugPrint('Erro ao carregar opções de pagamento: $e');
     } finally {
@@ -128,6 +135,7 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
       for (final n in _parcelasAtivas)
         n.toString(): ClienteValidators.parseNumero(_jurosControllers[n]!.text) ?? 0,
     };
+    final valorMinimoParcela = ClienteValidators.parseNumero(_valorMinimoParcelaController.text) ?? 5;
 
     setState(() => _salvando = true);
     try {
@@ -136,6 +144,7 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
         'chave_pix': _chavePixController.text.trim(),
         'bandeiras_aceitas': _bandeirasAtivas.toList(),
         'taxas_parcelamento': taxasParcelamento,
+        'valor_minimo_parcela': valorMinimoParcela,
       }).eq('id', empresaId);
 
       if (mounted) {
@@ -285,6 +294,16 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
                           ],
                         ),
                       ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _valorMinimoParcelaController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Valor mínimo por parcela',
+                        prefixText: 'R\$ ',
+                        helperText: 'Abaixo disso (2x em diante), a parcela some das opções no site.',
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
