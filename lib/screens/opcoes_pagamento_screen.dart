@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
+import '../utils/cliente_validators.dart';
 import '../widgets/form_section.dart';
 
 const metodosPagamentoDisponiveis = [
@@ -14,6 +15,20 @@ const metodosPagamentoDisponiveis = [
   'Link de Pagamento',
   'Outros',
 ];
+
+/// Chave salva em `empresas.bandeiras_aceitas` — mostrada como ícone/rótulo
+/// no checkout do site (só exibição, sem validação real: a maquininha
+/// física é quem de fato aceita ou recusa o cartão).
+const bandeirasCartaoDisponiveis = [
+  ('visa', 'Visa'),
+  ('mastercard', 'Mastercard'),
+  ('elo', 'Elo'),
+  ('amex', 'American Express'),
+  ('hipercard', 'Hipercard'),
+  ('diners', 'Diners Club'),
+];
+
+const _parcelaMaxima = 12;
 
 /// Configurações > Opções de Pagamento: quais métodos aparecem na tela de
 /// pagamento do balcão, e a chave Pix mostrada ao caixa (pagamento continua
@@ -28,6 +43,12 @@ class OpcoesPagamentoScreen extends StatefulWidget {
 class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
   final _chavePixController = TextEditingController();
   final Set<String> _metodosAtivos = {...metodosPagamentoDisponiveis};
+  final Set<String> _bandeirasAtivas = {};
+  // Parcela 1 (à vista) sempre oferecida — não faz sentido desligar.
+  final Set<int> _parcelasAtivas = {1};
+  final Map<int, TextEditingController> _jurosControllers = {
+    for (var n = 1; n <= _parcelaMaxima; n++) n: TextEditingController(text: n == 1 ? '0' : ''),
+  };
   bool _carregando = true;
   bool _salvando = false;
 
@@ -40,6 +61,9 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
   @override
   void dispose() {
     _chavePixController.dispose();
+    for (final c in _jurosControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -53,7 +77,7 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
     try {
       final data = await supabase
           .from('empresas')
-          .select('metodos_pagamento_ativos, chave_pix')
+          .select('metodos_pagamento_ativos, chave_pix, bandeiras_aceitas, taxas_parcelamento')
           .eq('id', empresaId)
           .single();
 
@@ -64,6 +88,24 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
           ..addAll(metodos.map((m) => m.toString()));
       }
       _chavePixController.text = data['chave_pix']?.toString() ?? '';
+
+      final bandeiras = data['bandeiras_aceitas'] as List?;
+      if (bandeiras != null) {
+        _bandeirasAtivas
+          ..clear()
+          ..addAll(bandeiras.map((b) => b.toString()));
+      }
+
+      final taxas = data['taxas_parcelamento'] as Map<String, dynamic>?;
+      if (taxas != null) {
+        _parcelasAtivas.clear();
+        for (final entry in taxas.entries) {
+          final n = int.tryParse(entry.key);
+          if (n == null || n < 1 || n > _parcelaMaxima) continue;
+          _parcelasAtivas.add(n);
+          _jurosControllers[n]!.text = ClienteValidators.formatarMoeda((entry.value as num).toDouble());
+        }
+      }
     } catch (e) {
       debugPrint('Erro ao carregar opções de pagamento: $e');
     } finally {
@@ -82,11 +124,18 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
     final empresaId = context.read<AuthProvider>().empresaId;
     if (empresaId == null) return;
 
+    final taxasParcelamento = {
+      for (final n in _parcelasAtivas)
+        n.toString(): ClienteValidators.parseNumero(_jurosControllers[n]!.text) ?? 0,
+    };
+
     setState(() => _salvando = true);
     try {
       await supabase.from('empresas').update({
         'metodos_pagamento_ativos': _metodosAtivos.toList(),
         'chave_pix': _chavePixController.text.trim(),
+        'bandeiras_aceitas': _bandeirasAtivas.toList(),
+        'taxas_parcelamento': taxasParcelamento,
       }).eq('id', empresaId);
 
       if (mounted) {
@@ -163,6 +212,79 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
                       ),
                       inputFormatters: [FilteringTextInputFormatter.singleLineFormatter],
                     ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                FormSection(
+                  titulo: 'Bandeiras de cartão aceitas',
+                  children: [
+                    Text(
+                      'Só pra exibir no site — a maquininha é quem decide de verdade se aceita o cartão.',
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: bandeirasCartaoDisponiveis.map((bandeira) {
+                        final (chave, nome) = bandeira;
+                        return FilterChip(
+                          label: Text(nome),
+                          selected: _bandeirasAtivas.contains(chave),
+                          onSelected: (v) => setState(() {
+                            if (v) {
+                              _bandeirasAtivas.add(chave);
+                            } else {
+                              _bandeirasAtivas.remove(chave);
+                            }
+                          }),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                FormSection(
+                  titulo: 'Parcelamento no cartão de crédito',
+                  children: [
+                    Text(
+                      'Marque quantas parcelas sua maquininha oferece e a taxa de juros de cada uma — '
+                      'o site mostra o valor de cada parcela já com o juros aplicado. A cobrança real '
+                      'continua acontecendo na maquininha, na entrega/retirada.',
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                    ),
+                    for (var n = 1; n <= _parcelaMaxima; n++)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            Checkbox(
+                              value: _parcelasAtivas.contains(n),
+                              // Parcela 1 (à vista) não pode ser desligada.
+                              onChanged: n == 1
+                                  ? null
+                                  : (v) => setState(() {
+                                        if (v == true) {
+                                          _parcelasAtivas.add(n);
+                                        } else {
+                                          _parcelasAtivas.remove(n);
+                                        }
+                                      }),
+                            ),
+                            SizedBox(width: 56, child: Text(n == 1 ? '1x (à vista)' : '${n}x')),
+                            Expanded(
+                              child: TextField(
+                                controller: _jurosControllers[n],
+                                enabled: _parcelasAtivas.contains(n),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  suffixText: '% de juros',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 24),
