@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
 import '../widgets/categoria_cliente_badge.dart';
+import '../widgets/estado_erro_lista.dart';
 import '../widgets/importar_clientes_planilha.dart';
 import 'cliente_detalhes_screen.dart';
 import '../models/cliente.dart';
@@ -162,7 +163,12 @@ class _ClientesScreenState extends State<ClientesScreen> {
           Expanded(
             child: clientProvider.carregando
                 ? const Center(child: CircularProgressIndicator())
-                : clientesFiltrados.isEmpty
+                : clientProvider.erro != null
+                    ? EstadoErroLista(
+                        mensagem: clientProvider.erro!,
+                        onTentarNovamente: clientProvider.carregarClientes,
+                      )
+                    : clientesFiltrados.isEmpty
                     ? _estadoVazio(colorScheme)
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),

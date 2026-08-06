@@ -8,6 +8,7 @@ import '../models/usuario.dart';
 import '../providers/auth_provider.dart';
 import '../providers/usuario_provider.dart';
 import '../utils/formatadores_input.dart';
+import '../widgets/estado_erro_lista.dart';
 
 /// Gestão de equipe: quem tem acesso à empresa, com qual papel, e convites
 /// pendentes pra novas pessoas entrarem. Substitui a versão antiga que
@@ -312,7 +313,9 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
       ),
       body: provider.carregando
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
+          : provider.erro != null && provider.usuarios.isEmpty
+              ? EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.carregar)
+              : RefreshIndicator(
               onRefresh: provider.carregar,
               child: ListView(
                 padding: const EdgeInsets.all(12),

@@ -5,10 +5,12 @@ import 'package:provider/provider.dart';
 
 import '../models/despesa.dart';
 import '../models/fornecedor.dart';
+import '../providers/auth_provider.dart';
 import '../providers/despesa_provider.dart';
 import '../providers/fornecedor_provider.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
+import '../widgets/estado_erro_lista.dart';
 import '../widgets/form_section.dart';
 
 const _metodosPagamentoDespesa = ['Dinheiro', 'Pix', 'Transferência', 'Boleto', 'Cartão'];
@@ -166,6 +168,10 @@ class _DespesasScreenState extends State<DespesasScreen> {
           ),
           if (provider.carregando)
             const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (provider.erro != null)
+            Expanded(
+              child: EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.carregar),
+            )
           else if (despesas.isEmpty)
             Expanded(
               child: Center(
@@ -389,7 +395,8 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
       if (_editando) {
         await provider.atualizar(despesa);
       } else {
-        await provider.adicionar(despesa);
+        final criadoPor = context.read<AuthProvider>().usuarioAtual?.id;
+        await provider.adicionar(despesa, criadoPor: criadoPor);
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {

@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/venda.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../widgets/categoria_cliente_badge.dart';
+import '../widgets/estado_erro_lista.dart';
 import 'venda_detalhes_screen.dart';
 
 /// Urgência do pedido em relação à previsão de entrega calculada pela
@@ -370,7 +371,9 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
           ),
           if (provider.carregando) const LinearProgressIndicator(),
           Expanded(
-            child: pedidos.isEmpty
+            child: provider.erro != null && pedidos.isEmpty
+                ? EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.carregarVendas)
+                : pedidos.isEmpty
                 ? RefreshIndicator(
                     onRefresh: provider.carregarVendas,
                     child: ListView(

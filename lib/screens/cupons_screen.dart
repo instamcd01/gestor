@@ -8,6 +8,7 @@ import '../providers/produto_provider.dart';
 import '../repositories/cupom_repository.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
+import '../widgets/estado_erro_lista.dart';
 import '../widgets/form_section.dart';
 
 class CuponsScreen extends StatefulWidget {
@@ -104,6 +105,10 @@ class _CuponsScreenState extends State<CuponsScreen> {
           ),
           if (provider.carregando)
             const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (provider.erro != null)
+            Expanded(
+              child: EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.carregar),
+            )
           else if (cupons.isEmpty)
             Expanded(
               child: Center(

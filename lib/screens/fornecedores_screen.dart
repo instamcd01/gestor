@@ -5,6 +5,7 @@ import '../models/fornecedor.dart';
 import '../providers/fornecedor_provider.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
+import '../widgets/estado_erro_lista.dart';
 import '../widgets/form_section.dart';
 
 class FornecedoresScreen extends StatefulWidget {
@@ -97,6 +98,10 @@ class _FornecedoresScreenState extends State<FornecedoresScreen> {
           ),
           if (provider.carregando)
             const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (provider.erro != null)
+            Expanded(
+              child: EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.carregar),
+            )
           else if (fornecedores.isEmpty)
             Expanded(
               child: Center(

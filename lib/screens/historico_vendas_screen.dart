@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../models/venda.dart';
+import '../widgets/estado_erro_lista.dart';
 import 'venda_detalhes_screen.dart';
 
 class HistoricoVendasScreen extends StatefulWidget {
@@ -157,6 +158,10 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
           ),
           if (carregando)
             const LinearProgressIndicator()
+          else if (historicoProvider.erro != null && todasVendas.isEmpty)
+            Expanded(
+              child: EstadoErroLista(mensagem: historicoProvider.erro!, onTentarNovamente: _carregarVendas),
+            )
           else if (vendas.isEmpty)
             Expanded(
               child: Center(

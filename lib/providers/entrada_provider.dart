@@ -43,6 +43,7 @@ class EntradaProvider with ChangeNotifier {
     required NfeImportada nfe,
     required List<ItemEntrada> itensResolvidos,
     String? fornecedorId,
+    String? criadoPor,
   }) async {
     if (_empresaId == null) {
       throw StateError('Nenhuma empresa definida no EntradaProvider ainda.');
@@ -63,6 +64,7 @@ class EntradaProvider with ChangeNotifier {
       empresaId: _empresaId!,
       fornecedorId: fornecedorId,
       parcelas: nfe.parcelas,
+      criadoPor: criadoPor,
     );
     await carregar();
   }

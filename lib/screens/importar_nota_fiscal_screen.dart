@@ -388,6 +388,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             nfe: nfe,
             itensResolvidos: _itensResolvidos,
             fornecedorId: fornecedorId,
+            criadoPor: context.read<AuthProvider>().usuarioAtual?.id,
           );
 
       if (!mounted) return;

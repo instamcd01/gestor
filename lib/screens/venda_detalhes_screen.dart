@@ -201,27 +201,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _venda = Venda(
-          idVenda: _venda.idVenda,
-          cliente: _venda.cliente,
-          dataVenda: _venda.dataVenda,
-          subtotal: _venda.subtotal,
-          desconto: _venda.desconto,
-          saldoUsado: _venda.saldoUsado,
-          valorEntrega: _venda.valorEntrega,
-          entregaSelecionada: _venda.entregaSelecionada,
-          valorTotal: _venda.valorTotal,
-          valorPago: _venda.valorPago,
-          troco: _venda.troco,
-          metodoPagamento: _venda.metodoPagamento,
-          totalItens: _venda.totalItens,
-          itens: _venda.itens,
-          custoTotal: _venda.custoTotal,
-          lucroTotal: _venda.lucroTotal,
-          observacao: _venda.observacao,
-          pagamentosDetalhados: _venda.pagamentosDetalhados,
-          status: 'cancelado',
-        );
+        _venda = _venda.copyWith(status: 'cancelado');
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Venda cancelada. Estoque e saldo do cliente foram estornados.')),
@@ -568,6 +548,25 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
+            ),
+          ],
+          if (venda.linkConfirmacaoEntrega != null && venda.linkConfirmacaoEntrega!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            InkWell(
+              onTap: () async {
+                final uri = Uri.parse(venda.linkConfirmacaoEntrega!);
+                if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+              },
+              child: Row(
+                children: [
+                  Icon(Icons.link, size: 16, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Abrir confirmação de entrega (99Food)',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, decoration: TextDecoration.underline),
+                  ),
+                ],
+              ),
             ),
           ],
           if (venda.marketplacePedidoId != null) ...[

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../models/notificacao.dart';
 import '../providers/notificacao_provider.dart';
+import '../widgets/estado_erro_lista.dart';
 import 'avaliacoes_disputas_screen.dart';
 import 'despesas_screen.dart';
 import 'fila_pedidos_screen.dart';
@@ -137,7 +138,9 @@ class _NotificacoesScreenState extends State<NotificacoesScreen> {
       ),
       body: provider.carregando && provider.notificacoes.isEmpty
           ? const Center(child: CircularProgressIndicator())
-          : provider.notificacoes.isEmpty
+          : provider.erro != null && provider.notificacoes.isEmpty
+              ? EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.carregar)
+              : provider.notificacoes.isEmpty
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(32),

@@ -7,6 +7,7 @@ import '../providers/zona_entrega_provider.dart';
 import '../services/distancia_service.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
+import '../widgets/estado_erro_lista.dart';
 import 'dados_loja_screen.dart';
 
 /// Configurações de entrega (Configurações > Opções de Entrega): as
@@ -136,6 +137,11 @@ class _ConfiguracaoEntregaScreenState extends State<ConfiguracaoEntregaScreen> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 32),
               child: Center(child: CircularProgressIndicator()),
+            )
+          else if (provider.erro != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.carregarZonas),
             )
           else if (provider.zonas.isEmpty)
             const Padding(

@@ -75,6 +75,7 @@ class Venda {
   final String? telefoneLocalizador; // código de discagem mascarada -- só funciona pra ligar, não WhatsApp
   final DateTime? telefoneLocalizadorExpiraEm;
   final String? codigoRetiradaExibicao; // pickupCode informativo da iFood (não é o código que o lojista digita)
+  final String? linkConfirmacaoEntrega; // handover_page_url da 99Food -- entregador/lojista abre pra confirmar com o cliente, sem código
   final String? statusPagamento; // 'pago' (já cobrado pelo marketplace) / 'pendente' (cobrar na entrega)
   final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
@@ -136,6 +137,7 @@ class Venda {
     this.telefoneLocalizador,
     this.telefoneLocalizadorExpiraEm,
     this.codigoRetiradaExibicao,
+    this.linkConfirmacaoEntrega,
     this.statusPagamento,
     this.taxaServicoCliente,
     this.campanhaMarketplace,
@@ -149,6 +151,120 @@ class Venda {
     this.previsaoEntregaInicio,
     this.previsaoEntregaFim,
   });
+
+  /// Sempre usar isso pra atualizar campos localmente (ex: status após
+  /// cancelamento) em vez de reconstruir `Venda(...)` na mão — um
+  /// construtor manual esquece silenciosamente qualquer campo novo
+  /// (todos têm default/nullable, então compila mesmo incompleto), o que
+  /// já causou um bug real: cancelar uma venda de marketplace resetava
+  /// `canalVenda` pra 'loja_fisica' e apagava rastreio/código de
+  /// confirmação/link de entrega da tela, mesmo a venda continuando
+  /// corretamente marcada como cancelada no banco.
+  Venda copyWith({
+    String? idVenda,
+    int? numeroSequencial,
+    Cliente? cliente,
+    DateTime? dataVenda,
+    double? subtotal,
+    double? desconto,
+    String? cupomId,
+    double? saldoUsado,
+    double? valorEntrega,
+    String? entregaSelecionada,
+    double? valorTotal,
+    double? valorPago,
+    double? troco,
+    String? metodoPagamento,
+    int? totalItens,
+    List<ItemVenda>? itens,
+    double? custoTotal,
+    double? lucroTotal,
+    String? observacao,
+    Map<String, double>? pagamentosDetalhados,
+    String? status,
+    String? canalVenda,
+    String? vendedorId,
+    String? marketplacePedidoId,
+    String? tipoEntregaMarketplace,
+    String? codigoConfirmacaoStatus,
+    String? codigoConfirmacaoErro,
+    double? rastreioLatitude,
+    double? rastreioLongitude,
+    DateTime? rastreioEtaEntrega,
+    DateTime? rastreioAtualizadoEm,
+    String? separacaoStatus,
+    String? separacaoErro,
+    String? numeroExibicaoMarketplace,
+    String? telefoneLocalizador,
+    DateTime? telefoneLocalizadorExpiraEm,
+    String? codigoRetiradaExibicao,
+    String? linkConfirmacaoEntrega,
+    String? statusPagamento,
+    double? taxaServicoCliente,
+    String? campanhaMarketplace,
+    String? cupomMarketplace,
+    String? politicaSubstituicao,
+    String? entregadorTipo,
+    bool? agendado,
+    DateTime? entregaPrevistaInicio,
+    DateTime? entregaPrevistaFim,
+    bool? agendadoManualmente,
+    DateTime? previsaoEntregaInicio,
+    DateTime? previsaoEntregaFim,
+  }) {
+    return Venda(
+      idVenda: idVenda ?? this.idVenda,
+      numeroSequencial: numeroSequencial ?? this.numeroSequencial,
+      cliente: cliente ?? this.cliente,
+      dataVenda: dataVenda ?? this.dataVenda,
+      subtotal: subtotal ?? this.subtotal,
+      desconto: desconto ?? this.desconto,
+      cupomId: cupomId ?? this.cupomId,
+      saldoUsado: saldoUsado ?? this.saldoUsado,
+      valorEntrega: valorEntrega ?? this.valorEntrega,
+      entregaSelecionada: entregaSelecionada ?? this.entregaSelecionada,
+      valorTotal: valorTotal ?? this.valorTotal,
+      valorPago: valorPago ?? this.valorPago,
+      troco: troco ?? this.troco,
+      metodoPagamento: metodoPagamento ?? this.metodoPagamento,
+      totalItens: totalItens ?? this.totalItens,
+      itens: itens ?? this.itens,
+      custoTotal: custoTotal ?? this.custoTotal,
+      lucroTotal: lucroTotal ?? this.lucroTotal,
+      observacao: observacao ?? this.observacao,
+      pagamentosDetalhados: pagamentosDetalhados ?? this.pagamentosDetalhados,
+      status: status ?? this.status,
+      canalVenda: canalVenda ?? this.canalVenda,
+      vendedorId: vendedorId ?? this.vendedorId,
+      marketplacePedidoId: marketplacePedidoId ?? this.marketplacePedidoId,
+      tipoEntregaMarketplace: tipoEntregaMarketplace ?? this.tipoEntregaMarketplace,
+      codigoConfirmacaoStatus: codigoConfirmacaoStatus ?? this.codigoConfirmacaoStatus,
+      codigoConfirmacaoErro: codigoConfirmacaoErro ?? this.codigoConfirmacaoErro,
+      rastreioLatitude: rastreioLatitude ?? this.rastreioLatitude,
+      rastreioLongitude: rastreioLongitude ?? this.rastreioLongitude,
+      rastreioEtaEntrega: rastreioEtaEntrega ?? this.rastreioEtaEntrega,
+      rastreioAtualizadoEm: rastreioAtualizadoEm ?? this.rastreioAtualizadoEm,
+      separacaoStatus: separacaoStatus ?? this.separacaoStatus,
+      separacaoErro: separacaoErro ?? this.separacaoErro,
+      numeroExibicaoMarketplace: numeroExibicaoMarketplace ?? this.numeroExibicaoMarketplace,
+      telefoneLocalizador: telefoneLocalizador ?? this.telefoneLocalizador,
+      telefoneLocalizadorExpiraEm: telefoneLocalizadorExpiraEm ?? this.telefoneLocalizadorExpiraEm,
+      codigoRetiradaExibicao: codigoRetiradaExibicao ?? this.codigoRetiradaExibicao,
+      linkConfirmacaoEntrega: linkConfirmacaoEntrega ?? this.linkConfirmacaoEntrega,
+      statusPagamento: statusPagamento ?? this.statusPagamento,
+      taxaServicoCliente: taxaServicoCliente ?? this.taxaServicoCliente,
+      campanhaMarketplace: campanhaMarketplace ?? this.campanhaMarketplace,
+      cupomMarketplace: cupomMarketplace ?? this.cupomMarketplace,
+      politicaSubstituicao: politicaSubstituicao ?? this.politicaSubstituicao,
+      entregadorTipo: entregadorTipo ?? this.entregadorTipo,
+      agendado: agendado ?? this.agendado,
+      entregaPrevistaInicio: entregaPrevistaInicio ?? this.entregaPrevistaInicio,
+      entregaPrevistaFim: entregaPrevistaFim ?? this.entregaPrevistaFim,
+      agendadoManualmente: agendadoManualmente ?? this.agendadoManualmente,
+      previsaoEntregaInicio: previsaoEntregaInicio ?? this.previsaoEntregaInicio,
+      previsaoEntregaFim: previsaoEntregaFim ?? this.previsaoEntregaFim,
+    );
+  }
 
   bool get pagoPeloMarketplace => statusPagamento == 'pago';
 
