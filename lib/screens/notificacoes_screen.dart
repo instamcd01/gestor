@@ -20,6 +20,8 @@ Widget? _telaRelacionada(String tipo) {
     case TipoNotificacao.custoAlterado:
       return ProdutosScreen();
     case TipoNotificacao.pedidoParado:
+    case TipoNotificacao.pedidoHoraSaidaEntrega:
+    case TipoNotificacao.pedidoAtrasadoEntrega:
       return const FilaPedidosScreen();
     case TipoNotificacao.despesaVencendo:
     case TipoNotificacao.despesaVencida:
@@ -41,6 +43,10 @@ Widget? _telaRelacionada(String tipo) {
       return (Icons.remove_shopping_cart_outlined, Colors.red);
     case TipoNotificacao.pedidoParado:
       return (Icons.hourglass_empty, Colors.orange);
+    case TipoNotificacao.pedidoHoraSaidaEntrega:
+      return (Icons.directions_run, Colors.orange);
+    case TipoNotificacao.pedidoAtrasadoEntrega:
+      return (Icons.local_shipping_outlined, Colors.red);
     case TipoNotificacao.despesaVencendo:
       return (Icons.event_outlined, Colors.orange);
     case TipoNotificacao.despesaVencida:

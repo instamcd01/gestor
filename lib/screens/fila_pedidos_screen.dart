@@ -169,12 +169,21 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       final zona = venda.entregaSelecionada;
       if (zona.isNotEmpty) chips.add(_chipInfo(context, Icons.map_outlined, zona));
 
-      final previsaoInicio = venda.previsaoEntregaInicio;
-      final previsaoFim = venda.previsaoEntregaFim;
-      if (previsaoInicio != null && previsaoFim != null) {
-        final min = previsaoInicio.difference(venda.dataVenda).inMinutes;
-        final max = previsaoFim.difference(venda.dataVenda).inMinutes;
-        chips.add(_chipInfo(context, Icons.schedule_outlined, 'Zona: $min-$max min'));
+      // Só reconstrói "Zona: X-Y min" pra pedido imediato — previsaoInicio/Fim
+      // aí é "agora + faixa da zona", então a diferença até dataVenda dá a
+      // faixa configurada de volta. Pedido agendado (iFood ou manual) grava
+      // um horário absoluto futuro nas mesmas colunas — calcular a diferença
+      // até dataVenda daria um número sem sentido (ex: 523-583 min pra um
+      // agendamento de amanhã). Esse caso já tem o bloco "Agendado p/ HH:MM"
+      // mais abaixo, não precisa duplicar aqui.
+      if (!venda.agendado && !venda.agendadoManualmente) {
+        final previsaoInicio = venda.previsaoEntregaInicio;
+        final previsaoFim = venda.previsaoEntregaFim;
+        if (previsaoInicio != null && previsaoFim != null) {
+          final min = previsaoInicio.difference(venda.dataVenda).inMinutes;
+          final max = previsaoFim.difference(venda.dataVenda).inMinutes;
+          chips.add(_chipInfo(context, Icons.schedule_outlined, 'Zona: $min-$max min'));
+        }
       }
 
       final distancia = venda.cliente.rangeDistancia;

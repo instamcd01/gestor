@@ -1,6 +1,7 @@
 /// Tipos de notificação — ver as triggers/jobs no banco (migrations
 /// `trigger_notificacao_estoque_baixo`, `job_notificacao_pedido_parado`,
-/// `job_notificacao_despesa_vencendo`, `trigger_notificacao_avaliacao_disputa_sync`)
+/// `job_notificacao_despesa_vencendo`, `trigger_notificacao_avaliacao_disputa_sync`,
+/// `notificar_pedidos_atrasados_entrega`, `notifica_hora_de_sair_para_entrega`)
 /// que são a única fonte que grava nessa tabela.
 class TipoNotificacao {
   static const estoqueBaixo = 'estoque_baixo';
@@ -13,6 +14,8 @@ class TipoNotificacao {
   static const syncFalhou = 'sync_falhou';
   static const custoAlterado = 'custo_alterado';
   static const novoPedido = 'novo_pedido';
+  static const pedidoAtrasadoEntrega = 'pedido_atrasado_entrega';
+  static const pedidoHoraSaidaEntrega = 'pedido_hora_saida_entrega';
 }
 
 /// Uma categoria configurável no painel de preferências de notificação —
@@ -42,6 +45,16 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.pedidoParado,
     titulo: 'Pedido parado',
     descricao: 'Quando um pedido fica mais de 15 minutos sem avançar.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.pedidoHoraSaidaEntrega,
+    titulo: 'Hora de sair pra entrega',
+    descricao: 'Quando o tempo restante até o prazo já é só o suficiente pra rodar a rota até o cliente.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.pedidoAtrasadoEntrega,
+    titulo: 'Entrega atrasada',
+    descricao: 'Quando um pedido passa do prazo estimado de entrega da zona.',
   ),
   CategoriaNotificacao(
     chave: TipoNotificacao.despesaVencendo,

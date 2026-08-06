@@ -345,6 +345,12 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
         ? gerarJanelasHorario(_dataEscolhida!.data, _dataEscolhida!.diaSemana, _horarioFuncionamento)
         : <JanelaHorarioAgendamento>[];
 
+    // Mesma faixa configurada na zona que vira a previsão automática
+    // (ConclusaoVendaScreen) quando o vendedor não agenda — mostrada aqui
+    // como legenda de "Quero agora", igual ao checkout do site.
+    final estimativaMin = _zonaEncontrada?.estimativaMinMin;
+    final estimativaMax = _zonaEncontrada?.estimativaMinMax;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -353,15 +359,29 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
           child: Text('Quando?', style: TextStyle(fontWeight: FontWeight.w600)),
         ),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: ChoiceChip(
-                label: const Text('Quero agora'),
-                selected: !_agendando,
-                onSelected: (_) => setState(() {
-                  _agendando = false;
-                  _janelaEscolhida = null;
-                }),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Quero agora'),
+                    selected: !_agendando,
+                    onSelected: (_) => setState(() {
+                      _agendando = false;
+                      _janelaEscolhida = null;
+                    }),
+                  ),
+                  if (estimativaMin != null && estimativaMax != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 4),
+                      child: Text(
+                        'Entrega estimada em $estimativaMin–$estimativaMax min',
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(width: 8),
