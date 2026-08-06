@@ -282,6 +282,7 @@ class _MarketplaceConfigCardState extends State<_MarketplaceConfigCard> {
   late final TextEditingController _apiKeyController;
   late final TextEditingController _apiSecretController;
   late final TextEditingController _observacoesController;
+  String? _modoEntrega;
   bool _mostrarSecret = false;
   bool _expandido = false;
 
@@ -293,6 +294,7 @@ class _MarketplaceConfigCardState extends State<_MarketplaceConfigCard> {
     _apiKeyController = TextEditingController(text: widget.config.apiKey);
     _apiSecretController = TextEditingController(text: widget.config.apiSecret);
     _observacoesController = TextEditingController(text: widget.config.observacoes);
+    _modoEntrega = widget.config.modoEntrega;
   }
 
   @override
@@ -313,6 +315,7 @@ class _MarketplaceConfigCardState extends State<_MarketplaceConfigCard> {
       apiKey: _apiKeyController.text.trim(),
       apiSecret: _apiSecretController.text.trim(),
       observacoes: _observacoesController.text.trim(),
+      modoEntrega: _modoEntrega,
     ));
   }
 
@@ -357,6 +360,30 @@ class _MarketplaceConfigCardState extends State<_MarketplaceConfigCard> {
                         onPressed: () => setState(() => _mostrarSecret = !_mostrarSecret),
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Modo de entrega',
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      (null, 'Não definido'),
+                      (ModoEntrega.propria, 'Entrega própria'),
+                      (ModoEntrega.plataforma, 'Entrega pela plataforma'),
+                    ].map((opcao) {
+                      final (valor, rotulo) = opcao;
+                      return ChoiceChip(
+                        label: Text(rotulo),
+                        selected: _modoEntrega == valor,
+                        onSelected: (_) => setState(() => _modoEntrega = valor),
+                      );
+                    }).toList(),
                   ),
                   const SizedBox(height: 12),
                   TextField(

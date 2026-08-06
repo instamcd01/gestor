@@ -1,3 +1,9 @@
+/// Valores válidos de [MarketplaceConfig.modoEntrega].
+class ModoEntrega {
+  static const propria = 'propria';
+  static const plataforma = 'plataforma';
+}
+
 class MarketplaceConfig {
   final String? id;
   final String marketplaceId;
@@ -6,6 +12,7 @@ class MarketplaceConfig {
   final String apiKey;
   final String apiSecret;
   final String observacoes;
+  final String? modoEntrega;
 
   MarketplaceConfig({
     this.id,
@@ -15,6 +22,7 @@ class MarketplaceConfig {
     this.apiKey = '',
     this.apiSecret = '',
     this.observacoes = '',
+    this.modoEntrega,
   });
 
   factory MarketplaceConfig.fromSupabase(Map<String, dynamic> row) {
@@ -26,6 +34,7 @@ class MarketplaceConfig {
       apiKey: row['api_key']?.toString() ?? '',
       apiSecret: row['api_secret']?.toString() ?? '',
       observacoes: row['observacoes']?.toString() ?? '',
+      modoEntrega: row['modo_entrega'] as String?,
     );
   }
 
@@ -37,6 +46,7 @@ class MarketplaceConfig {
       'api_key': apiKey,
       'api_secret': apiSecret,
       'observacoes': observacoes,
+      'modo_entrega': modoEntrega,
     };
   }
 }
