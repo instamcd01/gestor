@@ -1,0 +1,1031 @@
+{
+  "name": "Marketplace - Resposta de Disputa",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Resposta de Disputa (iFood)\n\nDisparado pelo trigger trg_notificar_resposta_disputa em marketplace_disputas (via pg_net) quando o lojista aceita ou rejeita uma contestação no app.\n\nPOST /order/v1.0/disputes/{disputeId}/accept ou /reject, body {\"reason\": motivo}. Decisão é sempre manual no app -- nunca automatizar aceite/rejeição (recomendação explícita da iFood). Erro reverte marketplace_disputas.status para 'erro' (não fica preso em pendente nem finge que foi aceito/rejeitado).\n\n--- Atualizado 2026-07-23: alternativa ---\nstatus_novo='alternativa' agora suportado (REFUND/BENEFIT/ADDITIONAL_TIME) via 'Montar resposta disputa'. NUNCA testado contra disputa real -- path e formato de amount.value (centavos? reais?) sao inferidos da documentacao. Conferir com cuidado antes de confiar em valores financeiros reais.",
+        "height": 280,
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "note",
+      "name": "LEIA-ME",
+      "position": [
+        -260,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "disputa-resposta",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "w1",
+      "webhookId": "disputa-resposta-webhook",
+      "name": "Webhook",
+      "position": [
+        -260,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere empresa_id = $1 and marketplace_id = $2 and ativo = true\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.empresa_id, $json.body.marketplace_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "a1",
+      "name": "Buscar credenciais empresa",
+      "position": [
+        0,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a2",
+      "name": "Checar token em cache",
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tk1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "a3",
+      "name": "Token válido?",
+      "position": [
+        480,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "a4",
+      "name": "Obter token OAuth",
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a5",
+      "name": "Salvar token em cache",
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "a6",
+      "name": "Token pronto",
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.body}}",
+        "onError": "continueErrorOutput",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "b1",
+      "name": "Responder disputa no iFood",
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "={{ 'ifood_disputa_' + $('Webhook').item.json.body.status_novo }}",
+            "tabela_origem": "marketplace_disputas",
+            "registro_id": "={{$('Webhook').item.json.body.disputa_id}}",
+            "dados": "={{ JSON.stringify($('Webhook').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "b2",
+      "name": "Log resposta disputa",
+      "position": [
+        1200,
+        -20
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_disputas set status = 'erro', erro_resposta = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.disputa_id, $('Responder disputa no iFood').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "b3",
+      "name": "Marcar disputa com erro",
+      "position": [
+        1200,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_disputa_resposta_erro",
+            "tabela_origem": "marketplace_disputas",
+            "registro_id": "={{$('Webhook').item.json.body.disputa_id}}",
+            "dados": "={{ JSON.stringify({ ...$('Webhook').item.json.body, erro: $('Responder disputa no iFood').item.json.error?.message || 'erro desconhecido' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "b4",
+      "name": "Log erro resposta disputa",
+      "position": [
+        1440,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $('Webhook').item.json.body;\nconst base = `https://merchant-api.ifood.com.br/order/v1.0/disputes/${b.disputa_id_externo}`;\nlet url, body;\nif (b.status_novo === 'aceita') {\n  url = `${base}/accept`;\n  body = { reason: b.motivo_resposta || 'Aceito pela loja' };\n} else if (b.status_novo === 'alternativa') {\n  // Path e shape inferidos da documentacao, nunca testados contra uma disputa real (nenhuma\n  // aconteceu nesse merchant sandbox ainda). Maior risco: nao sabemos se 'amount.value' e em\n  // centavos ou reais -- o exemplo da doc mostra '\"value\":\"1500\"' sem separador decimal, o que\n  // sugere centavos, mas isso NAO esta confirmado. Conferir com muito cuidado antes de confiar\n  // nisso pra REFUND/BENEFIT reais -- errar aqui e um erro financeiro de 100x, nao cosmetico.\n  url = `${base}/alternatives/${b.alternativa_id_externo}`;\n  if (b.alternativa_tipo === 'ADDITIONAL_TIME') {\n    body = { type: 'ADDITIONAL_TIME', metadata: { additionalTimeInMinutes: b.alternativa_minutos, additionalTimeReason: 'ORDER_OUT_FOR_DELIVERY' } };\n  } else {\n    body = { type: b.alternativa_tipo, metadata: { amount: { value: String(Math.round((b.alternativa_valor || 0) * 100)), currency: 'BRL' } } };\n  }\n} else {\n  url = `${base}/reject`;\n  body = { reason: b.motivo_resposta || 'Rejeitado pela loja' };\n}\nreturn [{ json: { ...$json, url, body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "m1",
+      "name": "Montar resposta disputa",
+      "position": [
+        800,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Branch 99Food adicionada 2026-08-06\n\nEste workflow (como o Status Sync Back antes da correcao) nao tinha NENHUMA checagem de marketplace -- qualquer disputa, mesmo de 99Food, cairia no fluxo OAuth do iFood. Corrigido com 'É iFood? (disputa)' logo apos buscar credenciais.\n\n99Food nao tem conceito de 'alternativa' (REFUND/BENEFIT/ADDITIONAL_TIME) como o iFood -- so agree:true/false. Se status_novo vier 'alternativa' para uma disputa 99Food, é erro de dado (nunca deveria acontecer, ver 'Montar resposta disputa 99Food').\n\nIncerteza: a doc mostra o Request Example com o campo 'reason' solto, mas a tabela de parametros de Handle Refund Requests lista base_reason_id/base_reason/custom_reason -- inconsistencia da propria doc da 99Food. Segui o Request Example (mais concreto) para os dois endpoints (cancel e refund). Se recusas de reembolso comecarem a falhar, e o primeiro lugar pra olhar.",
+        "height": 300,
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "e0",
+      "name": "LEIA-ME 99Food",
+      "position": [
+        0,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e1c",
+              "leftValue": "={{$('Webhook').item.json.body.marketplace_id}}",
+              "rightValue": "d4811153-e210-47b0-b910-ee0440914f60",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "e1",
+      "name": "É iFood? (disputa)",
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e2c",
+              "leftValue": "={{$('Webhook').item.json.body.marketplace_id}}",
+              "rightValue": "e11ec855-6936-410d-a56a-635adebfe595",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "e2",
+      "name": "É 99Food? (disputa)",
+      "position": [
+        240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "disputa_resposta_marketplace_nao_suportado",
+            "tabela_origem": "marketplace_disputas",
+            "registro_id": "={{$('Webhook').item.json.body.disputa_id}}",
+            "dados": "={{ JSON.stringify($('Webhook').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "e14",
+      "name": "Log marketplace nao suportado (disputa)",
+      "position": [
+        480,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select\n  (select d.tipo from marketplace_disputas d where d.id = $1 limit 1) as tipo,\n  (select mp.marketplace_order_id from marketplace_pedidos mp where mp.pedido_id = $2 limit 1) as marketplace_order_id;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.disputa_id, $('Webhook').item.json.body.pedido_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "e3",
+      "name": "Buscar tipo e order_id da disputa (99Food)",
+      "position": [
+        480,
+        260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Buscar credenciais empresa').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    tipo: $json.tipo,\n    marketplace_order_id: $json.marketplace_order_id,\n    app_id_valor: cfg.api_key,\n    app_shop_id_valor: cfg.id_loja_plataforma,\n    api_secret: cfg.api_secret,\n    auth_token: valido ? cached.authToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "e4",
+      "name": "Checar token 99Food em cache (disputa)",
+      "position": [
+        720,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e5c",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "e5",
+      "name": "Token 99Food válido? (disputa)",
+      "position": [
+        960,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "={{$json.app_id_valor}}"
+            },
+            {
+              "name": "app_secret",
+              "value": "={{$json.api_secret}}"
+            },
+            {
+              "name": "app_shop_id",
+              "value": "={{$json.app_shop_id_valor}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "e6",
+      "name": "Obter token 99Food (disputa)",
+      "position": [
+        1200,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token 99Food em cache (disputa)').item.json;\nconst resp = $json;\nconst tokenData = resp.data || {};\nconst ok = resp.errno === 0 && !!tokenData.auth_token;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nif (ok) {\n  store.food99Tokens[ctx.app_shop_id_valor] = {\n    authToken: tokenData.auth_token,\n    expiresAt: tokenData.token_expiration_time ? tokenData.token_expiration_time * 1000 : Date.now() + 21600000,\n  };\n}\nreturn [{ json: { ...ctx, auth_token: ok ? tokenData.auth_token : null, token_valido: ok, token_erro: ok ? null : (resp.errmsg || 'erro desconhecido ao obter token') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "e7",
+      "name": "Salvar token 99Food em cache (disputa)",
+      "position": [
+        1440,
+        380
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "e8",
+      "name": "Token 99Food pronto (disputa)",
+      "position": [
+        1680,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $('Webhook').item.json.body;\nconst info = $json;\nif (b.status_novo === 'alternativa') {\n  // 99Food nao tem esse conceito -- nunca deveria acontecer para uma disputa 99Food.\n  // Deixa passar como recusa (agree:false) em vez de travar o fluxo, mas fica logado.\n  throw new Error('status_novo=alternativa nao suportado pela 99Food (disputa 99Food, deveria ser aceita/rejeitada)');\n}\nconst agree = b.status_novo === 'aceita';\nconst url = info.tipo === 'cancelamento'\n  ? 'https://openapi.99food.com/v1/order/apply/cancel'\n  : 'https://openapi.99food.com/v1/order/apply/refund';\nconst body = {\n  auth_token: info.auth_token,\n  order_id: info.marketplace_order_id,\n  apply_id: b.disputa_id_externo,\n  agree,\n  reason: b.motivo_resposta || (agree ? 'Aceito pela loja' : 'Recusado pela loja'),\n};\nreturn [{ json: { ...info, url, body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "e9",
+      "name": "Montar resposta disputa 99Food",
+      "position": [
+        1920,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.url}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.body}}",
+        "onError": "continueErrorOutput",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "e10",
+      "name": "Responder disputa na 99Food",
+      "position": [
+        2160,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "={{ '99food_disputa_' + $('Webhook').item.json.body.status_novo }}",
+            "tabela_origem": "marketplace_disputas",
+            "registro_id": "={{$('Webhook').item.json.body.disputa_id}}",
+            "dados": "={{ JSON.stringify($('Webhook').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "e11",
+      "name": "Log resposta disputa 99Food",
+      "position": [
+        2400,
+        140
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_disputas set status = 'erro', erro_resposta = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.disputa_id, $('Responder disputa na 99Food').item.json.errmsg || $('Responder disputa na 99Food').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "e12",
+      "name": "Marcar disputa 99Food com erro",
+      "position": [
+        2400,
+        380
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_disputa_resposta_erro",
+            "tabela_origem": "marketplace_disputas",
+            "registro_id": "={{$('Webhook').item.json.body.disputa_id}}",
+            "dados": "={{ JSON.stringify({ ...$('Webhook').item.json.body, erro: $('Responder disputa na 99Food').item.json.errmsg || $('Responder disputa na 99Food').item.json.error?.message || 'erro desconhecido' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "e13",
+      "name": "Log erro resposta disputa 99Food",
+      "position": [
+        2640,
+        380
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e15c",
+              "leftValue": "={{$json.errno}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "e15",
+      "name": "Resposta 99Food teve sucesso? (errno)",
+      "position": [
+        2400,
+        20
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais empresa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais empresa": {
+      "main": [
+        [
+          {
+            "node": "É iFood? (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido?": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto": {
+      "main": [
+        [
+          {
+            "node": "Montar resposta disputa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder disputa no iFood": {
+      "main": [
+        [
+          {
+            "node": "Log resposta disputa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar disputa com erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar disputa com erro": {
+      "main": [
+        [
+          {
+            "node": "Log erro resposta disputa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar resposta disputa": {
+      "main": [
+        [
+          {
+            "node": "Responder disputa no iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É iFood? (disputa)": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É 99Food? (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É 99Food? (disputa)": {
+      "main": [
+        [
+          {
+            "node": "Buscar tipo e order_id da disputa (99Food)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log marketplace nao suportado (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar tipo e order_id da disputa (99Food)": {
+      "main": [
+        [
+          {
+            "node": "Checar token 99Food em cache (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token 99Food em cache (disputa)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food válido? (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food válido? (disputa)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token 99Food (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token 99Food (disputa)": {
+      "main": [
+        [
+          {
+            "node": "Salvar token 99Food em cache (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token 99Food em cache (disputa)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food pronto (disputa)": {
+      "main": [
+        [
+          {
+            "node": "Montar resposta disputa 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar resposta disputa 99Food": {
+      "main": [
+        [
+          {
+            "node": "Responder disputa na 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder disputa na 99Food": {
+      "main": [
+        [
+          {
+            "node": "Resposta 99Food teve sucesso? (errno)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar disputa 99Food com erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar disputa 99Food com erro": {
+      "main": [
+        [
+          {
+            "node": "Log erro resposta disputa 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resposta 99Food teve sucesso? (errno)": {
+      "main": [
+        [
+          {
+            "node": "Log resposta disputa 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar disputa 99Food com erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

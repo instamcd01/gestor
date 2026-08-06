@@ -1,9 +1,9 @@
 {
-  "name": "iFood - Catalogo Sync",
+  "name": "Marketplace - Catalogo Sync",
   "nodes": [
     {
       "parameters": {
-        "content": "## Catalogo Sync (iFood)\n\nDisparado pelos triggers trg_notificar_catalogo_produto_canal (preco/disponivel) e trg_notificar_catalogo_estoque (quantidade) via pg_net, sempre que um produto ligado a um marketplace ativo muda.\n\nEnvia para POST /item/v1.0/ingestion/{merchantId} (upsert por barcode). Produtos sem codigo_barras nao disparam o trigger no banco.\n\nO resultado (sucesso ou erro) e gravado de volta em produto_canal.sincronizacao_status para o app mostrar.",
+        "content": "## Catalogo Sync (iFood)\n\nDisparado pelos triggers trg_notificar_catalogo_produto_canal (preco/disponivel) e trg_notificar_catalogo_estoque (quantidade) via pg_net, sempre que um produto ligado a um marketplace ativo muda.\n\nEnvia para POST /item/v1.0/ingestion/{merchantId} (upsert por barcode). Produtos sem codigo_barras nao disparam o trigger no banco.\n\nO resultado (sucesso ou erro) e gravado de volta em produto_canal.sincronizacao_status para o app mostrar.\n\n---\n## Branch 99Food adicionada 2026-08-06\nReaproveita \"Buscar credenciais empresa\" (ja generico por empresa_id+marketplace_id) e \"Marcar canal sincronizado\" (generico). Autenticacao MD5 propria (auth/authtoken/get), nao usa o token OAuth do iFood. Usa updateItems (add/update no mesmo endpoint, sem PUT-vs-PATCH como no iFood) - MAS updateItems exige app_category_id ja existente na 99Food, entao ate o seed inicial (uploadGrocery) rodar com sucesso e categoria_marketplace_config ser populada, todo evento cai em \"Log categoria 99Food nao sincronizada\" e nao tenta a chamada. Sem chamada de Stock API (setstockSync) nesta v1 - a doc pede pra \"comunicar com o time da DiDiFood\" antes de usar, so o campo status (1/2, calculado por estoque>0) controla disponibilidade por enquanto.",
         "height": 300,
         "width": 460
       },
@@ -777,6 +777,414 @@
         },
         "options": {}
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f99-1",
+              "leftValue": "={{$('Webhook').item.json.body.marketplace_id}}",
+              "rightValue": "e11ec855-6936-410d-a56a-635adebfe595",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "f99-0",
+      "name": "É 99Food?",
+      "position": [
+        880,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select (select category_id_externo from categoria_marketplace_config\n  where empresa_id = $1 and marketplace_id = $2 and categoria_normalizada = $3 limit 1) as category_id_externo;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.empresa_id, $('Webhook').item.json.body.marketplace_id, $('Webhook').item.json.body.categoria_normalizada] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "f99-1n",
+      "name": "Buscar categoria mapeada 99Food",
+      "position": [
+        1120,
+        320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f99-2",
+              "leftValue": "={{$json.category_id_externo}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true,
+                "name": "filter.operator.notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "f99-2n",
+      "name": "Categoria 99Food mapeada?",
+      "position": [
+        1360,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_categoria_nao_sincronizada",
+            "tabela_origem": "produtos",
+            "registro_id": "={{$('Webhook').item.json.body.produto_id}}",
+            "dados": "={{ JSON.stringify({ categoria: $('Webhook').item.json.body.categoria_normalizada, nota: 'Categoria ainda nao existe na 99Food - aguardando seed inicial do catalogo (uploadGrocery) ou categoria nova desde o ultimo seed.' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "f99-3n",
+      "name": "Log categoria 99Food nao sincronizada",
+      "position": [
+        1600,
+        440
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Buscar credenciais empresa').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    app_id_valor: cfg.api_key,\n    app_shop_id_valor: cfg.id_loja_plataforma,\n    api_secret: cfg.api_secret,\n    auth_token: valido ? cached.authToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "f99-4n",
+      "name": "Checar token 99Food em cache",
+      "position": [
+        1600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f99-5",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "f99-5n",
+      "name": "Token 99Food válido?",
+      "position": [
+        1840,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "={{$json.app_id_valor}}"
+            },
+            {
+              "name": "app_secret",
+              "value": "={{$json.api_secret}}"
+            },
+            {
+              "name": "app_shop_id",
+              "value": "={{$json.app_shop_id_valor}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "f99-6n",
+      "name": "Obter token 99Food (catalogo)",
+      "position": [
+        2080,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token 99Food em cache').item.json;\nconst resp = $json;\nconst tokenData = resp.data || {};\nconst ok = resp.errno === 0 && !!tokenData.auth_token;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nif (ok) {\n  store.food99Tokens[ctx.app_shop_id_valor] = {\n    authToken: tokenData.auth_token,\n    expiresAt: tokenData.token_expiration_time ? tokenData.token_expiration_time * 1000 : Date.now() + 21600000,\n  };\n}\nreturn [{ json: { ...ctx, auth_token: ok ? tokenData.auth_token : null, token_valido: ok, token_erro: ok ? null : (resp.errmsg || 'erro desconhecido ao obter token') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "f99-7n",
+      "name": "Salvar token 99Food em cache",
+      "position": [
+        2320,
+        320
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "f99-8n",
+      "name": "Token 99Food pronto",
+      "position": [
+        2560,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').item.json.body;\nconst catId = $('Buscar categoria mapeada 99Food').item.json.category_id_externo;\n\n// Corta por code point (nao por char UTF-16) pra nunca quebrar acento/emoji.\nfunction truncateCodepoints(str, max) {\n  const arr = Array.from(str || '');\n  if (arr.length <= max) return str || '';\n  return arr.slice(0, max).join('');\n}\nfunction truncateWordBoundary(str, max) {\n  const arr = Array.from(str || '');\n  if (arr.length <= max) return str || '';\n  const cut = arr.slice(0, max).join('');\n  const lastSpace = cut.lastIndexOf(' ');\n  return lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut;\n}\n\n// item_name da 99Food e limitado a 50 char - a maioria dos nomes reais\n// deste catalogo estoura isso (padrao de nomenclatura longo, ver memoria\n// gestor_padrao_nome_produto). Quando trunca, o nome completo vai pro\n// começo da descricao em vez de simplesmente se perder.\nconst nomeCompleto = body.nome || '';\nconst itemName = truncateWordBoundary(nomeCompleto, 50);\nconst nomeFoiTruncado = itemName !== nomeCompleto;\nconst descBase = nomeFoiTruncado ? (nomeCompleto + '\\n\\n' + (body.descricao || '')) : (body.descricao || '');\nconst shortDesc = truncateCodepoints(descBase.trim(), 400);\n\nconst priceCents = Math.round((body.preco || 0) * 100);\nlet activityPriceCents;\nif (body.preco_promocional && body.preco_promocional > 0 && body.preco_promocional < body.preco) {\n  const promoCents = Math.round(body.preco_promocional * 100);\n  if (priceCents - promoCents >= priceCents * 0.01) activityPriceCents = promoCents;\n}\n\nconst item = {\n  app_item_id: body.produto_id,\n  app_category_id: catId,\n  upc: body.codigo_barras,\n  item_name: itemName,\n  price: priceCents,\n  status: body.status_calculado === 'AVAILABLE' ? 1 : 2,\n  item_tags: [],\n};\nif (shortDesc) item.short_desc = shortDesc;\nif (activityPriceCents != null) item.activity_price = activityPriceCents;\nif (body.imagem_url && /^https:\\/\\//.test(body.imagem_url)) item.head_img = body.imagem_url;\n\nreturn [{ json: { item_list: [item] } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "f99-9n",
+      "name": "Montar item 99Food",
+      "position": [
+        2800,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.99food.com/v3/item/item/updateItems",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { auth_token: $('Token 99Food pronto').item.json.auth_token, item_list: $json.item_list } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "f99-10n",
+      "name": "Enviar item 99Food (updateItems)",
+      "position": [
+        3040,
+        200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f99-11",
+              "leftValue": "={{$json.errno}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "f99-11n",
+      "name": "99Food aceitou o item?",
+      "position": [
+        3280,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_catalogo_sync",
+            "tabela_origem": "produtos",
+            "registro_id": "={{$('Webhook').item.json.body.produto_id}}",
+            "dados": "={{ JSON.stringify($('Webhook').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "f99-12n",
+      "name": "Log sync catalogo 99Food",
+      "position": [
+        3520,
+        40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_catalogo_sync_erro",
+            "tabela_origem": "produtos",
+            "registro_id": "={{$('Webhook').item.json.body.produto_id}}",
+            "dados": "={{ JSON.stringify({ payload: $('Webhook').item.json.body, erro: ($json.errmsg || ($json.error && $json.error.message) || 'Erro desconhecido ao atualizar item na 99Food') }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "f99-13n",
+      "name": "Log erro sync catalogo 99Food",
+      "position": [
+        3520,
+        280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update produto_canal\nset ultima_sincronizacao_em = now(),\n    sincronizacao_status = 'erro',\n    sincronizacao_erro = $3\nwhere produto_id = $1 and marketplace_id = $2;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, ($('Enviar item 99Food (updateItems)').item.json.errmsg || ($('Enviar item 99Food (updateItems)').item.json.error && $('Enviar item 99Food (updateItems)').item.json.error.message) || 'Erro desconhecido ao atualizar item na 99Food')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "f99-14n",
+      "name": "Marcar canal com erro 99Food",
+      "position": [
+        3760,
+        280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
     }
   ],
   "connections": {
@@ -875,7 +1283,7 @@
         ],
         [
           {
-            "node": "Log marketplace nao suportado",
+            "node": "É 99Food?",
             "type": "main",
             "index": 0
           }
@@ -1118,22 +1526,189 @@
           }
         ]
       ]
+    },
+    "É 99Food?": {
+      "main": [
+        [
+          {
+            "node": "Buscar categoria mapeada 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log marketplace nao suportado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar categoria mapeada 99Food": {
+      "main": [
+        [
+          {
+            "node": "Categoria 99Food mapeada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Categoria 99Food mapeada?": {
+      "main": [
+        [
+          {
+            "node": "Checar token 99Food em cache",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log categoria 99Food nao sincronizada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token 99Food em cache": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food válido?": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token 99Food (catalogo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token 99Food (catalogo)": {
+      "main": [
+        [
+          {
+            "node": "Salvar token 99Food em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token 99Food em cache": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food pronto": {
+      "main": [
+        [
+          {
+            "node": "Montar item 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar item 99Food": {
+      "main": [
+        [
+          {
+            "node": "Enviar item 99Food (updateItems)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar item 99Food (updateItems)": {
+      "main": [
+        [
+          {
+            "node": "99Food aceitou o item?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log erro sync catalogo 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "99Food aceitou o item?": {
+      "main": [
+        [
+          {
+            "node": "Log sync catalogo 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log erro sync catalogo 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log sync catalogo 99Food": {
+      "main": [
+        [
+          {
+            "node": "Marcar canal sincronizado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log erro sync catalogo 99Food": {
+      "main": [
+        [
+          {
+            "node": "Marcar canal com erro 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
     "executionOrder": "v1",
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
-  },
-  "staticData": {
-    "global": {
-      "ifoodTokens": {
-        "3bce0e24-2868-49f3-a9dd-eed921ffc8e4": {
-          "accessToken": "eyJraWQiOiJlZGI4NWY2Mi00ZWY5LTExZTktODY0Ny1kNjYzYmQ4NzNkOTMiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzUxMiJ9.eyJzdWIiOiIwZmQ4MDY1MS0wM2U2LTQ0NDItYWU3Ny0xNTdmZjg0NTZjODgiLCJvd25lcl9uYW1lIjoibHVjYXMtbWFjaGFkby12aWVpcmEiLCJpc3MiOiJpRm9vZCIsImNsaWVudF9pZCI6IjBmZDgwNjUxLTAzZTYtNDQ0Mi1hZTc3LTE1N2ZmODQ1NmM4OCIsImF1ZCI6WyJpdGVtIiwiY2F0YWxvZyIsImZpbmFuY2lhbCIsIm1lcmNoYW50IiwibG9naXN0aWNzIiwicGlja2luZyIsIm9hdXRoLXNlcnZlciIsInNoaXBwaW5nIiwicmV2aWV3IiwiZ3JvY2VyaWVzIiwiZXZlbnRzIiwib3JkZXIiLCJwcm9tb3Rpb24iXSwiYXBwX25hbWUiOiJkZWxpdmVyeS1wZXQtcmoiLCJzY29wZSI6WyJpdGVtIiwic2hpcHBpbmciLCJjYXRhbG9nIiwicmV2aWV3IiwibWVyY2hhbnQiLCJsb2dpc3RpY3MiLCJncm9jZXJpZXMiLCJwaWNraW5nIiwiZXZlbnRzIiwib3JkZXIiLCJjb25jaWxpYXRvciIsInByb21vdGlvbiJdLCJ0dmVyIjoidjIiLCJtZXJjaGFudF9zY29wZSI6WyIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6Y2F0YWxvZyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTptZXJjaGFudCIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpyZXZpZXciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6aXRlbSIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpvcmRlciIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpjb25jaWxpYXRvciIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpldmVudHMiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6bG9naXN0aWNzIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5Omdyb2NlcmllcyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpwcm9tb3Rpb24iLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6c2hpcHBpbmciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6cGlja2luZyJdLCJleHAiOjE3ODUzODY1ODIsImlhdCI6MTc4NTM2NDk4MiwianRpIjoiMGZkODA2NTEtMDNlNi00NDQyLWFlNzctMTU3ZmY4NDU2Yzg4IiwibWVyY2hhbnRfc2NvcGVkIjp0cnVlfQ.POeVL7CaIpwB1YzbBkZ5tIopQBr3-sjobWrFGg2Wp5mLgatjXxhGOvpI5wL041NDxW0e5gFGyJaZIfbe_Dd2u31iaMJ3xQ3jBCFuJF0GQMYiNRteIrCUo-gI8Gw4UUOIXSxSyEF-5oqOkkDlOCTOAHL0bUizumJh_pSh8GIttWM",
-          "expiresAt": 1785386581099
-        }
-      }
-    }
-  },
-  "pinData": {}
+  }
 }

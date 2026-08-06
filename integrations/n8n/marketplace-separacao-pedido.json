@@ -1,0 +1,2013 @@
+{
+  "name": "Marketplace - Separação de Pedido",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Separação de pedido (Picking API, Mercado)\n\nATENÇÃO: Picking tem homologação própria na iFood, separada do resto -- pode não estar liberado pra essa loja mesmo com credenciais válidas. Não testado contra pedido real.\n\nseparacao-iniciar: POST startSeparation. Erro reverte separacao_status pra null.\nseparacao-finalizar: POST endSeparation. Erro reverte separacao_status pra separando.\nseparacao-acao: remover -> DELETE items/{uniqueId}. substituir -> POST items/{uniqueId}/replace, body com ean/quantity/prices inferido da documentação (nunca confirmado ao vivo -- unitValue/grossValue podem estar em centavos ou reais, conferir antes de confiar em pedido real).",
+        "height": 380,
+        "width": 560
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "note",
+      "name": "LEIA-ME",
+      "position": [
+        -300,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "separacao-iniciar",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "w1",
+      "webhookId": "separacao-iniciar-webhook",
+      "name": "Webhook Iniciar",
+      "position": [
+        -300,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere empresa_id = $1 and marketplace_id = $2 and ativo = true\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.empresa_id, $json.body.marketplace_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "a1",
+      "name": "Buscar credenciais empresa iniciar",
+      "position": [
+        0,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a2",
+      "name": "Checar token em cache iniciar",
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tk1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "a3",
+      "name": "Token válido? iniciar",
+      "position": [
+        480,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "a4",
+      "name": "Obter token OAuth iniciar",
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache iniciar').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a5",
+      "name": "Salvar token em cache iniciar",
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "a6",
+      "name": "Token pronto iniciar",
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://merchant-api.ifood.com.br/picking/v1.0/orders/{{$('Webhook Iniciar').item.json.body.marketplace_order_id}}/startSeparation",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}",
+        "onError": "continueErrorOutput",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "b1",
+      "name": "Iniciar separação na iFood",
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_separacao_iniciada",
+            "dados": "={{ JSON.stringify($('Webhook Iniciar').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "b2",
+      "name": "Log ifood_separacao_iniciada",
+      "position": [
+        1200,
+        -20
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_pedidos set separacao_status = null, separacao_erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Iniciar').item.json.body.marketplace_pedido_id, $('Iniciar separação na iFood').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "b3",
+      "name": "Reverter início (erro)",
+      "position": [
+        1200,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "separacao-finalizar",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "w2",
+      "webhookId": "separacao-finalizar-webhook",
+      "name": "Webhook Finalizar",
+      "position": [
+        -300,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere empresa_id = $1 and marketplace_id = $2 and ativo = true\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.empresa_id, $json.body.marketplace_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "a1",
+      "name": "Buscar credenciais empresa finalizar",
+      "position": [
+        0,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a2",
+      "name": "Checar token em cache finalizar",
+      "position": [
+        240,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tk1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "a3",
+      "name": "Token válido? finalizar",
+      "position": [
+        480,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "a4",
+      "name": "Obter token OAuth finalizar",
+      "position": [
+        480,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache finalizar').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a5",
+      "name": "Salvar token em cache finalizar",
+      "position": [
+        720,
+        700
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "a6",
+      "name": "Token pronto finalizar",
+      "position": [
+        960,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://merchant-api.ifood.com.br/picking/v1.0/orders/{{$('Webhook Finalizar').item.json.body.marketplace_order_id}}/endSeparation",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}",
+        "onError": "continueErrorOutput",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "c1",
+      "name": "Finalizar separação na iFood",
+      "position": [
+        960,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_separacao_finalizada",
+            "dados": "={{ JSON.stringify($('Webhook Finalizar').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c2",
+      "name": "Log ifood_separacao_finalizada",
+      "position": [
+        1200,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_pedidos set separacao_status = 'separando', separacao_erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Finalizar').item.json.body.marketplace_pedido_id, $('Finalizar separação na iFood').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c3",
+      "name": "Reverter fim (erro)",
+      "position": [
+        1200,
+        620
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "separacao-acao",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "w3",
+      "webhookId": "separacao-acao-webhook",
+      "name": "Webhook Ação",
+      "position": [
+        -300,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere empresa_id = $1 and marketplace_id = $2 and ativo = true\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.empresa_id, $json.body.marketplace_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "a1",
+      "name": "Buscar credenciais empresa ação",
+      "position": [
+        0,
+        900
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a2",
+      "name": "Checar token em cache ação",
+      "position": [
+        240,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tk1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "a3",
+      "name": "Token válido? ação",
+      "position": [
+        480,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "a4",
+      "name": "Obter token OAuth ação",
+      "position": [
+        480,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache ação').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a5",
+      "name": "Salvar token em cache ação",
+      "position": [
+        720,
+        1100
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "a6",
+      "name": "Token pronto ação",
+      "position": [
+        960,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ac1",
+              "leftValue": "={{$('Webhook Ação').item.json.body.tipo_acao}}",
+              "rightValue": "remover",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "d1",
+      "name": "É remoção?",
+      "position": [
+        960,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://merchant-api.ifood.com.br/picking/v1.0/orders/{{$('Webhook Ação').item.json.body.marketplace_order_id}}/items/{{$('Webhook Ação').item.json.body.uniqueid_marketplace}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "onError": "continueErrorOutput",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "d2",
+      "name": "Remover item na iFood",
+      "position": [
+        1200,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://merchant-api.ifood.com.br/picking/v1.0/orders/{{$('Webhook Ação').item.json.body.marketplace_order_id}}/items/{{$('Webhook Ação').item.json.body.uniqueid_marketplace}}/replace",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ean: $('Webhook Ação').item.json.body.ean_substituto, quantity: $('Webhook Ação').item.json.body.quantidade, prices: { unitValue: Math.round(($('Webhook Ação').item.json.body.preco_substituto || 0) * 100), grossValue: Math.round(($('Webhook Ação').item.json.body.preco_substituto || 0) * 100 * ($('Webhook Ação').item.json.body.quantidade || 1)) } } }}",
+        "onError": "continueErrorOutput",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "d3",
+      "name": "Substituir item na iFood",
+      "position": [
+        1200,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = 'aplicada' where id = $1;",
+        "options": {
+          "queryReplacement": "={{$('Webhook Ação').item.json.body.acao_id}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d4",
+      "name": "Marcar ação aplicada (remoção)",
+      "position": [
+        1440,
+        720
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = 'erro', erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Ação').item.json.body.acao_id, $('Remover item na iFood').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d5",
+      "name": "Marcar erro (remoção)",
+      "position": [
+        1440,
+        880
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = 'aplicada' where id = $1;",
+        "options": {
+          "queryReplacement": "={{$('Webhook Ação').item.json.body.acao_id}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d6",
+      "name": "Marcar ação aplicada (substituição)",
+      "position": [
+        1440,
+        960
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = 'erro', erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Ação').item.json.body.acao_id, $('Substituir item na iFood').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d7",
+      "name": "Marcar erro (substituição)",
+      "position": [
+        1440,
+        1120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Branch 99Food adicionada 2026-08-06\n\nBug corrigido antes de construir: as 3 queries 'Buscar credenciais empresa *' tinham o marketplace_id do iFood fixo no SQL -- uma acao de picking de um pedido 99Food buscaria (e usaria) credenciais do iFood por engano. Parametrizado por $2=marketplace_id.\n\nOutro bug corrigido no banco: notificar_separacao_acao() nunca mandava marketplace_id no payload do webhook -- impossivel rotear sem isso. Migration adicionou marketplace_id e item_externo_id (app_item_id) ao payload.\n\niniciar/finalizar: 99Food nao tem conceito de 'começar/terminar separação' como endpoint de API -- so loga, sem chamada.\n\nação: 99Food só tem cancelar/marcar-esgotado/ajustar-peso (POST /order/operate/adjustItem) -- SEM equivalente de 'substituir por outro produto'. Uma acao de substituição vira apenas um cancelamento do item original (sem substituto real no pedido) -- fica registrado bem visivel no campo erro pra nao passar despercebido pelo lojista.\n\n99Food retorna sempre HTTP 200 mesmo com errno de erro -- por isso o IF explicito de errno, nao onError.",
+        "height": 380,
+        "width": 560
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "sticky99sep",
+      "name": "LEIA-ME 99Food",
+      "position": [
+        0,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g1c (iniciar99)",
+              "leftValue": "={{$('Webhook Iniciar').item.json.body.marketplace_id}}",
+              "rightValue": "d4811153-e210-47b0-b910-ee0440914f60",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g1 (iniciar99)",
+      "name": "É iFood? (iniciar99)",
+      "position": [
+        260,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g2c (iniciar99)",
+              "leftValue": "={{$('Webhook Iniciar').item.json.body.marketplace_id}}",
+              "rightValue": "e11ec855-6936-410d-a56a-635adebfe595",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g2 (iniciar99)",
+      "name": "É 99Food? (iniciar99)",
+      "position": [
+        500,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "separacao_marketplace_nao_suportado (iniciar99)",
+            "tabela_origem": "marketplace_pedidos",
+            "dados": "={{ JSON.stringify($('Webhook Iniciar').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "g3 (iniciar99)",
+      "name": "Log marketplace nao suportado (iniciar99)",
+      "position": [
+        500,
+        840
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_separacao_iniciada",
+            "tabela_origem": "marketplace_pedidos",
+            "registro_id": "={{$('Webhook Iniciar').item.json.body.marketplace_pedido_id}}",
+            "dados": "={{ JSON.stringify($('Webhook Iniciar').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "logIni99",
+      "name": "Log separação iniciada 99Food (sem API)",
+      "position": [
+        740,
+        640
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g1c (finalizar99)",
+              "leftValue": "={{$('Webhook Finalizar').item.json.body.marketplace_id}}",
+              "rightValue": "d4811153-e210-47b0-b910-ee0440914f60",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g1 (finalizar99)",
+      "name": "É iFood? (finalizar99)",
+      "position": [
+        260,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g2c (finalizar99)",
+              "leftValue": "={{$('Webhook Finalizar').item.json.body.marketplace_id}}",
+              "rightValue": "e11ec855-6936-410d-a56a-635adebfe595",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g2 (finalizar99)",
+      "name": "É 99Food? (finalizar99)",
+      "position": [
+        500,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "separacao_marketplace_nao_suportado (finalizar99)",
+            "tabela_origem": "marketplace_pedidos",
+            "dados": "={{ JSON.stringify($('Webhook Finalizar').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "g3 (finalizar99)",
+      "name": "Log marketplace nao suportado (finalizar99)",
+      "position": [
+        500,
+        1100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_separacao_finalizada",
+            "tabela_origem": "marketplace_pedidos",
+            "registro_id": "={{$('Webhook Finalizar').item.json.body.marketplace_pedido_id}}",
+            "dados": "={{ JSON.stringify($('Webhook Finalizar').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "logFin99",
+      "name": "Log separação finalizada 99Food (sem API)",
+      "position": [
+        740,
+        900
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g1c (ação99)",
+              "leftValue": "={{$('Webhook Ação').item.json.body.marketplace_id}}",
+              "rightValue": "d4811153-e210-47b0-b910-ee0440914f60",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g1 (ação99)",
+      "name": "É iFood? (ação99)",
+      "position": [
+        260,
+        1060
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g2c (ação99)",
+              "leftValue": "={{$('Webhook Ação').item.json.body.marketplace_id}}",
+              "rightValue": "e11ec855-6936-410d-a56a-635adebfe595",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g2 (ação99)",
+      "name": "É 99Food? (ação99)",
+      "position": [
+        500,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "separacao_marketplace_nao_suportado (ação99)",
+            "tabela_origem": "marketplace_pedidos",
+            "dados": "={{ JSON.stringify($('Webhook Ação').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "g3 (ação99)",
+      "name": "Log marketplace nao suportado (ação99)",
+      "position": [
+        500,
+        1400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Buscar credenciais empresa ação').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{ json: { app_id_valor: cfg.api_key, app_shop_id_valor: cfg.id_loja_plataforma, api_secret: cfg.api_secret, auth_token: valido ? cached.authToken : null, token_valido: valido } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "acT1",
+      "name": "Checar token 99Food em cache (ação99)",
+      "position": [
+        740,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "acT2c",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "acT2",
+      "name": "Token 99Food válido? (ação99)",
+      "position": [
+        960,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "={{$json.app_id_valor}}"
+            },
+            {
+              "name": "app_secret",
+              "value": "={{$json.api_secret}}"
+            },
+            {
+              "name": "app_shop_id",
+              "value": "={{$json.app_shop_id_valor}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "acT3",
+      "name": "Obter token 99Food (ação99)",
+      "position": [
+        1180,
+        1320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token 99Food em cache (ação99)').item.json;\nconst resp = $json;\nconst tokenData = resp.data || {};\nconst ok = resp.errno === 0 && !!tokenData.auth_token;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nif (ok) { store.food99Tokens[ctx.app_shop_id_valor] = { authToken: tokenData.auth_token, expiresAt: tokenData.token_expiration_time ? tokenData.token_expiration_time * 1000 : Date.now() + 21600000 }; }\nreturn [{ json: { ...ctx, auth_token: ok ? tokenData.auth_token : null, token_valido: ok, token_erro: ok ? null : (resp.errmsg || 'erro desconhecido ao obter token') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "acT4",
+      "name": "Salvar token 99Food em cache (ação99)",
+      "position": [
+        1420,
+        1320
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "acT5",
+      "name": "Token 99Food pronto (ação99)",
+      "position": [
+        1660,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const w = $('Webhook Ação').item.json.body;\n// 99Food (Adjust Order Items) so cobre cancelar/marcar esgotado/ajustar peso --\n// NAO EXISTE operacao de \"substituir por outro produto\" como no iFood (que\n// insere um item novo no lugar). Pra 'substituir', a unica coisa possivel e\n// cancelar o item original -- o cliente fica sem substituto real, so um\n// estorno parcial. Isso fica logado explicitamente, nao finge que funcionou.\nconst isSubstituicaoSemSuporte = w.tipo_acao === 'substituir';\nconst body = {\n  auth_token: $json.auth_token,\n  order_id: w.marketplace_order_id,\n  cancel: {\n    items: [{\n      mdu_id: w.uniqueid_marketplace,\n      cancel_amount: w.quantidade,\n    }],\n  },\n};\nreturn [{ json: { ...$json, body, isSubstituicaoSemSuporte } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "acB1",
+      "name": "Montar ajuste 99Food",
+      "position": [
+        1900,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.99food.com/v3/order/operate/adjustItem",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.body}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "acB2",
+      "name": "Ajustar item na 99Food",
+      "position": [
+        2140,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "acB3c",
+              "leftValue": "={{$json.errno}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "acB3",
+      "name": "Ajuste 99Food teve sucesso?",
+      "position": [
+        2380,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = 'aplicada', erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Ação').item.json.body.acao_id, $('Montar ajuste 99Food').item.json.isSubstituicaoSemSuporte ? 'ATENCAO: 99Food nao suporta substituicao de item -- o item original foi apenas cancelado (estorno parcial), sem substituto real no pedido.' : null] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "acB4",
+      "name": "Marcar ação aplicada 99Food",
+      "position": [
+        2620,
+        1100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = $2, erro = $3 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Ação').item.json.body.acao_id, 'erro', $json.errmsg || $json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "acB5",
+      "name": "Marcar erro 99Food (ação)",
+      "position": [
+        2620,
+        1300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Iniciar": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais empresa iniciar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais empresa iniciar": {
+      "main": [
+        [
+          {
+            "node": "É iFood? (iniciar99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache iniciar": {
+      "main": [
+        [
+          {
+            "node": "Token válido? iniciar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido? iniciar": {
+      "main": [
+        [
+          {
+            "node": "Token pronto iniciar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth iniciar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth iniciar": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache iniciar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache iniciar": {
+      "main": [
+        [
+          {
+            "node": "Token pronto iniciar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto iniciar": {
+      "main": [
+        [
+          {
+            "node": "Iniciar separação na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Iniciar separação na iFood": {
+      "main": [
+        [
+          {
+            "node": "Log ifood_separacao_iniciada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reverter início (erro)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Finalizar": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais empresa finalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais empresa finalizar": {
+      "main": [
+        [
+          {
+            "node": "É iFood? (finalizar99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache finalizar": {
+      "main": [
+        [
+          {
+            "node": "Token válido? finalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido? finalizar": {
+      "main": [
+        [
+          {
+            "node": "Token pronto finalizar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth finalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth finalizar": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache finalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache finalizar": {
+      "main": [
+        [
+          {
+            "node": "Token pronto finalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto finalizar": {
+      "main": [
+        [
+          {
+            "node": "Finalizar separação na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalizar separação na iFood": {
+      "main": [
+        [
+          {
+            "node": "Log ifood_separacao_finalizada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reverter fim (erro)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Ação": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais empresa ação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais empresa ação": {
+      "main": [
+        [
+          {
+            "node": "É iFood? (ação99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache ação": {
+      "main": [
+        [
+          {
+            "node": "Token válido? ação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido? ação": {
+      "main": [
+        [
+          {
+            "node": "Token pronto ação",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth ação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth ação": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache ação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache ação": {
+      "main": [
+        [
+          {
+            "node": "Token pronto ação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto ação": {
+      "main": [
+        [
+          {
+            "node": "É remoção?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É remoção?": {
+      "main": [
+        [
+          {
+            "node": "Remover item na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Substituir item na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remover item na iFood": {
+      "main": [
+        [
+          {
+            "node": "Marcar ação aplicada (remoção)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar erro (remoção)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Substituir item na iFood": {
+      "main": [
+        [
+          {
+            "node": "Marcar ação aplicada (substituição)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar erro (substituição)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É iFood? (iniciar99)": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache iniciar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É 99Food? (iniciar99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É 99Food? (iniciar99)": {
+      "main": [
+        [
+          {
+            "node": "Log separação iniciada 99Food (sem API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log marketplace nao suportado (iniciar99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É iFood? (finalizar99)": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache finalizar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É 99Food? (finalizar99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É 99Food? (finalizar99)": {
+      "main": [
+        [
+          {
+            "node": "Log separação finalizada 99Food (sem API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log marketplace nao suportado (finalizar99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É iFood? (ação99)": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache ação",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É 99Food? (ação99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É 99Food? (ação99)": {
+      "main": [
+        [
+          {
+            "node": "Checar token 99Food em cache (ação99)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log marketplace nao suportado (ação99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token 99Food em cache (ação99)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food válido? (ação99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food válido? (ação99)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (ação99)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token 99Food (ação99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token 99Food (ação99)": {
+      "main": [
+        [
+          {
+            "node": "Salvar token 99Food em cache (ação99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token 99Food em cache (ação99)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (ação99)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food pronto (ação99)": {
+      "main": [
+        [
+          {
+            "node": "Montar ajuste 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar ajuste 99Food": {
+      "main": [
+        [
+          {
+            "node": "Ajustar item na 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ajustar item na 99Food": {
+      "main": [
+        [
+          {
+            "node": "Ajuste 99Food teve sucesso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ajuste 99Food teve sucesso?": {
+      "main": [
+        [
+          {
+            "node": "Marcar ação aplicada 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar erro 99Food (ação)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

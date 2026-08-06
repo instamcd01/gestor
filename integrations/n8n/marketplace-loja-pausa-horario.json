@@ -1,0 +1,2493 @@
+{
+  "name": "Marketplace - Loja (Pausa e Horário)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Loja: pausar (interrupções) + horário (opening-hours)\n\ninterrupcao-criar: disparado por INSERT em marketplace_interrupcoes -> POST /interruptions.\ninterrupcao-cancelar: disparado quando status vira cancelada -> DELETE /interruptions/{id}. Erro reverte status pra ativa.\nhorario-sync: disparado por UPDATE de empresas.horario_funcionamento -> traduz pro formato de shifts da iFood e PUT /opening-hours. Só um shift por dia (o Gestor não modela múltiplos turnos hoje).",
+        "height": 320,
+        "width": 520
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "note",
+      "name": "LEIA-ME",
+      "position": [
+        -300,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "interrupcao-criar",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "w1",
+      "webhookId": "interrupcao-criar-webhook",
+      "name": "Webhook Criar",
+      "position": [
+        -300,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere empresa_id = $1 and marketplace_id = $2 and ativo = true\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.empresa_id, $json.body.marketplace_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "a1",
+      "name": "Buscar credenciais empresa",
+      "position": [
+        0,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a2",
+      "name": "Checar token em cache",
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tk1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "a3",
+      "name": "Token válido?",
+      "position": [
+        480,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "a4",
+      "name": "Obter token OAuth",
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a5",
+      "name": "Salvar token em cache",
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "a6",
+      "name": "Token pronto",
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://merchant-api.ifood.com.br/merchant/v1.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/interruptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { description: $('Webhook Criar').item.json.body.motivo, start: $('Webhook Criar').item.json.body.inicio, end: $('Webhook Criar').item.json.body.fim } }}",
+        "onError": "continueErrorOutput",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "b1",
+      "name": "Criar interrupção na iFood",
+      "position": [
+        960,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_interrupcoes set id_externo = $2, status = 'ativa' where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Criar').item.json.body.interrupcao_id, $json.id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "b2",
+      "name": "Marcar interrupção ativa",
+      "position": [
+        1200,
+        -20
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_interrupcoes set status = 'erro', erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Criar').item.json.body.interrupcao_id, $('Criar interrupção na iFood').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "b3",
+      "name": "Marcar interrupção com erro",
+      "position": [
+        1200,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "interrupcao-cancelar",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "w2",
+      "webhookId": "interrupcao-cancelar-webhook",
+      "name": "Webhook Cancelar",
+      "position": [
+        -300,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere empresa_id = $1 and marketplace_id = $2 and ativo = true\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.empresa_id, $json.body.marketplace_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "a1_c",
+      "name": "Buscar credenciais empresa (cancelar)",
+      "position": [
+        0,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a2_c",
+      "name": "Checar token em cache (cancelar)",
+      "position": [
+        240,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tk1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "a3_c",
+      "name": "Token válido? (cancelar)",
+      "position": [
+        480,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "a4_c",
+      "name": "Obter token OAuth (cancelar)",
+      "position": [
+        480,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a5_c",
+      "name": "Salvar token em cache (cancelar)",
+      "position": [
+        720,
+        700
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "a6_c",
+      "name": "Token pronto (cancelar)",
+      "position": [
+        960,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://merchant-api.ifood.com.br/merchant/v1.0/merchants/{{$('Buscar credenciais empresa (cancelar)').item.json.id_loja_plataforma}}/interruptions/{{$('Webhook Cancelar').item.json.body.id_externo}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "onError": "continueErrorOutput",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "c1",
+      "name": "Cancelar interrupção na iFood",
+      "position": [
+        960,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_interrupcao_cancelada",
+            "tabela_origem": "pedidos",
+            "registro_id": "={{$('Webhook Cancelar').item.json.body.interrupcao_id}}",
+            "dados": "={{ JSON.stringify($('Webhook Cancelar').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c2",
+      "name": "Log ifood_interrupcao_cancelada",
+      "position": [
+        1200,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_interrupcoes set status = 'ativa', erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Cancelar').item.json.body.interrupcao_id, $('Cancelar interrupção na iFood').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c3",
+      "name": "Reverter cancelamento (erro)",
+      "position": [
+        1200,
+        620
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "horario-sync",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "w3",
+      "webhookId": "horario-sync-webhook",
+      "name": "Webhook Horário",
+      "position": [
+        -300,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere empresa_id = $1 and marketplace_id = $2 and ativo = true\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.empresa_id, $json.body.marketplace_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "a1_h",
+      "name": "Buscar credenciais empresa (horário)",
+      "position": [
+        0,
+        900
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a2_h",
+      "name": "Checar token em cache (horário)",
+      "position": [
+        240,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tk1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "a3_h",
+      "name": "Token válido? (horário)",
+      "position": [
+        480,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "a4_h",
+      "name": "Obter token OAuth (horário)",
+      "position": [
+        480,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "a5_h",
+      "name": "Salvar token em cache (horário)",
+      "position": [
+        720,
+        1100
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "a6_h",
+      "name": "Token pronto (horário)",
+      "position": [
+        960,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const dias = { segunda: 'MONDAY', terca: 'TUESDAY', quarta: 'WEDNESDAY', quinta: 'THURSDAY', sexta: 'FRIDAY', sabado: 'SATURDAY', domingo: 'SUNDAY' };\nconst horario = $('Webhook Horário').item.json.body.horario_funcionamento || {};\nconst shifts = [];\nfor (const [diaPt, diaEn] of Object.entries(dias)) {\n  const d = horario[diaPt];\n  if (!d || !d.aberto) continue;\n  const [abreH, abreM] = (d.abre || '00:00').split(':').map(Number);\n  const [fechaH, fechaM] = (d.fecha || '00:00').split(':').map(Number);\n  const duracao = (fechaH * 60 + fechaM) - (abreH * 60 + abreM);\n  if (duracao <= 0) continue;\n  shifts.push({ dayOfWeek: diaEn, start: `${d.abre}:00`, duration: duracao });\n}\nreturn [{ json: { ...$json, shifts } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "d1",
+      "name": "Montar shifts",
+      "position": [
+        960,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://merchant-api.ifood.com.br/merchant/v1.0/merchants/{{$('Buscar credenciais empresa (horário)').item.json.id_loja_plataforma}}/opening-hours",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { shifts: $json.shifts } }}",
+        "onError": "continueErrorOutput",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "d2",
+      "name": "Atualizar horário na iFood",
+      "position": [
+        1200,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_horario_sync",
+            "tabela_origem": "pedidos",
+            "registro_id": "={{ null }}",
+            "dados": "={{ JSON.stringify({ empresa_id: $('Webhook Horário').item.json.body.empresa_id, shifts: $('Montar shifts').item.json.shifts }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d3",
+      "name": "Log ifood_horario_sync",
+      "position": [
+        1440,
+        820
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "ifood_horario_sync_erro",
+            "tabela_origem": "pedidos",
+            "registro_id": "={{ null }}",
+            "dados": "={{ JSON.stringify({ empresa_id: $('Webhook Horário').item.json.body.empresa_id, erro: $('Atualizar horário na iFood').item.json.error?.message || 'erro desconhecido' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d4",
+      "name": "Log ifood_horario_sync_erro",
+      "position": [
+        1440,
+        1020
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Branch 99Food adicionada 2026-08-06\n\n3 fluxos, mesmo padrao das outras branches: gate 'É iFood?'/'É 99Food?' logo apos buscar credenciais (esse workflow tambem nao tinha NENHUMA checagem de marketplace antes).\n\nAlem disso corrigi um bug mais profundo: o trigger notificar_horario_marketplace() no banco era hardcoded pro marketplace_id do iFood -- nunca dispararia pra 99Food mesmo com esse branch pronto. Generalizado pra looping igual ao notificar_catalogo_marketplace().\n\nPausar: 99Food so tem 4 duracoes fixas (10/20/30min/ate o fim do dia), sem duracao livre como o iFood -- arredonda pra mais perto. pause_reason_code sempre 1006 ('Other') porque nao temos um seletor de motivo com os codigos da 99Food no app ainda (so texto livre) -- mesma limitacao ja documentada pro motivo de cancelamento de pedido.\n\nRetomar: 99Food nao tem um id de interrupcao pra deletar como o iFood -- e so 'voltar pra online' (setStatus store_status:1). id_externo fica com o valor fixo 'setStatus', so pra indicar que foi criado com sucesso.\n\nHorario: 99Food agrupa dias com o mesmo horario num unico bloco (bizDay:[1,2,3]), diferente do iFood que manda um shift por dia -- 'Montar biz_day_time 99Food' faz esse agrupamento.\n\nTodos os 3 fluxos: 99Food retorna sempre HTTP 200 mesmo em erro de negocio (errno != 0) -- por isso cada chamada tem um IF explicito checando errno, nao um onError/continueErrorOutput (mesmo bug ja encontrado e corrigido no workflow de disputas).",
+        "height": 420,
+        "width": 560
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "sticky99food",
+      "name": "LEIA-ME 99Food",
+      "position": [
+        0,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g1c (pausar)",
+              "leftValue": "={{$('Webhook Criar').item.json.body.marketplace_id}}",
+              "rightValue": "d4811153-e210-47b0-b910-ee0440914f60",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g1 (pausar)",
+      "name": "É iFood? (pausar)",
+      "position": [
+        260,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g2c (pausar)",
+              "leftValue": "={{$('Webhook Criar').item.json.body.marketplace_id}}",
+              "rightValue": "e11ec855-6936-410d-a56a-635adebfe595",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g2 (pausar)",
+      "name": "É 99Food? (pausar)",
+      "position": [
+        500,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "loja_marketplace_nao_suportado_pausar",
+            "tabela_origem": "empresa_marketplace_config",
+            "dados": "={{ JSON.stringify($('Buscar credenciais empresa').item.json) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "g3 (pausar)",
+      "name": "Log marketplace nao suportado (pausar)",
+      "position": [
+        500,
+        860
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Buscar credenciais empresa').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    empresa_id: cfg.empresa_id,\n    app_id_valor: cfg.api_key,\n    app_shop_id_valor: cfg.id_loja_plataforma,\n    api_secret: cfg.api_secret,\n    auth_token: valido ? cached.authToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "t1 (pausar)",
+      "name": "Checar token 99Food em cache (pausar)",
+      "position": [
+        740,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "t2c (pausar)",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "t2 (pausar)",
+      "name": "Token 99Food válido? (pausar)",
+      "position": [
+        960,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "={{$json.app_id_valor}}"
+            },
+            {
+              "name": "app_secret",
+              "value": "={{$json.api_secret}}"
+            },
+            {
+              "name": "app_shop_id",
+              "value": "={{$json.app_shop_id_valor}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "t3 (pausar)",
+      "name": "Obter token 99Food (pausar)",
+      "position": [
+        1180,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token 99Food em cache (pausar)').item.json;\nconst resp = $json;\nconst tokenData = resp.data || {};\nconst ok = resp.errno === 0 && !!tokenData.auth_token;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nif (ok) {\n  store.food99Tokens[ctx.app_shop_id_valor] = {\n    authToken: tokenData.auth_token,\n    expiresAt: tokenData.token_expiration_time ? tokenData.token_expiration_time * 1000 : Date.now() + 21600000,\n  };\n}\nreturn [{ json: { ...ctx, auth_token: ok ? tokenData.auth_token : null, token_valido: ok, token_erro: ok ? null : (resp.errmsg || 'erro desconhecido ao obter token') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "t4 (pausar)",
+      "name": "Salvar token 99Food em cache (pausar)",
+      "position": [
+        1420,
+        760
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "t5 (pausar)",
+      "name": "Token 99Food pronto (pausar)",
+      "position": [
+        1660,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const w = $('Webhook Criar').item.json.body;\nconst inicio = new Date(w.inicio);\nconst fim = new Date(w.fim);\nconst minutos = Math.max(1, Math.round((fim - inicio) / 60000));\n// 99Food so aceita 4 durações fixas (10/20/30min/até o fim do dia) -- sem\n// equivalente pra uma janela livre como a do iFood, arredonda pra mais perto.\nlet pauseTime;\nif (minutos <= 15) pauseTime = 1;\nelse if (minutos <= 25) pauseTime = 2;\nelse if (minutos <= 45) pauseTime = 3;\nelse pauseTime = 4;\nreturn [{ json: { ...$json, pause_time: pauseTime, pause_reason_code: 1006 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "pA1",
+      "name": "Montar pause_time 99Food",
+      "position": [
+        1900,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.99food.com/v1/shop/shop/setStatus",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { auth_token: $json.auth_token, store_status: 3, pause_time: $json.pause_time, pause_reason_code: $json.pause_reason_code } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "pA2",
+      "name": "Pausar loja na 99Food",
+      "position": [
+        2140,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "pA3c",
+              "leftValue": "={{$json.errno}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "pA3",
+      "name": "Pausa 99Food teve sucesso?",
+      "position": [
+        2380,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_interrupcoes set id_externo = 'setStatus', status = 'ativa' where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Criar').item.json.body.interrupcao_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "pA4",
+      "name": "Marcar interrupção ativa (99Food)",
+      "position": [
+        2620,
+        540
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_interrupcoes set status = $2, erro = $3 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Criar').item.json.body.interrupcao_id, 'erro', $json.errmsg || $json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "pA5",
+      "name": "Marcar interrupção com erro (99Food)",
+      "position": [
+        2620,
+        740
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g1c (retomar)",
+              "leftValue": "={{$('Webhook Cancelar').item.json.body.marketplace_id}}",
+              "rightValue": "d4811153-e210-47b0-b910-ee0440914f60",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g1 (retomar)",
+      "name": "É iFood? (retomar)",
+      "position": [
+        260,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g2c (retomar)",
+              "leftValue": "={{$('Webhook Cancelar').item.json.body.marketplace_id}}",
+              "rightValue": "e11ec855-6936-410d-a56a-635adebfe595",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g2 (retomar)",
+      "name": "É 99Food? (retomar)",
+      "position": [
+        500,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "loja_marketplace_nao_suportado_retomar",
+            "tabela_origem": "empresa_marketplace_config",
+            "dados": "={{ JSON.stringify($('Buscar credenciais empresa (cancelar)').item.json) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "g3 (retomar)",
+      "name": "Log marketplace nao suportado (retomar)",
+      "position": [
+        500,
+        1320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Buscar credenciais empresa (cancelar)').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    empresa_id: cfg.empresa_id,\n    app_id_valor: cfg.api_key,\n    app_shop_id_valor: cfg.id_loja_plataforma,\n    api_secret: cfg.api_secret,\n    auth_token: valido ? cached.authToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "t1 (retomar)",
+      "name": "Checar token 99Food em cache (retomar)",
+      "position": [
+        740,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "t2c (retomar)",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "t2 (retomar)",
+      "name": "Token 99Food válido? (retomar)",
+      "position": [
+        960,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "={{$json.app_id_valor}}"
+            },
+            {
+              "name": "app_secret",
+              "value": "={{$json.api_secret}}"
+            },
+            {
+              "name": "app_shop_id",
+              "value": "={{$json.app_shop_id_valor}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "t3 (retomar)",
+      "name": "Obter token 99Food (retomar)",
+      "position": [
+        1180,
+        1220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token 99Food em cache (retomar)').item.json;\nconst resp = $json;\nconst tokenData = resp.data || {};\nconst ok = resp.errno === 0 && !!tokenData.auth_token;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nif (ok) {\n  store.food99Tokens[ctx.app_shop_id_valor] = {\n    authToken: tokenData.auth_token,\n    expiresAt: tokenData.token_expiration_time ? tokenData.token_expiration_time * 1000 : Date.now() + 21600000,\n  };\n}\nreturn [{ json: { ...ctx, auth_token: ok ? tokenData.auth_token : null, token_valido: ok, token_erro: ok ? null : (resp.errmsg || 'erro desconhecido ao obter token') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "t4 (retomar)",
+      "name": "Salvar token 99Food em cache (retomar)",
+      "position": [
+        1420,
+        1220
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "t5 (retomar)",
+      "name": "Token 99Food pronto (retomar)",
+      "position": [
+        1660,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.99food.com/v1/shop/shop/setStatus",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { auth_token: $json.auth_token, store_status: 1 } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "pB1",
+      "name": "Retomar loja na 99Food",
+      "position": [
+        1900,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "pB2c",
+              "leftValue": "={{$json.errno}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "pB2",
+      "name": "Retomada 99Food teve sucesso?",
+      "position": [
+        2140,
+        1100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_interrupcao_cancelada",
+            "tabela_origem": "marketplace_interrupcoes",
+            "registro_id": "={{$('Webhook Cancelar').item.json.body.interrupcao_id}}",
+            "dados": "={{ JSON.stringify($('Webhook Cancelar').item.json.body) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "pB3",
+      "name": "Log retomada 99Food",
+      "position": [
+        2380,
+        1000
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_interrupcoes set status = 'ativa', erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Cancelar').item.json.body.interrupcao_id, $json.errmsg || $json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "pB4",
+      "name": "Reverter cancelamento (erro) 99Food",
+      "position": [
+        2380,
+        1200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g1c (horário)",
+              "leftValue": "={{$('Webhook Horário').item.json.body.marketplace_id}}",
+              "rightValue": "d4811153-e210-47b0-b910-ee0440914f60",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g1 (horário)",
+      "name": "É iFood? (horário)",
+      "position": [
+        260,
+        1420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "g2c (horário)",
+              "leftValue": "={{$('Webhook Horário').item.json.body.marketplace_id}}",
+              "rightValue": "e11ec855-6936-410d-a56a-635adebfe595",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "g2 (horário)",
+      "name": "É 99Food? (horário)",
+      "position": [
+        500,
+        1560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "loja_marketplace_nao_suportado_horário",
+            "tabela_origem": "empresa_marketplace_config",
+            "dados": "={{ JSON.stringify($('Buscar credenciais empresa (horário)').item.json) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "g3 (horário)",
+      "name": "Log marketplace nao suportado (horário)",
+      "position": [
+        500,
+        1780
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Buscar credenciais empresa (horário)').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    empresa_id: cfg.empresa_id,\n    app_id_valor: cfg.api_key,\n    app_shop_id_valor: cfg.id_loja_plataforma,\n    api_secret: cfg.api_secret,\n    auth_token: valido ? cached.authToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "t1 (horário)",
+      "name": "Checar token 99Food em cache (horário)",
+      "position": [
+        740,
+        1560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "t2c (horário)",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "t2 (horário)",
+      "name": "Token 99Food válido? (horário)",
+      "position": [
+        960,
+        1560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "={{$json.app_id_valor}}"
+            },
+            {
+              "name": "app_secret",
+              "value": "={{$json.api_secret}}"
+            },
+            {
+              "name": "app_shop_id",
+              "value": "={{$json.app_shop_id_valor}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "t3 (horário)",
+      "name": "Obter token 99Food (horário)",
+      "position": [
+        1180,
+        1680
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token 99Food em cache (horário)').item.json;\nconst resp = $json;\nconst tokenData = resp.data || {};\nconst ok = resp.errno === 0 && !!tokenData.auth_token;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nif (ok) {\n  store.food99Tokens[ctx.app_shop_id_valor] = {\n    authToken: tokenData.auth_token,\n    expiresAt: tokenData.token_expiration_time ? tokenData.token_expiration_time * 1000 : Date.now() + 21600000,\n  };\n}\nreturn [{ json: { ...ctx, auth_token: ok ? tokenData.auth_token : null, token_valido: ok, token_erro: ok ? null : (resp.errmsg || 'erro desconhecido ao obter token') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "t4 (horário)",
+      "name": "Salvar token 99Food em cache (horário)",
+      "position": [
+        1420,
+        1680
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "t5 (horário)",
+      "name": "Token 99Food pronto (horário)",
+      "position": [
+        1660,
+        1560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const dias = { segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, domingo: 7 };\nconst horario = $('Webhook Horário').item.json.body.horario_funcionamento || {};\n// 99Food agrupa dias com o MESMO horario num unico bloco (bizDay:[...]), ao\n// inves de um shift por dia como o iFood -- agrupa por chave \"abre-fecha\".\nconst grupos = {};\nfor (const [diaPt, diaNum] of Object.entries(dias)) {\n  const d = horario[diaPt];\n  if (!d || !d.aberto) continue;\n  const abre = d.abre || '00:00';\n  const fecha = d.fecha || '00:00';\n  const chave = abre + '-' + fecha;\n  grupos[chave] = grupos[chave] || { bizDay: [], abre, fecha };\n  grupos[chave].bizDay.push(diaNum);\n}\nconst biz_day_time = Object.values(grupos).map(g => ({\n  bizDay: g.bizDay.sort((a, b) => a - b),\n  bizTime: [{ begin: g.abre, end: g.fecha }],\n}));\nreturn [{ json: { ...$json, biz_day_time } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "pC1",
+      "name": "Montar biz_day_time 99Food",
+      "position": [
+        1900,
+        1560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.99food.com/v1/shop/shop/update",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { auth_token: $json.auth_token, biz_day_time: $json.biz_day_time } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "pC2",
+      "name": "Atualizar horário na 99Food",
+      "position": [
+        2140,
+        1560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "pC3c",
+              "leftValue": "={{$json.errno}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "pC3",
+      "name": "Horário 99Food teve sucesso?",
+      "position": [
+        2380,
+        1560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_horario_sync",
+            "tabela_origem": "empresas",
+            "dados": "={{ JSON.stringify({ empresa_id: $('Webhook Horário').item.json.body.empresa_id, biz_day_time: $('Montar biz_day_time 99Food').item.json.biz_day_time }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "pC4",
+      "name": "Log horário 99Food",
+      "position": [
+        2620,
+        1460
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_horario_sync_erro",
+            "tabela_origem": "empresas",
+            "dados": "={{ JSON.stringify({ empresa_id: $('Webhook Horário').item.json.body.empresa_id, erro: $json.errmsg || $json.error?.message || 'erro desconhecido' }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "pC5",
+      "name": "Log erro horário 99Food",
+      "position": [
+        2620,
+        1660
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Criar": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais empresa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais empresa": {
+      "main": [
+        [
+          {
+            "node": "É iFood? (pausar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido?": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto": {
+      "main": [
+        [
+          {
+            "node": "Criar interrupção na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar interrupção na iFood": {
+      "main": [
+        [
+          {
+            "node": "Marcar interrupção ativa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar interrupção com erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Cancelar": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais empresa (cancelar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais empresa (cancelar)": {
+      "main": [
+        [
+          {
+            "node": "É iFood? (retomar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache (cancelar)": {
+      "main": [
+        [
+          {
+            "node": "Token válido? (cancelar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido? (cancelar)": {
+      "main": [
+        [
+          {
+            "node": "Token pronto (cancelar)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth (cancelar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth (cancelar)": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache (cancelar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache (cancelar)": {
+      "main": [
+        [
+          {
+            "node": "Token pronto (cancelar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto (cancelar)": {
+      "main": [
+        [
+          {
+            "node": "Cancelar interrupção na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancelar interrupção na iFood": {
+      "main": [
+        [
+          {
+            "node": "Log ifood_interrupcao_cancelada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reverter cancelamento (erro)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Horário": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais empresa (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais empresa (horário)": {
+      "main": [
+        [
+          {
+            "node": "É iFood? (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache (horário)": {
+      "main": [
+        [
+          {
+            "node": "Token válido? (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido? (horário)": {
+      "main": [
+        [
+          {
+            "node": "Token pronto (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth (horário)": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache (horário)": {
+      "main": [
+        [
+          {
+            "node": "Token pronto (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto (horário)": {
+      "main": [
+        [
+          {
+            "node": "Montar shifts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar shifts": {
+      "main": [
+        [
+          {
+            "node": "Atualizar horário na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar horário na iFood": {
+      "main": [
+        [
+          {
+            "node": "Log ifood_horario_sync",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log ifood_horario_sync_erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É iFood? (pausar)": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É 99Food? (pausar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É 99Food? (pausar)": {
+      "main": [
+        [
+          {
+            "node": "Checar token 99Food em cache (pausar)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log marketplace nao suportado (pausar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token 99Food em cache (pausar)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food válido? (pausar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food válido? (pausar)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (pausar)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token 99Food (pausar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token 99Food (pausar)": {
+      "main": [
+        [
+          {
+            "node": "Salvar token 99Food em cache (pausar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token 99Food em cache (pausar)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (pausar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food pronto (pausar)": {
+      "main": [
+        [
+          {
+            "node": "Montar pause_time 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar pause_time 99Food": {
+      "main": [
+        [
+          {
+            "node": "Pausar loja na 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pausar loja na 99Food": {
+      "main": [
+        [
+          {
+            "node": "Pausa 99Food teve sucesso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pausa 99Food teve sucesso?": {
+      "main": [
+        [
+          {
+            "node": "Marcar interrupção ativa (99Food)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar interrupção com erro (99Food)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É iFood? (retomar)": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache (cancelar)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É 99Food? (retomar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É 99Food? (retomar)": {
+      "main": [
+        [
+          {
+            "node": "Checar token 99Food em cache (retomar)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log marketplace nao suportado (retomar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token 99Food em cache (retomar)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food válido? (retomar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food válido? (retomar)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (retomar)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token 99Food (retomar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token 99Food (retomar)": {
+      "main": [
+        [
+          {
+            "node": "Salvar token 99Food em cache (retomar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token 99Food em cache (retomar)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (retomar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food pronto (retomar)": {
+      "main": [
+        [
+          {
+            "node": "Retomar loja na 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retomar loja na 99Food": {
+      "main": [
+        [
+          {
+            "node": "Retomada 99Food teve sucesso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retomada 99Food teve sucesso?": {
+      "main": [
+        [
+          {
+            "node": "Log retomada 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reverter cancelamento (erro) 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É iFood? (horário)": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É 99Food? (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É 99Food? (horário)": {
+      "main": [
+        [
+          {
+            "node": "Checar token 99Food em cache (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log marketplace nao suportado (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token 99Food em cache (horário)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food válido? (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food válido? (horário)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token 99Food (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token 99Food (horário)": {
+      "main": [
+        [
+          {
+            "node": "Salvar token 99Food em cache (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token 99Food em cache (horário)": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food pronto (horário)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food pronto (horário)": {
+      "main": [
+        [
+          {
+            "node": "Montar biz_day_time 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar biz_day_time 99Food": {
+      "main": [
+        [
+          {
+            "node": "Atualizar horário na 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar horário na 99Food": {
+      "main": [
+        [
+          {
+            "node": "Horário 99Food teve sucesso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Horário 99Food teve sucesso?": {
+      "main": [
+        [
+          {
+            "node": "Log horário 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log erro horário 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

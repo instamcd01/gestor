@@ -1,0 +1,1973 @@
+{
+  "name": "99Food - Webhook de Eventos",
+  "nodes": [
+    {
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "sticky-readme",
+      "name": "LEIA-ME",
+      "position": [
+        -980,
+        -420
+      ],
+      "parameters": {
+        "content": "## 99Food - Webhook de Eventos (Grocery API)\n\nPrimeira versao, construida 2026-08-06. Cobre orderNew (ingestao) e orderCancel (cancelamento). Outros tipos (orderConfirm/orderReady/orderFinish/orderPartialCancel/orderCancelApply/orderRefundApply) so logam generico por enquanto, mesmo padrao usado na primeira versao do workflow do iFood.\n\nPONTOS NAO VALIDADOS AO VIVO AINDA (ver memoria gestor_99food_integration_architecture, secao \"How to apply\"):\n- Price Model: detecta Model 1 (delivery_type=1, entrega pela 99Food) vs Model 2 (delivery_type=2, entrega pela loja) pela presenca de real_pay_price/customer_need_paying_money. Model 2 usa os campos diretos da doc. Model 1 NAO tem campo de total explicito na doc - valor_total e DERIVADO (order_price - descontos + taxa de entrega original - reembolsos), nao confirmado contra pedido real ainda. Usuario avisou 2026-08-06 que a 99Food deve liberar primeiro por entrega da propria plataforma (delivery_type=1) - ou seja Model 1 e o caso mais provavel do primeiro pedido real, confirmar a formula com prioridade.\n- entregador_tipo (marketplace_pedidos) vem de delivery_type (1=99FOOD, 2=MERCHANT) - eixo diferente de tipo_entrega_marketplace/fulfillment_mode (DELIVERY vs TAKEOUT). Bug real ja corrigido 2026-08-06: a 1a versao gravava o valor errado (tipo_entrega_marketplace) nessa coluna.\n- price_model + o objeto price bruto da 99Food ficam salvos em marketplace_pedidos.metadata pra auditoria/conferencia manual caso a formula derivada do Model 1 esteja errada.\n- Precos assumidos em centavos (BRL) - dividido por 100. Doc so confirma isso explicitamente pra MXN/PEN/COP/CRC, nao lista BRL.\n- Mapa pay_channel -> forma de pagamento PT-BR e uma melhor tentativa, nao confirmado.\n- order_id enviado como STRING no confirm (nao numero bruto) pra evitar perda de precisao do inteiro 64-bit - se a 99Food rejeitar, e o primeiro lugar a olhar.\n- Assinatura MD5(rawBody + api_secret) comparada contra o header didi-header-sign - verificar se options.rawBody do node Webhook realmente entrega o byte exato (mesmo risco ja documentado pro iFood).\n- Resposta do webhook: respondToWebhook em paralelo com o processamento (ack imediato {\"errno\":0,\"errmsg\":\"ok\"}), nao depende do resto da cadeia terminar.\n- app_id/order_id/event_id/shop_id/uid sao protegidos contra perda de precisao via regex antes do JSON.parse (99Food usa 64-bit int, JS perde precisao acima de 2^53 - a propria doc da 99Food avisa isso)."
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "99food-eventos",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "wh1",
+      "name": "Webhook",
+      "position": [
+        -700,
+        0
+      ],
+      "webhookId": "4d45a7c1-0d1e-4258-9ddd-9303b4acc597"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {errno: 0, errmsg: \"ok\"} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "id": "wh2",
+      "name": "Responder OK",
+      "position": [
+        -460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookItem = $('Webhook').item;\nlet rawBody;\nif (webhookItem.binary && webhookItem.binary.data) {\n  rawBody = Buffer.from(webhookItem.binary.data.data, 'base64').toString('utf8');\n} else {\n  rawBody = JSON.stringify(webhookItem.json.body);\n}\nconst headers = webhookItem.json.headers || {};\nconst signature = headers['didi-header-sign'] || headers['Didi-Header-Sign'] || '';\n\n// 99Food usa inteiros 64-bit (app_id, order_id, event_id, shop_id, uid) que\n// perdem precisao no JSON.parse padrao do JS (documentado pela propria 99Food,\n// recomendam json-bigint). Protegemos citando esses campos como string via\n// regex ANTES do parse, preservando os digitos exatos.\nconst protectedFields = ['app_id', 'order_id', 'event_id', 'shop_id', 'uid', 'apply_id'];\nconst pattern = new RegExp('\"(' + protectedFields.join('|') + ')\"\\\\s*:\\\\s*(-?\\\\d+)(?=[,}\\\\s])', 'g');\nconst safeBody = rawBody.replace(pattern, '\"$1\":\"$2\"');\n\nlet evento = {};\ntry { evento = JSON.parse(safeBody); } catch (e) { evento = {}; }\n\nreturn [{\n  json: {\n    rawBody,\n    signature,\n    app_id: evento.app_id || null,\n    app_shop_id: evento.app_shop_id || null,\n    type: evento.type || null,\n    timestamp: evento.timestamp || null,\n    data: evento.data || {},\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "wh3",
+      "name": "Extrair corpo e assinatura",
+      "position": [
+        -460,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select c.empresa_id, c.api_key as app_id_valor, c.api_secret, c.id_loja_plataforma as app_shop_id_valor\nfrom (select 1) as dummy\nleft join empresa_marketplace_config c\n  on c.marketplace_id = 'e11ec855-6936-410d-a56a-635adebfe595'\n and c.ativo = true\n and c.api_key = $1\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{$json.app_id || '0'}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "wh4",
+      "name": "Buscar config pelo app_id",
+      "position": [
+        -220,
+        -80
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.api_secret}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true,
+                "name": "filter.operator.notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "wh5",
+      "name": "Config encontrada?",
+      "position": [
+        20,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_app_id_desconhecido",
+            "dados": "={{ JSON.stringify({ app_id: $('Extrair corpo e assinatura').item.json.app_id, rawBody: $('Extrair corpo e assinatura').item.json.rawBody }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "wh6",
+      "name": "Registrar evento app_id desconhecido",
+      "position": [
+        260,
+        120
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "action": "hash",
+        "type": "MD5",
+        "value": "={{ $('Extrair corpo e assinatura').item.json.rawBody + $json.api_secret }}",
+        "encoding": "hex"
+      },
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "id": "wh7",
+      "name": "Calcular assinatura esperada",
+      "position": [
+        260,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = $('Extrair corpo e assinatura').item.json;\nconst config = $('Buscar config pelo app_id').item.json;\nconst computed = $json.data ?? $json.hash ?? $json.hmac ?? $json.value ?? '';\nconst valido = String(computed).toLowerCase() === String(parsed.signature || '').toLowerCase();\nreturn [{\n  json: {\n    ...parsed,\n    empresa_id: config.empresa_id,\n    app_id_valor: config.app_id_valor,\n    app_shop_id_valor: config.app_shop_id_valor,\n    api_secret: config.api_secret,\n    assinatura_valida: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "wh8",
+      "name": "Consolidar verificação",
+      "position": [
+        500,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "wc1",
+              "leftValue": "={{$json.assinatura_valida}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "wh9",
+      "name": "Assinatura válida?",
+      "position": [
+        740,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_assinatura_invalida",
+            "dados": "={{ JSON.stringify({ rawBody: $json.rawBody }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "wh10",
+      "name": "Registrar evento assinatura inválida",
+      "position": [
+        980,
+        60
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "sw1",
+                    "leftValue": "={{$json.type}}",
+                    "rightValue": "orderNew",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "sw2",
+                    "leftValue": "={{$json.type}}",
+                    "rightValue": "orderCancel",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "sw3",
+                    "leftValue": "={{$json.type}}",
+                    "rightValue": "orderCancelApply",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "sw4",
+                    "leftValue": "={{$json.type}}",
+                    "rightValue": "orderRefundApply",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "id": "sw0",
+      "name": "Switch por tipo de evento",
+      "position": [
+        980,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select (select count(*) from marketplace_pedidos where marketplace_order_id = $1) as total;",
+        "options": {
+          "queryReplacement": "={{$json.data.order_id}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n1",
+      "name": "Checar pedido duplicado",
+      "position": [
+        1240,
+        -420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.total}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt",
+                "name": "filter.operator.gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "n2",
+      "name": "Já existe?",
+      "position": [
+        1480,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Switch por tipo de evento').item.json;\nconst empresaId = ctx.empresa_id;\nconst orderInfo = ctx.data.order_info || {};\nconst price = orderInfo.price || {};\nconst addr = orderInfo.receive_address || {};\n\n// Mapa de pay_channel -> forma de pagamento PT-BR, melhor tentativa, nao\n// confirmado ao vivo ainda - ver LEIA-ME.\nconst payChannelMap = {\n  150: 'Cartão de Crédito', 153: 'Dinheiro', 154: 'Outros', 190: 'Outros', 120: 'Outros',\n  212: 'Pix', 280: 'Pix', 257: 'Outros', 258: 'Outros', 259: 'Outros', 260: 'Outros',\n  262: 'Cartão de Crédito', 263: 'Cartão de Débito', 264: 'Outros',\n};\nconst tipoPagamento = payChannelMap[orderInfo.pay_channel] || 'Outros';\nconst statusPagamento = orderInfo.pay_method === 1 ? 'pago' : 'pendente';\n\n// 99Food tem 2 modelos de price ativos, escolhidos por delivery_type\n// (1=entrega pela 99Food -> Price Model 1, sem campo de total explicito;\n// 2=entrega pela loja -> Price Model 2, com real_pay_price/customer_need_paying_money).\n// Bug real encontrado 2026-08-06, antes de qualquer pedido real chegar:\n// o codigo so tratava Model 2 - todo pedido com delivery_type=1 (que o\n// usuario espera ser o modo liberado primeiro pela 99Food) cairia no\n// fallback ?? 0 e gravaria valor_total=0. Model 1 nao tem campo de total\n// documentado, entao o valor abaixo e DERIVADO (order_price - descontos +\n// taxa de entrega original - reembolsos), nao confirmado ainda contra um\n// pedido real - ver LEIA-ME.\nconst isModel2 = price.real_pay_price != null || price.customer_need_paying_money != null;\nlet valorProdutos, valorEntrega, desconto, valorTotal;\nif (isModel2) {\n  valorProdutos = (price.order_price || 0) / 100;\n  valorEntrega = (price.delivery_price || 0) / 100;\n  desconto = ((price.items_discount || 0) + (price.delivery_discount || 0)) / 100;\n  valorTotal = (price.real_pay_price ?? price.customer_need_paying_money ?? 0) / 100;\n} else {\n  valorProdutos = ((price.order_price || 0) - (price.items_discount || 0)) / 100;\n  valorEntrega = Math.max(0, (price.store_charged_delivery_price || 0) - (price.delivery_discount || 0)) / 100;\n  desconto = ((price.items_discount || 0) + (price.delivery_discount || 0)) / 100;\n  valorTotal = valorProdutos + valorEntrega + ((price.service_price || 0) + (price.meal_top_up_price || 0) - (price.refund_price || 0)) / 100;\n}\nconst taxaServico = (price.others_fees?.service_price ?? price.service_price ?? 0) / 100;\n\n// delivery_type: 1=entrega pela 99Food (courier da plataforma), 2=entrega\n// pela loja - eixo diferente de fulfillment_mode (entrega vs retirada).\n// Mesma convencao ja usada pro iFood (entregador_tipo='MERCHANT' quando a\n// loja entrega) para manter os dois marketplaces comparaveis no dashboard.\nconst entregadorTipo = orderInfo.delivery_type === 1 ? '99FOOD' : 'MERCHANT';\n\nconst valorPendente = price.customer_need_paying_money ?? price.real_pay_price ?? valorTotal;\nconst changeFor = orderInfo.change_for || 0;\nconst troco = changeFor > valorPendente * 100 ? (changeFor - valorPendente * 100) / 100 : null;\n\n// fulfillment_mode: 0=Delivery, 1=Self Pickup (retirada).\nconst tipoEntrega = orderInfo.fulfillment_mode === 1 ? 'TAKEOUT' : 'DELIVERY';\n\nconst remarkArr = Array.isArray(orderInfo.remark) ? orderInfo.remark : (orderInfo.remark ? [orderInfo.remark] : []);\n\nreturn [{\n  json: {\n    empresa_id: empresaId,\n    order_id: ctx.data.order_id,\n    orderInfo,\n    cliente: {\n      nome: addr.name || 'Cliente 99Food',\n      telefone: addr.phone || '',\n      idExterno99food: addr.uid || null,\n      cpf: addr.cpf || null,\n      endereco: addr.street_name || '',\n      numero: addr.street_number || addr.house_number || '',\n      bairro: addr.district || '',\n      cidade: addr.city || '',\n      estado: addr.state || '',\n      cep: addr.postal_code || '',\n      complemento: addr.complement || null,\n      latitude: addr.poi_lat ?? null,\n      longitude: addr.poi_lng ?? null,\n    },\n    pagamento: { tipo_pagamento: tipoPagamento, status_pagamento: statusPagamento, troco },\n    precos: {\n      valor_produtos: valorProdutos,\n      valor_entrega: valorEntrega,\n      desconto,\n      valor_total: valorTotal,\n      taxa_servico_cliente: taxaServico,\n      price_model: isModel2 ? 2 : 1,\n      raw: price,\n    },\n    numero_exibicao: orderInfo.order_index != null ? String(orderInfo.order_index) : null,\n    telefone_localizador: addr.locator || null,\n    codigo_retirada_exibicao: orderInfo.handover_code || orderInfo.pickup_code || null,\n    tipo_entrega_marketplace: tipoEntrega,\n    entregador_tipo: entregadorTipo,\n    observacoes: remarkArr.join(', '),\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "n3",
+      "name": "Preparar dados do pedido e cliente",
+      "position": [
+        1720,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select (select id from clientes where empresa_id = $1 and id_externo_99food = $2 and deleted_at is null limit 1) as id;",
+        "options": {
+          "queryReplacement": "={{$json.empresa_id}}, {{$json.cliente.idExterno99food}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n4",
+      "name": "Buscar cliente existente",
+      "position": [
+        1960,
+        -420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true,
+                "name": "filter.operator.notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "n5",
+      "name": "Cliente existe?",
+      "position": [
+        2200,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "clientes",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "empresa_id": "={{$('Preparar dados do pedido e cliente').item.json.empresa_id}}",
+            "nome": "={{$('Preparar dados do pedido e cliente').item.json.cliente.nome}}",
+            "telefone": "={{$('Preparar dados do pedido e cliente').item.json.cliente.telefone}}",
+            "endereco": "={{$('Preparar dados do pedido e cliente').item.json.cliente.endereco}}",
+            "numero": "={{$('Preparar dados do pedido e cliente').item.json.cliente.numero}}",
+            "bairro": "={{$('Preparar dados do pedido e cliente').item.json.cliente.bairro}}",
+            "cidade": "={{$('Preparar dados do pedido e cliente').item.json.cliente.cidade}}",
+            "estado": "={{$('Preparar dados do pedido e cliente').item.json.cliente.estado}}",
+            "cep": "={{$('Preparar dados do pedido e cliente').item.json.cliente.cep}}",
+            "complemento": "={{$('Preparar dados do pedido e cliente').item.json.cliente.complemento}}",
+            "latitude": "={{$('Preparar dados do pedido e cliente').item.json.cliente.latitude}}",
+            "longitude": "={{$('Preparar dados do pedido e cliente').item.json.cliente.longitude}}",
+            "cpf": "={{$('Preparar dados do pedido e cliente').item.json.cliente.cpf}}",
+            "id_externo_99food": "={{$('Preparar dados do pedido e cliente').item.json.cliente.idExterno99food}}",
+            "canal_origem": "99food"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n6",
+      "name": "Inserir cliente",
+      "position": [
+        2440,
+        -320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const found = $('Buscar cliente existente').item.json;\nconst cliente_id = found.id || $json.id;\nreturn [{ json: { ...$('Preparar dados do pedido e cliente').item.json, cliente_id } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "n7",
+      "name": "Selecionar id do cliente",
+      "position": [
+        2680,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json;\nconst items = ctx.orderInfo.order_items || [];\nreturn items.map(it => {\n  const remark = Array.isArray(it.remark) ? it.remark.join(', ') : (it.remark || null);\n  return {\n    json: {\n      empresa_id: ctx.empresa_id,\n      cliente_id: ctx.cliente_id,\n      order_id: ctx.order_id,\n      orderInfo: ctx.orderInfo,\n      pagamento: ctx.pagamento,\n      precos: ctx.precos,\n      numero_exibicao: ctx.numero_exibicao,\n      telefone_localizador: ctx.telefone_localizador,\n      codigo_retirada_exibicao: ctx.codigo_retirada_exibicao,\n      tipo_entrega_marketplace: ctx.tipo_entrega_marketplace,\n      entregador_tipo: ctx.entregador_tipo,\n      observacoes: ctx.observacoes,\n      item_externo_id: String(it.app_item_id),\n      uniqueid_marketplace: it.mdu_id != null ? String(it.mdu_id) : null,\n      nome_item: it.name,\n      quantidade: it.amount,\n      preco_unitario: (it.sku_price || 0) / 100,\n      subtotal: (it.total_price ?? ((it.sku_price || 0) * (it.amount || 1))) / 100,\n      observacao_cliente: remark,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "n8",
+      "name": "Explodir itens do pedido",
+      "position": [
+        2920,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select (select produto_id from produto_canal where item_externo_id = $1 and marketplace_id = 'e11ec855-6936-410d-a56a-635adebfe595' limit 1) as produto_id;",
+        "options": {
+          "queryReplacement": "={{$json.item_externo_id}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n9",
+      "name": "Resolver produto_id",
+      "position": [
+        3160,
+        -420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.produto_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true,
+                "name": "filter.operator.notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "n10",
+      "name": "Produto mapeado?",
+      "position": [
+        3400,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select (select id from produtos where empresa_id = $1 and sku = $2 limit 1) as id;",
+        "options": {
+          "queryReplacement": "={{$('Explodir itens do pedido').item.json.empresa_id}}, {{'__99FOOD_NAO_CATALOGADO__'}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n11",
+      "name": "Buscar placeholder existente",
+      "position": [
+        3640,
+        -260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true,
+                "name": "filter.operator.notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "n12",
+      "name": "Placeholder existe?",
+      "position": [
+        3880,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "produtos",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "empresa_id": "={{$('Explodir itens do pedido').item.json.empresa_id}}",
+            "nome": "Item não catalogado (99Food)",
+            "sku": "__99FOOD_NAO_CATALOGADO__",
+            "preco": "={{$('Explodir itens do pedido').item.json.preco_unitario}}",
+            "ativo": true,
+            "exibir_no_catalogo": false
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n13",
+      "name": "Inserir produto placeholder",
+      "position": [
+        4120,
+        -160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const direct = $('Resolver produto_id').item.json.produto_id;\nlet produtoId = direct;\nlet naoCatalogado = false;\nif (!produtoId) {\n  naoCatalogado = true;\n  const existing = $('Buscar placeholder existente').item.json.id;\n  produtoId = existing || $json.id;\n}\nreturn [{ json: { ...$('Explodir itens do pedido').item.json, produto_id: produtoId, item_nao_catalogado: naoCatalogado } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "n14",
+      "name": "Consolidar produto_id",
+      "position": [
+        4360,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const list = items.map(i => i.json);\nconst first = list[0] || {};\nreturn [{\n  json: {\n    empresa_id: first.empresa_id,\n    cliente_id: first.cliente_id,\n    order_id: first.order_id,\n    orderInfo: first.orderInfo,\n    pagamento: first.pagamento,\n    precos: first.precos,\n    numero_exibicao: first.numero_exibicao,\n    telefone_localizador: first.telefone_localizador,\n    codigo_retirada_exibicao: first.codigo_retirada_exibicao,\n    tipo_entrega_marketplace: first.tipo_entrega_marketplace,\n    entregador_tipo: first.entregador_tipo,\n    observacoes: first.observacoes,\n    itens: list,\n    algum_nao_catalogado: list.some(i => i.item_nao_catalogado),\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "n15",
+      "name": "Agregar itens resolvidos",
+      "position": [
+        4600,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "pedidos",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "empresa_id": "={{$json.empresa_id}}",
+            "cliente_id": "={{$json.cliente_id}}",
+            "status": "pendente",
+            "origem": "99food",
+            "origem_tipo": "marketplace",
+            "canal_venda": "99food",
+            "marketplace_id": "e11ec855-6936-410d-a56a-635adebfe595",
+            "tipo_pagamento": "={{$json.pagamento.tipo_pagamento}}",
+            "status_pagamento": "={{$json.pagamento.status_pagamento}}",
+            "valor_produtos": "={{$json.precos.valor_produtos}}",
+            "valor_entrega": "={{$json.precos.valor_entrega}}",
+            "desconto": "={{$json.precos.desconto}}",
+            "valor_total": "={{$json.precos.valor_total}}",
+            "observacoes": "={{ $json.algum_nao_catalogado ? (($json.observacoes || '') + ' Contém item não catalogado, revisar catálogo da 99Food.').trim() : ($json.observacoes || '') }}",
+            "tipo_entrega_marketplace": "={{$json.tipo_entrega_marketplace}}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n16",
+      "name": "Inserir pedido",
+      "position": [
+        4840,
+        -420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const pedidoId = $json.id;\nconst itens = $('Agregar itens resolvidos').item.json.itens;\nreturn itens.map(it => ({\n  json: {\n    pedido_id: pedidoId,\n    produto_id: it.produto_id,\n    quantidade: it.quantidade,\n    preco_unitario: it.preco_unitario,\n    subtotal: it.subtotal,\n    uniqueid_marketplace: it.uniqueid_marketplace,\n    observacao_cliente: it.observacao_cliente,\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "n17",
+      "name": "Reexplodir itens p/ inserir",
+      "position": [
+        5080,
+        -540
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "itens_pedido",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "pedido_id": "={{$json.pedido_id}}",
+            "produto_id": "={{$json.produto_id}}",
+            "quantidade": "={{$json.quantidade}}",
+            "preco_unitario": "={{$json.preco_unitario}}",
+            "subtotal": "={{$json.subtotal}}",
+            "uniqueid_marketplace": "={{$json.uniqueid_marketplace}}",
+            "observacao_cliente": "={{$json.observacao_cliente}}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n18",
+      "name": "Inserir itens_pedido",
+      "position": [
+        5320,
+        -540
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "marketplace_pedidos",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "pedido_id": "={{$('Inserir pedido').item.json.id}}",
+            "marketplace_id": "e11ec855-6936-410d-a56a-635adebfe595",
+            "marketplace_order_id": "={{$('Agregar itens resolvidos').item.json.order_id}}",
+            "status_marketplace": "orderNew",
+            "valor_bruto_marketplace": "={{$('Agregar itens resolvidos').item.json.precos.valor_total}}",
+            "numero_exibicao": "={{$('Agregar itens resolvidos').item.json.numero_exibicao}}",
+            "telefone_localizador": "={{$('Agregar itens resolvidos').item.json.telefone_localizador}}",
+            "codigo_retirada_exibicao": "={{$('Agregar itens resolvidos').item.json.codigo_retirada_exibicao}}",
+            "taxa_servico_cliente": "={{$('Agregar itens resolvidos').item.json.precos.taxa_servico_cliente}}",
+            "entregador_tipo": "={{$('Agregar itens resolvidos').item.json.entregador_tipo}}",
+            "metadata": "={{ JSON.stringify({ price_model: $('Agregar itens resolvidos').item.json.precos.price_model, price_raw: $('Agregar itens resolvidos').item.json.precos.raw }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n19",
+      "name": "Inserir marketplace_pedidos",
+      "position": [
+        5080,
+        -320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Buscar config pelo app_id').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.app_shop_id_valor];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    app_id_valor: cfg.app_id_valor,\n    app_shop_id_valor: cfg.app_shop_id_valor,\n    api_secret: cfg.api_secret,\n    auth_token: valido ? cached.authToken : null,\n    token_valido: valido,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "n20",
+      "name": "Checar token em cache",
+      "position": [
+        5560,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "n21",
+      "name": "Token válido?",
+      "position": [
+        5800,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "={{$json.app_id_valor}}"
+            },
+            {
+              "name": "app_secret",
+              "value": "={{$json.api_secret}}"
+            },
+            {
+              "name": "app_shop_id",
+              "value": "={{$json.app_shop_id_valor}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "n22",
+      "name": "Obter token 99Food",
+      "position": [
+        6040,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache').item.json;\nconst resp = $json;\nconst tokenData = resp.data || {};\n// So marca valido/cacheia se a chamada realmente teve sucesso (errno 0 E\n// auth_token presente) - bug real encontrado ao vivo 2026-08-06: sem essa\n// checagem, uma falha (ex: autorizacao da loja expirada, errno 10102)\n// ainda marcava token_valido=true com auth_token undefined, e o erro real\n// so aparecia depois, de forma confusa, na chamada de confirmacao.\nconst ok = resp.errno === 0 && !!tokenData.auth_token;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nif (ok) {\n  store.food99Tokens[ctx.app_shop_id_valor] = {\n    authToken: tokenData.auth_token,\n    expiresAt: tokenData.token_expiration_time ? tokenData.token_expiration_time * 1000 : Date.now() + 21600000,\n  };\n}\nreturn [{ json: { ...ctx, auth_token: ok ? tokenData.auth_token : null, token_valido: ok, token_erro: ok ? null : (resp.errmsg || 'erro desconhecido ao obter token') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "n23",
+      "name": "Salvar token em cache",
+      "position": [
+        6280,
+        -200
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "n24",
+      "name": "Token pronto",
+      "position": [
+        6520,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.99food.com/v1/order/order/confirm",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { auth_token: $('Token pronto').item.json.auth_token, order_id: $('Agregar itens resolvidos').item.json.order_id } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "n25",
+      "name": "Confirmar pedido na 99Food",
+      "position": [
+        6760,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_pedido_recebido",
+            "tabela_origem": "pedidos",
+            "registro_id": "={{$('Inserir pedido').item.json.id}}",
+            "dados": "={{ JSON.stringify({ order_id: $('Agregar itens resolvidos').item.json.order_id, valor_total: $('Agregar itens resolvidos').item.json.precos.valor_total }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n26",
+      "name": "Registrar evento pedido recebido",
+      "position": [
+        7000,
+        -320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select\n  (select mp.pedido_id from marketplace_pedidos mp where mp.marketplace_order_id = $1 limit 1) as pedido_id,\n  (select p.status from pedidos p join marketplace_pedidos mp on mp.pedido_id = p.id where mp.marketplace_order_id = $1 limit 1) as status;",
+        "options": {
+          "queryReplacement": "={{$json.data.order_id}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c1",
+      "name": "Buscar pedido pelo id do marketplace",
+      "position": [
+        1240,
+        -40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{$json.pedido_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true,
+                "name": "filter.operator.notEmpty"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "cancelado",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals",
+                "name": "filter.operator.notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "c2",
+      "name": "Pedido encontrado e ativo?",
+      "position": [
+        1480,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select cancelar_pedido($1);",
+        "options": {
+          "queryReplacement": "={{$json.pedido_id}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c3",
+      "name": "Cancelar pedido (RPC)",
+      "position": [
+        1720,
+        -40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_pedido_cancelado",
+            "tabela_origem": "pedidos",
+            "registro_id": "={{$('Buscar pedido pelo id do marketplace').item.json.pedido_id}}",
+            "dados": "={{ JSON.stringify({ order_id: $('Switch por tipo de evento').item.json.data.order_id }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c4",
+      "name": "Registrar evento cancelado",
+      "position": [
+        1960,
+        -40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "={{ '99food_evento_' + ($json.type || 'desconhecido') }}",
+            "dados": "={{ JSON.stringify($json.data) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "f1",
+      "name": "Registrar evento genérico",
+      "position": [
+        1240,
+        260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Disputas (orderCancelApply / orderRefundApply)\n\nAmbos os eventos disparam varias vezes (cancelApply: a cada 2min por 5min; refundApply: a cada 1h por 25h) como lembrete -- por isso o insert usa ON CONFLICT (disputa_id_externo) DO NOTHING, idempotente.\n\nNao encontrei a doc do endpoint /shop/apply/set (\"Set Store Cancellation/Refund\") na navegacao atual do portal -- so achei a referencia a ele no texto de outras paginas. Se esses eventos nunca chegarem na pratica, e provavel que falte habilitar isso -- contatar a 99Food.\n\nResposta (aceitar/recusar) fica no workflow 'Marketplace - Resposta de Disputa', disparado pelo trigger generico quando o lojista decide no app -- mesmo padrao ja usado pro iFood.",
+        "height": 260,
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "d0",
+      "name": "LEIA-ME Disputas",
+      "position": [
+        980,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select (select mp.pedido_id from marketplace_pedidos mp where mp.marketplace_order_id = $1 limit 1) as pedido_id;",
+        "options": {
+          "queryReplacement": "={{$json.data.order_id}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d1",
+      "name": "Buscar pedido pelo id do marketplace (disputa)",
+      "position": [
+        1220,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d2c",
+              "leftValue": "={{$json.pedido_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true,
+                "name": "filter.operator.notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "d2",
+      "name": "Pedido encontrado? (disputa)",
+      "position": [
+        1460,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const evt = $('Switch por tipo de evento').item.json;\nconst pedidoId = $json.pedido_id;\nconst data = evt.data;\nconst isCancel = evt.type === 'orderCancelApply';\nlet payload;\nif (isCancel) {\n  payload = {\n    tipo: 'cancelamento',\n    mensagem: data.apply_reason || '',\n    alternativas: { reason_list: data.reason_list || [] },\n    // Store tem 5min pra responder (repetido a cada 2min como lembrete pela 99Food).\n    prazo_minutos: 5,\n  };\n} else {\n  payload = {\n    tipo: 'reembolso',\n    mensagem: data.apply_reason || '',\n    alternativas: { base_reason_list: data.base_reason_list || [], images: data.images || [] },\n    // Refund fica ate 25h em aberto (25 lembretes de 1h) antes do auto-aceite da 99Food.\n    prazo_minutos: 25 * 60,\n  };\n}\nreturn [{\n  json: {\n    pedido_id: pedidoId,\n    marketplace_id: 'e11ec855-6936-410d-a56a-635adebfe595',\n    disputa_id_externo: String(data.apply_id),\n    tipo: payload.tipo,\n    mensagem: payload.mensagem,\n    alternativas: JSON.stringify(payload.alternativas),\n    prazo_minutos: payload.prazo_minutos,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "d3",
+      "name": "Montar disputa 99Food",
+      "position": [
+        1700,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into marketplace_disputas (pedido_id, marketplace_id, disputa_id_externo, tipo, mensagem, alternativas, prazo_expiracao, status)\nvalues ($1, $2, $3, $4, $5, $6::jsonb, now() + ($7 || ' minutes')::interval, 'pendente')\non conflict (disputa_id_externo) do nothing\nreturning id;",
+        "options": {
+          "queryReplacement": "={{ [$json.pedido_id, $json.marketplace_id, $json.disputa_id_externo, $json.tipo, $json.mensagem, $json.alternativas, $json.prazo_minutos] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d4",
+      "name": "Inserir disputa 99Food",
+      "position": [
+        1940,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "={{ '99food_disputa_' + $('Montar disputa 99Food').item.json.tipo + '_recebida' }}",
+            "tabela_origem": "marketplace_disputas",
+            "registro_id": "={{$('Montar disputa 99Food').item.json.pedido_id}}",
+            "dados": "={{ JSON.stringify($('Switch por tipo de evento').item.json.data) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d5",
+      "name": "Log disputa recebida",
+      "position": [
+        2180,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_disputa_pedido_nao_encontrado",
+            "tabela_origem": "marketplace_disputas",
+            "dados": "={{ JSON.stringify($('Switch por tipo de evento').item.json.data) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "d6",
+      "name": "Log pedido nao encontrado (disputa)",
+      "position": [
+        1460,
+        660
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extrair corpo e assinatura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair corpo e assinatura": {
+      "main": [
+        [
+          {
+            "node": "Buscar config pelo app_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar config pelo app_id": {
+      "main": [
+        [
+          {
+            "node": "Config encontrada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config encontrada?": {
+      "main": [
+        [
+          {
+            "node": "Calcular assinatura esperada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar evento app_id desconhecido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular assinatura esperada": {
+      "main": [
+        [
+          {
+            "node": "Consolidar verificação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar verificação": {
+      "main": [
+        [
+          {
+            "node": "Assinatura válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assinatura válida?": {
+      "main": [
+        [
+          {
+            "node": "Switch por tipo de evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar evento assinatura inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch por tipo de evento": {
+      "main": [
+        [
+          {
+            "node": "Checar pedido duplicado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar pedido pelo id do marketplace",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar pedido pelo id do marketplace (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar pedido pelo id do marketplace (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar evento genérico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar pedido duplicado": {
+      "main": [
+        [
+          {
+            "node": "Já existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Já existe?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Preparar dados do pedido e cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar dados do pedido e cliente": {
+      "main": [
+        [
+          {
+            "node": "Buscar cliente existente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar cliente existente": {
+      "main": [
+        [
+          {
+            "node": "Cliente existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cliente existe?": {
+      "main": [
+        [
+          {
+            "node": "Selecionar id do cliente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Inserir cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inserir cliente": {
+      "main": [
+        [
+          {
+            "node": "Selecionar id do cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Selecionar id do cliente": {
+      "main": [
+        [
+          {
+            "node": "Explodir itens do pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explodir itens do pedido": {
+      "main": [
+        [
+          {
+            "node": "Resolver produto_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver produto_id": {
+      "main": [
+        [
+          {
+            "node": "Produto mapeado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Produto mapeado?": {
+      "main": [
+        [
+          {
+            "node": "Consolidar produto_id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar placeholder existente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar placeholder existente": {
+      "main": [
+        [
+          {
+            "node": "Placeholder existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Placeholder existe?": {
+      "main": [
+        [
+          {
+            "node": "Consolidar produto_id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Inserir produto placeholder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inserir produto placeholder": {
+      "main": [
+        [
+          {
+            "node": "Consolidar produto_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar produto_id": {
+      "main": [
+        [
+          {
+            "node": "Agregar itens resolvidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agregar itens resolvidos": {
+      "main": [
+        [
+          {
+            "node": "Inserir pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inserir pedido": {
+      "main": [
+        [
+          {
+            "node": "Reexplodir itens p/ inserir",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Inserir marketplace_pedidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reexplodir itens p/ inserir": {
+      "main": [
+        [
+          {
+            "node": "Inserir itens_pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inserir marketplace_pedidos": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido?": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token 99Food": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache": {
+      "main": [
+        [
+          {
+            "node": "Token pronto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto": {
+      "main": [
+        [
+          {
+            "node": "Confirmar pedido na 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmar pedido na 99Food": {
+      "main": [
+        [
+          {
+            "node": "Registrar evento pedido recebido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar pedido pelo id do marketplace": {
+      "main": [
+        [
+          {
+            "node": "Pedido encontrado e ativo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedido encontrado e ativo?": {
+      "main": [
+        [
+          {
+            "node": "Cancelar pedido (RPC)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancelar pedido (RPC)": {
+      "main": [
+        [
+          {
+            "node": "Registrar evento cancelado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar pedido pelo id do marketplace (disputa)": {
+      "main": [
+        [
+          {
+            "node": "Pedido encontrado? (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedido encontrado? (disputa)": {
+      "main": [
+        [
+          {
+            "node": "Montar disputa 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log pedido nao encontrado (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar disputa 99Food": {
+      "main": [
+        [
+          {
+            "node": "Inserir disputa 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inserir disputa 99Food": {
+      "main": [
+        [
+          {
+            "node": "Log disputa recebida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
