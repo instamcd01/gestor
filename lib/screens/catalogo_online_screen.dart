@@ -33,12 +33,14 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
   final _retiradaPrazoMinController = TextEditingController();
   final _freteEconomicoValorController = TextEditingController();
   final _freteEconomicoPrazoDiasController = TextEditingController();
+  final _taxaServicoValorController = TextEditingController();
 
   bool _catalogoAtivo = false;
   bool _aceitaPedidosOnline = false;
   bool _aceitaRetirada = true;
   bool _mostrarEstoqueBaixo = false;
   String _modelo = 'classico';
+  String _taxaServicoTipo = 'percentual';
 
   bool _carregando = true;
   bool _salvando = false;
@@ -59,6 +61,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
     _retiradaPrazoMinController.dispose();
     _freteEconomicoValorController.dispose();
     _freteEconomicoPrazoDiasController.dispose();
+    _taxaServicoValorController.dispose();
     super.dispose();
   }
 
@@ -75,6 +78,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
           .select('catalogo_slug, catalogo_ativo, aceita_pedidos_online, aceita_retirada, '
               'mostrar_estoque_baixo, catalogo_modelo, retirada_prazo_min, '
               'frete_economico_valor, frete_economico_prazo_dias, '
+              'taxa_servico_tipo, taxa_servico_valor, '
               'whatsapp_catalogo, instagram, facebook, catalogo_info_extra')
           .eq('id', empresaId)
           .single();
@@ -88,6 +92,9 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
       _freteEconomicoValorController.text =
           ClienteValidators.formatarMoeda((data['frete_economico_valor'] as num?)?.toDouble());
       _freteEconomicoPrazoDiasController.text = data['frete_economico_prazo_dias']?.toString() ?? '';
+      _taxaServicoTipo = data['taxa_servico_tipo']?.toString() ?? 'percentual';
+      _taxaServicoValorController.text =
+          ClienteValidators.formatarMoeda((data['taxa_servico_valor'] as num?)?.toDouble());
       _catalogoAtivo = data['catalogo_ativo'] as bool? ?? false;
       _aceitaPedidosOnline = data['aceita_pedidos_online'] as bool? ?? false;
       _aceitaRetirada = data['aceita_retirada'] as bool? ?? true;
@@ -161,6 +168,9 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
         'retirada_prazo_min': int.tryParse(_retiradaPrazoMinController.text.trim()),
         'frete_economico_valor': ClienteValidators.parseNumero(_freteEconomicoValorController.text),
         'frete_economico_prazo_dias': int.tryParse(_freteEconomicoPrazoDiasController.text.trim()),
+        'taxa_servico_tipo':
+            ClienteValidators.parseNumero(_taxaServicoValorController.text) == null ? null : _taxaServicoTipo,
+        'taxa_servico_valor': ClienteValidators.parseNumero(_taxaServicoValorController.text),
       }).eq('id', empresaId);
 
       if (mounted) {
@@ -322,6 +332,48 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                                 decoration: const InputDecoration(labelText: 'Prazo (dias úteis)'),
                                 keyboardType: TextInputType.number,
                                 inputFormatters: [InteiroInputFormatter()],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    FormSection(
+                      titulo: 'Taxa de serviço (site)',
+                      children: [
+                        Text(
+                          'Cobrada em cima do valor dos produtos, em qualquer pedido do site '
+                          '(entrega ou retirada) — igual ao iFood. Deixe o valor em branco pra '
+                          'não cobrar taxa nenhuma.',
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: _taxaServicoTipo,
+                                decoration: const InputDecoration(labelText: 'Tipo'),
+                                items: const [
+                                  DropdownMenuItem(value: 'percentual', child: Text('Percentual (%)')),
+                                  DropdownMenuItem(value: 'fixo', child: Text('Valor fixo (R\$)')),
+                                ],
+                                onChanged: (v) => setState(() => _taxaServicoTipo = v!),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _taxaServicoValorController,
+                                decoration: InputDecoration(
+                                  labelText: 'Valor',
+                                  prefixText: _taxaServicoTipo == 'fixo' ? 'R\$ ' : null,
+                                  suffixText: _taxaServicoTipo == 'percentual' ? '%' : null,
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                inputFormatters: [DecimalInputFormatter()],
                               ),
                             ),
                           ],
