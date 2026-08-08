@@ -5,6 +5,8 @@ import 'configuracao_entrega_screen.dart';
 import 'configuracao_notificacoes_screen.dart';
 import 'dados_loja_screen.dart';
 import 'catalogo_online_screen.dart';
+import 'banners_loja_screen.dart';
+import 'kit_de_marca_screen.dart';
 import 'horario_funcionamento_screen.dart';
 import 'meu_recibo_screen.dart';
 import 'opcoes_pagamento_screen.dart';
@@ -44,6 +46,11 @@ class ConfiguracoesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Kit de Marca mexe na identidade visual mostrada a QUALQUER cliente/
+    // usuário (site e app) — igual usuários/finanças, é decisão só do
+    // dono, nem gerente vê esse item (pedido explícito do usuário).
+    final isDono = context.watch<AuthProvider>().isDono;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Configurações do App'),
@@ -57,7 +64,9 @@ class ConfiguracoesScreen extends StatelessWidget {
               MenuItem('Dados da Loja', Icons.store_outlined, const DadosLojaScreen()),
               MenuItem('Horário de Funcionamento', Icons.schedule_outlined, const GeralScreen()),
               MenuItem('Aparência e Marca', Icons.palette_outlined, const AparenciaScreen()),
+              if (isDono) MenuItem('Kit de Marca', Icons.auto_awesome_mosaic_outlined, const KitDeMarcaScreen()),
               MenuItem('Catálogo Online', Icons.storefront_outlined, const CatalogoOnlineScreen()),
+              MenuItem('Banners da Home', Icons.view_carousel_outlined, const BannersLojaScreen()),
               MenuItem('Meu Recibo', Icons.receipt_long_outlined, const MeuReciboScreen()),
               MenuItem('Notificações', Icons.notifications_outlined, const ConfiguracaoNotificacoesScreen()),
             ],

@@ -76,7 +76,11 @@ class _ReciboScreenState extends State<ReciboScreen> {
       _mensagemRodape = data['recibo_mensagem']?.toString() ?? '';
 
       final mostrarLogo = data['recibo_mostrar_logo'] as bool? ?? true;
-      final logoUrl = branding.logoUrl ?? '';
+      // Recibo impresso não é uma "posição" configurável do Kit de Marca (não
+      // faz sentido nele ser um texto/mascote) — usa direto a logo completa,
+      // se tiver alguma cadastrada.
+      final logosCompletas = branding.ativosDeMarcaPorTipo('logo_completa');
+      final logoUrl = logosCompletas.isNotEmpty ? logosCompletas.first.url : '';
       if (mostrarLogo && logoUrl.isNotEmpty) {
         try {
           final resposta = await http.get(Uri.parse(logoUrl));

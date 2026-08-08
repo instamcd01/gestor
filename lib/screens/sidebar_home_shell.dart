@@ -57,7 +57,7 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
 
   Widget _buildLayoutLargo(BuildContext context, {required bool extended}) {
     final colorScheme = Theme.of(context).colorScheme;
-    final logoUrl = context.watch<BrandingProvider>().logoUrl;
+    final logoUrl = context.watch<BrandingProvider>().urlParaPosicao('app_sidebar');
     final destinos = destinosParaPapel(context.watch<AuthProvider>().papel);
     // Defensivo: se o papel mudou (ex: dono acabou de rebaixar o próprio
     // usuário de teste) e a lista filtrada ficou mais curta que o índice
@@ -173,17 +173,19 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
     if (confirmou == true && context.mounted) context.read<AuthProvider>().sair();
   }
 
+  // `contain` (não `cover`) + só altura fixa — mesma correção de
+  // `drawer_home_shell.dart` (logo raramente é quadrada, `cover` cortava
+  // as bordas de qualquer imagem mais larga que alta).
   Widget _logoOuIcone(String? logoUrl, ColorScheme colorScheme, {required double tamanho}) {
     if (logoUrl == null || logoUrl.isEmpty) {
       return Icon(Icons.pets, size: tamanho, color: colorScheme.primary);
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: tamanho * 3),
       child: Image.network(
         logoUrl,
-        width: tamanho,
         height: tamanho,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => Icon(Icons.pets, size: tamanho, color: colorScheme.primary),
       ),
     );

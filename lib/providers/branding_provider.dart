@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/supabase_config.dart';
+import '../models/marca_ativo.dart';
 import '../models/modelo_visual.dart';
+import '../repositories/marca_repository.dart';
 import '../repositories/modelo_visual_repository.dart';
 import '../theme/app_theme.dart';
 
@@ -24,15 +27,21 @@ const _chaveCacheLayoutSidebar = 'branding_cache_layout_sidebar';
 /// o app usa as cores/modelo padrão (AppThemeDefaults) como fallback.
 class BrandingProvider with ChangeNotifier {
   final ModeloVisualRepository _modeloRepository = ModeloVisualRepository();
+  final MarcaRepository _marcaRepository = MarcaRepository();
 
   String? _empresaId;
+  String? _nomeEmpresa;
   ModeloVisual? _modelo;
   List<ModeloVisual> _modelosDisponiveis = [];
+
+  // Kit de marca: galeria de ativos (mascote/logo/nome-imagem) + qual
+  // ativo (ou "texto simples") aparece em cada posição do app/site.
+  List<MarcaAtivo> _ativos = [];
+  Map<String, MarcaPosicao> _posicoes = {};
 
   // null = herda o padrão do modelo escolhido; não-null = sobrepõe.
   Color? _corPrimariaOverride;
   Color? _corSecundariaOverride;
-  String? _logoUrl;
   // Escuro até `carregarBranding` trazer a preferência real da empresa: a
   // tela de login é a primeira impressão do app e não deve piscar claro
   // (ou depender do tema do sistema) antes do login acontecer.
@@ -48,10 +57,29 @@ class BrandingProvider with ChangeNotifier {
 
   ModeloVisual? get modelo => _modelo;
   List<ModeloVisual> get modelosDisponiveis => _modelosDisponiveis;
-  String? get logoUrl => _logoUrl;
   ThemeMode get temaModo => _temaModo;
   bool get carregando => _carregando;
   LayoutNavegacao get layoutNavegacao => _modelo?.layoutNavegacao ?? _layoutCache ?? LayoutNavegacao.drawer;
+
+  /// Nome da empresa — fallback textual pra qualquer posição em modo
+  /// "texto" ('Gestor' só se ainda não carregou/sem empresa, nunca deveria
+  /// aparecer de verdade pro usuário final).
+  String get nomeEmpresa => _nomeEmpresa ?? 'Gestor';
+
+  List<MarcaAtivo> get ativosDeMarca => _ativos;
+  List<MarcaAtivo> ativosDeMarcaPorTipo(String tipo) => _ativos.where((a) => a.tipo == tipo).toList();
+  MarcaPosicao? posicaoDeMarca(String posicao) => _posicoes[posicao];
+
+  /// URL da imagem configurada pra essa posição — null quando o modo é
+  /// "texto" (mostrar o nome da empresa) ou nada foi configurado ainda.
+  String? urlParaPosicao(String posicao) {
+    final p = _posicoes[posicao];
+    if (p == null || p.modo != 'imagem' || p.ativoId == null) return null;
+    for (final ativo in _ativos) {
+      if (ativo.id == p.ativoId) return ativo.url;
+    }
+    return null;
+  }
 
   Color get corPrimaria =>
       _corPrimariaOverride ??
@@ -132,16 +160,23 @@ class BrandingProvider with ChangeNotifier {
     try {
       final data = await supabase
           .from('empresas')
-          .select('cor_primaria, cor_secundaria, logo_url, tema_preferido, modelo_visual_id')
+          .select('nome, cor_primaria, cor_secundaria, tema_preferido, modelo_visual_id')
           .eq('id', empresaId)
           .single();
 
+      _nomeEmpresa = data['nome']?.toString();
       _corPrimariaOverride = data['cor_primaria'] != null ? AppTheme.hexParaColor(data['cor_primaria']) : null;
       _corSecundariaOverride = data['cor_secundaria'] != null ? AppTheme.hexParaColor(data['cor_secundaria']) : null;
-      _logoUrl = data['logo_url'];
       _temaModo = _temaModoFromString(data['tema_preferido']);
 
-      _modelosDisponiveis = await _modeloRepository.listarAtivos();
+      final resultados = await Future.wait([
+        _modeloRepository.listarAtivos(),
+        _marcaRepository.listarAtivos(),
+        _marcaRepository.listarPosicoes(),
+      ]);
+      _modelosDisponiveis = resultados[0] as List<ModeloVisual>;
+      _ativos = resultados[1] as List<MarcaAtivo>;
+      _posicoes = {for (final p in resultados[2] as List<MarcaPosicao>) p.posicao: p};
 
       final modeloVisualId = data['modelo_visual_id'] as String?;
       ModeloVisual? modeloEncontrado;
@@ -211,15 +246,63 @@ class BrandingProvider with ChangeNotifier {
     }).eq('id', _empresaId!);
   }
 
-  /// Atualiza a URL do logo (já hospedado no Supabase Storage) e salva.
-  Future<void> atualizarLogo(String logoUrl) async {
-    _logoUrl = logoUrl;
-    notifyListeners();
+  /// Envia uma imagem nova pro kit de marca (mascote/logo/nome-imagem) e
+  /// recarrega a galeria local. Ver [MarcaRepository.enviar] pra regra de
+  /// "tipo único substitui" vs. "mascote sempre adiciona".
+  Future<MarcaAtivo> enviarAtivoDeMarca({
+    required Uint8List bytes,
+    required String tipo,
+    String? rotulo,
+  }) async {
+    if (_empresaId == null) throw StateError('Sem empresa logada');
+    final ordem = tipo == 'mascote' ? ativosDeMarcaPorTipo('mascote').length : 0;
+    final ativo = await _marcaRepository.enviar(
+      bytes: bytes,
+      empresaId: _empresaId!,
+      tipo: tipo,
+      rotulo: rotulo,
+      ordem: ordem,
+    );
+    await _recarregarKitDeMarca();
+    return ativo;
+  }
 
+  Future<void> excluirAtivoDeMarca(String ativoId) async {
+    await _marcaRepository.excluirAtivo(ativoId);
+    await _recarregarKitDeMarca();
+  }
+
+  Future<void> atualizarRotuloDeMarca(String ativoId, String rotulo) async {
+    await _marcaRepository.atualizarRotulo(ativoId, rotulo);
+    await _recarregarKitDeMarca();
+  }
+
+  /// Define o que aparece numa posição (`site_header`, `app_drawer`, etc.)
+  /// — `modo='texto'` mostra o nome da empresa, `modo='imagem'` mostra o
+  /// ativo indicado.
+  Future<void> definirPosicaoDeMarca({
+    required String posicao,
+    required String modo,
+    String? ativoId,
+  }) async {
     if (_empresaId == null) return;
-    await supabase
-        .from('empresas')
-        .update({'logo_url': logoUrl}).eq('id', _empresaId!);
+    await _marcaRepository.definirPosicao(
+      empresaId: _empresaId!,
+      posicao: posicao,
+      modo: modo,
+      ativoId: ativoId,
+    );
+    await _recarregarKitDeMarca();
+  }
+
+  Future<void> _recarregarKitDeMarca() async {
+    final resultados = await Future.wait([
+      _marcaRepository.listarAtivos(),
+      _marcaRepository.listarPosicoes(),
+    ]);
+    _ativos = resultados[0] as List<MarcaAtivo>;
+    _posicoes = {for (final p in resultados[1] as List<MarcaPosicao>) p.posicao: p};
+    notifyListeners();
   }
 
   /// Atualiza a preferência de tema claro/escuro/sistema.
