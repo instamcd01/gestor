@@ -18,6 +18,8 @@ import 'providers/preferencias_provider.dart';
 import 'providers/notificacao_provider.dart';
 import 'providers/entrada_provider.dart';
 import 'providers/cupom_provider.dart';
+import 'providers/pedido_compra_provider.dart';
+import 'providers/banner_home_provider.dart';
 import 'screens/auth_gate.dart';
 import 'config/supabase_config.dart';
 
@@ -61,6 +63,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NotificacaoProvider()),
         ChangeNotifierProvider(create: (_) => EntradaProvider()),
         ChangeNotifierProvider(create: (_) => CupomProvider()),
+        ChangeNotifierProvider(create: (_) => PedidoCompraProvider()),
+        ChangeNotifierProvider(create: (_) => BannerHomeProvider()),
       ],
       child: Consumer<BrandingProvider>(
         builder: (context, branding, _) {

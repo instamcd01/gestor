@@ -7,11 +7,14 @@ import 'package:provider/provider.dart';
 
 import '../models/entrada.dart';
 import '../models/fornecedor.dart';
+import '../models/pedido_compra.dart';
 import '../models/produto.dart';
 import '../providers/auth_provider.dart';
 import '../providers/entrada_provider.dart';
 import '../providers/fornecedor_provider.dart';
+import '../providers/pedido_compra_provider.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/produto_fornecedor_repository.dart';
 import '../services/nfe_xml_parser.dart';
 import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
@@ -56,7 +59,14 @@ String _formatarQuantidade(double q) => q == q.roundToDouble() ? q.toStringAsFix
 /// enquanto — PDF/DANFE impressa (consulta à Sefaz pela chave de acesso)
 /// é uma fase futura, pausada.
 class ImportarNotaFiscalScreen extends StatefulWidget {
-  const ImportarNotaFiscalScreen({super.key});
+  /// Quando aberta a partir de um Pedido de Compra confirmado ("Confirmar
+  /// recebimento"), a entrada gerada fica linkada a esse pedido
+  /// (`entradas.pedido_compra_id`) e o pedido é marcado como recebido ao
+  /// final — reaproveita esse fluxo já testado em vez de duplicar a
+  /// lógica de dar entrada em outro lugar.
+  final PedidoCompra? pedidoCompra;
+
+  const ImportarNotaFiscalScreen({super.key, this.pedidoCompra});
 
   @override
   State<ImportarNotaFiscalScreen> createState() => _ImportarNotaFiscalScreenState();
@@ -384,16 +394,50 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         await context.read<ProdutoProvider>().atualizarProduto(produto);
       }
 
+      // Toda NF-e importada já traz produto+fornecedor+custo casados — usa
+      // isso pra manter "Fornecedores deste produto" sempre atualizado
+      // sozinho, sem depender de cadastro manual (ver memória do projeto
+      // sobre essa feature).
+      if (fornecedorId != null) {
+        final produtoFornecedorRepo = ProdutoFornecedorRepository();
+        for (final item in _itensResolvidos) {
+          if (!item.casado || item.custoUnitario <= 0) continue;
+          await produtoFornecedorRepo.vincularDeEntrada(
+            produtoId: item.produtoId!,
+            fornecedorId: fornecedorId,
+            empresaId: empresaId,
+            custoUnitario: item.custoUnitario,
+          );
+        }
+      }
+
       await context.read<EntradaProvider>().importarNfe(
             nfe: nfe,
             itensResolvidos: _itensResolvidos,
             fornecedorId: fornecedorId,
+            pedidoCompraId: widget.pedidoCompra?.id,
             criadoPor: context.read<AuthProvider>().usuarioAtual?.id,
           );
+
+      if (widget.pedidoCompra?.id != null) {
+        await context.read<PedidoCompraProvider>().marcarComoRecebido(widget.pedidoCompra!.id!);
+      }
 
       if (!mounted) return;
       final pendentes = _itensResolvidos.where((i) => !i.casado).length;
       final temBoletos = nfe.parcelas.isNotEmpty;
+
+      // Aberta a partir de um pedido de compra: já dá entrada e marca
+      // recebido, então volta direto pro detalhe do pedido em vez de
+      // ficar nessa tela pronta pra importar outra nota.
+      if (widget.pedidoCompra != null) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Pedido #${widget.pedidoCompra!.numeroSequencial ?? ''} recebido — estoque atualizado.'),
+        ));
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           'Nota importada: ${_itensResolvidos.length - pendentes} item(ns) somado(s) ao estoque'
@@ -428,7 +472,13 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Importar Nota Fiscal')),
+      appBar: AppBar(
+        title: Text(
+          widget.pedidoCompra != null
+              ? 'Receber Pedido #${widget.pedidoCompra!.numeroSequencial ?? ''}'
+              : 'Importar Nota Fiscal',
+        ),
+      ),
       body: _processando
           ? const Center(child: CircularProgressIndicator())
           : _temPreVia
@@ -444,6 +494,10 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (widget.pedidoCompra != null) ...[
+              _bannerPedidoVinculado(context),
+              const SizedBox(height: 24),
+            ],
             Icon(Icons.description_outlined, size: 56, color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 16),
             Text(
@@ -456,6 +510,46 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
               onPressed: _selecionarArquivo,
               icon: const Icon(Icons.upload_file),
               label: const Text('Selecionar XML'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Aviso de que essa importação vai fechar o pedido de compra — e, se o
+  /// fornecedor da NF-e já foi identificado, confere se bate com o do
+  /// pedido (sem bloquear, só avisando — a NF-e mandada pode legitimamente
+  /// vir de uma razão social/filial ligeiramente diferente).
+  Widget _bannerPedidoVinculado(BuildContext context) {
+    final pedido = widget.pedidoCompra!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final divergeDoFornecedor =
+        _fornecedorExistente != null && _fornecedorExistente!.id != pedido.fornecedor.id;
+
+    return Card(
+      color: divergeDoFornecedor ? colorScheme.errorContainer : colorScheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Recebendo o Pedido de Compra #${pedido.numeroSequencial ?? ''} — ${pedido.fornecedor.nome}',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: divergeDoFornecedor ? colorScheme.onErrorContainer : colorScheme.onPrimaryContainer,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              divergeDoFornecedor
+                  ? 'Atenção: essa NF-e é de "${_fornecedorExistente!.nome}", diferente do fornecedor do pedido. Confira se é o XML certo antes de confirmar.'
+                  : 'Ao confirmar, o estoque é atualizado e o pedido marcado como recebido. Não use "Importar Nota Fiscal" separadamente pra essa mesma entrega — duplicaria o estoque.',
+              style: TextStyle(
+                fontSize: 12,
+                color: divergeDoFornecedor ? colorScheme.onErrorContainer : colorScheme.onPrimaryContainer,
+              ),
             ),
           ],
         ),
@@ -477,6 +571,10 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (widget.pedidoCompra != null) ...[
+          _bannerPedidoVinculado(context),
+          const SizedBox(height: 16),
+        ],
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),

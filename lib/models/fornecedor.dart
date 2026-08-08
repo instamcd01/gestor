@@ -11,6 +11,17 @@ class Fornecedor {
   /// nota com valor diferente do custo real de aquisição. 1.0 = sem ajuste.
   double fatorCusto;
 
+  /// Dias entre o envio do pedido de compra e a mercadoria chegar — usado
+  /// no cálculo de sugestão de compra (RPC `sugestoes_pedido_compra`) pra
+  /// saber com quanta antecedência repor. `null` = ainda não cadastrado,
+  /// tratado como 0 dias na sugestão (conservador: sugere pra já).
+  int? prazoEntregaDias;
+
+  /// Valor mínimo em R$ que o fornecedor exige por pedido — usado na tela
+  /// de Sugestão de Compra pra avisar se o pedido montado não bateu o
+  /// mínimo. `null` = sem mínimo cadastrado/conhecido.
+  double? valorMinimoPedido;
+
   Fornecedor({
     this.id,
     required this.nome,
@@ -20,6 +31,8 @@ class Fornecedor {
     this.observacoes = '',
     this.ativo = true,
     this.fatorCusto = 1.0,
+    this.prazoEntregaDias,
+    this.valorMinimoPedido,
   });
 
   factory Fornecedor.fromSupabase(Map<String, dynamic> row) {
@@ -32,6 +45,8 @@ class Fornecedor {
       observacoes: row['observacoes']?.toString() ?? '',
       ativo: row['ativo'] as bool? ?? true,
       fatorCusto: (row['fator_custo'] as num?)?.toDouble() ?? 1.0,
+      prazoEntregaDias: (row['prazo_entrega_dias'] as num?)?.toInt(),
+      valorMinimoPedido: (row['valor_minimo_pedido'] as num?)?.toDouble(),
     );
   }
 
@@ -44,6 +59,8 @@ class Fornecedor {
       'observacoes': observacoes,
       'ativo': ativo,
       'fator_custo': fatorCusto,
+      'prazo_entrega_dias': prazoEntregaDias,
+      'valor_minimo_pedido': valorMinimoPedido,
     };
   }
 }

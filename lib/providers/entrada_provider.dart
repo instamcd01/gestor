@@ -43,6 +43,7 @@ class EntradaProvider with ChangeNotifier {
     required NfeImportada nfe,
     required List<ItemEntrada> itensResolvidos,
     String? fornecedorId,
+    String? pedidoCompraId,
     String? criadoPor,
   }) async {
     if (_empresaId == null) {
@@ -63,6 +64,7 @@ class EntradaProvider with ChangeNotifier {
       entrada: entrada,
       empresaId: _empresaId!,
       fornecedorId: fornecedorId,
+      pedidoCompraId: pedidoCompraId,
       parcelas: nfe.parcelas,
       criadoPor: criadoPor,
     );

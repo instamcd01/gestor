@@ -125,6 +125,7 @@ class Entrada {
   final DateTime dataEntrada;
   final String observacoes;
   final List<ItemEntrada> itens;
+  final String? pedidoCompraId;
 
   Entrada({
     this.id,
@@ -138,6 +139,7 @@ class Entrada {
     DateTime? dataEntrada,
     this.observacoes = '',
     this.itens = const [],
+    this.pedidoCompraId,
   }) : dataEntrada = dataEntrada ?? DateTime.now();
 
   factory Entrada.fromSupabase(Map<String, dynamic> row) {
@@ -156,7 +158,7 @@ class Entrada {
     );
   }
 
-  Map<String, dynamic> toSupabaseMap({String? fornecedorId}) {
+  Map<String, dynamic> toSupabaseMap({String? fornecedorId, String? pedidoCompraId}) {
     return {
       'fornecedor_id': fornecedorId ?? fornecedor?.id,
       'nfe_chave_acesso': nfeChaveAcesso,
@@ -167,6 +169,7 @@ class Entrada {
       'data_emissao': dataEmissao?.toIso8601String(),
       'data_entrada': dataEntrada.toIso8601String(),
       'observacoes': observacoes,
+      'pedido_compra_id': pedidoCompraId ?? this.pedidoCompraId,
     };
   }
 }

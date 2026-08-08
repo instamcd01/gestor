@@ -14,6 +14,7 @@ import '../utils/produto_validators.dart';
 import '../widgets/campos_estruturados_variante.dart';
 import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
+import '../widgets/fornecedores_produto_section.dart';
 import 'gerenciar_midias_produto_screen.dart';
 
 class EditarProdutoScreen extends StatefulWidget {
@@ -851,6 +852,11 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                 ],
               ),
               const SizedBox(height: 16.0),
+
+              if (widget.produto.id != null) ...[
+                FornecedoresProdutoSection(produtoId: widget.produto.id!),
+                const SizedBox(height: 16.0),
+              ],
 
               CanaisMarketplaceSection(key: _canaisKey, produtoId: widget.produto.id),
               const SizedBox(height: 16.0),

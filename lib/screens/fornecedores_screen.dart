@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/fornecedor.dart';
@@ -174,6 +175,8 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
   late final TextEditingController _emailController;
   late final TextEditingController _observacoesController;
   late final TextEditingController _fatorCustoController;
+  late final TextEditingController _prazoEntregaController;
+  late final TextEditingController _valorMinimoController;
   bool _salvando = false;
 
   bool get _editando => widget.fornecedor != null;
@@ -188,6 +191,10 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
     _emailController = TextEditingController(text: f?.email ?? '');
     _observacoesController = TextEditingController(text: f?.observacoes ?? '');
     _fatorCustoController = TextEditingController(text: ProdutoValidators.formatarMoeda(f?.fatorCusto ?? 1.0));
+    _prazoEntregaController = TextEditingController(text: f?.prazoEntregaDias?.toString() ?? '');
+    _valorMinimoController = TextEditingController(
+      text: f?.valorMinimoPedido != null ? ProdutoValidators.formatarMoeda(f!.valorMinimoPedido!) : '',
+    );
   }
 
   @override
@@ -198,6 +205,8 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
     _emailController.dispose();
     _observacoesController.dispose();
     _fatorCustoController.dispose();
+    _prazoEntregaController.dispose();
+    _valorMinimoController.dispose();
     super.dispose();
   }
 
@@ -213,6 +222,8 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
       email: _emailController.text.trim(),
       observacoes: _observacoesController.text.trim(),
       fatorCusto: ProdutoValidators.parseNumero(_fatorCustoController.text) ?? 1.0,
+      prazoEntregaDias: int.tryParse(_prazoEntregaController.text.trim()),
+      valorMinimoPedido: ProdutoValidators.parseNumero(_valorMinimoController.text),
     );
 
     try {
@@ -284,6 +295,31 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: [DecimalInputFormatter()],
                     validator: (v) => (ProdutoValidators.parseNumero(v) ?? 0) > 0 ? null : 'Informe um valor maior que zero',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              FormSection(
+                titulo: 'Pedido de compra',
+                children: [
+                  TextFormField(
+                    controller: _prazoEntregaController,
+                    decoration: const InputDecoration(
+                      labelText: 'Prazo de entrega (dias, opcional)',
+                      helperText: 'Dias entre enviar o pedido e a mercadoria chegar — usado na sugestão automática de compra.',
+                      helperMaxLines: 2,
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  ),
+                  TextFormField(
+                    controller: _valorMinimoController,
+                    decoration: const InputDecoration(
+                      labelText: 'Valor mínimo do pedido, R\$ (opcional)',
+                      helperText: 'Se o fornecedor exige um valor mínimo por pedido.',
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [DecimalInputFormatter()],
                   ),
                 ],
               ),

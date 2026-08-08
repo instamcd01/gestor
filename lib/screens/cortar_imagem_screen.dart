@@ -11,7 +11,13 @@ import 'package:flutter/material.dart';
 class CortarImagemScreen extends StatefulWidget {
   final Uint8List imagem;
 
-  const CortarImagemScreen({super.key, required this.imagem});
+  /// Quando informado, trava o recorte nessa proporção (ex: 2.0 = 2:1) em
+  /// vez de deixar livre — usado pra banner, onde o carrossel do site
+  /// sempre corta pra uma faixa larga (16:9 no celular, 21:9 no desktop) e
+  /// um recorte de formato errado ficaria mal enquadrado nos dois.
+  final double? aspectRatio;
+
+  const CortarImagemScreen({super.key, required this.imagem, this.aspectRatio});
 
   @override
   State<CortarImagemScreen> createState() => _CortarImagemScreenState();
@@ -77,9 +83,10 @@ class _CortarImagemScreenState extends State<CortarImagemScreen> {
               image: widget.imagem,
               controller: _controller,
               interactive: true,
+              aspectRatio: widget.aspectRatio,
               initialRectBuilder: InitialRectBuilder.withSizeAndRatio(
                 size: 1,
-                aspectRatio: _proporcaoImagem,
+                aspectRatio: widget.aspectRatio ?? _proporcaoImagem,
               ),
               onCropped: (result) {
                 if (!mounted) return;

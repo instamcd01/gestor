@@ -24,12 +24,16 @@ class EntradaRepository {
     required Entrada entrada,
     required String empresaId,
     String? fornecedorId,
+    String? pedidoCompraId,
     List<ParcelaEntrada> parcelas = const [],
     String? criadoPor,
   }) async {
     final entradaRow = await supabase
         .from('entradas')
-        .insert({...entrada.toSupabaseMap(fornecedorId: fornecedorId), 'empresa_id': empresaId})
+        .insert({
+          ...entrada.toSupabaseMap(fornecedorId: fornecedorId, pedidoCompraId: pedidoCompraId),
+          'empresa_id': empresaId,
+        })
         .select(_selectComFornecedor)
         .single();
     final entradaId = entradaRow['id'] as String;
@@ -93,6 +97,40 @@ class EntradaRepository {
         custoUnitario: (row['custo_unitario'] as num?)?.toDouble() ?? 0.0,
         quantidade: (row['quantidade'] as num?)?.toDouble() ?? 0.0,
       ));
+    }
+    return resultado;
+  }
+
+  /// Último custo unitário efetivamente pago por produto (não importa o
+  /// fornecedor) — usado pra avisar na montagem de um pedido de compra
+  /// quando o custo atual está divergindo do que foi pago da última vez
+  /// ("comprou por R$8 a última vez, esse fornecedor está cobrando R$11").
+  /// Só itens já casados com produto (`produto_id` preenchido).
+  Future<Map<String, ({double custoUnitario, String fornecedorNome, DateTime dataEntrada})>> buscarUltimoCustoPorProduto(
+    List<String> produtoIds,
+  ) async {
+    if (produtoIds.isEmpty) return {};
+
+    final data = await supabase
+        .from('itens_entrada')
+        .select('produto_id, custo_unitario, entrada:entradas(data_entrada, fornecedor:fornecedores(nome))')
+        .inFilter('produto_id', produtoIds);
+
+    final resultado = <String, ({double custoUnitario, String fornecedorNome, DateTime dataEntrada})>{};
+    for (final row in data as List) {
+      final produtoId = row['produto_id'] as String?;
+      final entrada = row['entrada'] as Map<String, dynamic>?;
+      if (produtoId == null || entrada == null) continue;
+      final dataEntrada = DateTime.parse(entrada['data_entrada'].toString());
+      final atual = resultado[produtoId];
+      if (atual != null && !dataEntrada.isAfter(atual.dataEntrada)) continue;
+
+      final fornecedor = entrada['fornecedor'] as Map<String, dynamic>?;
+      resultado[produtoId] = (
+        custoUnitario: (row['custo_unitario'] as num?)?.toDouble() ?? 0.0,
+        fornecedorNome: fornecedor?['nome']?.toString() ?? '—',
+        dataEntrada: dataEntrada,
+      );
     }
     return resultado;
   }

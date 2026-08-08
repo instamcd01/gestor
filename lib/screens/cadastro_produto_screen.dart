@@ -22,7 +22,14 @@ class CadastroProdutoScreen extends StatefulWidget {
   /// continua em branco, o usuário completa antes de salvar.
   final Produto? produtoInicial;
 
-  const CadastroProdutoScreen({super.key, this.produtoInicial});
+  /// Quando true, ao salvar volta pra tela anterior com o produto criado
+  /// (`Navigator.pop(context, produtoCriado)`) em vez de ir pra galeria de
+  /// mídias — usado por fluxos que precisam do produto na hora (ex:
+  /// cadastrar um item novo no meio da montagem de um pedido de compra),
+  /// sem desviar o usuário pra outra tela.
+  final bool retornarProdutoCriado;
+
+  const CadastroProdutoScreen({super.key, this.produtoInicial, this.retornarProdutoCriado = false});
 
   @override
   _CadastroProdutoScreenState createState() => _CadastroProdutoScreenState();
@@ -314,6 +321,10 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
         }
 
         if (mounted) {
+          if (widget.retornarProdutoCriado) {
+            Navigator.of(context).pop(produtoCriado);
+            return;
+          }
           // Verifica novamente antes de interagir com a UI. Produto criado —
           // manda direto pra galeria de mídias, já que fotos/vídeos só podem
           // ser salvos depois que o produto existe (precisam do id).
