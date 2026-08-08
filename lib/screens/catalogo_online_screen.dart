@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
+import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/aviso_banner.dart';
 import '../widgets/form_section.dart';
@@ -29,6 +30,9 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
   final _instagramController = TextEditingController();
   final _facebookController = TextEditingController();
   final _infoExtraController = TextEditingController();
+  final _retiradaPrazoMinController = TextEditingController();
+  final _freteEconomicoValorController = TextEditingController();
+  final _freteEconomicoPrazoDiasController = TextEditingController();
 
   bool _catalogoAtivo = false;
   bool _aceitaPedidosOnline = false;
@@ -52,6 +56,9 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
     _instagramController.dispose();
     _facebookController.dispose();
     _infoExtraController.dispose();
+    _retiradaPrazoMinController.dispose();
+    _freteEconomicoValorController.dispose();
+    _freteEconomicoPrazoDiasController.dispose();
     super.dispose();
   }
 
@@ -66,7 +73,8 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
       final data = await supabase
           .from('empresas')
           .select('catalogo_slug, catalogo_ativo, aceita_pedidos_online, aceita_retirada, '
-              'mostrar_estoque_baixo, catalogo_modelo, '
+              'mostrar_estoque_baixo, catalogo_modelo, retirada_prazo_min, '
+              'frete_economico_valor, frete_economico_prazo_dias, '
               'whatsapp_catalogo, instagram, facebook, catalogo_info_extra')
           .eq('id', empresaId)
           .single();
@@ -76,6 +84,10 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
       _instagramController.text = data['instagram']?.toString() ?? '';
       _facebookController.text = data['facebook']?.toString() ?? '';
       _infoExtraController.text = data['catalogo_info_extra']?.toString() ?? '';
+      _retiradaPrazoMinController.text = data['retirada_prazo_min']?.toString() ?? '';
+      _freteEconomicoValorController.text =
+          ClienteValidators.formatarMoeda((data['frete_economico_valor'] as num?)?.toDouble());
+      _freteEconomicoPrazoDiasController.text = data['frete_economico_prazo_dias']?.toString() ?? '';
       _catalogoAtivo = data['catalogo_ativo'] as bool? ?? false;
       _aceitaPedidosOnline = data['aceita_pedidos_online'] as bool? ?? false;
       _aceitaRetirada = data['aceita_retirada'] as bool? ?? true;
@@ -109,8 +121,26 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
     return semAcento.replaceAll(RegExp(r'\s+'), '-').replaceAll(RegExp(r'[^a-z0-9\-]'), '');
   }
 
+  /// null = os dois em branco (modalidade econômica desligada, permitido)
+  /// ou os dois preenchidos. Senão, exige os dois.
+  String? _validarFreteEconomico() {
+    final valorTexto = _freteEconomicoValorController.text.trim();
+    final prazoTexto = _freteEconomicoPrazoDiasController.text.trim();
+    if (valorTexto.isEmpty && prazoTexto.isEmpty) return null;
+    if (valorTexto.isEmpty || prazoTexto.isEmpty) {
+      return 'Informe valor e prazo do frete econômico, ou deixe os dois em branco';
+    }
+    return null;
+  }
+
   Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final erroFreteEconomico = _validarFreteEconomico();
+    if (erroFreteEconomico != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erroFreteEconomico)));
+      return;
+    }
 
     final empresaId = context.read<AuthProvider>().empresaId;
     if (empresaId == null) return;
@@ -128,6 +158,9 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
         'instagram': _instagramController.text.trim(),
         'facebook': _facebookController.text.trim(),
         'catalogo_info_extra': _infoExtraController.text.trim(),
+        'retirada_prazo_min': int.tryParse(_retiradaPrazoMinController.text.trim()),
+        'frete_economico_valor': ClienteValidators.parseNumero(_freteEconomicoValorController.text),
+        'frete_economico_prazo_dias': int.tryParse(_freteEconomicoPrazoDiasController.text.trim()),
       }).eq('id', empresaId);
 
       if (mounted) {
@@ -213,6 +246,16 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                           value: _aceitaRetirada,
                           onChanged: (v) => setState(() => _aceitaRetirada = v),
                         ),
+                        if (_aceitaRetirada)
+                          TextFormField(
+                            controller: _retiradaPrazoMinController,
+                            decoration: const InputDecoration(
+                              labelText: 'Prazo de retirada (min) (Opcional)',
+                              helperText: 'Mostrado ao cliente no checkout do site — ex: 30 = "pronto em até 30 min"',
+                            ),
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [InteiroInputFormatter()],
+                          ),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text('Mostrar estoque baixo no produto'),
@@ -247,6 +290,41 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                             DropdownMenuItem(value: 'moderno', child: Text('Moderno')),
                           ],
                           onChanged: (v) => setState(() => _modelo = v!),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    FormSection(
+                      titulo: 'Entrega econômica (site)',
+                      children: [
+                        Text(
+                          'Modalidade extra, mais barata e mais lenta que a entrega por zona '
+                          '(Configurações > Opções de Entrega) — vale pra qualquer endereço dentro '
+                          'da área de entrega. Deixe os dois campos em branco pra não oferecer essa opção.',
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _freteEconomicoValorController,
+                                decoration: const InputDecoration(labelText: 'Valor (R\$)', prefixText: 'R\$ '),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                inputFormatters: [MoedaInputFormatter()],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _freteEconomicoPrazoDiasController,
+                                decoration: const InputDecoration(labelText: 'Prazo (dias úteis)'),
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [InteiroInputFormatter()],
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
