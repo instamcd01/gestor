@@ -18,6 +18,7 @@ import 'exportar_relatorios_screen.dart';
 import 'historico_entradas_screen.dart';
 import 'importar_nota_fiscal_screen.dart';
 import 'integrar_plataformas_screen.dart';
+import 'mercado_pago_conectar_screen.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
 
@@ -76,6 +77,8 @@ class ConfiguracoesScreen extends StatelessWidget {
             titulo: 'Vendas',
             itens: [
               MenuItem('Opções de Pagamento', Icons.payment_outlined, const OpcoesPagamentoScreen()),
+              if (isDono)
+                MenuItem('Pagamento Online', Icons.account_balance_wallet_outlined, const MercadoPagoConectarScreen()),
               MenuItem('Pedidos e Vendas', Icons.shopping_cart_outlined, const PedidosVendasScreen()),
               MenuItem('Opções de Entrega', Icons.local_shipping_outlined, const ConfiguracaoEntregaScreen()),
               MenuItem('Cupons de Desconto', Icons.local_offer_outlined, const CuponsScreen()),
