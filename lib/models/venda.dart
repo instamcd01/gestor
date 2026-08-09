@@ -5,6 +5,7 @@ import 'package:gestor/models/produto.dart';
 /// coluna `pedidos.status` no banco é texto livre (sem CHECK constraint),
 /// então esses valores são a convenção seguida pelo app inteiro.
 class StatusPedido {
+  static const aguardandoPagamento = 'aguardando_pagamento';
   static const pendente = 'pendente';
   static const preparando = 'preparando';
   static const saiuParaEntrega = 'saiu_para_entrega';
@@ -15,6 +16,8 @@ class StatusPedido {
 
   static String rotulo(String status) {
     switch (status) {
+      case aguardandoPagamento:
+        return 'Aguardando pagamento';
       case pendente:
         return 'Pendente';
       case preparando:
@@ -275,6 +278,7 @@ class Venda {
 
   bool get cancelada => status == StatusPedido.cancelado;
   bool get finalizada => status == StatusPedido.entregue;
+  bool get aguardandoPagamento => status == StatusPedido.aguardandoPagamento;
   bool get emAndamento => StatusPedido.emAndamento.contains(status);
   bool get temEntrega => valorEntrega > 0 || entregaSelecionada.isNotEmpty;
   bool get ehMarketplace => canalVenda == 'ifood';

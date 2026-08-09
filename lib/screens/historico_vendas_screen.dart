@@ -319,6 +319,11 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
             Text(
               StatusPedido.rotulo(venda.status).toUpperCase(),
               style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12),
+            )
+          else if (venda.aguardandoPagamento)
+            Text(
+              StatusPedido.rotulo(venda.status).toUpperCase(),
+              style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12),
             ),
         ],
       ),

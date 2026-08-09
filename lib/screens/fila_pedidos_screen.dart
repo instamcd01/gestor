@@ -200,6 +200,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         venda.pagoPeloMarketplace ? Icons.check_circle_outline : Icons.payments_outlined,
         venda.pagoPeloMarketplace ? 'Pago' : 'Cobrar na entrega',
       ));
+    } else if (venda.aguardandoPagamento) {
+      chips.add(_chipInfo(context, Icons.hourglass_empty, 'Aguardando confirmação do pagamento'));
     }
 
     if (venda.troco > 0) {
@@ -262,6 +264,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
 
   Color _corStatus(String status) {
     switch (status) {
+      case StatusPedido.aguardandoPagamento:
+        return Colors.amber;
       case StatusPedido.pendente:
         return Colors.orange;
       case StatusPedido.preparando:
@@ -314,6 +318,12 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       pedidos = provider.vendas
           .where((v) => v.status == _filtroStatus && _mesmoDia(v.dataVenda, agora))
           .toList();
+    } else if (_filtroStatus == StatusPedido.aguardandoPagamento) {
+      // Sem restrição de "hoje": diferente de Concluídos/Cancelados (estado
+      // final, só interessa o dia), um pedido preso aguardando pagamento
+      // continua precisando de atenção do lojista até ser resolvido, não
+      // importa há quanto tempo foi feito.
+      pedidos = provider.vendas.where((v) => v.status == StatusPedido.aguardandoPagamento).toList();
     } else if (_filtroStatus != null) {
       pedidos = provider.pedidosAtivos.where((v) => v.status == _filtroStatus).toList();
     } else {
@@ -360,10 +370,18 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                       onSelected: (_) => setState(() => _filtroStatus = StatusPedido.entregue),
                     ),
                   ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: const Text('Cancelados'),
+                      selected: _filtroStatus == StatusPedido.cancelado,
+                      onSelected: (_) => setState(() => _filtroStatus = StatusPedido.cancelado),
+                    ),
+                  ),
                   ChoiceChip(
-                    label: const Text('Cancelados'),
-                    selected: _filtroStatus == StatusPedido.cancelado,
-                    onSelected: (_) => setState(() => _filtroStatus = StatusPedido.cancelado),
+                    label: const Text('Aguardando pagamento'),
+                    selected: _filtroStatus == StatusPedido.aguardandoPagamento,
+                    onSelected: (_) => setState(() => _filtroStatus = StatusPedido.aguardandoPagamento),
                   ),
                 ],
               ),
@@ -393,6 +411,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                               null => 'Nenhum pedido em andamento.',
                               StatusPedido.entregue => 'Nenhum pedido concluído hoje ainda.',
                               StatusPedido.cancelado => 'Nenhum pedido cancelado hoje.',
+                              StatusPedido.aguardandoPagamento => 'Nenhum pedido aguardando pagamento.',
                               _ => 'Nenhum pedido nesse status.',
                             },
                             style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
