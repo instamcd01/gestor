@@ -355,10 +355,17 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 initialValue: _taxaServicoTipo,
+                                isExpanded: true,
                                 decoration: const InputDecoration(labelText: 'Tipo'),
                                 items: const [
-                                  DropdownMenuItem(value: 'percentual', child: Text('Percentual (%)')),
-                                  DropdownMenuItem(value: 'fixo', child: Text('Valor fixo (R\$)')),
+                                  DropdownMenuItem(
+                                    value: 'percentual',
+                                    child: Text('Percentual (%)', overflow: TextOverflow.ellipsis),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'fixo',
+                                    child: Text('Valor fixo (R\$)', overflow: TextOverflow.ellipsis),
+                                  ),
                                 ],
                                 onChanged: (v) => setState(() => _taxaServicoTipo = v!),
                               ),
