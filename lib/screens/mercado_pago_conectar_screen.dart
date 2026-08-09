@@ -8,15 +8,16 @@ import '../widgets/aviso_banner.dart';
 import '../widgets/form_section.dart';
 
 /// Client ID da aplicação Mercado Pago DA PLATAFORMA (uma só, não muda por
-/// loja) — preencher depois de criar a aplicação com acesso de Marketplace
-/// no painel do Mercado Pago (developers.mercadopago.com). client_id não é
-/// segredo (vai exposto na própria URL de autorização); o client_secret
+/// loja) — aplicação "Delivery Pet MP" no painel do Mercado Pago
+/// (developers.mercadopago.com/panel/app/8162106481494061). client_id não
+/// é segredo (vai exposto na própria URL de autorização); o client_secret
 /// fica só no servidor do site (env var), nunca aqui no app.
-const String kMercadoPagoClientId = ''; // TODO: preencher após criar a aplicação no painel do Mercado Pago
+const String kMercadoPagoClientId = '8162106481494061';
 
 /// URL base do site (gestor-loja) — usada pra montar o redirect_uri do
-/// OAuth (`$kSiteBaseUrl/mp/callback`).
-const String kSiteBaseUrl = ''; // TODO: preencher com o domínio de produção do gestor-loja
+/// OAuth (`$kSiteBaseUrl/mp/callback`). Precisa bater exatamente com a URL
+/// de redirecionamento cadastrada na aplicação do Mercado Pago.
+const String kSiteBaseUrl = 'https://deliverypetexpress.com.br';
 
 /// Configurações > Vendas > Pagamento Online: conectar a conta Mercado
 /// Pago da loja (OAuth/split marketplace — o dinheiro cai direto pro
