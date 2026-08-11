@@ -911,7 +911,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 venda.custoEntregaReal != null ||
                 venda.taxaMaquininha != null ||
                 venda.mercadoPagoTaxa != null ||
-                (venda.ehMarketplace && venda.taxaComissaoMarketplace != null)) ...[
+                (venda.ehMarketplace && (venda.taxaComissaoMarketplace != null || venda.taxaGatewayMarketplace != null))) ...[
               const Divider(height: 20),
               if (venda.custoEmbalagem != null)
                 _linhaValor('Embalagem', -venda.custoEmbalagem!, currencyFormat, cor: corLaranja),
@@ -923,6 +923,9 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 _linhaValor('Taxa Mercado Pago', -venda.mercadoPagoTaxa!, currencyFormat, cor: corLaranja),
               if (venda.ehMarketplace && venda.taxaComissaoMarketplace != null)
                 _linhaValor('Comissão marketplace', -venda.taxaComissaoMarketplace!, currencyFormat, cor: corLaranja),
+              if (venda.ehMarketplace && venda.taxaGatewayMarketplace != null)
+                _linhaValor('Taxa pagamento (marketplace)', -venda.taxaGatewayMarketplace!, currencyFormat,
+                    cor: corLaranja),
               _linhaValor('Lucro líquido real', venda.lucroLiquidoReal, currencyFormat,
                   cor: corVerde, destaque: true),
               _linhaValor(

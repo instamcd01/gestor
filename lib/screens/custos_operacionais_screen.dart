@@ -27,14 +27,17 @@ class _ComissaoMarketplace {
   final String marketplaceId;
   final String nome;
   final percentualController = TextEditingController();
+  final taxaGatewayController = TextEditingController();
   final taxaFixaController = TextEditingController();
   double? _percentualOriginal;
+  double? _taxaGatewayOriginal;
   double? _taxaFixaOriginal;
 
   _ComissaoMarketplace({required this.marketplaceId, required this.nome});
 
   void dispose() {
     percentualController.dispose();
+    taxaGatewayController.dispose();
     taxaFixaController.dispose();
   }
 }
@@ -107,7 +110,7 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
 
         final taxasRows = await supabase
             .from('marketplace_taxas')
-            .select('marketplace_id, percentual_comissao, taxa_fixa')
+            .select('marketplace_id, percentual_comissao, taxa_gateway, taxa_fixa')
             .eq('empresa_id', empresaId)
             .isFilter('vigencia_fim', null);
         final taxasPorMarketplace = {for (final r in taxasRows) r['marketplace_id'] as String: r};
@@ -120,8 +123,10 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
           final taxaAtual = taxasPorMarketplace[config.marketplaceId];
           if (taxaAtual != null) {
             comissao._percentualOriginal = (taxaAtual['percentual_comissao'] as num?)?.toDouble();
+            comissao._taxaGatewayOriginal = (taxaAtual['taxa_gateway'] as num?)?.toDouble();
             comissao._taxaFixaOriginal = (taxaAtual['taxa_fixa'] as num?)?.toDouble();
             comissao.percentualController.text = _formatarNumero(taxaAtual['percentual_comissao'] as num?) ?? '';
+            comissao.taxaGatewayController.text = _formatarNumero(taxaAtual['taxa_gateway'] as num?) ?? '';
             comissao.taxaFixaController.text = _formatarNumero(taxaAtual['taxa_fixa'] as num?) ?? '';
           }
           return comissao;
@@ -165,8 +170,11 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
       // nada criaria uma vigência nova a cada clique em "Salvar").
       for (final comissao in _comissoes) {
         final percentual = _parseNumero(comissao.percentualController.text);
+        final taxaGateway = _parseNumero(comissao.taxaGatewayController.text);
         final taxaFixa = _parseNumero(comissao.taxaFixaController.text);
-        final mudou = percentual != comissao._percentualOriginal || taxaFixa != comissao._taxaFixaOriginal;
+        final mudou = percentual != comissao._percentualOriginal ||
+            taxaGateway != comissao._taxaGatewayOriginal ||
+            taxaFixa != comissao._taxaFixaOriginal;
         if (!mudou || percentual == null) continue;
 
         final hoje = DateTime.now().toIso8601String().split('T').first;
@@ -182,6 +190,7 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
           'marketplace_id': comissao.marketplaceId,
           'vigencia_inicio': hoje,
           'percentual_comissao': percentual,
+          'taxa_gateway': taxaGateway ?? 0,
           'taxa_fixa': taxaFixa ?? 0,
         });
       }
@@ -342,9 +351,30 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
                         titulo: 'Comissão de marketplace',
                         children: _comissoes.expand((comissao) => [
                               Text(comissao.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              if (_comissoes.first == comissao)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    'Só os percentuais cobrados POR PEDIDO entram aqui. Mensalidade fixa '
+                                    '(ex: taxa de adesão/plano do iFood) não é custo por venda — lance como '
+                                    'despesa mensal em Configurações > Despesas, senão o lucro por pedido '
+                                    'fica impreciso, oscilando com o volume de vendas do mês.',
+                                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                  ),
+                                ),
                               TextFormField(
                                 controller: comissao.percentualController,
                                 decoration: const InputDecoration(labelText: 'Comissão (%)', suffixText: '%'),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                validator: _validarPercentual,
+                              ),
+                              TextFormField(
+                                controller: comissao.taxaGatewayController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Taxa de pagamento online (%)',
+                                  suffixText: '%',
+                                  helperText: 'Separada da comissão — cobrada pelo processamento do pagamento',
+                                ),
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 validator: _validarPercentual,
                               ),

@@ -90,6 +90,7 @@ class Venda {
   final double? taxaMaquininha; // pedidos.taxa_maquininha_valor — só cartão cobrado na entrega/loja física (não cobre Mercado Pago online nem marketplace)
   final double? custoEntregaReal; // pedidos.custo_entrega_valor — custo real de entrega própria (modo fixo/km configurado em empresas), null se retirada/modo ainda não suportado
   final double? taxaComissaoMarketplace; // marketplace_pedidos.taxa_comissao — comissão real cobrada pelo iFood/99Food, calculada por calcular_comissao_marketplace()
+  final double? taxaGatewayMarketplace; // marketplace_pedidos.taxa_gateway — taxa de pagamento online do marketplace (ex: 3,5% do contrato do iFood), separada da comissão
   final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
   final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
@@ -168,6 +169,7 @@ class Venda {
     this.taxaMaquininha,
     this.custoEntregaReal,
     this.taxaComissaoMarketplace,
+    this.taxaGatewayMarketplace,
     this.taxaServicoCliente,
     this.campanhaMarketplace,
     this.cupomMarketplace,
@@ -240,6 +242,7 @@ class Venda {
     double? taxaMaquininha,
     double? custoEntregaReal,
     double? taxaComissaoMarketplace,
+    double? taxaGatewayMarketplace,
     double? taxaServicoCliente,
     String? campanhaMarketplace,
     String? cupomMarketplace,
@@ -303,6 +306,7 @@ class Venda {
       taxaMaquininha: taxaMaquininha ?? this.taxaMaquininha,
       custoEntregaReal: custoEntregaReal ?? this.custoEntregaReal,
       taxaComissaoMarketplace: taxaComissaoMarketplace ?? this.taxaComissaoMarketplace,
+      taxaGatewayMarketplace: taxaGatewayMarketplace ?? this.taxaGatewayMarketplace,
       taxaServicoCliente: taxaServicoCliente ?? this.taxaServicoCliente,
       campanhaMarketplace: campanhaMarketplace ?? this.campanhaMarketplace,
       cupomMarketplace: cupomMarketplace ?? this.cupomMarketplace,
@@ -346,7 +350,8 @@ class Venda {
       (custoEntregaReal ?? 0) -
       (taxaMaquininha ?? 0) -
       (mercadoPagoTaxa ?? 0) -
-      (ehMarketplace ? (taxaComissaoMarketplace ?? 0) : 0);
+      (ehMarketplace ? (taxaComissaoMarketplace ?? 0) : 0) -
+      (ehMarketplace ? (taxaGatewayMarketplace ?? 0) : 0);
 
   /// "Pagamento Online" (rótulo genérico gravado no site pra qualquer
   /// meio pago via Mercado Pago) detalhado pra forma real usada — sem
