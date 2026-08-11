@@ -351,6 +351,32 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     }
   }
 
+  String _rotuloCanal(String canal) {
+    switch (canal) {
+      case 'whatsapp':
+        return 'WhatsApp';
+      case 'ifood':
+        return 'iFood';
+      case 'site':
+        return 'Site';
+      default:
+        return 'Loja Física';
+    }
+  }
+
+  IconData _iconeCanal(String canal) {
+    switch (canal) {
+      case 'whatsapp':
+        return Icons.chat;
+      case 'ifood':
+        return Icons.delivery_dining;
+      case 'site':
+        return Icons.language;
+      default:
+        return Icons.storefront;
+    }
+  }
+
   Future<void> _abrirRastreioNoMapa() async {
     final lat = _venda.rastreioLatitude;
     final lng = _venda.rastreioLongitude;
@@ -421,16 +447,33 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   ),
                 ],
 
+                // 3 cards por assunto (Pedido / Pagamento / Retirada ou
+                // Entrega) em vez de 1 card só misturando os 3 — antes tudo
+                // ficava numa lista só, difícil de escanear rápido quando o
+                // que importa muda conforme o papel de quem olha (vendedor
+                // só quer telefone/endereço pra despachar, dono também quer
+                // conferir o pagamento).
                 _card(
+                  titulo: 'Pedido',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _linhaInfo(Icons.receipt_long, 'ID da Venda', venda.idVenda ?? '-'),
+                      _linhaInfo(_iconeCanal(venda.canalVenda), 'Canal', _rotuloCanal(venda.canalVenda)),
                       if (venda.numeroExibicaoMarketplace != null)
                         _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (iFood)',
                             '#${venda.numeroExibicaoMarketplace}'),
-                      _linhaInfo(Icons.calendar_today,
-                          'Data', DateFormat('dd/MM/yyyy • HH:mm').format(venda.dataVenda)),
+                      _linhaInfo(
+                          Icons.calendar_today, 'Data', DateFormat('dd/MM/yyyy • HH:mm').format(venda.dataVenda)),
+                      _linhaInfo(Icons.receipt_long, 'ID da Venda', venda.idVenda ?? '-'),
+                    ],
+                  ),
+                ),
+
+                _card(
+                  titulo: 'Pagamento',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       _linhaInfo(
                         Icons.payment,
                         'Forma de Pagamento',
@@ -452,6 +495,15 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                         _linhaInfo(Icons.tag, 'ID pagamento (Mercado Pago)', venda.mercadoPagoPaymentId!),
                       if (podeEstornar && venda.mercadoPagoRefundId != null)
                         _linhaInfo(Icons.tag, 'ID estorno (Mercado Pago)', venda.mercadoPagoRefundId!),
+                    ],
+                  ),
+                ),
+
+                _card(
+                  titulo: venda.retirada ? 'Retirada' : 'Entrega',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       if (_temPrevisaoEntrega(venda))
                         _linhaInfo(Icons.schedule, _labelPrevisaoEntrega(venda), _formatarPrevisaoEntrega(venda)),
                       if (venda.cliente.celular.isNotEmpty)
@@ -847,6 +899,26 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   : '-',
               cor: corVerde,
             ),
+            // "Lucro Total" acima só desconta custo de produto — pra venda
+            // paga online, o Mercado Pago desconta a taxa dele direto da
+            // conta da loja (split, não é comissão do Gestor), então o que
+            // sobra de verdade é menor. Só aparece quando a taxa já foi
+            // capturada (`mercadoPagoTaxa` — ver `mercadopago.ts`).
+            if (venda.mercadoPagoTaxa != null) ...[
+              const Divider(height: 20),
+              _linhaValor('Taxa Mercado Pago', -venda.mercadoPagoTaxa!, currencyFormat, cor: corLaranja),
+              _linhaValor('Lucro líquido (após taxa)', venda.lucroTotalLiquido, currencyFormat,
+                  cor: corVerde, destaque: true),
+              _linhaValor(
+                'Margem líquida',
+                null,
+                currencyFormat,
+                textoCustomizado: venda.valorTotal > 0
+                    ? '${(venda.lucroTotalLiquido / venda.valorTotal * 100).toStringAsFixed(1)}%'
+                    : '-',
+                cor: corVerde,
+              ),
+            ],
           ],
         ),
       ),

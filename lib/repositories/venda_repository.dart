@@ -326,6 +326,7 @@ class VendaRepository {
       mercadoPagoPaymentId: metadata['mercadoPagoPaymentId']?.toString(),
       mercadoPagoRefundId: metadata['mercadoPagoRefundId']?.toString(),
       mercadoPagoEstornadoEm: DateTime.tryParse(metadata['estornadoEm']?.toString() ?? '')?.toLocal(),
+      mercadoPagoTaxa: (metadata['mercadoPagoTaxa'] as num?)?.toDouble(),
       taxaServicoCliente: (marketplacePedidoRow?['taxa_servico_cliente'] as num?)?.toDouble(),
       campanhaMarketplace: marketplacePedidoRow?['campanha_marketplace']?.toString(),
       cupomMarketplace: marketplacePedidoRow?['cupom_marketplace']?.toString(),

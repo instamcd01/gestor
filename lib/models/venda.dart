@@ -85,6 +85,7 @@ class Venda {
   final String? mercadoPagoPaymentId; // id do pagamento na API do Mercado Pago — referência pra consultar/disputar no painel deles
   final String? mercadoPagoRefundId; // id do estorno na API do Mercado Pago, só existe se `estornarPagamentoOnline` já rodou
   final DateTime? mercadoPagoEstornadoEm;
+  final double? mercadoPagoTaxa; // quanto o PRÓPRIO Mercado Pago descontou da loja (split direto na conta dela, não é comissão do Gestor)
   final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
   final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
@@ -158,6 +159,7 @@ class Venda {
     this.mercadoPagoPaymentId,
     this.mercadoPagoRefundId,
     this.mercadoPagoEstornadoEm,
+    this.mercadoPagoTaxa,
     this.taxaServicoCliente,
     this.campanhaMarketplace,
     this.cupomMarketplace,
@@ -225,6 +227,7 @@ class Venda {
     String? mercadoPagoPaymentId,
     String? mercadoPagoRefundId,
     DateTime? mercadoPagoEstornadoEm,
+    double? mercadoPagoTaxa,
     double? taxaServicoCliente,
     String? campanhaMarketplace,
     String? cupomMarketplace,
@@ -283,6 +286,7 @@ class Venda {
       mercadoPagoPaymentId: mercadoPagoPaymentId ?? this.mercadoPagoPaymentId,
       mercadoPagoRefundId: mercadoPagoRefundId ?? this.mercadoPagoRefundId,
       mercadoPagoEstornadoEm: mercadoPagoEstornadoEm ?? this.mercadoPagoEstornadoEm,
+      mercadoPagoTaxa: mercadoPagoTaxa ?? this.mercadoPagoTaxa,
       taxaServicoCliente: taxaServicoCliente ?? this.taxaServicoCliente,
       campanhaMarketplace: campanhaMarketplace ?? this.campanhaMarketplace,
       cupomMarketplace: cupomMarketplace ?? this.cupomMarketplace,
@@ -311,6 +315,12 @@ class Venda {
   /// Pago (ver `VendaRepository.estornarPagamentoOnline`), não só um
   /// cancelamento comum (que nunca chegou a cobrar, nada a devolver).
   bool get estornadoOnline => mercadoPagoEstornadoEm != null;
+
+  /// `lucroTotal` (calculado só a partir do custo dos produtos, no banco)
+  /// menos a taxa que o Mercado Pago descontou da loja, quando existir —
+  /// sem isso "Lucro Total" ficava otimista pra venda paga online, já que
+  /// nunca considerava o desconto real que a loja recebe a menos.
+  double get lucroTotalLiquido => lucroTotal - (mercadoPagoTaxa ?? 0);
 
   /// "Pagamento Online" (rótulo genérico gravado no site pra qualquer
   /// meio pago via Mercado Pago) detalhado pra forma real usada — sem
