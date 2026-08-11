@@ -82,6 +82,9 @@ class Venda {
   final String? statusPagamento; // 'pago' (já cobrado pelo marketplace) / 'pendente' (cobrar na entrega)
   final String? mercadoPagoPaymentTypeId; // credit_card/debit_card/bank_transfer — só em pagamento online do site (Mercado Pago)
   final int? mercadoPagoInstallments; // parcelas reais cobradas (diferente de "parcelas" informativas dos métodos na entrega)
+  final String? mercadoPagoPaymentId; // id do pagamento na API do Mercado Pago — referência pra consultar/disputar no painel deles
+  final String? mercadoPagoRefundId; // id do estorno na API do Mercado Pago, só existe se `estornarPagamentoOnline` já rodou
+  final DateTime? mercadoPagoEstornadoEm;
   final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
   final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
@@ -152,6 +155,9 @@ class Venda {
     this.statusPagamento,
     this.mercadoPagoPaymentTypeId,
     this.mercadoPagoInstallments,
+    this.mercadoPagoPaymentId,
+    this.mercadoPagoRefundId,
+    this.mercadoPagoEstornadoEm,
     this.taxaServicoCliente,
     this.campanhaMarketplace,
     this.cupomMarketplace,
@@ -216,6 +222,9 @@ class Venda {
     String? statusPagamento,
     String? mercadoPagoPaymentTypeId,
     int? mercadoPagoInstallments,
+    String? mercadoPagoPaymentId,
+    String? mercadoPagoRefundId,
+    DateTime? mercadoPagoEstornadoEm,
     double? taxaServicoCliente,
     String? campanhaMarketplace,
     String? cupomMarketplace,
@@ -271,6 +280,9 @@ class Venda {
       statusPagamento: statusPagamento ?? this.statusPagamento,
       mercadoPagoPaymentTypeId: mercadoPagoPaymentTypeId ?? this.mercadoPagoPaymentTypeId,
       mercadoPagoInstallments: mercadoPagoInstallments ?? this.mercadoPagoInstallments,
+      mercadoPagoPaymentId: mercadoPagoPaymentId ?? this.mercadoPagoPaymentId,
+      mercadoPagoRefundId: mercadoPagoRefundId ?? this.mercadoPagoRefundId,
+      mercadoPagoEstornadoEm: mercadoPagoEstornadoEm ?? this.mercadoPagoEstornadoEm,
       taxaServicoCliente: taxaServicoCliente ?? this.taxaServicoCliente,
       campanhaMarketplace: campanhaMarketplace ?? this.campanhaMarketplace,
       cupomMarketplace: cupomMarketplace ?? this.cupomMarketplace,
@@ -294,6 +306,11 @@ class Venda {
   /// iFood; usa `statusPagamento` (mesmo campo que já alimenta
   /// `pagoPeloMarketplace`), que é preenchido igual pra qualquer canal.
   bool get pagoOnline => !ehMarketplace && statusPagamento == 'pago';
+
+  /// true = essa venda foi cancelada com estorno de verdade pelo Mercado
+  /// Pago (ver `VendaRepository.estornarPagamentoOnline`), não só um
+  /// cancelamento comum (que nunca chegou a cobrar, nada a devolver).
+  bool get estornadoOnline => mercadoPagoEstornadoEm != null;
 
   /// "Pagamento Online" (rótulo genérico gravado no site pra qualquer
   /// meio pago via Mercado Pago) detalhado pra forma real usada — sem

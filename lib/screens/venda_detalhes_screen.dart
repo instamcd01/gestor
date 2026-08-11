@@ -85,13 +85,24 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
 
   bool _temPrevisaoEntrega(Venda venda) => _previsaoFim(venda) != null;
 
+  String _labelPrevisaoEntrega(Venda venda) {
+    if (_ehAgendado(venda)) return venda.retirada ? 'Retirada agendada' : 'Entrega agendada';
+    if (venda.modalidade == 'economica') return 'Entrega econômica';
+    return 'Previsão de entrega';
+  }
+
   String _formatarPrevisaoEntrega(Venda venda) {
     final formato = DateFormat('dd/MM HH:mm');
-    final inicio = _previsaoInicio(venda);
     final fim = _previsaoFim(venda)!;
-    if (_ehAgendado(venda) && inicio != null) {
-      return '${formato.format(inicio)} - ${formato.format(fim)}';
+    if (_ehAgendado(venda)) {
+      final inicio = _previsaoInicio(venda);
+      return inicio != null ? '${formato.format(inicio)} - ${formato.format(fim)}' : '~${formato.format(fim)}';
     }
+    // previsaoEntregaFim aqui guarda a mesma hora-do-dia do pedido (só a
+    // DATA já pula dias fechados — ver `finalizar_pedido_site`) — mostrar a
+    // hora seria enganoso, mesmo ajuste já feito no site e na Fila de
+    // Pedidos (ver `Venda.modalidade`).
+    if (venda.modalidade == 'economica') return 'Até ${DateFormat('dd/MM').format(fim)}';
     return '~${formato.format(fim)}';
   }
 
@@ -314,6 +325,32 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     }
   }
 
+  /// Recarrega a venda do banco pra checar se o webhook do Mercado Pago já
+  /// confirmou um Pix/cartão que ainda estava pendente — a tela não tem
+  /// realtime, então sem isso o lojista só saberia fechando e reabrindo (ou
+  /// puxando a Fila de Pedidos pra atualizar) em vez de conferir aqui mesmo.
+  Future<void> _verificarPagamentoAgora() async {
+    if (_venda.idVenda == null) return;
+    setState(() => _processando = true);
+    try {
+      final atualizada = await VendaRepository().buscarPorId(_venda.idVenda!);
+      if (!mounted) return;
+      setState(() => _venda = atualizada);
+      if (!atualizada.aguardandoPagamento && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pagamento confirmado!')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível verificar agora: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
+  }
+
   Future<void> _abrirRastreioNoMapa() async {
     final lat = _venda.rastreioLatitude;
     final lng = _venda.rastreioLongitude;
@@ -369,6 +406,20 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               children: [
                 if (cancelada) _bannerCancelada(),
                 if (!cancelada && venda.pagoOnline) _bannerPagoOnline(),
+                if (!cancelada && venda.aguardandoPagamento) ...[
+                  _bannerAguardandoPagamento(),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _processando ? null : _verificarPagamentoAgora,
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('Verificar pagamento agora'),
+                      ),
+                    ),
+                  ),
+                ],
 
                 _card(
                   child: Column(
@@ -394,14 +445,15 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                                 ? '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega'
                                 : venda.metodoPagamento,
                       ),
+                      // IDs técnicos do Mercado Pago — só quem pode estornar
+                      // (dono/gerente) precisa disso, e só serve pra buscar o
+                      // pagamento no painel deles em caso de dúvida/disputa.
+                      if (podeEstornar && venda.mercadoPagoPaymentId != null)
+                        _linhaInfo(Icons.tag, 'ID pagamento (Mercado Pago)', venda.mercadoPagoPaymentId!),
+                      if (podeEstornar && venda.mercadoPagoRefundId != null)
+                        _linhaInfo(Icons.tag, 'ID estorno (Mercado Pago)', venda.mercadoPagoRefundId!),
                       if (_temPrevisaoEntrega(venda))
-                        _linhaInfo(
-                          Icons.schedule,
-                          _ehAgendado(venda)
-                              ? (venda.retirada ? 'Retirada agendada' : 'Entrega agendada')
-                              : 'Previsão de entrega',
-                          _formatarPrevisaoEntrega(venda),
-                        ),
+                        _linhaInfo(Icons.schedule, _labelPrevisaoEntrega(venda), _formatarPrevisaoEntrega(venda)),
                       if (venda.cliente.celular.isNotEmpty)
                         _linhaComAcao(
                           icon: Icons.phone,
@@ -702,14 +754,35 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
+  Widget _bannerAguardandoPagamento() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AvisoBanner(
+        tipo: TipoAviso.alerta,
+        icone: Icons.hourglass_empty,
+        negrito: true,
+        texto: 'Aguardando confirmação do pagamento online (${_venda.metodoPagamento}) — ainda NÃO cobrar do cliente.',
+      ),
+    );
+  }
+
   Widget _bannerCancelada() {
-    return const Padding(
-      padding: EdgeInsets.only(bottom: 12),
+    // Distingue de um cancelamento comum (nunca chegou a cobrar nada) —
+    // aqui o dinheiro já voltou de verdade pro cliente via Mercado Pago,
+    // informação relevante pra qualquer um que abrir essa venda depois,
+    // não só pra quem tem permissão de estornar.
+    final texto = _venda.estornadoOnline
+        ? 'VENDA CANCELADA — pagamento estornado em '
+            '${DateFormat("dd/MM/yyyy 'às' HH:mm").format(_venda.mercadoPagoEstornadoEm!)}, '
+            'dinheiro já devolvido ao cliente pelo Mercado Pago.'
+        : 'VENDA CANCELADA';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: AvisoBanner(
         tipo: TipoAviso.erro,
         icone: Icons.block,
         negrito: true,
-        texto: 'VENDA CANCELADA',
+        texto: texto,
       ),
     );
   }
