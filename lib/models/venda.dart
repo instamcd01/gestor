@@ -86,6 +86,10 @@ class Venda {
   final String? mercadoPagoRefundId; // id do estorno na API do Mercado Pago, só existe se `estornarPagamentoOnline` já rodou
   final DateTime? mercadoPagoEstornadoEm;
   final double? mercadoPagoTaxa; // quanto o PRÓPRIO Mercado Pago descontou da loja (split direto na conta dela, não é comissão do Gestor)
+  final double? custoEmbalagem; // pedidos.custo_embalagem_valor — calculado por calcular_custos_operacionais_pedido() a partir de empresas.custo_embalagem_padrao
+  final double? taxaMaquininha; // pedidos.taxa_maquininha_valor — só cartão cobrado na entrega/loja física (não cobre Mercado Pago online nem marketplace)
+  final double? custoEntregaReal; // pedidos.custo_entrega_valor — custo real de entrega própria (modo fixo/km configurado em empresas), null se retirada/modo ainda não suportado
+  final double? taxaComissaoMarketplace; // marketplace_pedidos.taxa_comissao — comissão real cobrada pelo iFood/99Food, calculada por calcular_comissao_marketplace()
   final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
   final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
@@ -160,6 +164,10 @@ class Venda {
     this.mercadoPagoRefundId,
     this.mercadoPagoEstornadoEm,
     this.mercadoPagoTaxa,
+    this.custoEmbalagem,
+    this.taxaMaquininha,
+    this.custoEntregaReal,
+    this.taxaComissaoMarketplace,
     this.taxaServicoCliente,
     this.campanhaMarketplace,
     this.cupomMarketplace,
@@ -228,6 +236,10 @@ class Venda {
     String? mercadoPagoRefundId,
     DateTime? mercadoPagoEstornadoEm,
     double? mercadoPagoTaxa,
+    double? custoEmbalagem,
+    double? taxaMaquininha,
+    double? custoEntregaReal,
+    double? taxaComissaoMarketplace,
     double? taxaServicoCliente,
     String? campanhaMarketplace,
     String? cupomMarketplace,
@@ -287,6 +299,10 @@ class Venda {
       mercadoPagoRefundId: mercadoPagoRefundId ?? this.mercadoPagoRefundId,
       mercadoPagoEstornadoEm: mercadoPagoEstornadoEm ?? this.mercadoPagoEstornadoEm,
       mercadoPagoTaxa: mercadoPagoTaxa ?? this.mercadoPagoTaxa,
+      custoEmbalagem: custoEmbalagem ?? this.custoEmbalagem,
+      taxaMaquininha: taxaMaquininha ?? this.taxaMaquininha,
+      custoEntregaReal: custoEntregaReal ?? this.custoEntregaReal,
+      taxaComissaoMarketplace: taxaComissaoMarketplace ?? this.taxaComissaoMarketplace,
       taxaServicoCliente: taxaServicoCliente ?? this.taxaServicoCliente,
       campanhaMarketplace: campanhaMarketplace ?? this.campanhaMarketplace,
       cupomMarketplace: cupomMarketplace ?? this.cupomMarketplace,
@@ -316,11 +332,21 @@ class Venda {
   /// cancelamento comum (que nunca chegou a cobrar, nada a devolver).
   bool get estornadoOnline => mercadoPagoEstornadoEm != null;
 
-  /// `lucroTotal` (calculado só a partir do custo dos produtos, no banco)
-  /// menos a taxa que o Mercado Pago descontou da loja, quando existir —
-  /// sem isso "Lucro Total" ficava otimista pra venda paga online, já que
-  /// nunca considerava o desconto real que a loja recebe a menos.
-  double get lucroTotalLiquido => lucroTotal - (mercadoPagoTaxa ?? 0);
+  /// `lucroTotal` (calculado só a partir do custo dos produtos) menos TODO
+  /// custo/taxa operacional real conhecido pra essa venda: embalagem,
+  /// entrega própria, maquininha (cartão na entrega/loja), taxa do Mercado
+  /// Pago (pagamento online) e comissão de marketplace (iFood/99Food) —
+  /// cada um só entra na conta quando existir (pedidos sem essas
+  /// configurações continuam mostrando só o lucro de produto, sem inventar
+  /// custo). É o número final de "quanto sobrou de verdade", usado em vez
+  /// de `lucroTotal` sozinho na tela de detalhe da venda.
+  double get lucroLiquidoReal =>
+      lucroTotal -
+      (custoEmbalagem ?? 0) -
+      (custoEntregaReal ?? 0) -
+      (taxaMaquininha ?? 0) -
+      (mercadoPagoTaxa ?? 0) -
+      (ehMarketplace ? (taxaComissaoMarketplace ?? 0) : 0);
 
   /// "Pagamento Online" (rótulo genérico gravado no site pra qualquer
   /// meio pago via Mercado Pago) detalhado pra forma real usada — sem

@@ -889,9 +889,9 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           children: [
             _linhaValor('Custo Total', venda.custoTotal, currencyFormat, cor: corLaranja),
-            _linhaValor('Lucro Total', venda.lucroTotal, currencyFormat, cor: corVerde),
+            _linhaValor('Lucro Total (só produto)', venda.lucroTotal, currencyFormat, cor: corVerde),
             _linhaValor(
-              'Margem',
+              'Margem (só produto)',
               null,
               currencyFormat,
               textoCustomizado: venda.valorTotal > 0
@@ -899,22 +899,38 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   : '-',
               cor: corVerde,
             ),
-            // "Lucro Total" acima só desconta custo de produto — pra venda
-            // paga online, o Mercado Pago desconta a taxa dele direto da
-            // conta da loja (split, não é comissão do Gestor), então o que
-            // sobra de verdade é menor. Só aparece quando a taxa já foi
-            // capturada (`mercadoPagoTaxa` — ver `mercadopago.ts`).
-            if (venda.mercadoPagoTaxa != null) ...[
+            // "Lucro Total" acima só desconta custo de produto — cada linha
+            // abaixo é um custo operacional real que a loja também paga
+            // nessa venda especificamente (configurados em Configurações >
+            // Custos Operacionais, ou capturados direto da API do gateway/
+            // marketplace), só aparecendo quando existir de fato pra essa
+            // venda — sem isso "Lucro Total" ficava sistematicamente
+            // otimista, escondendo embalagem/entrega/taxas de quem decide
+            // preço e promoção.
+            if (venda.custoEmbalagem != null ||
+                venda.custoEntregaReal != null ||
+                venda.taxaMaquininha != null ||
+                venda.mercadoPagoTaxa != null ||
+                (venda.ehMarketplace && venda.taxaComissaoMarketplace != null)) ...[
               const Divider(height: 20),
-              _linhaValor('Taxa Mercado Pago', -venda.mercadoPagoTaxa!, currencyFormat, cor: corLaranja),
-              _linhaValor('Lucro líquido (após taxa)', venda.lucroTotalLiquido, currencyFormat,
+              if (venda.custoEmbalagem != null)
+                _linhaValor('Embalagem', -venda.custoEmbalagem!, currencyFormat, cor: corLaranja),
+              if (venda.custoEntregaReal != null)
+                _linhaValor('Entrega própria', -venda.custoEntregaReal!, currencyFormat, cor: corLaranja),
+              if (venda.taxaMaquininha != null)
+                _linhaValor('Taxa maquininha', -venda.taxaMaquininha!, currencyFormat, cor: corLaranja),
+              if (venda.mercadoPagoTaxa != null)
+                _linhaValor('Taxa Mercado Pago', -venda.mercadoPagoTaxa!, currencyFormat, cor: corLaranja),
+              if (venda.ehMarketplace && venda.taxaComissaoMarketplace != null)
+                _linhaValor('Comissão marketplace', -venda.taxaComissaoMarketplace!, currencyFormat, cor: corLaranja),
+              _linhaValor('Lucro líquido real', venda.lucroLiquidoReal, currencyFormat,
                   cor: corVerde, destaque: true),
               _linhaValor(
-                'Margem líquida',
+                'Margem líquida real',
                 null,
                 currencyFormat,
                 textoCustomizado: venda.valorTotal > 0
-                    ? '${(venda.lucroTotalLiquido / venda.valorTotal * 100).toStringAsFixed(1)}%'
+                    ? '${(venda.lucroLiquidoReal / venda.valorTotal * 100).toStringAsFixed(1)}%'
                     : '-',
                 cor: corVerde,
               ),
