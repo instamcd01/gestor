@@ -40,6 +40,7 @@ class MercadoPagoConectarScreen extends StatefulWidget {
 class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> with WidgetsBindingObserver {
   bool _carregando = true;
   bool _conectado = false;
+  String? _emailConectado;
   String _disponibilidade = 'entrega';
 
   @override
@@ -70,7 +71,8 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
       return;
     }
     try {
-      final conectado = await supabase.rpc('mp_esta_conectado') as bool;
+      final statusConexao = await supabase.rpc('mp_status_conexao') as List;
+      final linhaConexao = statusConexao.first as Map<String, dynamic>;
       final data = await supabase
           .from('empresas')
           .select('pagamento_online_disponibilidade')
@@ -78,7 +80,8 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
           .single();
       if (!mounted) return;
       setState(() {
-        _conectado = conectado;
+        _conectado = linhaConexao['conectado'] as bool;
+        _emailConectado = linhaConexao['email'] as String?;
         _disponibilidade = data['pagamento_online_disponibilidade'] as String? ?? 'entrega';
         _carregando = false;
       });
@@ -172,6 +175,18 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
                             ),
                           ],
                         ),
+                        // Mostra qual conta está conectada — sem isso não dá pra
+                        // saber se é a conta real da loja ou uma conta de teste
+                        // esquecida conectada por engano (já aconteceu).
+                        if (_conectado && _emailConectado != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4, left: 28),
+                            child: Text(
+                              _emailConectado!,
+                              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            ),
+                          ),
+                        const SizedBox(height: 8),
                         ElevatedButton(
                           onPressed: _conectar,
                           child: Text(_conectado ? 'Reconectar conta' : 'Conectar com Mercado Pago'),

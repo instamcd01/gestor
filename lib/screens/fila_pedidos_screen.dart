@@ -202,6 +202,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       ));
     } else if (venda.aguardandoPagamento) {
       chips.add(_chipInfo(context, Icons.hourglass_empty, 'Aguardando confirmação do pagamento'));
+    } else if (venda.pagoOnline) {
+      chips.add(_chipInfo(context, Icons.check_circle_outline, 'Pago online — não cobrar'));
     }
 
     if (venda.troco > 0) {

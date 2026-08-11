@@ -271,6 +271,13 @@ class Venda {
 
   bool get pagoPeloMarketplace => statusPagamento == 'pago';
 
+  /// Pago de verdade por um gateway online que não é o iFood (hoje só
+  /// Mercado Pago, pelo site) — cobrar de novo na entrega seria cobrança
+  /// duplicada. Não usa `ehMarketplace` porque essa venda não veio do
+  /// iFood; usa `statusPagamento` (mesmo campo que já alimenta
+  /// `pagoPeloMarketplace`), que é preenchido igual pra qualquer canal.
+  bool get pagoOnline => !ehMarketplace && statusPagamento == 'pago';
+
   bool get telefoneLocalizadorValido =>
       telefoneLocalizador != null &&
       telefoneLocalizador!.isNotEmpty &&

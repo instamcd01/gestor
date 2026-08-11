@@ -310,6 +310,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               padding: const EdgeInsets.all(12),
               children: [
                 if (cancelada) _bannerCancelada(),
+                if (!cancelada && venda.pagoOnline) _bannerPagoOnline(),
 
                 _card(
                   child: Column(
@@ -326,7 +327,9 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                         'Forma de Pagamento',
                         venda.ehMarketplace
                             ? '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}'
-                            : venda.metodoPagamento,
+                            : venda.pagoOnline
+                                ? '${venda.metodoPagamento} — já pago, NÃO cobrar na entrega'
+                                : venda.metodoPagamento,
                       ),
                       if (_temPrevisaoEntrega(venda))
                         _linhaInfo(
@@ -620,6 +623,18 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _bannerPagoOnline() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AvisoBanner(
+        tipo: TipoAviso.sucesso,
+        icone: Icons.check_circle_outline,
+        negrito: true,
+        texto: 'Já pago online (${_venda.metodoPagamento}) — NÃO cobrar na entrega.',
       ),
     );
   }
