@@ -89,6 +89,13 @@ class HistoricoVendasProvider with ChangeNotifier {
     await carregarVendas();
   }
 
+  /// Estorna o pagamento online (Mercado Pago) e cancela a venda —
+  /// ver VendaRepository.estornarPagamentoOnline.
+  Future<void> estornarPagamentoOnline(String idVenda) async {
+    await _repository.estornarPagamentoOnline(idVenda);
+    await carregarVendas();
+  }
+
   /// Avança um pedido pro próximo status do ciclo de vida (ver
   /// `Venda.proximoStatus`) — usado pela Fila de Pedidos.
   Future<void> avancarStatusPedido(String idVenda, String novoStatus) async {

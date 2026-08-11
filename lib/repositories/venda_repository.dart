@@ -1,3 +1,8 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import '../config/mercado_pago_config.dart';
 import '../config/supabase_config.dart';
 import '../models/cliente.dart';
 import '../models/produto.dart';
@@ -160,6 +165,30 @@ class VendaRepository {
     });
   }
 
+  /// Estorna um pagamento online (Mercado Pago) e cancela a venda em
+  /// seguida — o estorno em si só o site sabe fazer (é ele quem guarda o
+  /// access_token do Mercado Pago da loja, o app nunca tem esse token), por
+  /// isso a chamada HTTP autenticada com a própria sessão do app em vez de
+  /// um RPC direto. `cancelar()` (RPC já existente) cuida de repor estoque
+  /// e recalcular métricas do cliente — não duplicado aqui.
+  Future<void> estornarPagamentoOnline(String idVenda) async {
+    final sessao = supabase.auth.currentSession;
+    if (sessao == null) throw Exception('Sessão expirada — entre de novo.');
+
+    final resposta = await http.post(
+      Uri.parse('$kSiteBaseUrl/api/mercadopago/estornar'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ${sessao.accessToken}'},
+      body: jsonEncode({'pedidoId': idVenda}),
+    );
+
+    if (resposta.statusCode != 200) {
+      final corpo = jsonDecode(resposta.body) as Map<String, dynamic>;
+      throw Exception(corpo['erro']?.toString() ?? 'Não foi possível estornar o pagamento.');
+    }
+
+    await cancelar(idVenda, motivoCodigo: 'estorno_pagamento', motivoDescricao: 'Pagamento estornado via Mercado Pago');
+  }
+
   /// Confirma retirada/entrega por código (iFood) — o trigger cuida de
   /// validar de verdade contra a API a partir daqui. `codigo_confirmacao_status`
   /// fica 'pendente' até a resposta do n8n chegar; a tela recarrega a venda
@@ -292,6 +321,8 @@ class VendaRepository {
       codigoRetiradaExibicao: marketplacePedidoRow?['codigo_retirada_exibicao']?.toString(),
       linkConfirmacaoEntrega: marketplacePedidoRow?['link_confirmacao_entrega']?.toString(),
       statusPagamento: row['status_pagamento']?.toString(),
+      mercadoPagoPaymentTypeId: metadata['mercadoPagoPaymentTypeId']?.toString(),
+      mercadoPagoInstallments: (metadata['mercadoPagoInstallments'] as num?)?.toInt(),
       taxaServicoCliente: (marketplacePedidoRow?['taxa_servico_cliente'] as num?)?.toDouble(),
       campanhaMarketplace: marketplacePedidoRow?['campanha_marketplace']?.toString(),
       cupomMarketplace: marketplacePedidoRow?['cupom_marketplace']?.toString(),

@@ -80,6 +80,8 @@ class Venda {
   final String? codigoRetiradaExibicao; // pickupCode informativo da iFood (não é o código que o lojista digita)
   final String? linkConfirmacaoEntrega; // handover_page_url da 99Food -- entregador/lojista abre pra confirmar com o cliente, sem código
   final String? statusPagamento; // 'pago' (já cobrado pelo marketplace) / 'pendente' (cobrar na entrega)
+  final String? mercadoPagoPaymentTypeId; // credit_card/debit_card/bank_transfer — só em pagamento online do site (Mercado Pago)
+  final int? mercadoPagoInstallments; // parcelas reais cobradas (diferente de "parcelas" informativas dos métodos na entrega)
   final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
   final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
@@ -142,6 +144,8 @@ class Venda {
     this.codigoRetiradaExibicao,
     this.linkConfirmacaoEntrega,
     this.statusPagamento,
+    this.mercadoPagoPaymentTypeId,
+    this.mercadoPagoInstallments,
     this.taxaServicoCliente,
     this.campanhaMarketplace,
     this.cupomMarketplace,
@@ -203,6 +207,8 @@ class Venda {
     String? codigoRetiradaExibicao,
     String? linkConfirmacaoEntrega,
     String? statusPagamento,
+    String? mercadoPagoPaymentTypeId,
+    int? mercadoPagoInstallments,
     double? taxaServicoCliente,
     String? campanhaMarketplace,
     String? cupomMarketplace,
@@ -255,6 +261,8 @@ class Venda {
       codigoRetiradaExibicao: codigoRetiradaExibicao ?? this.codigoRetiradaExibicao,
       linkConfirmacaoEntrega: linkConfirmacaoEntrega ?? this.linkConfirmacaoEntrega,
       statusPagamento: statusPagamento ?? this.statusPagamento,
+      mercadoPagoPaymentTypeId: mercadoPagoPaymentTypeId ?? this.mercadoPagoPaymentTypeId,
+      mercadoPagoInstallments: mercadoPagoInstallments ?? this.mercadoPagoInstallments,
       taxaServicoCliente: taxaServicoCliente ?? this.taxaServicoCliente,
       campanhaMarketplace: campanhaMarketplace ?? this.campanhaMarketplace,
       cupomMarketplace: cupomMarketplace ?? this.cupomMarketplace,
@@ -277,6 +285,26 @@ class Venda {
   /// iFood; usa `statusPagamento` (mesmo campo que já alimenta
   /// `pagoPeloMarketplace`), que é preenchido igual pra qualquer canal.
   bool get pagoOnline => !ehMarketplace && statusPagamento == 'pago';
+
+  /// "Pagamento Online" (rótulo genérico gravado no site pra qualquer
+  /// meio pago via Mercado Pago) detalhado pra forma real usada — sem
+  /// isso o lojista via só "Pagamento Online" e não sabia se foi
+  /// crédito/débito/Pix nem quantas parcelas. `null` quando `metodoPagamento`
+  /// não é online (nada a detalhar) ou o pagamento é antigo, de antes
+  /// dessa informação começar a ser gravada.
+  String? get detalheFormaPagamentoOnline {
+    switch (mercadoPagoPaymentTypeId) {
+      case 'credit_card':
+        final parcelas = mercadoPagoInstallments ?? 1;
+        return parcelas > 1 ? 'Cartão de crédito parcelado em ${parcelas}x' : 'Cartão de crédito à vista';
+      case 'debit_card':
+        return 'Cartão de débito';
+      case 'bank_transfer':
+        return 'Pix (Mercado Pago)';
+      default:
+        return null;
+    }
+  }
 
   bool get telefoneLocalizadorValido =>
       telefoneLocalizador != null &&

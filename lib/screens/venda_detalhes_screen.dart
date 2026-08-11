@@ -216,6 +216,52 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     }
   }
 
+  /// Estorna o pagamento de verdade no Mercado Pago (dinheiro volta pro
+  /// cliente) e cancela a venda em seguida — ver
+  /// VendaRepository.estornarPagamentoOnline. Ação irreversível de dinheiro
+  /// de verdade, por isso a confirmação explícita antes.
+  Future<void> _confirmarEstorno() async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Estornar pagamento'),
+        content: const Text(
+          'Isso devolve o dinheiro pro cliente de verdade, através do Mercado Pago, e cancela a venda '
+          '(devolvendo os itens ao estoque). Essa ação não pode ser desfeita. Confirmar?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Voltar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Estornar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted || _venda.idVenda == null) return;
+
+    final historicoProvider = Provider.of<HistoricoVendasProvider>(context, listen: false);
+    setState(() => _processando = true);
+    try {
+      await historicoProvider.estornarPagamentoOnline(_venda.idVenda!);
+      if (!mounted) return;
+      setState(() {
+        _venda = _venda.copyWith(status: 'cancelado');
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pagamento estornado e venda cancelada.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível estornar: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
+  }
+
   /// Confirmação por código de retirada/entrega (iFood). O código digitado
   /// aqui dispara a validação de verdade contra a API via trigger no banco;
   /// como a resposta chega assíncrona (n8n), a tela espera um pouco e
@@ -283,6 +329,8 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     final temEntrega = venda.valorEntrega > 0 || venda.entregaSelecionada.isNotEmpty;
     // Custo/lucro/margem — vendedor não vê, nem o card interno nem por item.
     final podeVerFinancas = context.watch<AuthProvider>().podeVerFinancas;
+    final authProvider = context.watch<AuthProvider>();
+    final podeEstornar = authProvider.isDono || authProvider.isGerente;
     final cancelada = venda.cancelada;
 
     return Scaffold(
@@ -294,6 +342,16 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             tooltip: 'Ver recibo',
             onPressed: _verRecibo,
           ),
+          // Estorno é dinheiro voltando de verdade pro cliente (diferente de
+          // cancelar um pedido pago na entrega, que nunca chegou a cobrar) —
+          // só faz sentido pra venda paga online, e só dono/gerente decide
+          // isso, mesma restrição já aplicada no endpoint que faz o estorno.
+          if (!cancelada && venda.pagoOnline && podeEstornar)
+            IconButton(
+              icon: const Icon(Icons.undo),
+              tooltip: 'Estornar pagamento',
+              onPressed: _processando ? null : _confirmarEstorno,
+            ),
           if (!cancelada)
             IconButton(
               icon: const Icon(Icons.cancel_outlined),
@@ -328,7 +386,12 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                         venda.ehMarketplace
                             ? '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}'
                             : venda.pagoOnline
-                                ? '${venda.metodoPagamento} — já pago, NÃO cobrar na entrega'
+                                // "Pagamento Online" sozinho não dizia se foi
+                                // crédito/débito/Pix nem quantas parcelas — usa o
+                                // detalhe real quando disponível (pedidos antigos,
+                                // de antes dessa informação ser gravada, caem no
+                                // rótulo genérico mesmo).
+                                ? '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega'
                                 : venda.metodoPagamento,
                       ),
                       if (_temPrevisaoEntrega(venda))
@@ -634,7 +697,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
         tipo: TipoAviso.sucesso,
         icone: Icons.check_circle_outline,
         negrito: true,
-        texto: 'Já pago online (${_venda.metodoPagamento}) — NÃO cobrar na entrega.',
+        texto: 'Já pago online (${_venda.detalheFormaPagamentoOnline ?? _venda.metodoPagamento}) — NÃO cobrar na entrega.',
       ),
     );
   }
