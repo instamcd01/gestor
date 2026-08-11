@@ -200,7 +200,18 @@ class _DespesasScreenState extends State<DespesasScreen> {
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       child: ListTile(
-                        title: Text(despesa.descricao),
+                        title: Row(
+                          children: [
+                            Flexible(child: Text(despesa.descricao, overflow: TextOverflow.ellipsis)),
+                            if (despesa.recorrente) ...[
+                              const SizedBox(width: 6),
+                              Tooltip(
+                                message: 'Recorrente — gera a próxima ocorrência sozinha todo mês',
+                                child: Icon(Icons.autorenew, size: 14, color: Theme.of(context).colorScheme.primary),
+                              ),
+                            ],
+                          ],
+                        ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -316,6 +327,8 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
   late final TextEditingController _vencimentoController;
   late final TextEditingController _observacoesController;
   late final TextEditingController _codigoBarrasBoletoController;
+  late final TextEditingController _recorrenciaDiaController;
+  late bool _recorrente;
   late String _categoria;
   // Guardado por id, não pela instância de `Despesa.fornecedor` (essa vem
   // de uma consulta separada da lista usada no dropdown) — senão o
@@ -338,6 +351,10 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
     );
     _observacoesController = TextEditingController(text: d?.observacoes ?? '');
     _codigoBarrasBoletoController = TextEditingController(text: d?.codigoBarrasBoleto ?? '');
+    _recorrente = d?.recorrente ?? false;
+    _recorrenciaDiaController = TextEditingController(
+      text: (d?.recorrenciaDia ?? d?.dataVencimento.day)?.toString() ?? '',
+    );
     _categoria = d?.categoria ?? categoriasDespesaSugeridas.first;
     _fornecedorIdSelecionado = d?.fornecedor?.id;
 
@@ -351,6 +368,7 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
     _vencimentoController.dispose();
     _observacoesController.dispose();
     _codigoBarrasBoletoController.dispose();
+    _recorrenciaDiaController.dispose();
     super.dispose();
   }
 
@@ -388,6 +406,8 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
       metodoPagamento: widget.despesa?.metodoPagamento,
       observacoes: _observacoesController.text.trim(),
       codigoBarrasBoleto: _codigoBarrasBoletoController.text.trim().isEmpty ? null : _codigoBarrasBoletoController.text.trim(),
+      recorrente: _recorrente,
+      recorrenciaDia: _recorrente ? int.tryParse(_recorrenciaDiaController.text.trim()) : null,
     );
 
     try {
@@ -483,6 +503,33 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
                       ),
                     ],
                   ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Despesa recorrente'),
+                    subtitle: const Text('Repete todo mês sozinha (ex: mensalidade, assinatura)'),
+                    value: _recorrente,
+                    onChanged: (v) => setState(() {
+                      _recorrente = v;
+                      if (v && _recorrenciaDiaController.text.trim().isEmpty) {
+                        final vencimento = DateFormatUtilsLocal.parsear(_vencimentoController.text);
+                        _recorrenciaDiaController.text = (vencimento?.day ?? DateTime.now().day).toString();
+                      }
+                    }),
+                  ),
+                  if (_recorrente)
+                    TextFormField(
+                      controller: _recorrenciaDiaController,
+                      decoration: const InputDecoration(
+                        labelText: 'Dia do mês da próxima ocorrência',
+                        helperText: 'De 1 a 28 — evita ambiguidade em meses mais curtos',
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (v) {
+                        final dia = int.tryParse(v?.trim() ?? '');
+                        if (dia == null || dia < 1 || dia > 28) return 'Informe um dia entre 1 e 28';
+                        return null;
+                      },
+                    ),
                   TextFormField(
                     controller: _codigoBarrasBoletoController,
                     decoration: const InputDecoration(

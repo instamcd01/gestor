@@ -356,9 +356,10 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Text(
                                     'Só os percentuais cobrados POR PEDIDO entram aqui. Mensalidade fixa '
-                                    '(ex: taxa de adesão/plano do iFood) não é custo por venda — lance como '
-                                    'despesa mensal em Configurações > Despesas, senão o lucro por pedido '
-                                    'fica impreciso, oscilando com o volume de vendas do mês.',
+                                    '(ex: taxa de adesão/plano do iFood) não é custo por venda — cadastre '
+                                    'como despesa RECORRENTE em Configurações > Despesas (gera sozinha todo '
+                                    'mês), senão o lucro por pedido fica impreciso, oscilando com o volume '
+                                    'de vendas do mês.',
                                     style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                   ),
                                 ),

@@ -33,6 +33,12 @@ class Despesa {
   /// não traz isso, só o banco gera depois de registrado), preenchido
   /// manualmente pra facilitar identificar/pagar depois.
   final String? codigoBarrasBoleto;
+  /// true só na instância ATUAL/mais recente de uma série recorrente (ex:
+  /// mensalidade do iFood) — `gerar_despesas_recorrentes()` (pg_cron diário)
+  /// gera a próxima ocorrência automaticamente quando o mês vira, copiando
+  /// descrição/categoria/valor, e desliga essa flag na antiga.
+  final bool recorrente;
+  final int? recorrenciaDia; // dia do mês (1-28) em que a próxima ocorrência nasce
 
   Despesa({
     this.id,
@@ -47,6 +53,8 @@ class Despesa {
     this.metodoPagamento,
     this.observacoes = '',
     this.codigoBarrasBoleto,
+    this.recorrente = false,
+    this.recorrenciaDia,
   });
 
   bool get paga => status == StatusDespesa.pago;
@@ -68,6 +76,8 @@ class Despesa {
       metodoPagamento: row['metodo_pagamento']?.toString(),
       observacoes: row['observacoes']?.toString() ?? '',
       codigoBarrasBoleto: row['codigo_barras_boleto']?.toString(),
+      recorrente: row['recorrente'] as bool? ?? false,
+      recorrenciaDia: (row['recorrencia_dia'] as num?)?.toInt(),
     );
   }
 
@@ -84,6 +94,8 @@ class Despesa {
       'metodo_pagamento': metodoPagamento,
       'observacoes': observacoes,
       'codigo_barras_boleto': codigoBarrasBoleto,
+      'recorrente': recorrente,
+      'recorrencia_dia': recorrenciaDia,
     };
   }
 }
