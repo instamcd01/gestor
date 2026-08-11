@@ -35,6 +35,7 @@ class FilaPedidosScreen extends StatefulWidget {
 
 class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   String? _filtroStatus; // null = todos
+  String? _filtroModalidade; // null = todas — ver `Venda.modalidade`
   Timer? _timerUrgencia;
 
   @override
@@ -164,20 +165,42 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     if (venda.retirada) {
       chips.add(_chipInfo(context, Icons.storefront, 'Retirada'));
     } else {
+      // Chip de modalidade em destaque primeiro — é o dado que o lojista
+      // mais precisa pra decidir "entra na rota agora ou pode esperar":
+      // Expressa (imediata, zona) x Econômica (dias, config única da loja)
+      // x Agendada (janela escolhida, iFood ou manual). Antes só existia
+      // "Zona: X-Y min" reconstruído de previsaoEntregaInicio/Fim, que dava
+      // número sem sentido (ex: "0-4320 min") pra Econômica, já que ali
+      // essas colunas guardam uma data dias no futuro, não uma faixa de
+      // minutos — ver `Venda.modalidade`.
+      switch (venda.modalidade) {
+        case 'agendada':
+          chips.add(_chipDestaque(context, Icons.event_outlined, 'Agendada'));
+        case 'economica':
+          chips.add(_chipDestaque(context, Icons.savings_outlined, 'Econômica'));
+        default:
+          chips.add(_chipDestaque(context, Icons.bolt_outlined, 'Expressa'));
+      }
+
       final bairro = venda.cliente.bairro;
       if (bairro.isNotEmpty) chips.add(_chipInfo(context, Icons.location_on_outlined, bairro));
 
       final zona = venda.entregaSelecionada;
       if (zona.isNotEmpty) chips.add(_chipInfo(context, Icons.map_outlined, zona));
 
-      // Só reconstrói "Zona: X-Y min" pra pedido imediato — previsaoInicio/Fim
-      // aí é "agora + faixa da zona", então a diferença até dataVenda dá a
-      // faixa configurada de volta. Pedido agendado (iFood ou manual) grava
-      // um horário absoluto futuro nas mesmas colunas — calcular a diferença
-      // até dataVenda daria um número sem sentido (ex: 523-583 min pra um
-      // agendamento de amanhã). Esse caso já tem o bloco "Agendado p/ HH:MM"
-      // mais abaixo, não precisa duplicar aqui.
-      if (!venda.agendado && !venda.agendadoManualmente) {
+      if (venda.modalidade == 'economica') {
+        // previsaoEntregaFim aqui guarda a mesma hora-do-dia do pedido (só a
+        // DATA já pula dias fechados — ver `finalizar_pedido_site`), então
+        // mostrar a hora seria enganoso (mesmo problema já corrigido na
+        // página de confirmação do site). Mostra só a data.
+        final previsaoFim = venda.previsaoEntregaFim;
+        if (previsaoFim != null) {
+          chips.add(_chipInfo(context, Icons.schedule_outlined, 'Até ${DateFormat('dd/MM').format(previsaoFim)}'));
+        }
+      } else if (venda.modalidade == 'expressa') {
+        // "Zona: X-Y min" só faz sentido pra pedido imediato — previsaoInicio/
+        // Fim aí é "agora + faixa da zona", então a diferença até dataVenda dá
+        // a faixa configurada de volta.
         final previsaoInicio = venda.previsaoEntregaInicio;
         final previsaoFim = venda.previsaoEntregaFim;
         if (previsaoInicio != null && previsaoFim != null) {
@@ -315,7 +338,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     // atender por ordem de chegada). Concluídos/Cancelados são consultados
     // à parte, só do dia — isso aqui é a fila operacional de hoje, não um
     // histórico (esse já existe em Histórico de Vendas).
-    final List<Venda> pedidos;
+    List<Venda> pedidos;
     if (_filtroStatus == StatusPedido.entregue || _filtroStatus == StatusPedido.cancelado) {
       pedidos = provider.vendas
           .where((v) => v.status == _filtroStatus && _mesmoDia(v.dataVenda, agora))
@@ -330,6 +353,13 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       pedidos = provider.pedidosAtivos.where((v) => v.status == _filtroStatus).toList();
     } else {
       pedidos = provider.pedidosAtivos;
+    }
+    // Filtro por modalidade de entrega — independente do filtro de status,
+    // ajuda o lojista a separar "precisa entrar em rota agora" (expressa/
+    // retirada) de "pode esperar" (econômica) ou "tem hora marcada"
+    // (agendada) na hora de planejar as entregas do dia.
+    if (_filtroModalidade != null) {
+      pedidos = pedidos.where((v) => v.modalidade == _filtroModalidade).toList();
     }
 
     return Scaffold(
@@ -389,6 +419,49 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ChoiceChip(
+                    label: const Text('Todas modalidades'),
+                    selected: _filtroModalidade == null,
+                    onSelected: (_) => setState(() => _filtroModalidade = null),
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.bolt_outlined, size: 16),
+                    label: const Text('Expressa'),
+                    selected: _filtroModalidade == 'expressa',
+                    onSelected: (_) => setState(() => _filtroModalidade = 'expressa'),
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.savings_outlined, size: 16),
+                    label: const Text('Econômica'),
+                    selected: _filtroModalidade == 'economica',
+                    onSelected: (_) => setState(() => _filtroModalidade = 'economica'),
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.event_outlined, size: 16),
+                    label: const Text('Agendada'),
+                    selected: _filtroModalidade == 'agendada',
+                    onSelected: (_) => setState(() => _filtroModalidade = 'agendada'),
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.storefront, size: 16),
+                    label: const Text('Retirada'),
+                    selected: _filtroModalidade == 'retirada',
+                    onSelected: (_) => setState(() => _filtroModalidade = 'retirada'),
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (provider.carregando) const LinearProgressIndicator(),
           Expanded(
             child: provider.erro != null && pedidos.isEmpty
@@ -409,13 +482,15 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                         const SizedBox(height: 16),
                         Center(
                           child: Text(
-                            switch (_filtroStatus) {
-                              null => 'Nenhum pedido em andamento.',
-                              StatusPedido.entregue => 'Nenhum pedido concluído hoje ainda.',
-                              StatusPedido.cancelado => 'Nenhum pedido cancelado hoje.',
-                              StatusPedido.aguardandoPagamento => 'Nenhum pedido aguardando pagamento.',
-                              _ => 'Nenhum pedido nesse status.',
-                            },
+                            _filtroModalidade != null
+                                ? 'Nenhum pedido nessa modalidade.'
+                                : switch (_filtroStatus) {
+                                    null => 'Nenhum pedido em andamento.',
+                                    StatusPedido.entregue => 'Nenhum pedido concluído hoje ainda.',
+                                    StatusPedido.cancelado => 'Nenhum pedido cancelado hoje.',
+                                    StatusPedido.aguardandoPagamento => 'Nenhum pedido aguardando pagamento.',
+                                    _ => 'Nenhum pedido nesse status.',
+                                  },
                             style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
                           ),
                         ),

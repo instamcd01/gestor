@@ -104,6 +104,12 @@ class Venda {
   final DateTime? previsaoEntregaInicio;
   final DateTime? previsaoEntregaFim;
 
+  /// 'expressa'/'economica'/'agendada' — só vem preenchido em pedido do
+  /// site (ver `finalizar_pedido_site`); pedido criado no app (loja
+  /// física/WhatsApp) não grava essa chave, então vem `null` mesmo sendo
+  /// imediato — nesse caso trata-se como 'expressa' (ver `Venda.modalidade`).
+  final String? modalidadeEntrega;
+
   Venda({
     this.idVenda,
     this.numeroSequencial,
@@ -157,6 +163,7 @@ class Venda {
     this.agendadoManualmente = false,
     this.previsaoEntregaInicio,
     this.previsaoEntregaFim,
+    this.modalidadeEntrega,
   });
 
   /// Sempre usar isso pra atualizar campos localmente (ex: status após
@@ -220,6 +227,7 @@ class Venda {
     bool? agendadoManualmente,
     DateTime? previsaoEntregaInicio,
     DateTime? previsaoEntregaFim,
+    String? modalidadeEntrega,
   }) {
     return Venda(
       idVenda: idVenda ?? this.idVenda,
@@ -274,6 +282,7 @@ class Venda {
       agendadoManualmente: agendadoManualmente ?? this.agendadoManualmente,
       previsaoEntregaInicio: previsaoEntregaInicio ?? this.previsaoEntregaInicio,
       previsaoEntregaFim: previsaoEntregaFim ?? this.previsaoEntregaFim,
+      modalidadeEntrega: modalidadeEntrega ?? this.modalidadeEntrega,
     );
   }
 
@@ -328,6 +337,20 @@ class Venda {
       return tipoEntregaMarketplace != null && tipoEntregaMarketplace != 'DELIVERY';
     }
     return entregaSelecionada.isEmpty || entregaSelecionada == 'Retirada na Loja';
+  }
+
+  /// Classificação única de "como/quando entregar", pra chip e filtro na
+  /// Fila de Pedidos (ver `FilaPedidosScreen`): 'retirada' (não entra em
+  /// rota), 'agendada' (janela escolhida — iFood ou manual), 'economica'
+  /// (config única da loja, mais barata/lenta, só existe em pedido do
+  /// site) ou 'expressa' (default — imediato, zona de distância). Pedido
+  /// criado no app (loja física/WhatsApp) nunca grava `modalidadeEntrega`
+  /// mesmo sendo imediato, por isso o fallback pra 'expressa'.
+  String get modalidade {
+    if (retirada) return 'retirada';
+    if (agendado || agendadoManualmente) return 'agendada';
+    if (modalidadeEntrega == 'economica') return 'economica';
+    return 'expressa';
   }
 
   /// Próximo status no ciclo de vida (pula "saiu para entrega" quando o

@@ -336,6 +336,7 @@ class VendaRepository {
       agendadoManualmente: metadata['agendado'] as bool? ?? false,
       previsaoEntregaInicio: DateTime.tryParse(row['previsao_entrega_inicio']?.toString() ?? '')?.toLocal(),
       previsaoEntregaFim: DateTime.tryParse(row['previsao_entrega_fim']?.toString() ?? '')?.toLocal(),
+      modalidadeEntrega: metadata['modalidadeEntrega']?.toString(),
     );
   }
 }
