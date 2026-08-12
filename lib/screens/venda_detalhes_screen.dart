@@ -179,13 +179,38 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       motivoCodigo = motivo.codigo;
       motivoDescricao = motivo.descricao;
     } else {
+      // Pedido explícito do usuário: sem isso, nenhum cancelamento manual
+      // (a maioria dos casos) registrava motivo nenhum — a tela de detalhe
+      // só mostrava "VENDA CANCELADA" sem dar pra saber depois se foi o
+      // cliente que desistiu, produto em falta, etc. Campo opcional (não
+      // trava quem só quer cancelar rápido), mas sempre grava um código
+      // ('cancelado_pela_loja') pra já dar pra saber QUEM cancelou mesmo
+      // sem texto — ver Venda.origemCancelamento.
+      final controladorMotivo = TextEditingController();
       final confirmou = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Cancelar venda'),
-          content: const Text(
-            'Isso vai devolver os itens ao estoque, devolver o saldo do cliente usado (se houve) '
-            'e marcar a venda como cancelada. Essa ação não pode ser desfeita. Confirmar?',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Isso vai devolver os itens ao estoque, devolver o saldo do cliente usado (se houve) '
+                'e marcar a venda como cancelada. Essa ação não pode ser desfeita.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controladorMotivo,
+                maxLength: 200,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Motivo do cancelamento (opcional)',
+                  hintText: 'Ex: cliente desistiu, produto em falta...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Voltar')),
@@ -198,6 +223,9 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
         ),
       );
       if (confirmou != true || !mounted) return;
+      motivoCodigo = 'cancelado_pela_loja';
+      final texto = controladorMotivo.text.trim();
+      motivoDescricao = texto.isEmpty ? null : texto;
     }
 
     if (_venda.idVenda == null || !mounted) return;
@@ -212,7 +240,11 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _venda = _venda.copyWith(status: 'cancelado');
+        _venda = _venda.copyWith(
+          status: 'cancelado',
+          motivoCancelamentoCodigo: motivoCodigo,
+          motivoCancelamentoDescricao: motivoDescricao,
+        );
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Venda cancelada. Estoque e saldo do cliente foram estornados.')),
@@ -823,11 +855,26 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     // aqui o dinheiro já voltou de verdade pro cliente via Mercado Pago,
     // informação relevante pra qualquer um que abrir essa venda depois,
     // não só pra quem tem permissão de estornar.
-    final texto = _venda.estornadoOnline
-        ? 'VENDA CANCELADA — pagamento estornado em '
-            '${DateFormat("dd/MM/yyyy 'às' HH:mm").format(_venda.mercadoPagoEstornadoEm!)}, '
-            'dinheiro já devolvido ao cliente pelo Mercado Pago.'
-        : 'VENDA CANCELADA';
+    final String texto;
+    if (_venda.estornadoOnline) {
+      texto = 'VENDA CANCELADA — pagamento estornado em '
+          '${DateFormat("dd/MM/yyyy 'às' HH:mm").format(_venda.mercadoPagoEstornadoEm!)}, '
+          'dinheiro já devolvido ao cliente pelo Mercado Pago.';
+    } else {
+      // Pedido explícito do usuário: dizer QUEM cancelou (cliente/loja/
+      // sistema, deduzido em Venda.origemCancelamento) e o PORQUÊ, quando
+      // disponível — vendas canceladas antes dessa gravação existir (ou
+      // com o campo de motivo deixado em branco) caem no fallback
+      // "motivo não informado", sem inventar um motivo que não existe.
+      final origemLabel = switch (_venda.origemCancelamento) {
+        'cliente' => 'pelo cliente',
+        'sistema' => 'pelo sistema',
+        _ => 'pela loja',
+      };
+      final motivo = _venda.motivoCancelamentoDescricao?.trim();
+      final motivoTexto = (motivo != null && motivo.isNotEmpty) ? motivo : 'motivo não informado';
+      texto = 'VENDA CANCELADA $origemLabel — $motivoTexto';
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: AvisoBanner(

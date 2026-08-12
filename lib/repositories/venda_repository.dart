@@ -304,6 +304,8 @@ class VendaRepository {
       status: row['status']?.toString() ?? StatusPedido.entregue,
       canalVenda: row['canal_venda']?.toString() ?? 'loja_fisica',
       vendedorId: row['vendedor_id'] as String?,
+      motivoCancelamentoCodigo: row['motivo_cancelamento_codigo']?.toString(),
+      motivoCancelamentoDescricao: row['motivo_cancelamento_descricao']?.toString(),
       marketplacePedidoId: marketplacePedidoRow?['id'] as String?,
       tipoEntregaMarketplace: row['tipo_entrega_marketplace']?.toString(),
       codigoConfirmacaoStatus: row['codigo_confirmacao_status']?.toString(),

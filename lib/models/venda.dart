@@ -62,6 +62,8 @@ class Venda {
   final String status;            // ver StatusPedido (espelha pedidos.status)
   final String canalVenda;        // 'loja_fisica', 'whatsapp', 'ifood', 'site', etc.
   final String? vendedorId;       // quem registrou a venda — null em pedidos de outras origens (iFood, site)
+  final String? motivoCancelamentoCodigo; // pedidos.motivo_cancelamento_codigo — só existe quando cancelada; ver Venda.origemCancelamento
+  final String? motivoCancelamentoDescricao; // pedidos.motivo_cancelamento_descricao — texto pronto pra mostrar, quando presente
 
   // --- Campos específicos de marketplace (iFood), todos opcionais ---
   final String? marketplacePedidoId;    // marketplace_pedidos.id, precisa pra ações que gravam lá
@@ -143,6 +145,8 @@ class Venda {
     this.status = StatusPedido.entregue,
     this.canalVenda = 'loja_fisica',
     this.vendedorId,
+    this.motivoCancelamentoCodigo,
+    this.motivoCancelamentoDescricao,
     this.marketplacePedidoId,
     this.tipoEntregaMarketplace,
     this.codigoConfirmacaoStatus,
@@ -216,6 +220,8 @@ class Venda {
     String? status,
     String? canalVenda,
     String? vendedorId,
+    String? motivoCancelamentoCodigo,
+    String? motivoCancelamentoDescricao,
     String? marketplacePedidoId,
     String? tipoEntregaMarketplace,
     String? codigoConfirmacaoStatus,
@@ -280,6 +286,8 @@ class Venda {
       status: status ?? this.status,
       canalVenda: canalVenda ?? this.canalVenda,
       vendedorId: vendedorId ?? this.vendedorId,
+      motivoCancelamentoCodigo: motivoCancelamentoCodigo ?? this.motivoCancelamentoCodigo,
+      motivoCancelamentoDescricao: motivoCancelamentoDescricao ?? this.motivoCancelamentoDescricao,
       marketplacePedidoId: marketplacePedidoId ?? this.marketplacePedidoId,
       tipoEntregaMarketplace: tipoEntregaMarketplace ?? this.tipoEntregaMarketplace,
       codigoConfirmacaoStatus: codigoConfirmacaoStatus ?? this.codigoConfirmacaoStatus,
@@ -377,6 +385,27 @@ class Venda {
       telefoneLocalizador != null &&
       telefoneLocalizador!.isNotEmpty &&
       (telefoneLocalizadorExpiraEm == null || telefoneLocalizadorExpiraEm!.isAfter(DateTime.now()));
+
+  /// Quem efetivamente cancelou — 'cliente'/'sistema'/'loja'. Deduzido de
+  /// `motivoCancelamentoCodigo` (não é um campo próprio no banco): os
+  /// códigos conhecidos hoje são 'cliente_trocou_forma_pagamento' (cliente,
+  /// site), 'pagamento_recusado'/'pagamento_abandonado' (sistema, Mercado
+  /// Pago), e tudo mais (estorno pelo lojista, motivos do iFood,
+  /// cancelamento manual — 'cancelado_pela_loja' ou o `null` de vendas
+  /// canceladas antes dessa distinção existir) cai em 'loja', o caso mais
+  /// comum. Só faz sentido quando `cancelada`.
+  String? get origemCancelamento {
+    if (!cancelada) return null;
+    switch (motivoCancelamentoCodigo) {
+      case 'cliente_trocou_forma_pagamento':
+        return 'cliente';
+      case 'pagamento_recusado':
+      case 'pagamento_abandonado':
+        return 'sistema';
+      default:
+        return 'loja';
+    }
+  }
 
   bool get cancelada => status == StatusPedido.cancelado;
   bool get finalizada => status == StatusPedido.entregue;
