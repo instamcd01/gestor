@@ -567,6 +567,27 @@ class _ContaClienteTabState extends State<_ContaClienteTab> {
             ),
           ),
         ),
+        // Só leitura aqui — PetCash é gerido pelo site (crédito automático
+        // na entrega, consumo/expiração no checkout), sem botão de ajuste
+        // manual como o saldo comum (diferente semântica: tem validade por
+        // crédito, não é um saldo único fungível).
+        if (widget.cliente.saldoPetCash > 0)
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Text('🐾 PetCash Disponível', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(
+                    currencyFormat.format(widget.cliente.saldoPetCash),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
+                  ),
+                ],
+              ),
+            ),
+          ),
         Expanded(
           child: FutureBuilder<List<MovimentacaoSaldo>>(
             future: _futureMovimentacoes,

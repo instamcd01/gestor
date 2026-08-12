@@ -13,6 +13,7 @@ import 'opcoes_pagamento_screen.dart';
 import 'regras_venda_screen.dart';
 import 'cupons_screen.dart';
 import 'config_cupom_automatico_screen.dart';
+import 'config_petcash_screen.dart';
 import 'custos_operacionais_screen.dart';
 import 'entregadores_screen.dart';
 import 'metricas_cupons_screen.dart';
@@ -90,6 +91,7 @@ class ConfiguracoesScreen extends StatelessWidget {
               MenuItem('Cupons de Desconto', Icons.local_offer_outlined, const CuponsScreen()),
               MenuItem('Métricas de Cupons', Icons.bar_chart_outlined, const MetricasCuponsScreen()),
               MenuItem('Cupom Automático', Icons.auto_awesome_outlined, const ConfigCupomAutomaticoScreen()),
+              if (isDono) MenuItem('PetCash (Cashback)', Icons.pets_outlined, const ConfigPetCashScreen()),
             ],
           ),
           const SizedBox(height: 20),

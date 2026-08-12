@@ -15,6 +15,8 @@ class Cliente {
   final String cpf;
   final String observacao;
   final double saldo;
+  /// PetCash (cashback) disponível — gerido pelo site (gerar_petcash_pedido/consumir_petcash), só leitura aqui.
+  final double saldoPetCash;
   final List<Pet> pets;
 
   // Estratégico
@@ -71,6 +73,7 @@ class Cliente {
     required this.cpf,
     required this.observacao,
     required this.saldo,
+    this.saldoPetCash = 0.0,
     required this.pets,
     this.dataCadastro,
     this.aniversario,
@@ -183,6 +186,7 @@ class Cliente {
       cpf: row['cpf']?.toString() ?? '',
       observacao: metadata['observacao']?.toString() ?? '',
       saldo: (row['saldo'] as num?)?.toDouble() ?? 0.0,
+      saldoPetCash: (row['saldo_petcash'] as num?)?.toDouble() ?? 0.0,
       pets: petsRows.map((p) => Pet.fromSupabase(p as Map<String, dynamic>)).toList(),
       dataCadastro: parseData(row['created_at']),
       // Antes ficava preso no metadata (JSON); agora usa a coluna real
