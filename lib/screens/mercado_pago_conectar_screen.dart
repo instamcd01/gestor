@@ -32,6 +32,7 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
   String? _emailConectado;
   String _disponibilidade = 'entrega';
   bool _pixAtivo = true;
+  bool _debitoAtivo = true;
 
   @override
   void initState() {
@@ -65,7 +66,7 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
       final linhaConexao = statusConexao.first as Map<String, dynamic>;
       final data = await supabase
           .from('empresas')
-          .select('pagamento_online_disponibilidade, mp_pix_ativo')
+          .select('pagamento_online_disponibilidade, mp_pix_ativo, mp_debito_ativo')
           .eq('id', empresaId)
           .single();
       if (!mounted) return;
@@ -74,6 +75,7 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
         _emailConectado = linhaConexao['email'] as String?;
         _disponibilidade = data['pagamento_online_disponibilidade'] as String? ?? 'entrega';
         _pixAtivo = data['mp_pix_ativo'] as bool? ?? true;
+        _debitoAtivo = data['mp_debito_ativo'] as bool? ?? true;
         _carregando = false;
       });
     } catch (e) {
@@ -133,6 +135,21 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
     } catch (e) {
       if (mounted) {
         setState(() => _pixAtivo = anterior);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
+      }
+    }
+  }
+
+  Future<void> _mudarDebitoAtivo(bool valor) async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    final anterior = _debitoAtivo;
+    setState(() => _debitoAtivo = valor);
+    try {
+      await supabase.from('empresas').update({'mp_debito_ativo': valor}).eq('id', empresaId);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _debitoAtivo = anterior);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
       }
     }
@@ -250,6 +267,23 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
                           ),
                           value: _pixAtivo,
                           onChanged: _conectado ? _mudarPixAtivo : null,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    FormSection(
+                      titulo: 'Cartão de débito',
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Aceitar cartão de débito no pagamento online'),
+                          subtitle: const Text(
+                            'Hoje só funciona com o Cartão Virtual CAIXA (gerado na hora pelo app CAIXA Tem) — '
+                            'débito comum do banco do cliente não é aceito por essa opção. Se estiver confundindo '
+                            'clientes, desligue aqui; cartão de crédito e Pix não são afetados.',
+                          ),
+                          value: _debitoAtivo,
+                          onChanged: _conectado ? _mudarDebitoAtivo : null,
                         ),
                       ],
                     ),
