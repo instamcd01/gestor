@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../widgets/aviso_banner.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../repositories/venda_repository.dart';
+import '../utils/canal_venda_utils.dart';
 import '../utils/telefone_utils.dart';
 import 'recibo_screen.dart';
 import 'separacao_pedido_screen.dart';
@@ -383,32 +384,6 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     }
   }
 
-  String _rotuloCanal(String canal) {
-    switch (canal) {
-      case 'whatsapp':
-        return 'WhatsApp';
-      case 'ifood':
-        return 'iFood';
-      case 'site':
-        return 'Site';
-      default:
-        return 'Loja Física';
-    }
-  }
-
-  IconData _iconeCanal(String canal) {
-    switch (canal) {
-      case 'whatsapp':
-        return Icons.chat;
-      case 'ifood':
-        return Icons.delivery_dining;
-      case 'site':
-        return Icons.language;
-      default:
-        return Icons.storefront;
-    }
-  }
-
   Future<void> _abrirRastreioNoMapa() async {
     final lat = _venda.rastreioLatitude;
     final lng = _venda.rastreioLongitude;
@@ -490,7 +465,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _linhaInfo(_iconeCanal(venda.canalVenda), 'Canal', _rotuloCanal(venda.canalVenda)),
+                      _linhaInfo(iconeCanalVenda(venda.canalVenda), 'Canal', rotuloCanalVenda(venda.canalVenda)),
                       if (venda.numeroExibicaoMarketplace != null)
                         _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (iFood)',
                             '#${venda.numeroExibicaoMarketplace}'),

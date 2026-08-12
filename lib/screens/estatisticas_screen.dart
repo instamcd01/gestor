@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/venda.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../utils/canal_venda_utils.dart';
 import '../widgets/metric_card.dart';
 
 class _AgregadoProduto {
@@ -20,13 +21,6 @@ class _AgregadoCliente {
   final double valor;
   _AgregadoCliente({required this.nome, required this.qtdCompras, required this.valor});
 }
-
-const _rotulosCanal = {
-  'loja_fisica': 'Loja física',
-  'whatsapp': 'WhatsApp',
-  'ifood': 'iFood',
-  'site': 'Site',
-};
 
 /// Painel de estatísticas reais da empresa (Supabase), calculado em cima
 /// das vendas já carregadas pelo HistoricoVendasProvider. Substitui a
@@ -207,7 +201,7 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
                     _card(
                       titulo: 'Vendas por Canal',
                       child: _listaProporcao(
-                        _somaPor(vendas, (v) => _rotulosCanal[v.canalVenda] ?? v.canalVenda),
+                        _somaPor(vendas, (v) => rotuloCanalVenda(v.canalVenda)),
                         faturamento,
                         currencyFormat,
                       ),

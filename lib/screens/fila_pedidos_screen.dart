@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/venda.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../utils/canal_venda_utils.dart';
 import '../widgets/categoria_cliente_badge.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'venda_detalhes_screen.dart';
@@ -261,32 +262,6 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     }
   }
 
-  String _rotuloCanal(String canal) {
-    switch (canal) {
-      case 'whatsapp':
-        return 'WhatsApp';
-      case 'ifood':
-        return 'iFood';
-      case 'site':
-        return 'Site';
-      default:
-        return 'Loja Física';
-    }
-  }
-
-  IconData _iconeCanal(String canal) {
-    switch (canal) {
-      case 'whatsapp':
-        return Icons.chat;
-      case 'ifood':
-        return Icons.delivery_dining;
-      case 'site':
-        return Icons.language;
-      default:
-        return Icons.storefront;
-    }
-  }
-
   Color _corStatus(String status) {
     switch (status) {
       case StatusPedido.aguardandoPagamento:
@@ -534,7 +509,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                   child: Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Icon(_iconeCanal(venda.canalVenda), color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                      Icon(iconeCanalVenda(venda.canalVenda), color: Theme.of(context).colorScheme.onSurfaceVariant),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Column(
@@ -552,7 +527,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                               ],
                                             ),
                                             Text(
-                                              '#${venda.numeroSequencial ?? '-'} • ${_rotuloCanal(venda.canalVenda)} • $tempoDecorrido',
+                                              '#${venda.numeroSequencial ?? '-'} • ${rotuloCanalVenda(venda.canalVenda)} • $tempoDecorrido',
                                               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                                             ),
                                             Text(

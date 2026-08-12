@@ -11,6 +11,7 @@ import '../models/despesa.dart';
 import '../models/venda.dart';
 import '../providers/despesa_provider.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../utils/canal_venda_utils.dart';
 
 /// Configurações > Exportar Relatórios: exporta vendas ou despesas de um
 /// período pra planilha (.xlsx), pra abrir no Excel/Google Sheets.
@@ -115,7 +116,7 @@ class _ExportarRelatoriosScreenState extends State<ExportarRelatoriosScreen> {
           TextCellValue(venda.cliente.nome),
           TextCellValue(StatusPedido.rotulo(venda.status)),
           TextCellValue(venda.metodoPagamento),
-          TextCellValue(venda.canalVenda),
+          TextCellValue(rotuloCanalVenda(venda.canalVenda)),
           DoubleCellValue(venda.subtotal),
           DoubleCellValue(venda.desconto),
           DoubleCellValue(venda.valorEntrega),
