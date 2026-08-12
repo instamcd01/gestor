@@ -46,6 +46,7 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
 
   List<Pet> _pets = [];
   bool _aceitaMarketing = false;
+  bool _aceitaLembreteWhatsapp = false;
   bool _salvando = false;
   bool _autopreenchendoEndereco = false;
   double? _latitude;
@@ -293,6 +294,7 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
         aniversario: ClienteValidators.parseData(_aniversarioController.text),
         canalOrigem: canalOrigem,
         aceitaMarketing: _aceitaMarketing,
+        aceitaLembreteWhatsapp: _aceitaLembreteWhatsapp,
         rangeDistancia: rangeDistancia,
         estimativaEntrega: estimativaEntrega,
         latitude: _latitude,
@@ -495,6 +497,18 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
                     title: Text('Aceita receber promoções?'),
                     value: _aceitaMarketing,
                     onChanged: (v) => setState(() => _aceitaMarketing = v),
+                  ),
+                  // Opt-in específico pro lembrete automático de recompra
+                  // (mesmo campo que o checkbox do login no site grava) —
+                  // pra cliente que só compra por WhatsApp/loja física
+                  // conseguir ser avisado também, sem depender dele logar
+                  // no site pra ter essa chance.
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Aceita lembrete de recompra por WhatsApp?'),
+                    subtitle: const Text('Avisa quando um produto que ele costuma comprar provavelmente está acabando.'),
+                    value: _aceitaLembreteWhatsapp,
+                    onChanged: (v) => setState(() => _aceitaLembreteWhatsapp = v),
                   ),
                 ],
               ),

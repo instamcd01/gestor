@@ -254,6 +254,10 @@ class Cliente {
       // explicitamente setado marcava o cliente como "aceita" sem ele
       // nunca ter sido perguntado de verdade.
       'aceita_marketing': aceitaMarketing ?? false,
+      // Mesmo campo que o checkbox de login do site grava — nunca
+      // default true aqui (ver comentário acima), o atendente precisa
+      // marcar de propósito depois de perguntar ao cliente de verdade.
+      'aceita_lembrete_whatsapp': aceitaLembreteWhatsapp,
       'segmento': categoriaCliente,
       'data_nascimento': aniversario?.toIso8601String().split('T').first,
       'metadata': {

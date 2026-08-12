@@ -48,6 +48,7 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
 
   List<Pet> _pets = [];
   bool _aceitaMarketing = false;
+  bool _aceitaLembreteWhatsapp = false;
   bool _salvando = false;
   bool _autopreenchendoEndereco = false;
 
@@ -79,6 +80,7 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     _saldoController = TextEditingController(text: ClienteValidators.formatarMoeda(cliente.saldo));
     _aniversarioController = TextEditingController(text: ClienteValidators.formatarData(cliente.aniversario));
     _aceitaMarketing = cliente.aceitaMarketing ?? false;
+    _aceitaLembreteWhatsapp = cliente.aceitaLembreteWhatsapp;
     _pets = cliente.pets.toList();
     _rangeDistancia = cliente.rangeDistancia;
     _estimativaEntrega = cliente.estimativaEntrega;
@@ -258,6 +260,7 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
       canalOrigem: canalOrigem,
       aniversario: ClienteValidators.parseData(_aniversarioController.text),
       aceitaMarketing: _aceitaMarketing,
+      aceitaLembreteWhatsapp: _aceitaLembreteWhatsapp,
       dataCadastro: widget.clienteSelecionado.dataCadastro,
       quantidadeCompras: widget.clienteSelecionado.quantidadeCompras,
       rangeDistancia: _rangeDistancia,
@@ -525,6 +528,13 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
                   title: Text('Aceita receber promoções?'),
                   value: _aceitaMarketing,
                   onChanged: (v) => setState(() => _aceitaMarketing = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Aceita lembrete de recompra por WhatsApp?'),
+                  subtitle: const Text('Avisa quando um produto que ele costuma comprar provavelmente está acabando.'),
+                  value: _aceitaLembreteWhatsapp,
+                  onChanged: (v) => setState(() => _aceitaLembreteWhatsapp = v),
                 ),
               ],
             ),
