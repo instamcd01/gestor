@@ -159,6 +159,11 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
             _buildClienteInfo('Compras Realizadas', cliente.quantidadeCompras?.toString() ?? '0'),
             _buildClienteInfo('Total Gasto', 'R\$ ${(cliente.totalGasto ?? 0).toStringAsFixed(2)}'),
             _buildClienteInfo('Ticket Médio', 'R\$ ${(cliente.ticketMedio ?? 0).toStringAsFixed(2)}'),
+            if (cliente.intervaloMedioRecompraDias != null)
+              _buildClienteInfo(
+                'Intervalo Médio Entre Pedidos',
+                '${cliente.intervaloMedioRecompraDias!.toStringAsFixed(0)} dias',
+              ),
           ],
         ),
         const SizedBox(height: 16),

@@ -30,6 +30,8 @@ class Cliente {
   final int? numeroCompras;
   final DateTime? ultimaCompra;
   final double? ticketMedio;
+  /// Média de dias entre pedidos consecutivos (qualquer canal/status, inclusive cancelado) — calculada automaticamente pelo banco (`atualizar_frequencia_cliente`). Dado bruto, não usado pro lembrete de recompra (esse usa ciclo por produto, ver `Produto.cicloRecompraDias`) — só exibido aqui como referência.
+  final double? intervaloMedioRecompraDias;
 
   // Relacionamento
   final DateTime? proximaVisita;
@@ -85,6 +87,7 @@ class Cliente {
     this.numeroCompras,
     this.ultimaCompra,
     this.ticketMedio,
+    this.intervaloMedioRecompraDias,
     this.proximaVisita,
     this.motivoUltimaVisita,
     this.aceitaMarketing,
@@ -202,6 +205,7 @@ class Cliente {
       numeroCompras: (row['total_pedidos'] as num?)?.toInt(),
       ultimaCompra: parseData(row['ultima_compra']),
       ticketMedio: (row['ticket_medio'] as num?)?.toDouble() ?? 0.0,
+      intervaloMedioRecompraDias: (row['intervalo_medio_recompra_dias'] as num?)?.toDouble(),
       proximaVisita: parseData(metadata['proximaVisita']),
       motivoUltimaVisita: metadata['motivoUltimaVisita']?.toString(),
       aceitaMarketing: row['aceita_marketing'] as bool?,
