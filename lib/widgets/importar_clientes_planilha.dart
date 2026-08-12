@@ -173,7 +173,7 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
             aniversario: ClienteValidators.parseData(mapa.celula(row, 'aniversario')) ?? existente?.aniversario,
             canalOrigem: mapa.celula(row, 'canal_origem') ?? existente?.canalOrigem,
             aceitaMarketing: mapa.celula(row, 'aceita_marketing') != null
-                ? parseBooleanoPlanilha(mapa.celula(row, 'aceita_marketing'), padrao: true)
+                ? parseBooleanoPlanilha(mapa.celula(row, 'aceita_marketing'), padrao: false)
                 : existente?.aceitaMarketing,
             categoriaCliente: existente?.categoriaCliente,
             latitude: existente?.latitude,
@@ -341,7 +341,7 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
           TextCellValue(ClienteValidators.formatarData(c.aniversario)),
           TextCellValue(c.canalOrigem ?? ''),
           TextCellValue(c.observacao),
-          TextCellValue((c.aceitaMarketing ?? true) ? 'Sim' : 'Não'),
+          TextCellValue((c.aceitaMarketing ?? false) ? 'Sim' : 'Não'),
           DoubleCellValue(c.saldo),
         ]);
       }

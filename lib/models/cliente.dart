@@ -37,6 +37,8 @@ class Cliente {
 
   // Marketing
   final bool? aceitaMarketing;
+  /// Opt-in específico pro lembrete automático de recompra via WhatsApp (site) — separado de `aceitaMarketing`, ver clientes.aceita_lembrete_whatsapp.
+  final bool aceitaLembreteWhatsapp;
   final DateTime? ultimoContato;
   final String? canalPreferido;
 
@@ -86,6 +88,7 @@ class Cliente {
     this.proximaVisita,
     this.motivoUltimaVisita,
     this.aceitaMarketing,
+    this.aceitaLembreteWhatsapp = false,
     this.ultimoContato,
     this.canalPreferido,
     this.categoriaCliente,
@@ -202,6 +205,7 @@ class Cliente {
       proximaVisita: parseData(metadata['proximaVisita']),
       motivoUltimaVisita: metadata['motivoUltimaVisita']?.toString(),
       aceitaMarketing: row['aceita_marketing'] as bool?,
+      aceitaLembreteWhatsapp: row['aceita_lembrete_whatsapp'] as bool? ?? false,
       ultimoContato: parseData(metadata['ultimoContato']),
       canalPreferido: metadata['canalPreferido']?.toString(),
       categoriaCliente: row['segmento']?.toString(),
@@ -241,7 +245,11 @@ class Cliente {
       'longitude': longitude,
       'saldo': saldo,
       'canal_origem': canalOrigem,
-      'aceita_marketing': aceitaMarketing ?? true,
+      // Bug real corrigido: opt-in nunca deve defaultar pra true quando
+      // não informado — antes disso, qualquer save sem esse campo
+      // explicitamente setado marcava o cliente como "aceita" sem ele
+      // nunca ter sido perguntado de verdade.
+      'aceita_marketing': aceitaMarketing ?? false,
       'segmento': categoriaCliente,
       'data_nascimento': aniversario?.toIso8601String().split('T').first,
       'metadata': {
