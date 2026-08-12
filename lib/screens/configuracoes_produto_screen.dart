@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'gerenciar_categorias_screen.dart';
 import 'gerenciar_termos_variacao_screen.dart';
 import 'fabricante_screen.dart';
+import 'ciclo_recompra_padrao_screen.dart';
 import '../widgets/menu_secao.dart';
 
 /// Hub de configurações relacionadas a produto — hoje só Categorias, mas é
@@ -36,6 +37,11 @@ class ConfiguracoesProdutoScreen extends StatelessWidget {
                 'Termos de variante',
                 Icons.style_outlined,
                 const GerenciarTermosVariacaoScreen(),
+              ),
+              MenuItem(
+                'Ciclo de Recompra Padrão',
+                Icons.replay_circle_filled_outlined,
+                const CicloRecompraPadraoScreen(),
               ),
             ],
           ),

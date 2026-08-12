@@ -54,6 +54,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   final _custoController = TextEditingController();
   final _estoqueController = TextEditingController();
   final _estoqueMinimoController = TextEditingController();
+  final _cicloRecompraController = TextEditingController();
   final _markupController = TextEditingController();
   final _lucroController = TextEditingController();
   final _validadeController = TextEditingController();
@@ -243,6 +244,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     _custoController.dispose();
     _estoqueController.dispose();
     _estoqueMinimoController.dispose();
+    _cicloRecompraController.dispose();
     _markupController.dispose();
     _lucroController.dispose();
     _validadeController.dispose();
@@ -287,6 +289,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       imagemUrl: '',
       estoqueAtual: int.tryParse(_estoqueController.text) ?? 0,
       estoqueMinimo: int.tryParse(_estoqueMinimoController.text) ?? 0,
+      cicloRecompraDias: int.tryParse(_cicloRecompraController.text),
       destacar: _destacarProduto,
       exibirNoCatalogo: _exibirNoCatalogo,
       markup: _markupController.text.isNotEmpty ? '${_markupController.text}%' : null,
@@ -627,6 +630,23 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                     inputFormatters: [InteiroInputFormatter()],
                     validator: (value) =>
                         ProdutoValidators.estoqueInteiro(value, campo: 'o estoque mínimo'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16.0),
+
+              FormSection(
+                titulo: 'Recompra Automática',
+                children: [
+                  TextFormField(
+                    controller: _cicloRecompraController,
+                    decoration: const InputDecoration(
+                      labelText: 'Ciclo de recompra (dias)',
+                      helperText: 'Quantos dias esse produto costuma durar pro cliente. '
+                          'Vazio = usa o padrão da loja (Configurações do Produto).',
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [InteiroInputFormatter()],
                   ),
                 ],
               ),

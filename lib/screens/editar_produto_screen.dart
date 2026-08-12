@@ -45,6 +45,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _custoController;
   late TextEditingController _estoqueAtualController;
   late TextEditingController _estoqueMinimoController;
+  late TextEditingController _cicloRecompraController;
   late TextEditingController _markupController;
   late TextEditingController _lucroController;
   late TextEditingController _validadeController;
@@ -120,6 +121,8 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
         TextEditingController(text: widget.produto.estoqueAtual.toString());
     _estoqueMinimoController =
         TextEditingController(text: widget.produto.estoqueMinimo.toString());
+    _cicloRecompraController =
+        TextEditingController(text: widget.produto.cicloRecompraDias?.toString() ?? '');
     // markup vem formatado como "35.0%" do backend — o campo aqui é
     // editável e numérico, então guardamos só o número (com vírgula).
     _markupController = TextEditingController(
@@ -191,6 +194,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _custoController.dispose();
     _estoqueAtualController.dispose();
     _estoqueMinimoController.dispose();
+    _cicloRecompraController.dispose();
     _markupController.dispose();
     _lucroController.dispose();
     _validadeController.dispose();
@@ -373,6 +377,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
           widget.produto.estoqueAtual,
       estoqueMinimo: int.tryParse(_estoqueMinimoController.text) ??
           widget.produto.estoqueMinimo,
+      cicloRecompraDias: int.tryParse(_cicloRecompraController.text),
       imagemUrl: _imagemUrlAtual ?? widget.produto.imagemUrl,
       imagemUrlSecundaria: _imagemUrlVersoAtual,
       destacar: _destacarProduto,
@@ -761,6 +766,23 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                     inputFormatters: [InteiroInputFormatter()],
                     validator: (value) =>
                         ProdutoValidators.estoqueInteiro(value, campo: 'o estoque mínimo'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16.0),
+
+              FormSection(
+                titulo: 'Recompra Automática',
+                children: [
+                  TextFormField(
+                    controller: _cicloRecompraController,
+                    decoration: const InputDecoration(
+                      labelText: 'Ciclo de recompra (dias)',
+                      helperText: 'Quantos dias esse produto costuma durar pro cliente. '
+                          'Vazio = usa o padrão da loja (Configurações do Produto).',
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [InteiroInputFormatter()],
                   ),
                 ],
               ),

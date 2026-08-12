@@ -70,6 +70,13 @@ class Produto {
   final String? tipoVariacao;
   final String? varianteLabel;
 
+  /// Quantos dias esse produto costuma durar pro cliente — usado pra
+  /// prever recompra automática (lembrete via WhatsApp). `null` = usa o
+  /// padrão da loja (`empresas.ciclo_recompra_padrao_dias`), se houver;
+  /// se também não houver padrão, o produto simplesmente fica de fora da
+  /// detecção (nunca assume um ciclo que ninguém configurou).
+  int? cicloRecompraDias;
+
   Produto({
     this.id,
     required this.nome,
@@ -113,6 +120,7 @@ class Produto {
     this.produtoPaiId,
     this.tipoVariacao,
     this.varianteLabel,
+    this.cicloRecompraDias,
   });
 
   /// Monta o Produto a partir de uma linha do Supabase.
@@ -173,6 +181,7 @@ class Produto {
       produtoPaiId: row['produto_pai_id'] as String?,
       tipoVariacao: row['tipo_variacao']?.toString(),
       varianteLabel: row['variante_label']?.toString(),
+      cicloRecompraDias: (row['ciclo_recompra_dias'] as num?)?.toInt(),
       // Derivados (não são colunas próprias no banco, calculados aqui pra
       // manter compatibilidade com as telas que já exibem markup/lucro).
       markup: margem != null ? '${margem.toStringAsFixed(1)}%' : null,
@@ -215,6 +224,7 @@ class Produto {
       'composicao': composicao,
       'apresentacao': apresentacao,
       'nome_manual_override': nomeManualOverride,
+      'ciclo_recompra_dias': cicloRecompraDias,
     };
   }
 }
