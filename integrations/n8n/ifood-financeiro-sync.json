@@ -187,7 +187,13 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
@@ -471,6 +477,19 @@
         },
         "options": {}
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = typeof $json.data === 'string' ? $json.data : String($json.data || '');\nlet parsed;\ntry {\n  parsed = raw.trim() ? JSON.parse(raw) : { sales: [], total: 0 };\n} catch (e) {\n  // iFood retorna 204 (corpo vazio) quando nao ha vendas no periodo -- o node\n  // HTTP em modo texto nunca lanca erro por isso, mas o parse falharia sem\n  // esse fallback. Tambem cobre qualquer outro corpo nao-JSON inesperado.\n  parsed = { sales: [], total: 0, parse_error: raw.slice(0, 300) };\n}\nreturn [{ json: parsed }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "s10b",
+      "name": "Parsear resposta vendas iFood",
+      "position": [
+        1100,
+        140
+      ]
     }
   ],
   "connections": {
@@ -583,12 +602,7 @@
       "main": [
         [
           {
-            "node": "Log execucao",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Processar vendas",
+            "node": "Parsear resposta vendas iFood",
             "type": "main",
             "index": 0
           }
@@ -674,27 +688,27 @@
         ],
         []
       ]
+    },
+    "Parsear resposta vendas iFood": {
+      "main": [
+        [
+          {
+            "node": "Log execucao",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Processar vendas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
     "executionOrder": "v1",
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
-  },
-  "staticData": {
-    "node:A cada 6h": {
-      "recurrenceRules": [
-        18
-      ]
-    },
-    "global": {
-      "ifoodTokens": {
-        "3bce0e24-2868-49f3-a9dd-eed921ffc8e4": {
-          "accessToken": "eyJraWQiOiJlZGI4NWY2Mi00ZWY5LTExZTktODY0Ny1kNjYzYmQ4NzNkOTMiLCJ0eXAiOiJKV1QiLCJhbGciOiJSUzUxMiJ9.eyJzdWIiOiIwZmQ4MDY1MS0wM2U2LTQ0NDItYWU3Ny0xNTdmZjg0NTZjODgiLCJvd25lcl9uYW1lIjoibHVjYXMtbWFjaGFkby12aWVpcmEiLCJpc3MiOiJpRm9vZCIsImNsaWVudF9pZCI6IjBmZDgwNjUxLTAzZTYtNDQ0Mi1hZTc3LTE1N2ZmODQ1NmM4OCIsImF1ZCI6WyJpdGVtIiwiY2F0YWxvZyIsImZpbmFuY2lhbCIsIm1lcmNoYW50IiwibG9naXN0aWNzIiwicGlja2luZyIsIm9hdXRoLXNlcnZlciIsInNoaXBwaW5nIiwicmV2aWV3IiwiZ3JvY2VyaWVzIiwiZXZlbnRzIiwib3JkZXIiLCJwcm9tb3Rpb24iXSwiYXBwX25hbWUiOiJkZWxpdmVyeS1wZXQtcmoiLCJzY29wZSI6WyJpdGVtIiwic2hpcHBpbmciLCJjYXRhbG9nIiwicmV2aWV3IiwibWVyY2hhbnQiLCJsb2dpc3RpY3MiLCJncm9jZXJpZXMiLCJwaWNraW5nIiwiZXZlbnRzIiwib3JkZXIiLCJjb25jaWxpYXRvciIsInByb21vdGlvbiJdLCJ0dmVyIjoidjIiLCJtZXJjaGFudF9zY29wZSI6WyIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6Y2F0YWxvZyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTptZXJjaGFudCIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpyZXZpZXciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6aXRlbSIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpvcmRlciIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpjb25jaWxpYXRvciIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpldmVudHMiLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6bG9naXN0aWNzIiwiMjlkYzJhZjgtZGI3Yi00MTBlLWFmZmUtZTRlZDhmMGM2NTQ5Omdyb2NlcmllcyIsIjI5ZGMyYWY4LWRiN2ItNDEwZS1hZmZlLWU0ZWQ4ZjBjNjU0OTpwcm9tb3Rpb24iLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6c2hpcHBpbmciLCIyOWRjMmFmOC1kYjdiLTQxMGUtYWZmZS1lNGVkOGYwYzY1NDk6cGlja2luZyJdLCJleHAiOjE3ODUzODQwNDMsImlhdCI6MTc4NTM2MjQ0MywianRpIjoiMGZkODA2NTEtMDNlNi00NDQyLWFlNzctMTU3ZmY4NDU2Yzg4IiwibWVyY2hhbnRfc2NvcGVkIjp0cnVlfQ.O0gpQdL-BGSQ1xcrJPCeT7a9oZ5IGGU5L3wCycQcmYvwgTvDdr2hMIb3JfUfPPHv6Cx6bReagf1xctmc67LHDJbAMzYxal3coKmqtVfgbzBqoxIIzi2w7sUabUjJ5H3MQyItySF4d5krosuenGm9tpqSht-J-JQzeP4PDh1ad6s",
-          "expiresAt": 1785384042889
-        }
-      }
-    }
-  },
-  "pinData": {}
+  }
 }
