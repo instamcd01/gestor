@@ -130,6 +130,32 @@ class ProdutoRepository {
     await supabase.from('produtos').update({'revisar_preco': false}).eq('id', produtoId);
   }
 
+  /// Mesma coisa que [marcarPrecoRevisado], mas pra vários produtos de uma
+  /// vez (tela de Análise de Produtos em massa) — todos recebem o mesmo
+  /// valor, então um único UPDATE com `.inFilter` já resolve.
+  Future<void> marcarPrecoRevisadoEmMassa(List<String> produtoIds) async {
+    if (produtoIds.isEmpty) return;
+    await supabase.from('produtos').update({'revisar_preco': false}).inFilter('id', produtoIds);
+  }
+
+  /// Recalcula o preço de venda de um produto a partir do custo atual dele
+  /// (markup aplicado no cliente, ver `CalculadoraPrecoMarkup`) e já marca
+  /// como revisado — usado na revisão de preço em massa, um UPDATE estreito
+  /// (só `preco`/`revisar_preco`) pra não arriscar sobrescrever outros
+  /// campos com um objeto `Produto` local desatualizado.
+  Future<void> aplicarPrecoRevisado(String produtoId, double novoPreco) async {
+    await supabase
+        .from('produtos')
+        .update({'preco': novoPreco, 'revisar_preco': false}).eq('id', produtoId);
+  }
+
+  /// Define (ou limpa, com `dias == null`) o ciclo de recompra de vários
+  /// produtos de uma vez — mesmo valor pra todos, então um único UPDATE.
+  Future<void> atualizarCicloRecompraEmMassa(List<String> produtoIds, int? dias) async {
+    if (produtoIds.isEmpty) return;
+    await supabase.from('produtos').update({'ciclo_recompra_dias': dias}).inFilter('id', produtoIds);
+  }
+
   Future<List<SugestaoVariante>> listarSugestoesVariantePendentes() async {
     final data = await supabase
         .from('sugestoes_variante')

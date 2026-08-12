@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
 import '../repositories/produto_repository.dart';
+import '../utils/variante_label_utils.dart';
 
 class ProdutoProvider with ChangeNotifier {
   final ProdutoRepository _repository = ProdutoRepository();
@@ -151,6 +152,56 @@ class ProdutoProvider with ChangeNotifier {
     }
   }
 
+  /// Dispensa a revisão de vários produtos de uma vez, sem mudar o preço —
+  /// usado na aba "Revisar preço" da Análise de Produtos em massa quando o
+  /// usuário decide manter o preço atual mesmo assim.
+  Future<void> marcarPrecoRevisadoEmMassa(List<String> ids) async {
+    if (ids.isEmpty) return;
+    await _repository.marcarPrecoRevisadoEmMassa(ids);
+    for (final id in ids) {
+      final index = _produtos.indexWhere((p) => p.id == id);
+      if (index != -1) _produtos[index].revisarPreco = false;
+    }
+    notifyListeners();
+  }
+
+  /// Aplica um novo preço (calculado a partir do markup) em vários produtos
+  /// de uma vez — cada um com seu próprio preço, calculado em cima do
+  /// próprio custo (ver `CalculadoraPrecoMarkup`), por isso é um mapa em vez
+  /// de um valor único. Roda em paralelo pra não esperar produto por
+  /// produto; se algum falhar, o restante já aplicado permanece salvo (o
+  /// chamador recebe as exceptions agregadas no relatório).
+  Future<List<String>> aplicarPrecoRevisadoEmMassa(Map<String, double> precoPorId) async {
+    final falhas = <String>[];
+    await Future.wait(precoPorId.entries.map((entrada) async {
+      try {
+        await _repository.aplicarPrecoRevisado(entrada.key, entrada.value);
+        final index = _produtos.indexWhere((p) => p.id == entrada.key);
+        if (index != -1) {
+          _produtos[index].preco = entrada.value;
+          _produtos[index].revisarPreco = false;
+        }
+      } catch (e) {
+        debugPrint('Erro ao aplicar preço revisado em massa ($entrada.key): $e');
+        falhas.add(entrada.key);
+      }
+    }));
+    notifyListeners();
+    return falhas;
+  }
+
+  /// Define (ou limpa) o ciclo de recompra de vários produtos de uma vez —
+  /// usado na aba "Ciclo de recompra" da Análise de Produtos em massa.
+  Future<void> atualizarCicloRecompraEmMassa(List<String> ids, int? dias) async {
+    if (ids.isEmpty) return;
+    await _repository.atualizarCicloRecompraEmMassa(ids, dias);
+    for (final id in ids) {
+      final index = _produtos.indexWhere((p) => p.id == id);
+      if (index != -1) _produtos[index].cicloRecompraDias = dias;
+    }
+    notifyListeners();
+  }
+
   Future<void> aprovarSugestaoVariante({
     required SugestaoVariante sugestao,
     required String tipoVariacao,
@@ -173,6 +224,53 @@ class ProdutoProvider with ChangeNotifier {
     await _repository.rejeitarSugestaoVariante(sugestaoId);
     _sugestoesVariante.removeWhere((s) => s.id == sugestaoId);
     notifyListeners();
+  }
+
+  /// Aprova em massa, mas só sugestões de origem `estruturado` (campos
+  /// batendo exatamente — alta confiança). As de origem `heuristico`
+  /// (semelhança de nome) continuam exigindo revisão individual pelo
+  /// diálogo, porque não há como confirmar o rótulo de cada variante sem
+  /// olhar produto por produto — aprovar errado corrompe o agrupamento da
+  /// família (nome estruturado, filtros do site). Usa o mesmo rótulo padrão
+  /// que o diálogo individual usaria (ver `labelPadraoVariante`), já que não
+  /// há correção manual possível num fluxo em massa. Sequencial (não
+  /// paralelo) porque a RPC resolve a família no servidor com base no que já
+  /// foi aprovado antes — paralelizar arriscaria duas aprovações do mesmo
+  /// produto pisarem uma na outra.
+  Future<List<String>> aprovarSugestoesEstruturadasEmMassa(List<SugestaoVariante> sugestoes) async {
+    final falhas = <String>[];
+    for (final sugestao in sugestoes) {
+      if (sugestao.origem != 'estruturado') continue;
+      final candidato = getProdutoPorId(sugestao.produtoCandidatoId);
+      if (candidato == null) {
+        falhas.add(sugestao.id);
+        continue;
+      }
+      try {
+        await aprovarSugestaoVariante(
+          sugestao: sugestao,
+          tipoVariacao: sugestao.tipoVariacao,
+          varianteLabelProduto: sugestao.varianteLabelSugerido,
+          varianteLabelCandidato: labelPadraoVariante(candidato, sugestao.tipoVariacao),
+        );
+      } catch (e) {
+        debugPrint('Erro ao aprovar sugestão em massa (${sugestao.id}): $e');
+        falhas.add(sugestao.id);
+      }
+    }
+    return falhas;
+  }
+
+  /// Rejeita várias sugestões de uma vez (qualquer origem) — sempre seguro
+  /// e reversível (ver `reconsiderarSugestaoVariante`).
+  Future<void> rejeitarSugestoesEmMassa(List<String> sugestaoIds) async {
+    for (final id in sugestaoIds) {
+      try {
+        await rejeitarSugestaoVariante(id);
+      } catch (e) {
+        debugPrint('Erro ao rejeitar sugestão em massa ($id): $e');
+      }
+    }
   }
 
   List<SugestaoVariante> _sugestoesRejeitadas = [];

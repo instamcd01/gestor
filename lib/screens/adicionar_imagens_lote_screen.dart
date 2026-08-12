@@ -30,7 +30,14 @@ class _ItemImagemLote {
 /// arquivo (fabricante/código de barras) do upload individual, em
 /// `uploadImagemProduto`.
 class AdicionarImagensLoteScreen extends StatefulWidget {
-  const AdicionarImagensLoteScreen({super.key});
+  const AdicionarImagensLoteScreen({super.key, this.produtosPendentes});
+
+  /// Fila de produtos sem imagem, na ordem em que devem receber as próximas
+  /// fotos escolhidas — vem da aba "Sem imagem" da Análise de Produtos em
+  /// massa, que já mostra a lista de produtos antes de pedir as fotos
+  /// (inverte o fluxo padrão desta tela, que normalmente começa pelas
+  /// fotos e só depois vincula produto por produto).
+  final List<Produto>? produtosPendentes;
 
   @override
   State<AdicionarImagensLoteScreen> createState() => _AdicionarImagensLoteScreenState();
@@ -39,8 +46,15 @@ class AdicionarImagensLoteScreen extends StatefulWidget {
 class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen> {
   final _repo = ProdutoMidiaRepository();
   final List<_ItemImagemLote> _itens = [];
+  late List<Produto> _filaProdutos;
   bool _enviando = false;
   String? _empresaId;
+
+  @override
+  void initState() {
+    super.initState();
+    _filaProdutos = List.of(widget.produtosPendentes ?? const []);
+  }
 
   Future<void> _adicionarImagens() async {
     List<XFile> arquivos;
@@ -57,7 +71,13 @@ class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen>
 
     final novos = <_ItemImagemLote>[];
     for (final arquivo in arquivos) {
-      novos.add(_ItemImagemLote(bytes: await arquivo.readAsBytes()));
+      final item = _ItemImagemLote(bytes: await arquivo.readAsBytes());
+      // Vincula automaticamente na ordem da fila (quando veio de "Sem
+      // imagem") — o usuário ainda pode trocar tocando no item depois.
+      if (_filaProdutos.isNotEmpty) {
+        item.produto = _filaProdutos.removeAt(0);
+      }
+      novos.add(item);
     }
     if (!mounted) return;
     setState(() => _itens.addAll(novos));
@@ -173,7 +193,44 @@ class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen>
           ),
         ],
       ),
-      body: _itens.isEmpty
+      body: Column(
+        children: [
+          if (_filaProdutos.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Theme.of(context).colorScheme.primaryContainer,
+              child: Text(
+                'Faltam ${_filaProdutos.length} produto(s) sem foto vinculada — escolha mais imagens que elas serão vinculadas na ordem.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          Expanded(child: _buildLista()),
+        ],
+      ),
+      bottomNavigationBar: _itens.isEmpty
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: FilledButton.icon(
+                  onPressed: (_enviando || prontosParaEnviar == 0) ? null : _enviarTodos,
+                  icon: _enviando
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cloud_upload_outlined),
+                  label: Text(_enviando ? 'Enviando...' : 'Enviar $prontosParaEnviar imagem(ns)'),
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildLista() {
+    return _itens.isEmpty
           ? Center(
               child: TextButton.icon(
                 onPressed: _adicionarImagens,
@@ -194,26 +251,7 @@ class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen>
                   onRemover: _enviando ? null : () => _removerItem(item),
                 );
               },
-            ),
-      bottomNavigationBar: _itens.isEmpty
-          ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: FilledButton.icon(
-                  onPressed: (_enviando || prontosParaEnviar == 0) ? null : _enviarTodos,
-                  icon: _enviando
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.cloud_upload_outlined),
-                  label: Text(_enviando ? 'Enviando...' : 'Enviar $prontosParaEnviar imagem(ns)'),
-                ),
-              ),
-            ),
-    );
+            );
   }
 }
 
