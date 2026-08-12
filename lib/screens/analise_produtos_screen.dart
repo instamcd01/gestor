@@ -29,7 +29,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -56,6 +56,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
             Tab(text: 'Variantes ($comSugestao)'),
             Tab(text: 'Revisar preço ($revisarPreco)'),
             const Tab(text: 'Ciclo de recompra'),
+            const Tab(text: 'Catálogo'),
           ],
         ),
       ),
@@ -66,6 +67,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
           _AbaVariantes(),
           _AbaRevisarPreco(),
           _AbaCicloRecompra(),
+          _AbaCatalogo(),
         ],
       ),
     );
@@ -635,6 +637,311 @@ class _AbaCicloRecompraState extends State<_AbaCicloRecompra> {
                   OutlinedButton(
                     onPressed: _processando ? null : () => _limpar(produtoProvider),
                     child: const Text('Limpar ciclo (usar padrão da loja)'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// ---------------------------------------------------------------------
+/// Aba 5: Catálogo (categoria, fabricante, visibilidade, destaque, estoque
+/// mínimo em massa) — reúne outras configurações de produto que fazem
+/// sentido aplicar em lote, sugeridas depois que as 4 abas acima já
+/// existiam. Diferente das outras, opera sobre o catálogo inteiro (não um
+/// subconjunto "pendente de algo"), por isso tem busca em vez de já vir
+/// filtrada.
+/// ---------------------------------------------------------------------
+class _AbaCatalogo extends StatefulWidget {
+  const _AbaCatalogo();
+
+  @override
+  State<_AbaCatalogo> createState() => _AbaCatalogoState();
+}
+
+class _AbaCatalogoState extends State<_AbaCatalogo> {
+  final Set<String> _selecionados = {};
+  String _busca = '';
+  bool _processando = false;
+  List<String>? _categorias;
+  List<String>? _fabricantes;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = context.read<ProdutoProvider>();
+    provider.listarCategoriasDisponiveis().then((v) {
+      if (mounted) setState(() => _categorias = v);
+    });
+    provider.listarFabricantesDisponiveis().then((v) {
+      if (mounted) setState(() => _fabricantes = v);
+    });
+  }
+
+  Future<void> _aplicarBool(Future<void> Function(List<String>, bool) acao, bool valor) async {
+    setState(() => _processando = true);
+    await acao(_selecionados.toList(), valor);
+    if (!mounted) return;
+    setState(() {
+      _processando = false;
+      _selecionados.clear();
+    });
+  }
+
+  Future<void> _dialogCategoria(ProdutoProvider provider) async {
+    String? categoriaEscolhida;
+    final subcategoriaController = TextEditingController();
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          title: const Text('Definir categoria'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropdownButtonFormField<String>(
+                value: categoriaEscolhida,
+                decoration: const InputDecoration(labelText: 'Categoria'),
+                items: (_categorias ?? []).map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                onChanged: (v) => setStateDialog(() => categoriaEscolhida = v),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: subcategoriaController,
+                decoration: const InputDecoration(labelText: 'Subcategoria (opcional)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: categoriaEscolhida == null ? null : () => Navigator.pop(ctx, true),
+              child: const Text('Aplicar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmou != true || categoriaEscolhida == null) return;
+    setState(() => _processando = true);
+    final subcategoria = subcategoriaController.text.trim();
+    await provider.atualizarCategoriaEmMassa(
+      _selecionados.toList(),
+      categoriaEscolhida!,
+      subcategoria.isEmpty ? null : subcategoria,
+    );
+    if (!mounted) return;
+    setState(() {
+      _processando = false;
+      _selecionados.clear();
+    });
+  }
+
+  Future<void> _dialogFabricante(ProdutoProvider provider) async {
+    String? fabricanteEscolhido;
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          title: const Text('Definir fabricante'),
+          content: DropdownButtonFormField<String>(
+            value: fabricanteEscolhido,
+            decoration: const InputDecoration(labelText: 'Fabricante'),
+            items: (_fabricantes ?? []).map((f) => DropdownMenuItem(value: f, child: Text(f))).toList(),
+            onChanged: (v) => setStateDialog(() => fabricanteEscolhido = v),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: fabricanteEscolhido == null ? null : () => Navigator.pop(ctx, true),
+              child: const Text('Aplicar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmou != true || fabricanteEscolhido == null) return;
+    setState(() => _processando = true);
+    await provider.atualizarFabricanteEmMassa(_selecionados.toList(), fabricanteEscolhido!);
+    if (!mounted) return;
+    setState(() {
+      _processando = false;
+      _selecionados.clear();
+    });
+  }
+
+  Future<void> _dialogEstoqueMinimo(ProdutoProvider provider) async {
+    final controller = TextEditingController();
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Estoque mínimo'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'Quantidade mínima'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Aplicar')),
+        ],
+      ),
+    );
+    if (confirmou != true) return;
+    final minimo = int.tryParse(controller.text.trim());
+    if (minimo == null || minimo < 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Informe um número válido.')));
+      }
+      return;
+    }
+    setState(() => _processando = true);
+    await provider.atualizarEstoqueMinimoEmMassa(_selecionados.toList(), minimo);
+    if (!mounted) return;
+    setState(() {
+      _processando = false;
+      _selecionados.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final produtoProvider = context.watch<ProdutoProvider>();
+    final lista = produtoProvider.produtos.where((p) => contemTodasPalavras(p.nome, _busca)).toList();
+    final idsValidos = lista.map((p) => p.id).whereType<String>().toSet();
+    _selecionados.removeWhere((id) => !idsValidos.contains(id));
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: TextField(
+            decoration: const InputDecoration(hintText: 'Buscar por nome', prefixIcon: Icon(Icons.search)),
+            onChanged: (v) => setState(() => _busca = v),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: () => setState(() => _selecionados.addAll(idsValidos)),
+                child: const Text('Selecionar todos'),
+              ),
+              if (_selecionados.isNotEmpty)
+                TextButton(onPressed: () => setState(_selecionados.clear), child: const Text('Limpar seleção')),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.only(bottom: 8),
+            itemCount: lista.length,
+            itemBuilder: (context, index) {
+              final produto = lista[index];
+              final id = produto.id!;
+              final detalhes = [
+                produto.categoria.isNotEmpty ? produto.categoria : 'Sem categoria',
+                if (produto.fabricante != null && produto.fabricante!.isNotEmpty) produto.fabricante!,
+                if (!produto.exibirNoCatalogo) 'oculto do catálogo',
+                if (!produto.ativo) 'inativo',
+                if (produto.destacar) 'destaque',
+              ].join(' • ');
+              return CheckboxListTile(
+                value: _selecionados.contains(id),
+                onChanged: (v) => setState(() {
+                  if (v == true) {
+                    _selecionados.add(id);
+                  } else {
+                    _selecionados.remove(id);
+                  }
+                }),
+                title: Text(produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
+                subtitle: Text(detalhes),
+              );
+            },
+          ),
+        ),
+        if (_selecionados.isNotEmpty)
+          SafeArea(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, -2))],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('${_selecionados.length} selecionado(s)', style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.category_outlined, size: 18),
+                        label: const Text('Categoria'),
+                        onPressed: _processando ? null : () => _dialogCategoria(produtoProvider),
+                      ),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.factory_outlined, size: 18),
+                        label: const Text('Fabricante'),
+                        onPressed: _processando ? null : () => _dialogFabricante(produtoProvider),
+                      ),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.visibility_outlined, size: 18),
+                        label: const Text('Exibir no catálogo'),
+                        onPressed: _processando
+                            ? null
+                            : () => _aplicarBool(produtoProvider.atualizarExibirCatalogoEmMassa, true),
+                      ),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.visibility_off_outlined, size: 18),
+                        label: const Text('Ocultar do catálogo'),
+                        onPressed: _processando
+                            ? null
+                            : () => _aplicarBool(produtoProvider.atualizarExibirCatalogoEmMassa, false),
+                      ),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.check_circle_outline, size: 18),
+                        label: const Text('Ativar'),
+                        onPressed:
+                            _processando ? null : () => _aplicarBool(produtoProvider.atualizarAtivoEmMassa, true),
+                      ),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.block_outlined, size: 18),
+                        label: const Text('Desativar'),
+                        onPressed:
+                            _processando ? null : () => _aplicarBool(produtoProvider.atualizarAtivoEmMassa, false),
+                      ),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.star_outline, size: 18),
+                        label: const Text('Destacar'),
+                        onPressed: _processando
+                            ? null
+                            : () => _aplicarBool(produtoProvider.atualizarDestaqueEmMassa, true),
+                      ),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.star_border, size: 18),
+                        label: const Text('Remover destaque'),
+                        onPressed: _processando
+                            ? null
+                            : () => _aplicarBool(produtoProvider.atualizarDestaqueEmMassa, false),
+                      ),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                        label: const Text('Estoque mínimo'),
+                        onPressed: _processando ? null : () => _dialogEstoqueMinimo(produtoProvider),
+                      ),
+                    ],
                   ),
                 ],
               ),

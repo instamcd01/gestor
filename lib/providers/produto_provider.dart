@@ -202,6 +202,73 @@ class ProdutoProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<List<String>> listarCategoriasDisponiveis() => _repository.listarCategoriasDisponiveis();
+
+  Future<List<String>> listarFabricantesDisponiveis() => _repository.listarFabricantesDisponiveis();
+
+  Future<void> atualizarCategoriaEmMassa(List<String> ids, String categoria, String? subcategoria) async {
+    if (ids.isEmpty) return;
+    await _repository.atualizarCategoriaEmMassa(ids, categoria, subcategoria);
+    for (final id in ids) {
+      final index = _produtos.indexWhere((p) => p.id == id);
+      if (index != -1) {
+        _produtos[index].categoria = categoria;
+        _produtos[index].subcategoria = subcategoria;
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> atualizarFabricanteEmMassa(List<String> ids, String fabricante) async {
+    if (ids.isEmpty) return;
+    await _repository.atualizarFabricanteEmMassa(ids, fabricante);
+    for (final id in ids) {
+      final index = _produtos.indexWhere((p) => p.id == id);
+      if (index != -1) _produtos[index].fabricante = fabricante;
+    }
+    notifyListeners();
+  }
+
+  Future<void> atualizarExibirCatalogoEmMassa(List<String> ids, bool exibir) async {
+    if (ids.isEmpty) return;
+    await _repository.atualizarExibirCatalogoEmMassa(ids, exibir);
+    for (final id in ids) {
+      final index = _produtos.indexWhere((p) => p.id == id);
+      if (index != -1) _produtos[index].exibirNoCatalogo = exibir;
+    }
+    notifyListeners();
+  }
+
+  Future<void> atualizarAtivoEmMassa(List<String> ids, bool ativo) async {
+    if (ids.isEmpty) return;
+    await _repository.atualizarAtivoEmMassa(ids, ativo);
+    for (final id in ids) {
+      final index = _produtos.indexWhere((p) => p.id == id);
+      if (index != -1) _produtos[index].ativo = ativo;
+    }
+    notifyListeners();
+  }
+
+  Future<void> atualizarDestaqueEmMassa(List<String> ids, bool destacar) async {
+    if (ids.isEmpty) return;
+    await _repository.atualizarDestaqueEmMassa(ids, destacar);
+    for (final id in ids) {
+      final index = _produtos.indexWhere((p) => p.id == id);
+      if (index != -1) _produtos[index].destacar = destacar;
+    }
+    notifyListeners();
+  }
+
+  Future<void> atualizarEstoqueMinimoEmMassa(List<String> ids, int minimo) async {
+    if (ids.isEmpty) return;
+    await _repository.atualizarEstoqueMinimoEmMassa(ids, minimo);
+    for (final id in ids) {
+      final index = _produtos.indexWhere((p) => p.id == id);
+      if (index != -1) _produtos[index].estoqueMinimo = minimo;
+    }
+    notifyListeners();
+  }
+
   Future<void> aprovarSugestaoVariante({
     required SugestaoVariante sugestao,
     required String tipoVariacao,

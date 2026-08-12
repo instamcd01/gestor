@@ -156,6 +156,70 @@ class ProdutoRepository {
     await supabase.from('produtos').update({'ciclo_recompra_dias': dias}).inFilter('id', produtoIds);
   }
 
+  /// Categorias disponíveis pra empresa — mesma fonte usada em
+  /// cadastro/editar produto: a tabela `categorias` (cadastradas via
+  /// "Gerenciar categorias") unida com o que já está em uso em
+  /// `produtos.categoria` (que pode ter nomes ainda não formalizados lá).
+  Future<List<String>> listarCategoriasDisponiveis() async {
+    final data = await supabase.from('categorias').select('nome').order('ordem');
+    final categorias = (data as List).map((r) => r['nome'] as String).toSet();
+
+    final produtosData = await supabase.from('produtos').select('categoria');
+    categorias.addAll(
+      (produtosData as List).map((p) => (p['categoria'] as String?) ?? '').where((c) => c.isNotEmpty),
+    );
+    return categorias.toList()..sort();
+  }
+
+  /// Mesma lógica de [listarCategoriasDisponiveis], mas pra fabricantes
+  /// (tabela `fabricantes` + o que já está em uso em `produtos.fabricante`).
+  Future<List<String>> listarFabricantesDisponiveis() async {
+    final data = await supabase.from('fabricantes').select('nome').order('ordem');
+    final fabricantes = (data as List).map((r) => r['nome'] as String? ?? '').where((f) => f.isNotEmpty).toSet();
+
+    final produtosData = await supabase.from('produtos').select('fabricante');
+    fabricantes.addAll(
+      (produtosData as List).map((p) => (p['fabricante'] as String?) ?? '').where((f) => f.isNotEmpty),
+    );
+    return fabricantes.toList()..sort();
+  }
+
+  /// Categoria (obrigatória) + subcategoria (opcional, `null` limpa) de
+  /// vários produtos de uma vez.
+  Future<void> atualizarCategoriaEmMassa(List<String> produtoIds, String categoria, String? subcategoria) async {
+    if (produtoIds.isEmpty) return;
+    await supabase
+        .from('produtos')
+        .update({'categoria': categoria, 'subcategoria': subcategoria}).inFilter('id', produtoIds);
+  }
+
+  Future<void> atualizarFabricanteEmMassa(List<String> produtoIds, String fabricante) async {
+    if (produtoIds.isEmpty) return;
+    await supabase.from('produtos').update({'fabricante': fabricante}).inFilter('id', produtoIds);
+  }
+
+  Future<void> atualizarExibirCatalogoEmMassa(List<String> produtoIds, bool exibir) async {
+    if (produtoIds.isEmpty) return;
+    await supabase.from('produtos').update({'exibir_no_catalogo': exibir}).inFilter('id', produtoIds);
+  }
+
+  Future<void> atualizarAtivoEmMassa(List<String> produtoIds, bool ativo) async {
+    if (produtoIds.isEmpty) return;
+    await supabase.from('produtos').update({'ativo': ativo}).inFilter('id', produtoIds);
+  }
+
+  Future<void> atualizarDestaqueEmMassa(List<String> produtoIds, bool destacar) async {
+    if (produtoIds.isEmpty) return;
+    await supabase.from('produtos').update({'destaque': destacar}).inFilter('id', produtoIds);
+  }
+
+  /// Estoque mínimo vive na tabela `estoque` (não em `produtos`), por isso
+  /// o UPDATE aqui filtra por `produto_id`, não por `id`.
+  Future<void> atualizarEstoqueMinimoEmMassa(List<String> produtoIds, int minimo) async {
+    if (produtoIds.isEmpty) return;
+    await supabase.from('estoque').update({'quantidade_minima': minimo}).inFilter('produto_id', produtoIds);
+  }
+
   Future<List<SugestaoVariante>> listarSugestoesVariantePendentes() async {
     final data = await supabase
         .from('sugestoes_variante')
