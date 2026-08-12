@@ -18,6 +18,7 @@ import '../screens/inicio_screen.dart';
 import '../screens/meu_desempenho_screen.dart';
 import '../screens/notificacoes_screen.dart';
 import '../screens/produtos_screen.dart';
+import '../screens/rotas_entrega_screen.dart';
 import '../screens/usuarios_screen.dart';
 import '../screens/vendas_screen.dart';
 
@@ -76,6 +77,7 @@ final List<AppDestino> appDestinos = [
     builder: (_) => const FilaPedidosScreen(),
     contador: (context) => context.watch<HistoricoVendasProvider>().pedidosAtivos.length,
   ),
+  AppDestino(titulo: 'Rotas de Entrega', icone: Icons.alt_route, builder: (_) => const RotasEntregaScreen()),
   AppDestino(
     titulo: 'Produtos',
     icone: Icons.local_mall,

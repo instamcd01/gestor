@@ -14,6 +14,7 @@ import 'regras_venda_screen.dart';
 import 'cupons_screen.dart';
 import 'config_cupom_automatico_screen.dart';
 import 'custos_operacionais_screen.dart';
+import 'entregadores_screen.dart';
 import 'metricas_cupons_screen.dart';
 import 'exportar_relatorios_screen.dart';
 import 'historico_entradas_screen.dart';
@@ -82,6 +83,8 @@ class ConfiguracoesScreen extends StatelessWidget {
                 MenuItem('Pagamento Online', Icons.account_balance_wallet_outlined, const MercadoPagoConectarScreen()),
               if (isDono)
                 MenuItem('Custos Operacionais', Icons.calculate_outlined, const CustosOperacionaisScreen()),
+              if (isDono)
+                MenuItem('Entregadores', Icons.two_wheeler_outlined, const EntregadoresScreen()),
               MenuItem('Pedidos e Vendas', Icons.shopping_cart_outlined, const PedidosVendasScreen()),
               MenuItem('Opções de Entrega', Icons.local_shipping_outlined, const ConfiguracaoEntregaScreen()),
               MenuItem('Cupons de Desconto', Icons.local_offer_outlined, const CuponsScreen()),

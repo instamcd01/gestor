@@ -20,6 +20,7 @@ import 'providers/entrada_provider.dart';
 import 'providers/cupom_provider.dart';
 import 'providers/pedido_compra_provider.dart';
 import 'providers/banner_home_provider.dart';
+import 'providers/entregador_provider.dart';
 import 'screens/auth_gate.dart';
 import 'config/supabase_config.dart';
 
@@ -65,6 +66,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CupomProvider()),
         ChangeNotifierProvider(create: (_) => PedidoCompraProvider()),
         ChangeNotifierProvider(create: (_) => BannerHomeProvider()),
+        ChangeNotifierProvider(create: (_) => EntregadorProvider()),
       ],
       child: Consumer<BrandingProvider>(
         builder: (context, branding, _) {
