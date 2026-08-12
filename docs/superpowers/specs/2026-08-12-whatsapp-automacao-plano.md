@@ -20,8 +20,18 @@ workflows seguintes do pipeline original (`04 - Busca Produtos`, `05 -
 Carrinho`, `06 - Checkout`) nunca foram construídos (stub vazio).
 Decisão tomada (autorização do usuário: "se achar que dá pra usar como
 base tudo bem, mas pode desenvolver do zero se achar melhor"): **reaproveitar
-01/02, evoluir 03, não reconstruir carrinho/checkout dentro do
-WhatsApp** — ver seção "Decisão de arquitetura" abaixo para o porquê.
+01/02, evoluir 03**.
+
+**Revisão 12/08 (mesmo dia, depois de feedback do usuário)**: a premissa
+original deste documento ("carrinho/checkout nunca entra no WhatsApp") foi
+**revista**. O usuário trouxe um argumento comportamental real — 60-70%
+dos clientes preferem resolver a compra sem sair do WhatsApp, incluindo
+público idoso/pouco familiarizado com tecnologia pra quem "manda um link"
+é fricção, não solução — e pediu uma **arquitetura híbrida**: site e
+WhatsApp como duas interfaces sobre o **mesmo núcleo transacional**, sem
+o agente insistir num caminho só. Ver seção "Checkout híbrido" (substitui
+a antiga Fase 3) para a investigação real da arquitetura de pedido/
+pagamento que fundamenta essa decisão.
 
 ## Objetivo (classificação segundo a seção 2 do framework)
 
@@ -67,21 +77,11 @@ agora:
   conversa em andamento) — o lembrete de recompra já existe assim
   (`Site - Enviar Lembrete de Recompra via WhatsApp`, Schedule Trigger
   diário) e o novo "carrinho abandonado" (Fase 4) segue o mesmo molde.
-- **Agente de Pedidos** (montar carrinho/checkout dentro da conversa): **não
-  construído dentro do WhatsApp.** Ver justificativa abaixo.
-
-### Por que não reconstruir carrinho/checkout no WhatsApp
-
-O site (`gestor-loja`) já tem carrinho, cupom, PetCash, frete por zona e
-pagamento (Pix/cartão via Mercado Pago) — tudo testado e em produção.
-Reimplementar essa lógica de negócio inteira dentro de uma conversa de
-texto é o cenário de maior risco do projeto inteiro (dinheiro real,
-estoque real, várias regras de desconto que já têm bug histórico
-documentado neste projeto quando duplicadas). A seção 19 do próprio
-framework já aponta a saída: "quando o site for melhor pro cliente e pra
-operação, o WhatsApp pode atuar como ponte inteligente". Por isso a Fase 3
-constrói uma **ponte** (link de carrinho pré-preenchido), não um
-checkout paralelo.
+- **Agente de Pedidos** (montar carrinho/pedido dentro da conversa): fica
+  como **ferramentas** do mesmo agente único (`criar_carrinho`,
+  `criar_pedido`, `consultar_pedido`), não um workflow/agente separado —
+  ver "Checkout híbrido" abaixo pra como isso se conecta ao mesmo núcleo
+  do site.
 
 ## Arquitetura alvo
 
@@ -102,15 +102,31 @@ WhatsApp Cloud API
       │                                                │
       │                                                ▼
       │                            03 · Agente Conversacional (reconstrução)
-      │                            Agent (LLM) + ferramentas:
-      │                              - buscar_contexto_cliente (nome, pets, última compra, ciclo)
-      │                              - buscar_produto (Supabase real, sem bug de coluna)
-      │                              - consultar_zona_entrega (tabela real)
-      │                              - gerar_link_carrinho (Fase 3)
+      │                            Agent (LLM) + ferramentas — mínimo por fase,
+      │                            ver seção de ferramentas abaixo:
+      │                              - buscar_contexto_cliente (memória progressiva)
+      │                              - buscar_produto / consultar_estoque
+      │                              - consultar_zona_entrega / calcular_entrega
+      │                              - criar_carrinho / criar_pedido (núcleo compartilhado c/ site)
+      │                              - consultar_pedido / consultar_pagamento
+      │                              - gerar_link_carrinho (quando o cliente preferir o site)
       │                              - transferir_humano (mantém como está)
       │                            Memória: Simple Memory já existe, manter
+      │                            Toda decisão/tool logada em automacao_eventos
       │                                                │
       ◄────────────────────── resposta ────────────────┘
+                                                         │
+                                        ┌────────────────┴────────────────┐
+                                        ▼                                 ▼
+                              CHECKOUT VIA SITE                 CHECKOUT VIA WHATSAPP
+                              (link pro carrinho,                (Pix nativo na conversa;
+                               qualquer forma de pagto)           cartão ainda depende de
+                                        │                         um link de tokenização —
+                                        │                         ver "Checkout híbrido")
+                                        └────────────────┬────────────────┘
+                                                          ▼
+                                          MESMO NÚCLEO: finalizar_pedido_site
+                                          (estoque / cupom / PetCash / frete / pagamento)
 
 Workflows agendados/orientados a evento, independentes da conversa:
   - Site - Enviar Lembrete de Recompra via WhatsApp   (já existe, ativo)
@@ -122,82 +138,202 @@ Workflows agendados/orientados a evento, independentes da conversa:
 
 Baixo risco, alto valor, destrava tudo o que vem depois. Sem isso, medir
 qualquer melhoria das fases seguintes fica contaminado pelos bugs atuais.
+**Status real ao final desta rodada — ver relatório completo no chat/
+memória, resumo aqui:**
 
-1. **Corrigir o filtro de produto** em "Buscar Produto Supabase" (nó do
-   workflow 03): `estoque.gt.0` referencia coluna inexistente em
-   `produtos` (estoque é tabela relacionada). Trocar por um embed
-   filtrado do PostgREST (`estoque.quantidade_atual=gt.0` via select
-   aninhado) ou por uma RPC dedicada (preferível — ver Fase 2, essa RPC já
-   vai precisar existir com mais campos).
-2. **Handler de entrega**: trocar o texto fixo por uma consulta real a
-   `zonas_entrega` (a mesma tabela que `ZonaEntregaProvider`/config do
-   site já usa) — nunca deixar o bot dizer algo que diverge do que o
-   checkout realmente cobra.
-3. **Revogar grants soltos**: `anon` tem SELECT+INSERT em `conversas` e
-   `mensagens` sem policy própria (inerte hoje porque RLS nega por
-   padrão, mas por disciplina do projeto — ver
-   `feedback_regras_gerais_engenharia_projeto` — deve ser revogado como
-   qualquer objeto novo).
-4. **Limpar nós órfãos**: remover as 2 cadeias "v1" desconectadas no
-   workflow 03 e o `Knowledge Base Agent` órfão no workflow 01 — sujeira
-   que só atrapalha manutenção futura (seção 23 do framework).
-5. **Parametrizar `empresa_id`/`assignee_id`**: hoje hardcoded
-   (`3bce0e24-...` / `assignee_id: 1`). Resolver dinamicamente (via
-   `empresa_marketplace_config`-like lookup, ou uma tabela nova
-   `empresa_chatwoot_config` com `account_id`/`inbox_id`/`assignee_id`
-   por empresa) — não bloqueia o uso atual (só a Delivery Pet usa isso
-   hoje), mas é o que separa "script que funciona pra um cliente" de
-   "produto" (seção 37/38).
+1. **Filtro de produto quebrado** — ✅ confirmado ao vivo (PostgREST
+   devolve 400: `column produtos.estoque does not exist`) e ✅ corrigido no
+   JSON do workflow (`integrations/n8n/03-interpretar-intencao-fase0-fix.json`).
+   A verificação de estoque por depósito real fica pra Fase 2 (RPC
+   dedicada) — o fix da Fase 0 só para de quebrar a busca e suaviza a
+   certeza sobre disponibilidade na resposta (nunca afirmar estoque sem
+   checar de verdade).
+2. **Handler de entrega hardcoded** — ✅ confirmado que divergia do real
+   (bot dizia "a partir de R$8"; o valor mínimo real é R$4,99) e ✅
+   corrigido no mesmo JSON — agora consulta `zonas_entrega` de verdade.
+3. **Grants soltos** — ✅ **aplicado direto no banco**: `anon` tinha
+   SELECT+INSERT em `conversas`/`mensagens` sem policy própria (inerte
+   por causa do RLS, mas revogado por disciplina do projeto).
+4. **Nós órfãos** — ✅ corrigido nos dois JSONs (20 nós removidos do
+   workflow 03, 4 do workflow 01 — as cadeias "v1" mortas e o `Knowledge
+   Base Agent` desconectado).
+5. **Observabilidade** — ✅ **aplicada direto no banco**: tabela nova
+   `automacao_eventos` (empresa_id, conversa_id, mensagem_id, etapa,
+   tool_nome, detalhes jsonb, duracao_ms), sem grant nenhum pra
+   anon/authenticated (só o backend/n8n escreve). Ainda não populada por
+   nenhum workflow — quem grava nela é o agente da Fase 1+.
+6. **`empresa_id`/`assignee_id` hardcoded** — decisão consciente de
+   **não mexer na Fase 0**: só a Delivery Pet usa esse pipeline hoje, não
+   há um segundo tenant esperando, e criar uma tabela de config
+   multi-tenant agora seria construir pra uma necessidade que ainda não
+   existe (YAGNI). Fica documentado como item da Fase 7 (visão SaaS).
 
-## Fase 1 — Memória do cliente / fricção mínima (seção 4 e 11 do framework)
+**Pendente de uma ação sua**: os fixes dos itens 1/2/4 estão prontos como
+arquivo (`integrations/n8n/01-chatwoot-router-fase0-fix.json` e
+`03-interpretar-intencao-fase0-fix.json`) mas **ainda não foram aplicados
+no n8n** — o ambiente onde eu trabalho bloqueia automaticamente writes
+diretos num sistema de produção externo (o pipeline atende clientes reais
+agora). Duas formas de aplicar: (a) você importa esses 2 arquivos no editor
+do n8n (substituindo os workflows `01` e `03` existentes, mesmo id), ou
+(b) autoriza explicitamente o próximo `PUT` que eu tentar (aparece como
+prompt de permissão do Bash). Depois de aplicado, o teste recomendado é
+uma conversa de teste real (ou via Chatwoot API, com limpeza depois) antes
+de considerar a Fase 0 encerrada de verdade.
 
-Ferramenta nova `buscar_contexto_cliente`, chamada no início de toda
-conversa (não só quando o cliente pergunta), injetando no contexto do
-agente: nome, pets (espécie/porte), produtos com `ciclo_recompra_dias`
-próximo do vencimento pra aquele cliente (mesma view já existente,
-`v_produtos_prontos_recompra`/`v_clientes_prontos_recompra`), última
-compra, saldo PetCash, segmento (`clientes.segmento`, já calculado).
+## Fase 1 — Memória progressiva do cliente / fricção mínima (seções 4 e 11)
+
+Revisão 12/08: `buscar_contexto_cliente` deixa de ser só "puxar dados
+cadastrais" — vira o ponto de entrada de um **modelo de memória
+progressiva**, porque o usuário apontou que o WhatsApp é uma fonte de
+contexto/intenção que o site não captura (ex: "essa ração é pro Thor, ele
+tá acima do peso", "prefiro sempre pagar por aqui mesmo"). Isso não deve
+virar interrogatório — o dado é capturado quando surge naturalmente na
+conversa, nunca perguntado só pra preencher campo.
+
+**3 categorias de dado, tratadas de formas diferentes**:
+- **Estruturado/confiável** (já existe em tabela própria): `clientes`,
+  `pets`, última compra, `ciclo_recompra_dias`, `saldo_petcash`,
+  `segmento` — carregado sempre, sem custo de confiança.
+- **Observado/persistente, mas extraído de conversa** (ex: "prefere pagar
+  por aqui", "a gata não gostou daquela ração"): grava em
+  `conversas.contexto` (jsonb, coluna já existe, nunca usada) como fatos
+  datados e com a mensagem de origem — não vira verdade absoluta
+  automaticamente, é uma anotação que o agente pode citar mas também
+  reconsiderar se um fato novo contradisser um antigo.
+- **Temporário da conversa atual** (ex: "quero uma opção mais barata esse
+  mês"): fica só na memória de curto prazo do próprio agente (Simple
+  Memory, já existe) — nunca persiste em `conversas.contexto`.
+
 Isso é o que transforma "Como posso ajudar?" em "Oi João! A ração do
 Thor deve estar acabando, quer que eu confira?" (exemplo literal da seção
-11) sem precisar perguntar nada que o sistema já sabe.
+11) sem precisar perguntar nada que o sistema já sabe — e, com o tempo,
+alimenta o ciclo `conversa → contexto → memória → personalização → maior
+conversão → novos dados` que o usuário descreveu.
 
-**Sem tabela nova** — todos os dados já existem (`clientes`, `pets`,
-`v_produtos_prontos_recompra`, `catalogo_*_publico`). É só uma ferramenta
-nova no agente.
+**Sem tabela nova pro estruturado** (já existe). Pro observado/persistente,
+reaproveita `conversas.contexto` (coluna já existe, nunca usada — bate com
+o achado de que alguém já tinha planejado algo parecido, ver "Motor de
+Estados" na memória do projeto). Não decidido ainda: schema exato do jsonb
+em `contexto` (lista de fatos com data/origem vs. objeto livre) — detalhar
+no início da implementação desta fase, não antes.
 
 ## Fase 2 — Busca de produto real + venda consultiva (seções 7, 8, 16, 17)
 
-Ferramenta `buscar_produto(termo, filtros?)`: busca real (nome + talvez
-busca por categoria/necessidade, não só `ilike` — considerar full-text
-search do Postgres se o `ilike` simples não performar bem em ~3600
-produtos), retorna preço, estoque real (via join com `estoque`), presença
-de promoção. **Nunca inventar** disponibilidade/preço (seção 16) — se a
-ferramenta não achar, o agente diz que não achou, não especula.
+Ferramentas mínimas desta fase: `buscar_produto` (nome + categoria/
+necessidade, não só `ilike` — considerar full-text search do Postgres pra
+~3600 produtos) e `consultar_estoque` (join real com `estoque`, a
+verificação que a Fase 0 deliberadamente adiou). Retorna preço, estoque
+real, presença de promoção. **Nunca inventar** disponibilidade/preço
+(seção 16) — se a ferramenta não achar, o agente diz que não achou.
 
 Prompt do agente orientado a venda consultiva (seção 8): quando a busca
-retornar mais de uma opção plausível (ex: "ração" sozinho, sem espécie/
-porte), perguntar o mínimo necessário pra recomendar bem — nunca
-interrogatório. Cross-sell (seção 9) fica pra uma iteração depois de
-validar que a busca básica funciona bem — não empacotar tudo de uma vez
-(risco de a primeira versão nunca sair do papel por escopo demais).
+retornar mais de uma opção plausível, perguntar o mínimo necessário pra
+recomendar bem — nunca interrogatório. Cross-sell (seção 9) fica pra
+depois da busca básica validada.
 
-## Fase 3 — Ponte pedido → carrinho do site (implementa a decisão de arquitetura acima)
+## Checkout híbrido — substitui a antiga "Fase 3: ponte pro site"
 
-Ferramenta `gerar_link_carrinho(produtos: [{produto_id, quantidade}])`:
-1. Nova RPC `criar_carrinho_pendente_whatsapp(p_cliente_id, p_itens)` —
-   gera um token de curta duração (ex: tabela `carrinhos_whatsapp_pendentes`
-   com `token`, `cliente_id`, `itens jsonb`, `expira_em`, mesmo padrão de
-   expiração já usado em PetCash/OTP).
-2. Nova rota no site `gestor-loja`:
-   `/loja/[slug]/carrinho/retomar/[token]` — carrega os itens do token pro
-   carrinho do cliente (mesmo mecanismo de `localStorage`/sessão que o
-   carrinho normal já usa) e redireciona pro carrinho normal.
-3. Agente responde com o link direto (`https://.../carrinho/retomar/{token}`)
-   — o cliente termina no fluxo de checkout já validado e testado, sem
-   nenhuma lógica de pagamento nova no WhatsApp.
+Investigação real do checkout do site (12/08, lendo o código de verdade —
+`checkout.ts`, `carrinho.ts`, `mercadopago.ts`, `frete.ts` e as RPCs por
+trás) antes de desenhar qualquer coisa nova, conforme pedido.
 
-Isso fecha o funil (seção 26) até PEDIDO/PAGAMENTO sem duplicar nenhuma
-regra de negócio já existente.
+### O que existe hoje e como funciona (fatos confirmados, não suposição)
+
+- **Carrinho**: `adicionar_ao_carrinho_site(p_empresa_id, p_produto_id,
+  p_quantidade)` — RPC atômica (evita perder unidade em cliques
+  concorrentes), grava em `carrinho`/`carrinho_itens`.
+- **Fechamento do pedido**: `finalizar_pedido_site(...)` — um único RPC
+  gigante e bem testado que revalida TUDO server-side (nunca confia no
+  client): estoque real por produto, cupom (`validar_cupom`), saldo,
+  PetCash (`consumir_petcash`, já sem gate de auth — ver abaixo), frete
+  por zona/modalidade, taxa de serviço, agendamento, horário de
+  funcionamento. Cria o pedido com status `pendente` (pagamento na
+  entrega) ou `aguardando_pagamento` (Pagamento Online).
+- **Frete**: `calcular_frete_site(p_empresa_id, p_distancia_km,
+  p_subtotal)` — recebe a distância já calculada (Google Distance Matrix,
+  a partir de lat/lng) e escolhe a zona certa. **Não depende de sessão de
+  cliente** — só precisa da distância, reaproveitável 1:1 por uma
+  ferramenta `calcular_entrega` no WhatsApp.
+- **Pagamento online (Mercado Pago, split por loja)**: `cobrarPagamentoOnline`
+  chama a API do MP com o access_token DO VENDEDOR (não da plataforma).
+  Pra **Pix**: só precisa de `payment_method_id: 'pix'` + e-mail do
+  pagador — nenhum dado sensível de cartão envolvido, tudo pode rodar
+  server-to-server (n8n consegue chamar isso direto). Pra **cartão**: a
+  API exige um `token` que só a tokenização client-side do Payment Brick
+  da Mercado Pago gera (PCI compliance — o número do cartão nunca pode
+  passar pelo nosso backend/n8n em texto puro). **Achado que decide a
+  arquitetura**: Pix é 100% viável nativo no WhatsApp; cartão continua
+  precisando de uma etapa web (não necessariamente o site inteiro — pode
+  ser uma página mínima só com o formulário de cartão).
+
+### O achado central: quase todo o núcleo exige sessão real de Supabase Auth
+
+Confirmado direto no banco (`pg_get_functiondef`): `finalizar_pedido_site`,
+`adicionar_ao_carrinho_site`, `validar_cupom` e `entrar_ou_criar_cliente`
+**todos exigem `auth.uid()`** — são pensados pra rodar como o próprio
+cliente autenticado, não como um backend chamando em nome dele. Só
+`calcular_frete_site` e `consumir_petcash` são agnósticos (recebem os ids
+como parâmetro).
+
+Isso importa porque **hoje os clientes do WhatsApp não têm sessão de
+Supabase Auth**: `01 - Chatwoot WhatsApp Router` cria a linha em
+`clientes` direto via service role (bypassa RLS), nunca passa por
+`entrar_ou_criar_cliente`. Confirmado: **26 dos 28 clientes da empresa
+real não têm `auth_user_id`**. Ou seja, não dá pra simplesmente chamar
+`finalizar_pedido_site` a partir do n8n hoje — falta a peça de
+autenticação.
+
+**Dois caminhos possíveis pra resolver isso (não decidido — o usuário
+pediu pra descobrir, não decidir agora):**
+1. **RPC irmã, auth-agnóstica**: criar `finalizar_pedido_whatsapp(p_cliente_id,
+   ...)` com a MESMA lógica de `finalizar_pedido_site` (idealmente
+   extraindo um miolo comum compartilhado entre as duas, pra nunca
+   divergir regra de negócio entre canais), mas validando `p_cliente_id`
+   de outra forma — ex: só aceitando chamadas vindas de uma role/chave
+   dedicada ao n8n (não o service_role genérico, que já teria acesso
+   total a tudo), e cruzando o `p_cliente_id` contra o telefone que a
+   Chatwoot/WhatsApp confirmou dono daquela conversa. Mais rápido de
+   construir, mas cria um segundo caminho de autorização pra manter
+   seguro.
+2. **Autenticação real por telefone**: aproveitar que o projeto já tem
+   OTP via WhatsApp pro login do site (`Site - Enviar OTP Login via
+   WhatsApp`, workflow ativo) — se um cliente do WhatsApp também ganhar
+   uma sessão real de Supabase Auth (ex: telefone confirmado gera sessão
+   via Admin API), o n8n passa a chamar os MESMOS RPCs do site sem
+   nenhuma duplicação de regra. Mais elegante (zero divergência de lógica
+   entre canais) mas é mais trabalho e possivelmente precisa reconciliar
+   clientes que hoje têm 2 cadastros (um do WhatsApp sem auth, um do site
+   com auth, mesmo telefone) — problema já flagrado antes nesta mesma
+   memória do projeto (cliente só-marketplace que depois loga no site).
+
+### Ferramentas avaliadas (lista do usuário) — mínimo por fase, não tudo de uma vez
+
+| ferramenta | quando entra | observação |
+|---|---|---|
+| `buscar_contexto_cliente` | Fase 1 | memória progressiva, ver acima |
+| `buscar_produto` | Fase 2 | busca real, nunca inventa |
+| `consultar_estoque` | Fase 2 | join real, hoje ausente (bug corrigido só remove a certeza falsa) |
+| `consultar_zona_entrega` | Fase 0 (feito) | já corrigido no handler de entrega |
+| `calcular_entrega` | Fase 2/checkout híbrido | reaproveita `calcular_frete_site`, precisa de lat/lng (endereço salvo ou compartilhado no WhatsApp) |
+| `gerar_link_carrinho` | checkout híbrido | quando o cliente prefere o site, ou pra cartão (tokenização) |
+| `consultar_pedido` | checkout híbrido | status de um pedido existente — sem gate de auth necessário se escopado por telefone+empresa |
+| `criar_carrinho` / `criar_pedido` | checkout híbrido, depois de decidir o caminho de auth acima | é o `finalizar_pedido_site`/`adicionar_ao_carrinho_site` (ou a RPC irmã) |
+| `consultar_pagamento` | checkout híbrido | status de um Pix/cartão em andamento |
+| `transferir_humano` | Fase 0 (já existe) | mantido como está |
+
+**Regra do usuário, já é a prática deste projeto**: a IA nunca é fonte da
+verdade pra preço/estoque/frete/pagamento/status — ela decide QUANDO
+consultar uma ferramenta, a ferramenta consulta o dado real. Nenhuma
+ferramenta acima é exceção a isso.
+
+### Ainda não decidido — fica pra quando a Fase 2 estiver validada
+
+Qual dos dois caminhos de autenticação seguir, e se o checkout por cartão
+via WhatsApp vale o esforço de uma página mínima de tokenização própria ou
+se reusar o link do carrinho normal do site (que já tem o Payment Brick
+pronto) é suficiente pra esse caso específico. Ambos ficam mais fáceis de
+decidir com dados reais de quantos clientes realmente pedem "quero pagar
+por aqui" depois que a Fase 2 (busca de produto) já estiver rodando.
 
 ## Fase 4 — Recuperação de oportunidades (seção 13)
 
@@ -229,14 +365,16 @@ precisar de nenhuma automação nova — só contexto adicional na ferramenta
 
 ## Fase 6 — Métricas (seção 27)
 
-Os dados já ficam salvos (`conversas`, `mensagens`) — falta consumir.
-Métricas mínimas viáveis com o que já existe: taxa de transferência pra
-humano (`conversas.estado='atendente'` / total), volume de conversas por
-dia, e — depois da Fase 3 — taxa de conversão conversa→carrinho gerado→
-pedido pago (via o token de `carrinhos_whatsapp_pendentes`). Não construir
-dashboard novo agora — se necessário, uma tela simples no app
-(`Configurações > WhatsApp` ou similar) ou uma view SQL consultável
-depois que houver volume real pra medir.
+A base já existe desde a Fase 0: `conversas`/`mensagens` (dados brutos) +
+`automacao_eventos` (rastro etapa-a-etapa: mensagem recebida → contexto →
+decisão → tool → resultado → resposta, já criada e protegida, só falta
+ser populada pelo agente da Fase 1+). Métricas mínimas viáveis: taxa de
+transferência pra humano, volume de conversas por dia, taxa de conversão
+conversa→carrinho→pedido pago, e — só com `automacao_eventos` rodando —
+quais ferramentas falham mais e latência por etapa (pedido explícito do
+usuário: "fundamental pra depuração, segurança e otimização"). Não
+construir dashboard novo agora — view SQL consultável primeiro, tela no
+app só se o volume justificar.
 
 ## Fase 7 — Visão SaaS (seções 37, 38)
 
@@ -256,21 +394,39 @@ generalizado.
   pra um teste ter significância.
 - Multiagente "de verdade" (workflows separados por especialidade) — só
   se o agente único com ferramentas mostrar limite real de escala/latência.
-- Reescrever `04/05/06` como estavam nomeados originalmente — a Fase 3
-  cobre a necessidade real (fechar o funil) sem precisar de 3 workflows
-  extras fazendo o que o site já faz.
+- Parametrização de `empresa_id`/`assignee_id` (multi-tenant de verdade) —
+  adiado pra Fase 7, YAGNI enquanto só existe 1 tenant real.
+- Decisão final entre os 2 caminhos de autenticação pro checkout híbrido —
+  ver seção "Checkout híbrido" acima.
+
+## Rollout não-destrutivo (princípio explícito do usuário)
+
+O pipeline `01→03` atende clientes reais agora — nenhuma fase deste plano
+pode substituí-lo de uma vez só. Sequência obrigatória por fase, a partir
+da Fase 1:
+```
+produção atual → nova implementação isolada/testável → testes sintéticos
+→ validação → teste controlado (ex: só 1 conversa/cliente de teste)
+→ métricas → expansão gradual
+```
+Na prática: cada fase é construída e testada com dados sintéticos (mesmo
+padrão já usado em PetCash/cupom neste projeto — criar conversa/cliente
+fake, testar, apagar tudo, `count(*)=0`) antes de qualquer PUT no workflow
+ativo. Quando o workflow ativo precisar mudar de fato, o ideal é uma cópia
+do workflow (inativa) pra desenvolver, e só trocar o workflow ativo depois
+de validado — evita a alternativa arriscada de editar o workflow ativo em
+produção iterativamente. O bloqueio automático de writes de produção que
+apareceu na execução da Fase 0 (o ambiente exige autorização explícita do
+usuário pra qualquer `PUT` no n8n) é, na prática, uma salvaguarda a favor
+desse mesmo princípio — não um obstáculo a contornar.
 
 ## Ordem recomendada
 
-Fase 0 é pré-requisito de tudo (o bot está com um bug ativo em produção
-agora). Fases 1-3 formam o incremento de valor mais direto (contexto +
-busca real + fechar o funil) e podem ser construídas em sequência dentro
-da mesma leva de trabalho. Fases 4-6 dependem de volume real de conversas
-pra fazer sentido medir, então vêm depois. Fase 7 é lente contínua, não
-uma entrega isolada.
-
-**Este plano ainda não foi executado** — é o documento de referência
-criado antes de começar a construir, conforme pedido do usuário. Próxima
-ação: confirmar com o usuário se começa por Fase 0 (correção do que já
-está ativo em produção) e segue direto pras Fases 1-3, ou se ele quer
-revisar/ajustar alguma decisão deste plano antes.
+Fase 0 é pré-requisito de tudo (o bot tinha um bug ativo em produção,
+achado e corrigido nesta rodada — falta só aplicar no n8n, ver status
+acima). Fase 1 (memória) e Fase 2 (busca real) formam o próximo incremento
+de valor direto e podem ser construídas em sequência. O checkout híbrido
+depende de uma decisão de arquitetura (autenticação) que o usuário pediu
+pra não tomar ainda — próxima conversa, depois de ver este relatório.
+Fases 4-6 dependem de volume real de conversas pra fazer sentido medir.
+Fase 7 é lente contínua, não uma entrega isolada.

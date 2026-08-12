@@ -1,0 +1,1990 @@
+{
+  "updatedAt": "2026-06-25T17:40:59.873Z",
+  "createdAt": "2026-03-11T23:53:55.759Z",
+  "id": "xXBjMu0EmDDyQUrH",
+  "name": "03 - Interpretar Intencao v2",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "c055762a-8fe7-4141-a639-df2372f30060",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        176,
+        2224
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "resposta",
+              "type": "string",
+              "value": "={{ $json.resposta }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "82cb55f5-e7e8-4bf3-809a-459f698ff82c",
+      "name": "Handler Saudação",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1968,
+        1968
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const zonas = $input.all().map(i => i.json).sort((a, b) => Number(a.distancia_min_km) - Number(b.distancia_min_km));\nconst contexto = $('Rota Intenção2').item.json;\n\nlet resposta;\nif (zonas.length === 0) {\n  resposta = '🚚 Consigo confirmar a taxa de entrega assim que você me passar seu endereço! 😊';\n} else {\n  const linhas = zonas.map(z => {\n    const min = Number(z.distancia_min_km);\n    const max = Number(z.distancia_max_km);\n    const valor = Number(z.valor).toFixed(2).replace('.', ',');\n    return `📍 ${min}km a ${max}km: R$ ${valor}`;\n  });\n  const menorMinimo = Math.min(...zonas.map(z => Number(z.valor_minimo_frete_gratis || Infinity)));\n  const freteGratis = isFinite(menorMinimo)\n    ? `\\n\\n🎁 Frete grátis a partir de R$ ${menorMinimo.toFixed(2).replace('.', ',')} em pedidos na faixa mais próxima.`\n    : '';\n  resposta = `🚚 *Taxa de entrega por distância:*\\n\\n${linhas.join('\\n')}${freteGratis}\\n\\nMe manda seu bairro que eu confirmo certinho pra você! 😊`;\n}\n\nreturn [{ json: { ...contexto, resposta } }];"
+      },
+      "id": "d9d2556a-31f2-44e7-894a-fda05c1c0452",
+      "name": "Handler Entrega",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1968,
+        2096
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "produtos",
+        "limit": 5,
+        "filterType": "string",
+        "filterString": "=nome.ilike.*{{ $json.entidade }}*&ativo.eq.true"
+      },
+      "id": "53bba585-747a-4abb-ac5f-a1f08e8176ee",
+      "name": "Buscar Produto Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1968,
+        2224
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "zKVu2zDPVCtxDgq9",
+          "name": "Supabase cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "616ae052-1014-42e1-bf94-cfb2aae6c73f",
+      "name": "Produto Encontrado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2192,
+        2224
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const items = $input.all();\n\nif (!items || items.length === 0) {\n  return [{ json: { ...$('Parse Intenção2').item.json, resposta: 'Não encontrei esse produto no momento. 😔 Quer que eu verifique produtos similares ou fale com um atendente?' } }];\n}\n\nconst produto = items[0].json;\nconst intencao = $('Parse Intenção2').item.json.intencao;\n\nlet resposta = '';\n\nif (intencao === 'preco') {\n  resposta = `✅ *${produto.nome}*\\n💰 Preço: R$ ${Number(produto.preco).toFixed(2).replace('.', ',')}\\n\\nVou confirmar a disponibilidade certinha antes de fechar seu pedido. Deseja adicionar? 🛒`;\n} else {\n  resposta = `✅ Sim, temos *${produto.nome}*!\\n💰 R$ ${Number(produto.preco).toFixed(2).replace('.', ',')}\\n\\nVou confirmar a disponibilidade certinha antes de fechar seu pedido. Deseja pedir? 😊`;\n}\n\nreturn [{ json: { ...$('Parse Intenção2').item.json, resposta } }];"
+      },
+      "id": "ba24327d-1bce-4d98-995a-89e0de23f4bb",
+      "name": "Montar Resposta Produto",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2480,
+        2112
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "resposta",
+              "type": "string",
+              "value": "=Não encontrei *{{ $('Parse Intenção2').item.json.entidade }}* no nosso catálogo. 😔\n\nPosso te ajudar de outra forma? Temos rações, petiscos, acessórios e muito mais! 🐾"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "2adffeda-d571-4158-83a6-3129ab96a02f",
+      "name": "Produto Não Encontrado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2416,
+        2304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "resposta",
+              "type": "string",
+              "value": "={{ $json.resposta }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "ee5472df-5a25-44df-a012-1446b5159aa8",
+      "name": "Handler Pedido",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1968,
+        2352
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "resposta",
+              "type": "string",
+              "value": "={{ $json.resposta }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "d342b1f1-c06c-4afb-a61c-0e9bb95663df",
+      "name": "Handler Outro",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1968,
+        2480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://chatwoot.lukz.com.br/api/v1/accounts/1/conversations/{{ $json.chatwoot_conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "csDBD4VGxB6APRruxCDYACPr"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"{{ $json.resposta }}\",\n  \"message_type\": \"outgoing\",\n  \"private\": false\n}",
+        "options": {}
+      },
+      "id": "afdf6f86-8be7-4146-8c45-8ef7f3125997",
+      "name": "Enviar Mensagem Bot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2656,
+        2224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://chatwoot.lukz.com.br/api/v1/accounts/1/conversations/{{ $json.chatwoot_conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "csDBD4VGxB6APRruxCDYACPr"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"{{ $json.resposta }}\",\n  \"message_type\": \"outgoing\",\n  \"private\": false\n}",
+        "options": {}
+      },
+      "id": "77109af6-9307-4f8d-8cca-f9fcb639eaec",
+      "name": "Enviar Aviso Humano",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1968,
+        2608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://chatwoot.lukz.com.br/api/v1/accounts/1/conversations/{{ $json.chatwoot_conversation_id }}/assignments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "csDBD4VGxB6APRruxCDYACPr"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"assignee_id\": 1\n}",
+        "options": {}
+      },
+      "id": "580a377a-6bb8-4c0e-a8b0-1e8b67a675bd",
+      "name": "Transferir para Humano",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2192,
+        2608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "conversas",
+        "filterType": "string",
+        "filterString": "=chatwoot_conversation_id=eq.{{ $json.chatwoot_conversation_id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "estado",
+              "fieldValue": "atendente"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "e28199c6-45c8-47bd-b4a8-a2dea88396fb",
+      "name": "Atualizar Estado Humano",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2416,
+        2608
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "zKVu2zDPVCtxDgq9",
+          "name": "Supabase cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "mensagem",
+              "type": "string",
+              "value": "={{ $json.mensagem || $json.conteudo || $json.metadata?.content || $json.text }}"
+            },
+            {
+              "name": "chatwoot_conversation_id",
+              "type": "string",
+              "value": "={{ $json.chatwoot_conversation_id || $json.metadata?.conversation?.id }}"
+            },
+            {
+              "name": "telefone",
+              "type": "string",
+              "value": "={{ $json.telefone || $json.metadata?.sender?.phone_number }}"
+            },
+            {
+              "name": "cliente_id",
+              "type": "string",
+              "value": "={{ $json.cliente_id }}"
+            },
+            {
+              "name": "timestamp",
+              "type": "string",
+              "value": "={{ $json.timestamp || $json.metadata?.created_at }}"
+            },
+            {
+              "name": "tipo_input",
+              "type": "string",
+              "value": "={{ $json.tipo_input || $json.tipo || 'text' }}"
+            },
+            {
+              "name": "inbox_id",
+              "type": "string",
+              "value": "={{ $json.inbox_id || $json.metadata?.inbox?.id }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "8ddb4865-3f2c-4248-9a7e-c860a49bc733",
+      "name": "Padronizar Mensagem1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        896,
+        2176
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.mensagem }}",
+        "options": {
+          "systemMessage": "Você é um atendente virtual de um petshop chamado Delivery Pet, localizado no Rio de Janeiro.\n\nSua função é:\n1) Entender a intenção do cliente\n2) Identificar o produto ou categoria quando houver\n3) Gerar uma resposta inicial natural e simpática\n\nSempre responda SOMENTE em JSON válido, sem texto antes ou depois.\n\nFormato obrigatório:\n{\n  \"intencao\": \"\",\n  \"entidade\": \"\",\n  \"resposta\": \"\"\n}\n\nIntenções possíveis:\n- saudacao: cliente mandou oi, olá, bom dia, etc.\n- produto: cliente pergunta se tem algum produto específico\n- preco: cliente pergunta o preço de algum produto\n- entrega: cliente pergunta sobre frete, prazo, taxa, área de entrega\n- pedido: cliente quer fazer um pedido ou comprar algo\n- humano: cliente pede para falar com atendente humano, ou demonstra frustração\n- outro: qualquer outra dúvida geral\n\nNo campo 'entidade', coloque o nome do produto ou categoria mencionado pelo cliente (ex: 'ração golden', 'areia de gato', 'brinquedo para cachorro'). Deixe vazio se não houver.\n\nNo campo 'resposta', gere uma mensagem curta e simpática. Para intenção 'produto' e 'preco', diga apenas que vai verificar a disponibilidade — não invente informações sobre estoque ou preço.\n\nExemplos:\n- 'oi' → {\"intencao\":\"saudacao\",\"entidade\":\"\",\"resposta\":\"Olá! 😊 Bem-vindo à Delivery Pet! Como posso te ajudar hoje?\"}\n- 'tem ração golden?' → {\"intencao\":\"produto\",\"entidade\":\"ração golden\",\"resposta\":\"Vou verificar aqui pra você! 🐾\"}\n- 'quanto custa areia de gato?' → {\"intencao\":\"preco\",\"entidade\":\"areia de gato\",\"resposta\":\"Deixa eu checar o preço pra você! 😊\"}\n- 'quero fazer um pedido' → {\"intencao\":\"pedido\",\"entidade\":\"\",\"resposta\":\"Ótimo! Me conta o que você gostaria de pedir? 🛒\"}\n- 'quero falar com alguém' → {\"intencao\":\"humano\",\"entidade\":\"\",\"resposta\":\"Claro! Vou te transferir para um de nossos atendentes agora. 😊\"}"
+        }
+      },
+      "id": "e9bfa2a2-c47f-4af3-862e-bd28a324a386",
+      "name": "Knowledge Base Agent1",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        1168,
+        2176
+      ],
+      "typeVersion": 1.9
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "id": "2f438fed-8f6d-41b3-8bad-f11e4c5ef446",
+      "name": "OpenAI Chat Model1",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [
+        1168,
+        2368
+      ],
+      "typeVersion": 1.2,
+      "credentials": {
+        "openAiApi": {
+          "id": "GjY3JvQutQboY1NA",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=memory_{{ $json.telefone }}",
+        "contextWindowLength": 10
+      },
+      "id": "9577d8d1-8288-43d4-a8f6-1f4e501f6b04",
+      "name": "Simple Memory1",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "position": [
+        1328,
+        2368
+      ],
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
+        "functionCode": "const resposta = $json.output ?? \"{}\";\n\nlet data = {};\n\ntry {\n  // Remove possíveis markdown fences do modelo\n  const clean = resposta.replace(/```json|```/g, '').trim();\n  data = JSON.parse(clean);\n} catch(e) {\n  console.log('Erro ao parsear JSON:', resposta);\n  // Fallback: trata como intenção 'outro' com a resposta bruta\n  data = {\n    intencao: 'outro',\n    entidade: '',\n    resposta: resposta\n  };\n}\n\nreturn [{\n  json: {\n    ...$input.item.json,\n    intencao: data.intencao || 'outro',\n    entidade: data.entidade || '',\n    resposta: data.resposta || ''\n  }\n}];"
+      },
+      "id": "0aa45b64-c974-4eca-80b0-d06a510cfca6",
+      "name": "Parse Intenção2",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1488,
+        2176
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencao }}",
+                    "rightValue": "entrega",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "5e4c29d6-5d8f-455b-9086-8ab0b1d15869"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Entrega"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencao }}",
+                    "rightValue": "produto",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "6ada4961-c672-4ddb-b00b-760bc097697e"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Produto"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencao }}",
+                    "rightValue": "preco",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    },
+                    "id": "preco-condition"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Preco"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencao }}",
+                    "rightValue": "saudacao",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    },
+                    "id": "34ac273a-5a38-4f74-9cda-efa0e42ae433"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Saudacao"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencao }}",
+                    "rightValue": "pedido",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    },
+                    "id": "db280a59-e998-4c02-b57c-b1118496fe58"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pedido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencao }}",
+                    "rightValue": "humano",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    },
+                    "id": "34ad7726-cbb7-4aab-a9a6-3831e802dcfe"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Humano"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intencao }}",
+                    "rightValue": "outro",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    },
+                    "id": "d0dd5990-9aa7-4095-b41f-e98e6e1dee47"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Outro"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "2e9fceb7-e53a-48dc-ad71-0c0022235023",
+      "name": "Rota Intenção2",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1728,
+        2176
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "zonas_entrega",
+        "limit": 20,
+        "filterType": "string",
+        "filterString": "=empresa_id.eq.3bce0e24-2868-49f3-a9dd-eed921ffc8e4&ativo.eq.true"
+      },
+      "id": "buscar-zonas-entrega-fase0",
+      "name": "Buscar Zonas Entrega",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3040,
+        2600
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "zKVu2zDPVCtxDgq9",
+          "name": "Supabase cloud"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Padronizar Mensagem1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handler Saudação": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handler Entrega": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Produto Supabase": {
+      "main": [
+        [
+          {
+            "node": "Produto Encontrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Produto Encontrado?": {
+      "main": [
+        [
+          {
+            "node": "Montar Resposta Produto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Produto Não Encontrado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Resposta Produto": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Produto Não Encontrado": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handler Pedido": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handler Outro": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Aviso Humano": {
+      "main": [
+        [
+          {
+            "node": "Transferir para Humano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transferir para Humano": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Estado Humano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Padronizar Mensagem1": {
+      "main": [
+        [
+          {
+            "node": "Knowledge Base Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Knowledge Base Agent1": {
+      "main": [
+        [
+          {
+            "node": "Parse Intenção2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Knowledge Base Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "Knowledge Base Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Intenção2": {
+      "main": [
+        [
+          {
+            "node": "Rota Intenção2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rota Intenção2": {
+      "main": [
+        [
+          {
+            "node": "Buscar Zonas Entrega",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar Produto Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buscar Produto Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handler Saudação",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handler Pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar Aviso Humano",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handler Outro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Zonas Entrega": {
+      "main": [
+        [
+          {
+            "node": "Handler Entrega",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "79fc48a2-a608-46b6-821d-d9f382e36bc1",
+  "activeVersionId": "46d895a3-6d85-4f09-9cb4-01150dd343a9",
+  "versionCounter": 267,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-03-11T23:53:55.762Z",
+      "createdAt": "2026-03-11T23:53:55.762Z",
+      "role": "workflow:owner",
+      "workflowId": "xXBjMu0EmDDyQUrH",
+      "projectId": "2Xdm2YxGn6jGlHBX",
+      "project": {
+        "updatedAt": "2026-02-26T12:14:43.039Z",
+        "createdAt": "2026-02-26T12:11:37.362Z",
+        "id": "2Xdm2YxGn6jGlHBX",
+        "name": "Lukz Mcd <instamcd01@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "4e32e037-9ae8-4ba1-b50e-abc7e32f1921"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-13T04:45:15.000Z",
+    "createdAt": "2026-03-13T04:45:14.029Z",
+    "versionId": "46d895a3-6d85-4f09-9cb4-01150dd343a9",
+    "workflowId": "xXBjMu0EmDDyQUrH",
+    "nodes": [
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "id": "c055762a-8fe7-4141-a639-df2372f30060",
+        "typeVersion": 1.1,
+        "name": "When Executed by Another Workflow",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "position": [
+          -432,
+          480
+        ],
+        "alwaysOutputData": false
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://chatwoot.lukz.com.br/api/v1/accounts/1/conversations/{{ $('Padronizar Mensagem').item.json.chatwoot_conversation_id }}/messages",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "api_access_token",
+                "value": "csDBD4VGxB6APRruxCDYACPr"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n\"content\":\"{{$json.resposta}}\",\n\"message_type\":\"outgoing\",\n\"private\":false\n}",
+          "options": {}
+        },
+        "id": "ceaf2fcb-8bde-41fe-ad7b-42ed844081db",
+        "name": "Enviar mensagem",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [
+          928,
+          416
+        ]
+      },
+      {
+        "parameters": {
+          "functionCode": "const resposta = $json.output ?? \"{}\";\n\nlet data = {};\n\ntry {\n  data = JSON.parse(resposta);\n} catch(e) {\n  console.log(\"Erro ao parsear JSON:\", resposta);\n}\n\nreturn [{\n  json:{\n    ...$input.item.json,\n    intencao: data.intencao || \"\",\n    entidade: data.entidade || \"\",\n    resposta: data.resposta || \"\"\n  }\n}];"
+        },
+        "id": "fe3bbbee-4795-4176-92ca-64cbd82d01bb",
+        "name": "Parse Intenção",
+        "type": "n8n-nodes-base.function",
+        "typeVersion": 1,
+        "position": [
+          48,
+          752
+        ]
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.output }}",
+                      "rightValue": "entrega",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "5e4c29d6-5d8f-455b-9086-8ab0b1d15869"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Entrega"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "produto",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "6ada4961-c672-4ddb-b00b-760bc097697e"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Produto"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "id": "34ac273a-5a38-4f74-9cda-efa0e42ae433",
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "saudacao",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals",
+                        "name": "filter.operator.equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Saudacao"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "id": "d0dd5990-9aa7-4095-b41f-e98e6e1dee47",
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "outro",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals",
+                        "name": "filter.operator.equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Outro"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "id": "db280a59-e998-4c02-b57c-b1118496fe58",
+                      "leftValue": "{{$json.intencao}}",
+                      "rightValue": "pedido",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals",
+                        "name": "filter.operator.equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Pedido"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "id": "34ad7726-cbb7-4aab-a9a6-3831e802dcfe",
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "humano",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals",
+                        "name": "filter.operator.equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Humano"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "id": "75ab682d-794b-4b1d-a2c3-b0637904de18",
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "preco",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals",
+                        "name": "filter.operator.equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Preco"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "2ceb488c-8181-468f-95e6-caf3c76b6641",
+        "name": "Rota Intenção",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3,
+        "position": [
+          272,
+          752
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "c2978337-b130-498a-9370-78b33c3e2b00",
+        "name": "Resposta Entrega",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [
+          480,
+          640
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "c8aa37b9-7ac7-4968-b3c0-f922fe943b1d",
+        "name": "Resposta Produto",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [
+          608,
+          784
+        ]
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "gpt-4o-mini",
+            "mode": "list",
+            "cachedResultName": "GPT-4O-MINI"
+          },
+          "responses": {
+            "values": [
+              {
+                "content": "={{$json.mensagem}}"
+              },
+              {
+                "role": "system",
+                "content": "Você é um classificador de intenção para um petshop que vende pelo WhatsApp.\n\nClassifique a mensagem e retorne SOMENTE um JSON válido.\n\nIntenções possíveis:\nsaudacao\nproduto\npreco\nentrega\npedido\nhumano\noutro\n\nFormato obrigatório:\n\n{\n \"intencao\":\"\",\n \"entidade\":\"\"\n}"
+              }
+            ]
+          },
+          "builtInTools": {},
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2.1,
+        "position": [
+          48,
+          512
+        ],
+        "id": "f95b97db-eab7-4613-935a-02d4f70d15e6",
+        "name": "Message a model",
+        "credentials": {
+          "openAiApi": {
+            "id": "GjY3JvQutQboY1NA",
+            "name": "OpenAi account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "fields": {
+            "values": [
+              {}
+            ]
+          },
+          "options": {}
+        },
+        "id": "d2d4acd3-3ee0-4f87-b73b-9b5c642a0821",
+        "name": "Resposta Saudação",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [
+          656,
+          960
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "4b584a3b-3936-40e8-894a-ccf783c1c5db",
+        "name": "Resposta Outro",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [
+          416,
+          1136
+        ]
+      },
+      {
+        "parameters": {
+          "modelId": "gpt-4o-mini",
+          "responses": {
+            "values": [
+              {
+                "role": "system",
+                "content": "Você é um classificador de intenção para um petshop que vende pelo WhatsApp.\n\nClassifique a mensagem do cliente.\n\nRetorne SOMENTE JSON válido.\n\nIntenções possíveis:\nsaudacao\nproduto\npreco\nentrega\npedido\nhumano\noutro\n\nFormato obrigatório:\n\n{\n\"intencao\":\"\",\n\"entidade\":\"\"\n}"
+              },
+              {
+                "content": "Mensagem do cliente: {{$json.mensagem}}"
+              }
+            ]
+          },
+          "builtInTools": {},
+          "options": {}
+        },
+        "id": "fe3124ba-5dfb-42c1-9cbf-29310cdda36b",
+        "name": "Classificar Intenção",
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2,
+        "position": [
+          976,
+          1472
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "GjY3JvQutQboY1NA",
+            "name": "OpenAi account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://chatwoot.lukz.com.br/api/v1/accounts/1/conversations/{{ $('Padronizar Mensagem').item.json.chatwoot_conversation_id }}/messages ",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "api_access_token",
+                "value": "csDBD4VGxB6APRruxCDYACPr"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "{\n\"content\":\"{{$json.resposta}}\",\n\"message_type\":\"outgoing\",\n\"private\":false\n}",
+          "options": {}
+        },
+        "id": "7ebd67f7-b9f1-46cc-af04-99c709d45698",
+        "name": "Enviar mensagem Chatwoot",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [
+          1472,
+          880
+        ]
+      },
+      {
+        "parameters": {
+          "functionCode": "const resposta = $json.output || $json.response || \"\";\n\nlet intencao = \"outro\";\nlet entidade = null;\n\ntry {\n  const parsed = JSON.parse(resposta);\n  intencao = parsed.intencao;\n  entidade = parsed.entidade;\n} catch (e) {}\n\nreturn [{\n  json: {\n    ...$input.item.json,\n    intencao,\n    entidade\n  }\n}];"
+        },
+        "id": "6cf86ebf-5927-445f-bac6-1b17d3b0be9e",
+        "name": "Parse Intenção1",
+        "type": "n8n-nodes-base.function",
+        "typeVersion": 1,
+        "position": [
+          1568,
+          1472
+        ]
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "entrega",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "1de8980b-be2f-4e2a-a028-f8d6e18a5477"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Entrega"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "produto",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "9abdef8a-6d81-490e-9806-cafd84ce335b"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Produto"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "saudacao",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "d3f6d937-a7fa-4d9d-814b-60b3394cac15"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Saudacao"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "id": "0a08b99c-7ca8-4040-b716-74216000dd83",
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "outro",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals",
+                        "name": "filter.operator.equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                }
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "conditions": [
+                    {
+                      "id": "7cdc6b47-d238-4e35-8ac7-70414db19297",
+                      "leftValue": "={{$json.intencao}}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals",
+                        "name": "filter.operator.equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                }
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "267e08db-5d66-48a8-9451-8c8d7cdef31d",
+        "name": "Rota Intenção1",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3,
+        "position": [
+          1024,
+          832
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "771f8156-fe52-4a41-acc2-9e51d93291f9",
+        "name": "Resposta Entrega1",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [
+          1216,
+          672
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "cf643b68-1cae-4596-b50e-b816c4a1560e",
+        "name": "Resposta Produto1",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [
+          1216,
+          832
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "f69e16f9-9e81-4446-b135-7cf9fe6cc104",
+        "name": "Resposta Saudação1",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [
+          1216,
+          976
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "8d7a8462-51f0-4358-a55e-ccccd53a95b2",
+        "name": "Resposta Outro1",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [
+          1216,
+          1136
+        ]
+      },
+      {
+        "parameters": {
+          "functionCode": "const resposta = $json.output || $json.response || \"\";\n\nlet intencao = \"outro\";\nlet entidade = null;\n\ntry {\n  const parsed = JSON.parse(resposta);\n  intencao = parsed.intencao;\n  entidade = parsed.entidade;\n} catch (e) {}\n\nreturn [\n{\n  json: {\n    ...$input.item.json,\n    intencao,\n    entidade\n  }\n}\n];"
+        },
+        "id": "d2dbaa6f-c3d5-4c14-a548-1edb41e9e3ff",
+        "name": "Parse Intenção2",
+        "type": "n8n-nodes-base.function",
+        "typeVersion": 1,
+        "position": [
+          -224,
+          976
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "name": "mensagem",
+                "type": "string",
+                "value": "={{ $json.mensagem || $json.conteudo || $json.metadata?.content || $json.text }}"
+              },
+              {
+                "name": "chatwoot_conversation_id",
+                "type": "string",
+                "value": "={{ $json.chatwoot_conversation_id || $json.metadata?.conversation?.id }}"
+              },
+              {
+                "name": "telefone",
+                "type": "string",
+                "value": "={{ $json.telefone || $json.metadata?.sender?.phone_number }}"
+              },
+              {
+                "name": "cliente_id",
+                "type": "string",
+                "value": "={{ $json.cliente_id }}"
+              },
+              {
+                "name": "timestamp",
+                "type": "string",
+                "value": "={{ $json.timestamp || $json.metadata?.created_at }}"
+              },
+              {
+                "name": "tipo_input",
+                "type": "string",
+                "value": "={{ $json.tipo_input || $json.tipo || 'text' }}"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "id": "4fc197c2-b4ec-4520-8b25-cf176016555a",
+        "name": "Padronizar Mensagem",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -192,
+          368
+        ]
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ $json.metadata.content }}",
+          "options": {
+            "systemMessage": "Você é um atendente virtual de um petshop chamado Delivery Pet.\n\nSua função é:\n1) entender a intenção do cliente\n2) identificar o produto quando houver\n3) responder o cliente de forma natural\n\nSempre responda SOMENTE em JSON válido.\n\nFormato obrigatório:\n\n{\n \"intencao\":\"\",\n \"entidade\":\"\",\n \"resposta\":\"\"\n}\n\nIntenções possíveis:\nsaudacao\nproduto\npreco\nentrega\npedido\nhumano\noutro"
+          }
+        },
+        "id": "66fd9fec-0a8a-4942-8db4-1b6023c51096",
+        "name": "Knowledge Base Agent",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "position": [
+          224,
+          64
+        ],
+        "typeVersion": 1.9
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "mode": "list",
+            "value": "gpt-4o-mini"
+          },
+          "options": {}
+        },
+        "id": "ca1efab3-ec93-42a8-a551-d4ae058fc406",
+        "name": "OpenAI Chat Model",
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "position": [
+          224,
+          256
+        ],
+        "typeVersion": 1.2,
+        "credentials": {
+          "openAiApi": {
+            "id": "GjY3JvQutQboY1NA",
+            "name": "OpenAi account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "sessionIdType": "customKey",
+          "sessionKey": "=memory_{{$json.telefone}}",
+          "contextWindowLength": 10
+        },
+        "id": "f59e89e4-d723-4c1c-acc7-c454d1f1d800",
+        "name": "Simple Memory",
+        "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+        "position": [
+          336,
+          240
+        ],
+        "typeVersion": 1.3
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://chatwoot.lukz.com.br/api/v1/accounts/1/conversations/{{ $('Normalizar Dados').item.json.chatwoot_conversation_id }}/messages",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "api_access_token",
+                "value": "csDBD4VGxB6APRruxCDYACPr"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"content\": \"{{ $node['Knowledge Base Agent'].json['output'] }}\",\n  \"message_type\": \"outgoing\",\n  \"private\": false\n}",
+          "options": {}
+        },
+        "id": "94780d38-3610-48bd-8931-c3ae5ff06343",
+        "name": "Enviar mensagem1",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [
+          592,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "fddd6077-33ed-48af-8175-659528ebe9b7",
+        "name": "Resposta Preço",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [
+          784,
+          992
+        ]
+      }
+    ],
+    "connections": {
+      "When Executed by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "Padronizar Mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Intenção": {
+        "main": [
+          [
+            {
+              "node": "Rota Intenção",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Rota Intenção": {
+        "main": [
+          [
+            {
+              "node": "Resposta Entrega",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Produto",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Saudação",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Outro",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Outro",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Outro",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Preço",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resposta Entrega": {
+        "main": [
+          [
+            {
+              "node": "Enviar mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resposta Produto": {
+        "main": [
+          [
+            {
+              "node": "Enviar mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resposta Saudação": {
+        "main": [
+          [
+            {
+              "node": "Enviar mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Message a model": {
+        "main": [
+          []
+        ]
+      },
+      "Resposta Outro": {
+        "main": [
+          [
+            {
+              "node": "Enviar mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Classificar Intenção": {
+        "main": [
+          [
+            {
+              "node": "Parse Intenção1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Intenção1": {
+        "main": [
+          []
+        ]
+      },
+      "Rota Intenção1": {
+        "main": [
+          [
+            {
+              "node": "Resposta Entrega1",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Produto1",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Saudação1",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [],
+          []
+        ]
+      },
+      "Resposta Entrega1": {
+        "main": [
+          [
+            {
+              "node": "Enviar mensagem Chatwoot",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resposta Produto1": {
+        "main": [
+          [
+            {
+              "node": "Enviar mensagem Chatwoot",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resposta Saudação1": {
+        "main": [
+          [
+            {
+              "node": "Enviar mensagem Chatwoot",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resposta Outro1": {
+        "main": [
+          [
+            {
+              "node": "Enviar mensagem Chatwoot",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Padronizar Mensagem": {
+        "main": [
+          [
+            {
+              "node": "Knowledge Base Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Knowledge Base Agent": {
+        "main": [
+          [
+            {
+              "node": "Parse Intenção",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenAI Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "Knowledge Base Agent",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Simple Memory": {
+        "ai_memory": [
+          [
+            {
+              "node": "Knowledge Base Agent",
+              "type": "ai_memory",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resposta Preço": {
+        "main": [
+          [
+            {
+              "node": "Enviar mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Lukz Mcd",
+    "name": "Version 46d895a3",
+    "description": "",
+    "autosaved": true,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-03-13T04:45:15.901Z",
+        "id": 23,
+        "workflowId": "xXBjMu0EmDDyQUrH",
+        "versionId": "46d895a3-6d85-4f09-9cb4-01150dd343a9",
+        "event": "activated",
+        "userId": "4e32e037-9ae8-4ba1-b50e-abc7e32f1921"
+      }
+    ]
+  }
+}
