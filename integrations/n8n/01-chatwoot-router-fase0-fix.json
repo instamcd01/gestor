@@ -315,7 +315,8 @@
           "id": "zKVu2zDPVCtxDgq9",
           "name": "Supabase cloud"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -513,7 +514,8 @@
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     },
     "Atualizar Conversa": {
