@@ -707,20 +707,38 @@ de prioridade alta mas deliberadamente NÃO misturada com a construção do
 agente — mapear consumidores, separar, testar, só depois revogar a
 antiga, como projeto à parte.
 
-**APIs que a chave nova precisa habilitar — o mínimo necessário, não por garantia**:
-Só **Distance Matrix API**. O contrato de `calcular_frete` (acima) parte
-de `clientes.latitude/longitude` já salvos (geocodificados antes, no
-cadastro/checkout) — não geocodifica endereço novo em texto livre nesta
-versão. **Geocoding API não é necessária pra esse escopo** — só entraria
-se um dia a tool passasse a aceitar um endereço em texto solto vindo da
-conversa, o que não está no contrato aprovado.
+**Correção importante (13/08, depois de verificar contra a documentação
+oficial atual — o usuário pediu pra não assumir o nome legado)**: a API
+certa NÃO é "Distance Matrix API". Confirmado via developers.google.com:
+**a Distance Matrix API está em status Legacy desde 1º de março de 2025,
+e projetos/chaves NOVOS não conseguem mais habilitá-la** — não é só uma
+recomendação, é um bloqueio técnico real que teria feito a chave nova
+falhar. O substituto oficial é a **Routes API**, método `computeRoutes`
+(não `computeRouteMatrix`, que é pra N origens × M destinos — nosso caso
+é sempre 1 loja → 1 cliente).
+
+**APIs que a chave nova precisa habilitar — o mínimo necessário**: só
+**Routes API** (uma única API no Console, cobre tanto rota única quanto
+matriz — antes eram dois serviços separados). O contrato de
+`calcular_frete` parte de `clientes.latitude/longitude` já salvos — não
+geocodifica endereço novo em texto livre nesta versão, então Geocoding
+API continua não sendo necessária.
+
+**Detalhes técnicos confirmados** (developers.google.com/maps/documentation/routes):
+- Endpoint: `POST https://routes.googleapis.com/directions/v2:computeRoutes`
+- Corpo: `{"origin":{"location":{"latLng":{"latitude":..,"longitude":..}}},"destination":{"location":{"latLng":{"latitude":..,"longitude":..}}},"travelMode":"DRIVE"}`
+- Header obrigatório `X-Goog-FieldMask` (a Routes API cobra por campo pedido — só pedir o necessário reduz custo): `routes.distanceMeters` — não precisamos de `duration`, o prazo já vem das faixas de `zonas_entrega`, não do Maps.
+- Resposta: `{"routes":[{"distanceMeters": 4700}]}` → `distanceMeters / 1000` vira o `p_distancia_km` que `calcular_frete_site` já espera.
+- **Diferença Flutter vs. n8n não é só escolha, é obrigatória**: o Flutter usa a Distance Matrix API antiga porque a chave dele já estava habilitada antes de março/2025 (efeito colateral favorável — segue funcionando). A chave nova do n8n não tem essa opção, só pode ser Routes API.
 
 **Requisitos de segurança pra chave nova, definidos pelo usuário**:
 - Exclusiva pro backend/n8n (nunca compartilhada com Flutter/site).
 - Guardada como credencial/secret do n8n (Google Cloud Console →
-  restrição de API só pra Distance Matrix) — **nunca hardcoded no JSON do
+  restrição de API só pra Routes API) — **nunca hardcoded no JSON do
   workflow, nunca em prompt do agente, nunca devolvida na resposta da
-  tool, nunca enviada ao cliente**.
+  tool, nunca enviada ao cliente, nunca em texto nesta conversa/histórico**
+  — quando for provisionada, a credencial é criada direto no n8n (editor
+  ou API do n8n), o workflow só referencia pelo mecanismo de credenciais.
 - Restrição por IP de saída do n8n: avaliar depois SE disponível/compatível
   com a infra — não é bloqueante se o ambiente tiver IP variável.
 
@@ -773,9 +791,11 @@ faixas gerais) em vez de travar.
 **Implementação**: subworkflow n8n dedicado (não RPC pura — envolve uma
 chamada HTTP externa síncrona, que uma função Postgres não faz bem). Nós:
 buscar `clientes.latitude/longitude` (Supabase) → IF tem endereço → HTTP
-Request (Google Maps Distance Matrix, credencial nova) → RPC
-`calcular_frete_site` (Supabase) → monta o retorno estruturado. **Ainda
-não construído** — bloqueado na credencial nova (ver acima).
+Request (`POST routes.googleapis.com/directions/v2:computeRoutes`,
+header `X-Goog-FieldMask: routes.distanceMeters`, credencial nova do n8n)
+→ RPC `calcular_frete_site` (Supabase, com `distanceMeters/1000`) →
+monta o retorno estruturado. **Ainda não construído** — bloqueado na
+credencial nova (ver acima).
 
 ## Rollout não-destrutivo (princípio explícito do usuário)
 
