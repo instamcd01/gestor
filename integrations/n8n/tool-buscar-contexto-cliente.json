@@ -1,0 +1,93 @@
+{
+  "name": "Tool - Buscar Contexto Cliente",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "p_cliente_id"
+            },
+            {
+              "name": "p_empresa_id"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select buscar_contexto_cliente($1::uuid, $2::uuid) as contexto",
+        "options": {
+          "queryReplacement": "={{ [ $json.p_cliente_id, $json.p_empresa_id ] }}"
+        }
+      },
+      "id": "buscar-contexto-cliente-rpc",
+      "name": "Buscar Contexto Cliente (RPC)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const row = $input.first()?.json?.contexto || { encontrado: false };\nreturn [{ json: row }];"
+      },
+      "id": "montar-resultado",
+      "name": "Montar Resultado",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Buscar Contexto Cliente (RPC)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Contexto Cliente (RPC)": {
+      "main": [
+        [
+          {
+            "node": "Montar Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
