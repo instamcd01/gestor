@@ -464,6 +464,128 @@ nunca um caso alcançável pelo client real do site. Não corrigido de
 propósito (corrigir isso custaria mais complexidade do que vale por um
 cenário inatingível).
 
+## Validação real ponta a ponta (13/08) — 6 bugs de "plumbing" achados e corrigidos, fora do escopo original da Fase 0
+
+Antes de avançar pras tools, o usuário exigiu validação com uma conversa
+real (não só re-fetch estrutural do workflow). Isso se provou essencial:
+a API do Chatwoot não permite simular mensagem `incoming` num inbox
+WhatsApp real (`"Incoming messages are only allowed in Api inboxes"`), então
+o teste foi feito criando um contato/conversa de teste REAL no Chatwoot
+(`+5511900000001`, "TESTE CLAUDE - Fase0", apagado no final) e postando
+direto no webhook do n8n (`/webhook/whatsapp-webhook`) com o payload no
+formato exato que o Chatwoot manda, apontando pra essa conversa real —
+assim a resposta do bot chega de verdade no Chatwoot, dá pra conferir.
+
+**Achado mais sério**: `mensagens` tinha 131 linhas, só que TODAS com o
+mesmo timestamp (07/03/2026) — nenhuma mensagem nova desde então. Forte
+evidência de que o pipeline conversacional estava efetivamente parado pra
+conversas novas há ~5 meses, apesar dos workflows parecerem
+estruturalmente corretos na leitura de código.
+
+**6 bugs reais, todos pré-existentes (não introduzidos pela Fase 0),
+achados só porque uma mensagem de verdade foi processada de ponta a
+ponta**:
+
+1. **"Cliente Existe?" (workflow 01)** comparava contra um caminho de
+   payload que não existe mais (`body.conversation.messages[0].sender...`,
+   resquício de uma versão anterior do payload) — sempre avaliava "true",
+   então **clientes novos nunca eram criados**. Corrigido pra checar
+   `$json.id isNotEmpty` (mesmo padrão que "Conversa Existe?" já usava
+   certo).
+2. **"Buscar Conversa" (workflow 01)** usava sintaxe de filtro inválida
+   pro PostgREST (`coluna.eq.valor`, com ponto — o formato certo é
+   `coluna=eq.valor`, com igual). Um filtro inválido é silenciosamente
+   ignorado, então a query virava um `getAll` sem filtro nenhum,
+   **retornando a primeira linha da tabela `conversas`, não a conversa
+   certa** — e essa linha errada (de outra empresa!) fazia "Conversa
+   Existe?" achar que já existia, pulando "Criar Conversa" e caindo num
+   "Atualizar Conversa" que corretamente não achava nada pra atualizar
+   (id certo, mas inexistente) — pipeline morria ali, silenciosamente.
+   Corrigido trocando pro operation `get` (não `getAll`) + formato
+   estruturado `filters.conditions` — mesmo padrão comprovado de "Buscar
+   Cliente" — **agora também escopado por `empresa_id`, não só
+   `chatwoot_conversation_id`** (pedido explícito do usuário: nunca
+   identificar uma conversa só pelo id do Chatwoot, que não é único entre
+   contas diferentes).
+3. **Proteção de integridade nova** (pedido explícito do usuário, defesa
+   em profundidade): nós novos "Verificar Cliente" e "Verificar Conversa"
+   inseridos logo depois de "Buscar Cliente"/"Buscar Conversa" — conferem
+   que a linha encontrada realmente bate com telefone/chatwoot_conversation_id
+   + empresa_id esperados antes de deixar passar adiante; se não bater
+   (não deveria acontecer com o filtro correto, mas é rede de segurança
+   contra regressão futura), trata como "não encontrado" em vez de
+   confiar cegamente.
+4. **"Buscar Produto Supabase" (workflow 03, meu próprio fix da Fase 0)**
+   tinha o MESMO bug de sintaxe com ponto (`nome.ilike....&ativo.eq.true`)
+   — ou seja, o fix original da Fase 0 parava o erro 400, mas ainda não
+   filtrava de verdade por nome/ativo. Corrigido pra sinal de igual.
+5. **"Buscar Zonas Entrega" (workflow 03, nó novo que eu mesmo criei na
+   Fase 0)** tinha o mesmo problema. Tentei o formato estruturado
+   primeiro, mas `getAll` com múltiplas condições constrói uma árvore
+   `and=(...)` que exige um formato interno diferente do que `get` usa
+   (erro real capturado: `failed to parse logic tree
+   ((chatwoot_conversation_id..6,...))`, faltando o operador) — reverti
+   pra `filterString` com sintaxe de igual, comprovadamente correta.
+6. **"Parse Intenção2" perdia todo o contexto original (`chatwoot_conversation_id`,
+   `conversa_id`, `cliente_id`, `telefone`) depois do agente OpenAI** —
+   o node LangChain Agent substitui `$json` inteiro pela própria saída
+   (`{output: "..."}`), e "Parse Intenção2" espalhava `...$input.item.json`
+   (a saída do agente, já reduzida) em vez do contexto original. Corrigido
+   puxando explicitamente de `$('Padronizar Mensagem1').item.json` (o nó
+   logo antes do agente).
+7. **"Enviar Mensagem Bot"/"Enviar Aviso Humano" quebravam em qualquer
+   resposta com quebra de linha** — o corpo JSON era um template de texto
+   manual (`"content": "{{ $json.resposta }}"`) sem escapar `\n` de
+   verdade, então qualquer resposta multi-linha (ou seja, quase todas,
+   menos a saudação de uma linha só) gerava JSON inválido e o envio
+   falhava (`"JSON parameter needs to be valid JSON"`). Corrigido
+   envolvendo tudo numa única expressão `{{ JSON.stringify({content:
+   $json.resposta, ...}) }}`, que escapa corretamente.
+8. **"Transferir para Humano"/"Atualizar Estado Humano" liam
+   `$json.chatwoot_conversation_id` de um contexto já substituído** —
+   ambos vêm depois de OUTRO node HTTP (`Enviar Aviso Humano`), que
+   também substitui `$json` pela própria resposta da API do Chatwoot (que
+   nem tem um campo `chatwoot_conversation_id`, só `conversation_id`).
+   Corrigido com referência nomeada a `$('Parse Intenção2').item.json`.
+
+**Resultado dos 7 cenários pedidos** (contato de teste real, WhatsApp de
+verdade via Chatwoot, testado depois de cada fix, não só uma vez):
+- ✅ Saudação simples ("Oi") — cliente criado, conversa criada, mensagem
+  salva, resposta chegou no Chatwoot.
+- ✅ Consulta de produto real ("biscoito golden cookie?") — achou o
+  produto real, preço certo (R$19,90 confere com o banco), respondeu.
+- ⚠️ Consulta composta ("tem X e quanto fica a entrega?") — respondeu só
+  a parte do produto, ignorou a parte da entrega. **Não é bug novo, é o
+  limite já conhecido do switch atual** (uma intenção por vez) — confirma
+  exatamente por que a Fase 1+ troca isso por um agente com ferramentas.
+- ✅ Mensagem duplicada (mesmo `source_id` reenviado) — segunda tentativa
+  não criou linha nova em `mensagens`, não rodou "Processar Mensagem" de
+  novo.
+- ✅ Transferência humana ("quero falar com atendente") — `conversas.estado`
+  virou `'atendente'`, mensagem de transferência chegou no Chatwoot.
+- ❌ **Não testado: áudio.** Escopo já muito grande nesta rodada.
+- ❌ **Não testado: imagem.** Mesmo motivo.
+- ⚠️ **Segunda empresa**: não havia um ambiente seguro de teste pronto pra
+  isso. Evidência indireta: os filtros corrigidos (`Buscar Cliente`,
+  `Buscar Conversa`) agora exigem `empresa_id` explicitamente nas duas
+  buscas, então um cliente/conversa de outra empresa nunca bateria mesmo
+  que o `chatwoot_conversation_id`/telefone coincidisse.
+
+**Investigação da linha antiga (`conversas.chatwoot_conversation_id=4`,
+07/03/2026) — sem DELETE, só relatório, conforme pedido**: pertence à
+empresa "Delivery Pet" `4ff46568-...` (a stale, quase sem uso — 2
+clientes, 1 produto, 1 pedido, 0 usuários no total). O cliente
+relacionado (`720cdcab-...`) ainda existe, sem pedidos. 131 mensagens
+vinculadas a essa conversa (seriam apagadas junto se a conversa for
+removida — FK). Nenhuma outra tabela referencia `conversas`/`mensagens`
+além de `mensagens.conversa_id` e a nova `automacao_eventos` (vazia).
+**Candidata a remoção, mas decisão fica com o usuário** — não removida
+nesta sessão.
+
+**Dados de teste limpos ao final**: contato/conversa de teste apagados no
+Chatwoot; cliente/conversa/mensagens sintéticos apagados no Supabase
+(`count(*) = 0` confirmado).
+
 ## Rollout não-destrutivo (princípio explícito do usuário)
 
 O pipeline `01→03` atende clientes reais agora — nenhuma fase deste plano
