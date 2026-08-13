@@ -275,7 +275,7 @@
     },
     {
       "parameters": {
-        "functionCode": "const distanciaKm = $('Parse Distância').item.json.distancia_km;\nconst modalidade = $('When Executed by Another Workflow').item.json.p_modalidade || 'expressa';\nconst zona = $input.item.json;\n\nif (!zona || !zona.zona_id) {\n  return [{ json: { disponivel: false, distancia_km: distanciaKm, origem_calculo: 'distancia_real', motivo: 'Fora da área de entrega' } }];\n}\n\nif (modalidade === 'economica') {\n  if (zona.economico_valor == null) {\n    return [{ json: { disponivel: false, distancia_km: distanciaKm, origem_calculo: 'distancia_real', motivo: 'Frete econômico não disponível para esta loja' } }];\n  }\n  return [{ json: {\n    disponivel: true,\n    distancia_km: distanciaKm,\n    zona_nome: zona.zona_nome,\n    valor_frete: zona.economico_valor,\n    valor_frete_cheio: zona.economico_valor,\n    frete_gratis: false,\n    prazo_estimado_min: [zona.economico_prazo_dias * 24 * 60, zona.economico_prazo_dias * 24 * 60],\n    modalidade: 'economica',\n    origem_calculo: 'distancia_real',\n    motivo: null,\n  }}];\n}\n\nreturn [{ json: {\n  disponivel: true,\n  distancia_km: distanciaKm,\n  zona_nome: zona.zona_nome,\n  valor_frete: zona.valor,\n  valor_frete_cheio: zona.valor_cheio,\n  frete_gratis: zona.frete_gratis,\n  prazo_estimado_min: [zona.estimativa_min_min, zona.estimativa_min_max],\n  modalidade: 'expressa',\n  origem_calculo: 'distancia_real',\n  motivo: null,\n}}];"
+        "functionCode": "// distancia_km nunca sai daqui: e dado interno (o mesmo motivo pelo qual\n// consultar_zona_entrega tambem nao expoe). O agente so precisa do\n// resultado final (disponivel/valor/prazo), nao da distancia bruta.\nconst modalidade = $('When Executed by Another Workflow').item.json.p_modalidade || 'expressa';\nconst zona = $input.item.json;\n\nif (!zona || !zona.zona_id) {\n  return [{ json: { disponivel: false, zona_nome: null, valor_frete: null, valor_frete_cheio: null, frete_gratis: null, prazo_estimado_min: null, modalidade: null, motivo: 'Fora da área de entrega' } }];\n}\n\nif (modalidade === 'economica') {\n  if (zona.economico_valor == null) {\n    return [{ json: { disponivel: false, zona_nome: null, valor_frete: null, valor_frete_cheio: null, frete_gratis: null, prazo_estimado_min: null, modalidade: null, motivo: 'Frete econômico não disponível para esta loja' } }];\n  }\n  return [{ json: {\n    disponivel: true,\n    zona_nome: zona.zona_nome,\n    valor_frete: zona.economico_valor,\n    valor_frete_cheio: zona.economico_valor,\n    frete_gratis: false,\n    prazo_estimado_min: [zona.economico_prazo_dias * 24 * 60, zona.economico_prazo_dias * 24 * 60],\n    modalidade: 'economica',\n    motivo: null,\n  }}];\n}\n\nreturn [{ json: {\n  disponivel: true,\n  zona_nome: zona.zona_nome,\n  valor_frete: zona.valor,\n  valor_frete_cheio: zona.valor_cheio,\n  frete_gratis: zona.frete_gratis,\n  prazo_estimado_min: [zona.estimativa_min_min, zona.estimativa_min_max],\n  modalidade: 'expressa',\n  motivo: null,\n}}];"
       },
       "id": "montar-resultado",
       "name": "Montar Resultado",
@@ -284,6 +284,58 @@
       "position": [
         1984,
         -208
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "disponivel",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "name": "zona_nome",
+              "type": "string",
+              "value": null
+            },
+            {
+              "name": "valor_frete",
+              "type": "number",
+              "value": null
+            },
+            {
+              "name": "valor_frete_cheio",
+              "type": "number",
+              "value": null
+            },
+            {
+              "name": "frete_gratis",
+              "type": "boolean",
+              "value": null
+            },
+            {
+              "name": "modalidade",
+              "type": "string",
+              "value": null
+            },
+            {
+              "name": "motivo",
+              "type": "string",
+              "value": "Não foi possível calcular a rota até esse endereço"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "rota-nao-encontrada",
+      "name": "Rota Não Encontrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        -48
       ]
     }
   ],
@@ -381,7 +433,13 @@
             "index": 0
           }
         ],
-        []
+        [
+          {
+            "node": "Rota Não Encontrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Calcular Frete (RPC)": {
