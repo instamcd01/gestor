@@ -1,15 +1,18 @@
 {
-  "name": "Tool - Buscar Produto",
+  "name": "Tool - Consultar Estoque",
   "nodes": [
     {
       "parameters": {
         "workflowInputs": {
           "values": [
             {
+              "name": "p_produto_id"
+            },
+            {
               "name": "p_empresa_id"
             },
             {
-              "name": "p_consulta"
+              "name": "p_quantidade_desejada"
             }
           ]
         }
@@ -26,13 +29,13 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "select * from buscar_produto($1::uuid, $2)",
+        "query": "select consultar_estoque($1::uuid, $2::uuid, $3::int) as estoque",
         "options": {
-          "queryReplacement": "={{ [ $json.p_empresa_id, $json.p_consulta ] }}"
+          "queryReplacement": "={{ [ $json.p_produto_id, $json.p_empresa_id, $json.p_quantidade_desejada || null ] }}"
         }
       },
-      "id": "buscar-produto-rpc",
-      "name": "Buscar Produto (RPC)",
+      "id": "consultar-estoque-rpc",
+      "name": "Consultar Estoque (RPC)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
@@ -49,7 +52,7 @@
     },
     {
       "parameters": {
-        "functionCode": "const produtos = $input.all().map(i => i.json).filter(p => p && p.produto_id).map(p => ({\n  produto_id: p.produto_id,\n  nome: p.nome,\n  preco: p.preco,\n  preco_promocional: p.preco_promocional,\n  // Numero exato de estoque nunca chega ao agente por aqui: vira booleano.\n  // Quantidade exata (se precisa) so por consultar_estoque, e mesmo la\n  // o numero nao trafega pro agente (ver Tool - Consultar Estoque).\n  disponivel: (p.estoque_disponivel || 0) > 0\n}));\nreturn [{ json: { encontrado: produtos.length > 0, produtos } }];"
+        "functionCode": "const row = $input.first()?.json?.estoque || { encontrado: false, disponivel: false, consegue_atender: null };\n// \"quantidade\" nunca sai daqui pro agente: o numero exato de estoque nao deve\n// chegar ao contexto do LLM (ele repetia o numero mesmo com consegue_atender\n// pronto). A RPC ainda calcula quantidade internamente para outros usos futuros\n// (ex: validacao de carrinho direto no banco), so nao trafega para esta tool.\nreturn [{ json: { encontrado: row.encontrado, disponivel: row.disponivel, consegue_atender: row.consegue_atender } }];"
       },
       "id": "montar-resultado",
       "name": "Montar Resultado",
@@ -66,14 +69,14 @@
       "main": [
         [
           {
-            "node": "Buscar Produto (RPC)",
+            "node": "Consultar Estoque (RPC)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Buscar Produto (RPC)": {
+    "Consultar Estoque (RPC)": {
       "main": [
         [
           {
