@@ -49,7 +49,7 @@
     },
     {
       "parameters": {
-        "functionCode": "const row = $input.first()?.json?.contexto || { encontrado: false };\nreturn [{ json: row }];"
+        "functionCode": "// Auditoria de Data Exposure (13/08): a RPC calcula 'segmento' e 'ticket_medio'\n// (classificacao interna/metrica financeira) e 'dias_desde_ultima_compra'/\n// 'ciclo_dias' (reservados pra uma futura feature de previsao de recompra,\n// ainda sem instrucao de uso no agente). Nenhum desses campos e referenciado\n// por nenhuma regra do system prompt hoje -- pelo teste \"o agente precisa\n// disso pra funcionar?\", a resposta e nao, entao nao devem entrar no\n// contexto do LLM. RPC continua calculando tudo (fica disponivel pra uso\n// futuro), so nao trafega por aqui.\nconst row = $input.first()?.json?.contexto || { encontrado: false };\nif (!row.encontrado) return [{ json: row }];\n\nconst produtosRecorrentes = (row.produtos_recorrentes || []).map(p => ({\n  produto_nome: p.produto_nome,\n  especie: p.especie,\n}));\n\nreturn [{ json: {\n  encontrado: true,\n  nome: row.nome,\n  saldo_petcash: row.saldo_petcash,\n  pets: row.pets,\n  ultimo_pedido: row.ultimo_pedido,\n  produtos_recorrentes: produtosRecorrentes,\n  ambiguidade_multiplas_especies: row.ambiguidade_multiplas_especies,\n} }];"
       },
       "id": "montar-resultado",
       "name": "Montar Resultado",

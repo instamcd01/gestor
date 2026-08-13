@@ -299,7 +299,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Nunca expor distancia_km/endereco ao agente aqui -- só o que ele\n// precisa pra responder \"vocês entregam aqui\": se atende, o nome da\n// zona e o prazo. Distância e endereço ficam só dentro deste workflow.\nconst zona = $input.first()?.json?.zona || { atende: false, zona_nome: null, estimativa_min_min: null, estimativa_min_max: null };\nreturn [{ json: zona }];"
+        "functionCode": "// Nunca expor distancia_km/endereco ao agente aqui -- só o que ele\n// precisa pra responder \"vocês entregam aqui\": se atende, o nome da\n// zona e o prazo. Distância e endereço ficam só dentro deste workflow.\n// Auditoria de Data Exposure (13/08): antes isto fazia passthrough total\n// do jsonb da RPC -- hoje inofensivo porque a RPC só devolve esses 4\n// campos, mas frágil (qualquer campo novo adicionado na RPC no futuro\n// vazaria automaticamente sem ninguém perceber). Convertido pra whitelist\n// explícita, mesmo padrão já usado nas outras 4 tools.\nconst zona = $input.first()?.json?.zona || {};\nreturn [{ json: {\n  atende: zona.atende ?? false,\n  zona_nome: zona.zona_nome ?? null,\n  estimativa_min_min: zona.estimativa_min_min ?? null,\n  estimativa_min_max: zona.estimativa_min_max ?? null,\n  motivo: zona.motivo ?? null,\n} }];"
       },
       "id": "montar-resultado",
       "name": "Montar Resultado",
