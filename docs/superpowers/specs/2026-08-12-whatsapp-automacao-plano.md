@@ -168,17 +168,14 @@ memória, resumo aqui:**
    multi-tenant agora seria construir pra uma necessidade que ainda não
    existe (YAGNI). Fica documentado como item da Fase 7 (visão SaaS).
 
-**Pendente de uma ação sua**: os fixes dos itens 1/2/4 estão prontos como
-arquivo (`integrations/n8n/01-chatwoot-router-fase0-fix.json` e
-`03-interpretar-intencao-fase0-fix.json`) mas **ainda não foram aplicados
-no n8n** — o ambiente onde eu trabalho bloqueia automaticamente writes
-diretos num sistema de produção externo (o pipeline atende clientes reais
-agora). Duas formas de aplicar: (a) você importa esses 2 arquivos no editor
-do n8n (substituindo os workflows `01` e `03` existentes, mesmo id), ou
-(b) autoriza explicitamente o próximo `PUT` que eu tentar (aparece como
-prompt de permissão do Bash). Depois de aplicado, o teste recomendado é
-uma conversa de teste real (ou via Chatwoot API, com limpeza depois) antes
-de considerar a Fase 0 encerrada de verdade.
+**Aplicado no n8n em 13/08** (autorizado explicitamente pelo usuário,
+`PUT` direto nos workflows ativos, mesmo id): workflow `03` confirmado
+com 20 nós (filtro de produto corrigido, handler de entrega real, órfãos
+removidos) e workflow `01` confirmado com 12 nós + `onError:
+continueErrorOutput` em "Salvar Mensagem" (idempotência). Ambos
+continuam `active: true`. **Ainda não validado com uma conversa real de
+WhatsApp** — a verificação feita foi estrutural (re-fetch confirmando
+nós/conexões/parâmetros corretos), não uma execução ao vivo end-to-end.
 
 ## Fase 1 — Memória progressiva do cliente / fricção mínima (seções 4 e 11)
 
@@ -398,6 +395,74 @@ generalizado.
   adiado pra Fase 7, YAGNI enquanto só existe 1 tenant real.
 - Decisão final entre os 2 caminhos de autenticação pro checkout híbrido —
   ver seção "Checkout híbrido" acima.
+
+## Núcleo compartilhado — implementado e testado em 13/08
+
+Aprovado pelo usuário e já construído (banco), seguindo exatamente a
+ordem que ele definiu (itens 1-5 da ordem de execução dele, ver histórico
+da conversa): correção da Fase 0 → idempotência do webhook → concorrência
+de estoque → extração do `_core` → wrappers WhatsApp. **Nada disso está
+conectado ao agente/tools ainda** — só existe no banco, testado
+isoladamente.
+
+- **Concorrência de estoque** (`finalizar_pedido_site`, hoje via `_finalizar_pedido_core`):
+  a checagem de estoque agora trava (`FOR UPDATE`) as linhas de `estoque`
+  dos produtos do carrinho, em ordem determinística por `produto_id`
+  (evita deadlock entre duas finalizações concorrentes com produtos em
+  comum), com `lock_timeout` de 3s (contenção real vira erro rápido e
+  claro, não trava a resposta). Testado sequencialmente com dados
+  sintéticos: 1 unidade em estoque, primeiro pedido consome, segundo
+  pedido pro mesmo produto corretamente recebe "Estoque insuficiente".
+  **Limitação honesta**: não foi possível testar concorrência de verdade
+  (duas transações literalmente simultâneas) neste ambiente — não há
+  conexão Postgres direta disponível pra abrir duas sessões em paralelo,
+  só a API SQL síncrona. O padrão usado (`SELECT ... FOR UPDATE` dentro da
+  mesma transação que faz a checagem e a baixa) é comportamento padrão e
+  bem documentado do Postgres, não uma heurística nova — mas vale um teste
+  de carga real (2 conexões via script) antes do piloto ter volume.
+- **Idempotência do webhook Chatwoot**: índice único parcial em
+  `mensagens.mensagem_id_externa` (ignora nulls) — a unicidade em si é a
+  proteção atômica contra corrida (garantida pelo Postgres, não por lock
+  manual). Workflow `01`, nó "Salvar Mensagem", ganhou
+  `onError: continueErrorOutput`: uma inserção duplicada gera uma
+  violação de constraint, que agora cai num ramo de erro que só termina
+  ali (não chama "Processar Mensagem" de novo) em vez de derrubar a
+  execução inteira.
+- **`_finalizar_pedido_core` / `_adicionar_ao_carrinho_core`**: toda a
+  lógica de negócio (estoque com lock, cupom, PetCash, frete, taxa,
+  agendamento, criação do pedido/itens) — sem `auth.uid()`, recebe
+  `p_cliente_id` já resolvido. `EXECUTE` revogado de
+  `anon`/`authenticated`/`public` — só chamável a partir de outra função
+  (o "dono" da function tem privilégio implícito). `finalizar_pedido_site`/
+  `adicionar_ao_carrinho_site` viraram wrappers finos (mesma assinatura
+  pública, mesmos erros) que resolvem `auth.uid()` e delegam pro core.
+  **Testado end-to-end com dados sintéticos**: mesmo resultado exato
+  (`valor_total`, `canal_venda='site_proprio'`, `origem='site'`) que a
+  versão anterior produzia — comportamento do site preservado, confirmado
+  por execução real, não só leitura de código.
+- **`finalizar_pedido_whatsapp` / `adicionar_ao_carrinho_whatsapp`**:
+  mesma assinatura de intenção, resolvem cliente por `telefone +
+  empresa_id` em vez de `auth.uid()`, chamam o MESMO core. `EXECUTE`
+  revogado de `anon`/`authenticated` — só `service_role` (a mesma chave
+  que o n8n já usa pra tudo no pipeline `01→03`) consegue chamar.
+  **Testado end-to-end com dados sintéticos**: carrinho criado com
+  `origem='whatsapp'` (mesma tabela do site), pedido criado com
+  `canal_venda='whatsapp'`/`origem='whatsapp'`, estoque debitado
+  corretamente, e telefone desconhecido corretamente rejeitado com
+  "Cliente não encontrado". **Não exposto a nenhum workflow n8n nem ao
+  agente ainda** — só existe no banco, chamável só por quem tiver a
+  service_role key.
+
+**Micro-nuance de comportamento, disclosed por rigor**: no
+`finalizar_pedido_site` original, a validação de `tipo_entrega`/
+`modalidade_entrega`/`parcelas` acontecia ANTES de resolver o cliente. No
+wrapper novo, o cliente é resolvido primeiro, e essas validações
+acontecem dentro do core (depois). Só muda QUAL mensagem de erro aparece
+primeiro no caso (irreal em uso normal) de um caller mandar
+simultaneamente um `tipo_entrega` inválido E não ter cliente válido —
+nunca um caso alcançável pelo client real do site. Não corrigido de
+propósito (corrigir isso custaria mais complexidade do que vale por um
+cenário inatingível).
 
 ## Rollout não-destrutivo (princípio explícito do usuário)
 
