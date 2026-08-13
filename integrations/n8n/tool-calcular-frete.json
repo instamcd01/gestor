@@ -1,0 +1,404 @@
+{
+  "name": "Tool - Calcular Frete",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "empresas",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.p_empresa_id }}"
+            }
+          ]
+        }
+      },
+      "id": "buscar-empresa",
+      "name": "Buscar Empresa",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "zKVu2zDPVCtxDgq9",
+          "name": "Supabase cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "clientes",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $('When Executed by Another Workflow').item.json.p_cliente_id }}"
+            },
+            {
+              "keyName": "empresa_id",
+              "keyValue": "={{ $('When Executed by Another Workflow').item.json.p_empresa_id }}"
+            }
+          ]
+        }
+      },
+      "id": "buscar-cliente",
+      "name": "Buscar Cliente Frete",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "zKVu2zDPVCtxDgq9",
+          "name": "Supabase cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.endereco }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "tem-endereco",
+      "name": "Cliente Tem Endereço?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "disponivel",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "name": "origem_calculo",
+              "type": "string",
+              "value": "sem_endereco"
+            },
+            {
+              "name": "motivo",
+              "type": "string",
+              "value": "Cliente sem endereço cadastrado"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sem-endereco",
+      "name": "Sem Endereço",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "endereco_origem",
+              "type": "string",
+              "value": "={{ $('Buscar Empresa').item.json.endereco }}, {{ $('Buscar Empresa').item.json.cidade }} - {{ $('Buscar Empresa').item.json.estado }}, {{ $('Buscar Empresa').item.json.cep }}"
+            },
+            {
+              "name": "endereco_destino",
+              "type": "string",
+              "value": "={{ $json.endereco }}, {{ $json.cidade }} - {{ $json.estado }}, {{ $json.cep }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "montar-enderecos",
+      "name": "Montar Endereços",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://routes.googleapis.com/directions/v2:computeRoutes",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Goog-FieldMask",
+              "value": "routes.distanceMeters"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ origin: { address: $json.endereco_origem }, destination: { address: $json.endereco_destino }, travelMode: 'DRIVE' }) }}",
+        "options": {}
+      },
+      "id": "computar-rota",
+      "name": "Computar Rota (Google Maps)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        -128
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8gjtbsLiLH5AYkEL",
+          "name": "Google Maps Routes API (n8n backend)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rotas = $json.routes;\nif (!rotas || rotas.length === 0 || !rotas[0].distanceMeters) {\n  return [{ json: { disponivel: false, origem_calculo: 'distancia_real', motivo: 'Não foi possível calcular a rota até esse endereço' } }];\n}\nconst distanciaKm = rotas[0].distanceMeters / 1000;\nreturn [{ json: { distancia_km: distanciaKm, prossegue: true } }];"
+      },
+      "id": "parse-distancia",
+      "name": "Parse Distância",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1328,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.prossegue }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "rota-encontrada",
+      "name": "Rota Encontrada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from calcular_frete_site('{{ $('When Executed by Another Workflow').item.json.p_empresa_id }}'::uuid, {{ $json.distancia_km }}, {{ $('When Executed by Another Workflow').item.json.p_subtotal || 0 }})",
+        "options": {}
+      },
+      "id": "calcular-frete-rpc",
+      "name": "Calcular Frete (RPC)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1760,
+        -208
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const distanciaKm = $('Parse Distância').item.json.distancia_km;\nconst modalidade = $('When Executed by Another Workflow').item.json.p_modalidade || 'expressa';\nconst zona = $input.item.json;\n\nif (!zona || !zona.zona_id) {\n  return [{ json: { disponivel: false, distancia_km: distanciaKm, origem_calculo: 'distancia_real', motivo: 'Fora da área de entrega' } }];\n}\n\nif (modalidade === 'economica') {\n  if (zona.economico_valor == null) {\n    return [{ json: { disponivel: false, distancia_km: distanciaKm, origem_calculo: 'distancia_real', motivo: 'Frete econômico não disponível para esta loja' } }];\n  }\n  return [{ json: {\n    disponivel: true,\n    distancia_km: distanciaKm,\n    zona_nome: zona.zona_nome,\n    valor_frete: zona.economico_valor,\n    valor_frete_cheio: zona.economico_valor,\n    frete_gratis: false,\n    prazo_estimado_min: [zona.economico_prazo_dias * 24 * 60, zona.economico_prazo_dias * 24 * 60],\n    modalidade: 'economica',\n    origem_calculo: 'distancia_real',\n    motivo: null,\n  }}];\n}\n\nreturn [{ json: {\n  disponivel: true,\n  distancia_km: distanciaKm,\n  zona_nome: zona.zona_nome,\n  valor_frete: zona.valor,\n  valor_frete_cheio: zona.valor_cheio,\n  frete_gratis: zona.frete_gratis,\n  prazo_estimado_min: [zona.estimativa_min_min, zona.estimativa_min_max],\n  modalidade: 'expressa',\n  origem_calculo: 'distancia_real',\n  motivo: null,\n}}];"
+      },
+      "id": "montar-resultado",
+      "name": "Montar Resultado",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1984,
+        -208
+      ]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Buscar Empresa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Empresa": {
+      "main": [
+        [
+          {
+            "node": "Buscar Cliente Frete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Cliente Frete": {
+      "main": [
+        [
+          {
+            "node": "Cliente Tem Endereço?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cliente Tem Endereço?": {
+      "main": [
+        [
+          {
+            "node": "Montar Endereços",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem Endereço",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Endereços": {
+      "main": [
+        [
+          {
+            "node": "Computar Rota (Google Maps)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Computar Rota (Google Maps)": {
+      "main": [
+        [
+          {
+            "node": "Parse Distância",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Distância": {
+      "main": [
+        [
+          {
+            "node": "Rota Encontrada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rota Encontrada?": {
+      "main": [
+        [
+          {
+            "node": "Calcular Frete (RPC)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Calcular Frete (RPC)": {
+      "main": [
+        [
+          {
+            "node": "Montar Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
