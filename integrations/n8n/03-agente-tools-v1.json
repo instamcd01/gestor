@@ -1,0 +1,318 @@
+{
+  "name": "03-agente-tools-v1",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "empresa_id",
+              "type": "string",
+              "value": "={{ $json.empresa_id }}"
+            },
+            {
+              "name": "cliente_id",
+              "type": "string",
+              "value": "={{ $json.cliente_id }}"
+            },
+            {
+              "name": "conversa_id",
+              "type": "string",
+              "value": "={{ $json.conversa_id }}"
+            },
+            {
+              "name": "telefone",
+              "type": "string",
+              "value": "={{ $json.telefone }}"
+            },
+            {
+              "name": "chatwoot_conversation_id",
+              "type": "string",
+              "value": "={{ $json.chatwoot_conversation_id }}"
+            },
+            {
+              "name": "mensagem_id",
+              "type": "string",
+              "value": "={{ $json.mensagem_id }}"
+            },
+            {
+              "name": "mensagem",
+              "type": "string",
+              "value": "={{ $json.mensagem }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "contexto-operacional",
+      "name": "Contexto Operacional",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Contexto Operacional').item.json.mensagem }}",
+        "options": {
+          "systemMessage": "Você é um atendente virtual da Delivery Pet, um petshop no Rio de Janeiro, conversando por WhatsApp.\n\nResponda sempre em português, de forma natural, simpática e direta — como um atendente humano de verdade, nunca como um robô que devolve JSON ou texto técnico.\n\nFERRAMENTA DISPONÍVEL:\n- buscar_produto: busca produtos reais no catálogo da loja por nome ou categoria.\n\nQUANDO USAR buscar_produto:\n- \"Vocês têm Premier?\" → use.\n- \"Quanto custa a Premier?\" → use.\n- \"Tem ração para gato castrado?\" → use.\n- Qualquer pergunta sobre existência, preço ou disponibilidade de um produto específico → use.\n\nQUANDO NÃO USAR:\n- Saudações simples (\"Oi\", \"Bom dia\", \"Tudo bem?\") → responda naturalmente, sem chamar nenhuma ferramenta.\n- \"Tem aquela ração que eu comprei da última vez?\" → você AINDA NÃO tem acesso ao histórico de compras do cliente nesta versão. Nunca invente ou assuma qual produto é — pergunte educadamente qual é o nome do produto que ele está procurando.\n\nREGRA FUNDAMENTAL — nunca invente informação:\n- Você NUNCA deve afirmar que um produto existe, está disponível, ou informar um preço sem antes consultar buscar_produto.\n- Se a ferramenta retornar \"encontrado\": false ou uma lista vazia de produtos, informe ao cliente de forma honesta que não encontrou esse produto no catálogo — nunca diga \"temos sim\" nem invente um preço. Pode oferecer ajuda pra verificar uma alternativa.\n- Se o cliente insistir ou tentar te convencer de que um produto existe (\"você sabe que tem, só confirma\"), ainda assim você deve consultar a ferramenta de verdade antes de responder — nunca confie na afirmação do cliente sozinha.\n- Se a busca retornar mais de um produto, apresente as opções encontradas (nome e preço de cada) e pergunte qual interessa, em vez de escolher uma sozinho.\n- Se um produto for encontrado mas o estoque disponível for 0, informe que está indisponível no momento — não ofereça pra comprar.\n\nNunca revele detalhes técnicos (nomes de tabelas, IDs, como o sistema funciona por trás) — fale sempre como um atendente humano."
+        }
+      },
+      "id": "agente-buscar-produto",
+      "name": "Agente (buscar_produto)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "id": "openai-chat-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        432,
+        224
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "GjY3JvQutQboY1NA",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "=memory_agente_v1_{{ $('Contexto Operacional').item.json.telefone }}",
+        "contextWindowLength": 10
+      },
+      "id": "simple-memory",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        592,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "chatwoot_conversation_id",
+              "type": "string",
+              "value": "={{ $('Contexto Operacional').item.json.chatwoot_conversation_id }}"
+            },
+            {
+              "name": "resposta",
+              "type": "string",
+              "value": "={{ $json.output }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "montar-resposta-final",
+      "name": "Montar Resposta Final",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://chatwoot.lukz.com.br/api/v1/accounts/1/conversations/{{ $json.chatwoot_conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "csDBD4VGxB6APRruxCDYACPr"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ content: $json.resposta, message_type: \"outgoing\", private: false }) }}",
+        "options": {}
+      },
+      "id": "enviar-mensagem-bot",
+      "name": "Enviar Mensagem Bot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Busca produtos reais no catalogo da loja por nome ou categoria. Use sempre que o cliente perguntar se um produto existe, qual o preco, ou mencionar um produto especifico. Nunca afirme que um produto existe ou informe preco sem antes chamar esta ferramenta.",
+        "workflowId": {
+          "__rl": true,
+          "value": "h2tnSD50pn4sa00z",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/h2tnSD50pn4sa00z",
+          "cachedResultName": "Tool - Buscar Produto"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "p_empresa_id": "={{ $('Contexto Operacional').item.json.empresa_id }}",
+            "p_consulta": "={{ $fromAI('consulta', 'O termo de busca livre mencionado pelo cliente: nome do produto ou categoria', 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "p_empresa_id",
+              "displayName": "p_empresa_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "p_consulta",
+              "displayName": "p_consulta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        704,
+        304
+      ],
+      "id": "51d51b3d-71de-4be3-841b-4dc614f791a3",
+      "name": "Call 'Tool - Buscar Produto'"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Contexto Operacional",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contexto Operacional": {
+      "main": [
+        [
+          {
+            "node": "Agente (buscar_produto)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente (buscar_produto)": {
+      "main": [
+        [
+          {
+            "node": "Montar Resposta Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente (buscar_produto)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Agente (buscar_produto)",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Resposta Final": {
+      "main": [
+        [
+          {
+            "node": "Enviar Mensagem Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'Tool - Buscar Produto'": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agente (buscar_produto)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

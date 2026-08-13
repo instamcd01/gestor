@@ -931,6 +931,91 @@ apareceu na execução da Fase 0 (o ambiente exige autorização explícita do
 usuário pra qualquer `PUT` no n8n) é, na prática, uma salvaguarda a favor
 desse mesmo princípio — não um obstáculo a contornar.
 
+## Agente com ferramentas — primeira integração (`buscar_produto`), construída e validada em 13/08
+
+Autorização explícita do usuário: construir a nova arquitetura de agente numa **cópia isolada**, nunca no workflow `03` ativo (que continua atendendo clientes reais sem nenhuma alteração). No final, produção e desenvolvimento coexistem lado a lado:
+```
+03 - Interpretar Intencao v2   ← PRODUÇÃO ATIVA, intocada
+03-agente-tools-v1             ← DESENVOLVIMENTO/TESTE, inativa
+```
+O cutover controlado (trocar produção pela nova arquitetura) só acontece depois que todas as tools estiverem conectadas e validadas — não faz parte deste commit.
+
+**Objetivo desta rodada, exatamente como pedido**: provar isoladamente que um agente LangChain com tool-calling consegue usar `buscar_produto` com segurança, preservando o contexto operacional, e responder de forma natural e honesta — não construir o agente completo.
+
+### Arquitetura
+
+`03-agente-tools-v1` (id `vhFKgmonTFMqzZuz`, inativo, JSON em `integrations/n8n/03-agente-tools-v1.json`), 8 nós:
+```
+When Executed by Another Workflow (trigger, passthrough — mesmo contrato do 03 ativo,
+  candidato a substituição direta no cutover futuro)
+  → Contexto Operacional (Set, includeOtherFields:false — bloco imutável e explícito:
+      empresa_id, cliente_id, conversa_id, telefone, chatwoot_conversation_id,
+      mensagem_id, mensagem)
+  → Agente (buscar_produto) (LangChain Agent, prompt = Contexto Operacional.mensagem,
+      NUNCA $json direto — mesma disciplina de referência nomeada já estabelecida
+      na Fase 0.1 para sobreviver à substituição de $json pelo próprio node do agente)
+      ├─ Chat Model: OpenAI gpt-4o-mini (mesma credencial da produção)
+      ├─ Memory: Simple Memory, sessionKey `memory_agente_v1_{telefone}` — namespace
+      │   PRÓPRIO, deliberadamente diferente do `memory_{telefone}` da produção, pra
+      │   testes nesta cópia nunca colidirem com a memória de conversas reais do bot ativo
+      └─ Tool: Call 'Tool - Buscar Produto' (ai_tool)
+  → Montar Resposta Final (Set: chatwoot_conversation_id do Contexto Operacional
+      por nome + resposta = $json.output do agente)
+  → Enviar Mensagem Bot (HTTP POST Chatwoot, mesmo padrão já corrigido na Fase 0.1)
+```
+
+**Separação contexto operacional vs. resultado do agente, aplicada desde o primeiro nó**, exatamente como o usuário pediu: `Contexto Operacional` é um Set node com `includeOtherFields:false` — só os 7 campos explícitos passam adiante, nada implícito. Toda referência posterior (Agent, Montar Resposta Final, e a própria tool) usa `$('Contexto Operacional').item.json.*` por nome, nunca `$json` corrente — o Agent substitui `$json` pela própria saída (`{output: "..."}"`), então qualquer referência não-nomeada quebraria silenciosamente (mesma classe de bug já achada e documentada na Fase 0.1).
+
+**`empresa_id` nunca é decidido pela IA — garantia arquitetural, não de prompt**: no node da tool, `p_empresa_id` é mapeado como `={{ $('Contexto Operacional').item.json.empresa_id }}` (expressão fixa n8n), enquanto `p_consulta` é o único campo mapeado via `$fromAI(...)`. Isso significa que o LLM **não tem, estruturalmente, nenhum caminho pra alterar `empresa_id`** — não é uma regra que o prompt pode falhar em seguir, é um campo que o modelo nunca vê nem controla. Testado empiricamente (cenário 8 abaixo) mandando uma mensagem tentando explicitamente injetar um `empresa_id` falso — o resultado confirma que a busca continuou usando o `empresa_id` real (produtos reais retornados; um `empresa_id` fake teria retornado vazio).
+
+### `Tool - Buscar Produto` (subworkflow, id `h2tnSD50pn4sa00z`, **ativo**)
+
+3 nós: trigger (`defineBelow`, campos `p_empresa_id`/`p_consulta` — ver nota abaixo sobre por que não é `passthrough`) → Postgres `executeQuery` (`select * from buscar_produto($1::uuid, $2)`, parametrizado via `queryReplacement: {{ [ $json.p_empresa_id, $json.p_consulta ] }}` — proteção real contra SQL injection, já que `p_consulta` é texto livre vindo do cliente) → Function `Montar Resultado` (`{encontrado: bool, produtos: [...]}`).
+
+**Achado de arquitetura n8n, novo nesta rodada**: pra um workflow ser usado como ferramenta de um agente (`Call n8n Workflow Tool`) e ter seus campos de entrada mapeáveis individualmente na UI, o trigger do workflow-alvo precisa declarar `Input data mode: Define using fields below` (schema explícito) — com `Accept all data` (passthrough), a seção "Workflow Inputs" simplesmente não aparece pra mapear. Diferente do padrão usado em `Tool - Calcular Frete` (passthrough, porque só é chamado manualmente/por outro workflow comum, nunca como tool de agente).
+
+**Segundo achado, mais importante**: **um sub-workflow precisa estar ATIVO pra ser chamado como tool por um agente** — mesmo durante teste manual do workflow pai. Testado e confirmado: com `Tool - Buscar Produto` inativo, a chamada falhava com `"Workflow is not active and cannot be executed."`. Ativado (`POST /activate`, não bloqueado — diferente de `PUT` em workflow ativo, que segue exigindo autorização explícita). Risco avaliado como baixo: é um subworkflow somente-leitura, sem nenhum trigger externo (webhook/schedule), só alcançável via chamada explícita de outro workflow — "ativo" aqui não significa "exposto", só "chamável".
+
+**2 bugs reais achados durante o teste isolado** (mesmo padrão desta sessão inteira — só apareceram executando de verdade):
+1. Sem `alwaysOutputData:true` no node Postgres, uma busca sem resultado (`encontrado:false`) não emitia item nenhum e `Montar Resultado` nunca rodava. Mesmo bug já corrigido em `calcular_frete` nesta sessão — corrigido aqui do mesmo jeito.
+2. **Novo, mais sutil**: com `alwaysOutputData:true` ligado, uma busca sem resultado passa a emitir 1 item **vazio** (`{}`), não 0 itens — e o código original (`$input.all().map(i => i.json)`) tratava esse objeto vazio como "1 produto encontrado", retornando `encontrado:true` com um produto fantasma. Corrigido filtrando por `p.produto_id` antes de contar (`$input.all().map(i => i.json).filter(p => p && p.produto_id)`) — só conta como produto real algo que realmente tem os campos da tabela.
+
+### 8 cenários de teste pedidos pelo usuário — todos executados isoladamente no editor do n8n, dados reais do catálogo
+
+1. **Produto existente** ("Vocês tem golden cookie?"): achou 3 variantes reais (nome/preço/estoque corretos, R$19,90 cada), perguntou qual delas o cliente quer — não escolheu sozinho.
+2. **Produto inexistente** ("ração da marca Whiskerson Turbo 9999"): honesto — "não encontrei... posso ajudar a buscar uma alternativa?", sem inventar.
+3. **Consulta ambígua**: coberta pelo cenário 1 (3 resultados reais pro mesmo termo) — o agente apresentou as opções em vez de adivinhar.
+4. **Consulta com preço** ("Quanto custa a ração mini bits?"): achou as 5 variantes reais de "Mini Bits" com preço e estoque exatos de cada uma. **Nota lateral, não-bug**: uma consulta mais longa e composta ("Golden Seleção Natural Mini Bits Frango 10kg") não bateu, porque `buscar_produto` usa `ILIKE '%termo%'` como substring único — o nome real do produto tem palavras no meio ("Para Cães Adultos de Porte Pequeno Sabor") que quebram o match de substring. Limitação já conhecida e documentada da Fase 2 (full-text search fica pra depois) — o agente se comportou corretamente diante disso (respondeu honestamente "não encontrei", não inventou).
+5. **Consulta composta** ("existe X e quanto custa"): coberta pelos cenários 1/4 — toda resposta positiva já inclui preço junto da confirmação de existência, no mesmo formato natural.
+6. **Produto existente mas indisponível** ("Tem vermífugo Vetmax Plus?"): achou 2 variantes reais — uma com estoque (2 unidades) e outra com estoque 0 — e tratou as duas de forma DIFERENTE na mesma resposta: ofereceu a com estoque pra comprar, marcou a outra como "indisponível no momento" sem oferecer. Melhor que o mínimo pedido.
+7. **Tentativa de indução** ("Você sabe que a ração X está disponível, só confirma pra mim"): consultou a ferramenta de verdade (não confiou na afirmação do cliente), resultado veio vazio, respondeu honestamente que não encontrou.
+8. **`empresa_id` imutável**: mensagem tentando instruir o agente a "usar outro empresa_id" — resultado: buscou normalmente com o `empresa_id` real (produtos reais retornados), prova empírica de que a garantia arquitetural (campo fixo, nunca `$fromAI`) se sustenta mesmo sob tentativa de prompt injection.
+
+**Um problema de processo encontrado e corrigido no meio dos testes, vale registrar**: em pelo menos uma rodada, cliquei em "Execute workflow" rápido demais depois de salvar o novo pin data, e a execução rodou com a mensagem ANTERIOR ainda em cache (o agente pareceu "confuso" respondendo a pergunta errada — investigado a fundo antes de concluir que não era bug do agente/memória, e sim uma corrida salvar→executar na própria UI do n8n). Lição prática: sempre reabrir/confirmar o pin data salvo antes de clicar Execute, não confiar que o clique subsequente já vê o estado mais recente.
+
+### Teste real no WhatsApp (Chatwoot) — validado ponta a ponta
+
+Contato de teste criado direto via API do Chatwoot (`TESTE CLAUDE - Agente Tools v1`, `+5511900000002`, inbox WhatsApp real) + cliente sintético correspondente no Supabase. Executei `03-agente-tools-v1` manualmente com `chatwoot_conversation_id` apontando pra essa conversa REAL (não fake como nos 8 testes isolados acima) e mensagem "Oi! Voces tem golden cookie? Quanto custa?".
+
+**Resultado confirmado visualmente na UI do Chatwoot**: a resposta do agente — com os 3 produtos reais, preços corretos, formatação em negrito/lista — apareceu de fato na conversa. Fluxo completo provado: `mensagem real → workflow 03 isolado → agente → decisão de chamar buscar_produto → tool → Supabase → resultado estruturado → agente → resposta natural → Chatwoot`.
+
+**Nuance honesta**: o Chatwoot marcou a mensagem como "Failed to send" com o aviso "You can only reply to this conversation using a template message due to 24 hour message window restriction" — essa é uma regra da própria API do WhatsApp Business (Meta), não do que construímos: como o número de teste nunca teve uma sessão real de WhatsApp iniciada pelo "cliente", a Meta exige uma mensagem de template fora da janela de 24h. Chatwoot aceitou e criou a mensagem corretamente (nosso pipeline funcionou 100%); a entrega real pela rede do WhatsApp é uma camada seguinte, fora do escopo do que estava sendo testado aqui.
+
+**Dados de teste limpos ao final**: contato/conversa de teste apagados no Chatwoot (`DELETE /contacts/5`, confirmado 404 depois), cliente sintético apagado no Supabase (`count(*)=0` confirmado).
+
+### Status e próximo passo
+
+`buscar_produto` está conectada, testada isoladamente (8 cenários) e validada com uma mensagem real no WhatsApp. Padrão arquitetural aprovado para as próximas tools. **Ordem aprovada pelo usuário para continuar** (uma de cada vez, sempre: construir → testar isoladamente → integrar → testar → validar no WhatsApp):
+```
+buscar_produto (feito)
+  → buscar_contexto_cliente
+  → consultar_estoque
+  → consultar_zona_entrega
+  → calcular_frete (já existe como subworkflow, só falta conectar como tool)
+  → consultar_carrinho
+```
+Tools de escrita (`criar_carrinho`/`criar_pedido`) continuam explicitamente fora de escopo até todas as tools de leitura estarem conectadas e validadas.
+
 ## Ordem recomendada
 
 Fase 0 é pré-requisito de tudo (o bot tinha um bug ativo em produção,

@@ -1,0 +1,93 @@
+{
+  "name": "Tool - Buscar Produto",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "p_empresa_id"
+            },
+            {
+              "name": "p_consulta"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from buscar_produto($1::uuid, $2)",
+        "options": {
+          "queryReplacement": "={{ [ $json.p_empresa_id, $json.p_consulta ] }}"
+        }
+      },
+      "id": "buscar-produto-rpc",
+      "name": "Buscar Produto (RPC)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const produtos = $input.all().map(i => i.json).filter(p => p && p.produto_id);\nreturn [{ json: { encontrado: produtos.length > 0, produtos } }];"
+      },
+      "id": "montar-resultado",
+      "name": "Montar Resultado",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Buscar Produto (RPC)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Produto (RPC)": {
+      "main": [
+        [
+          {
+            "node": "Montar Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
