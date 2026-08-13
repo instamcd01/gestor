@@ -699,11 +699,35 @@ somar o n8n como mais um consumidor da MESMA chave só reforça essa
 ambiguidade e trava qualquer aperto de segurança futuro sem quebrar 3
 sistemas de uma vez. **Não alterei a chave existente.**
 
-**Ação necessária, só o usuário pode fazer**: provisionar uma chave NOVA
-no Google Cloud Console, exclusiva pro backend (n8n), restrita só às 2
-APIs necessárias (Distance Matrix + Geocoding) e, se possível, por IP de
-saída do servidor n8n (mais seguro que sem restrição nenhuma). Não tenho
-acesso ao Console do Google Cloud desse projeto pra criar isso.
+**Decisão do usuário (13/08)**: não reaproveitar a chave atual, não
+alterá-la/revogá-la agora (está em produção). Criar uma chave NOVA,
+exclusiva pro backend/n8n. Migrar/segregar a chave atual (Flutter vs.
+site vs. o resto) fica registrado como **tarefa de hardening separada**,
+de prioridade alta mas deliberadamente NÃO misturada com a construção do
+agente — mapear consumidores, separar, testar, só depois revogar a
+antiga, como projeto à parte.
+
+**APIs que a chave nova precisa habilitar — o mínimo necessário, não por garantia**:
+Só **Distance Matrix API**. O contrato de `calcular_frete` (acima) parte
+de `clientes.latitude/longitude` já salvos (geocodificados antes, no
+cadastro/checkout) — não geocodifica endereço novo em texto livre nesta
+versão. **Geocoding API não é necessária pra esse escopo** — só entraria
+se um dia a tool passasse a aceitar um endereço em texto solto vindo da
+conversa, o que não está no contrato aprovado.
+
+**Requisitos de segurança pra chave nova, definidos pelo usuário**:
+- Exclusiva pro backend/n8n (nunca compartilhada com Flutter/site).
+- Guardada como credencial/secret do n8n (Google Cloud Console →
+  restrição de API só pra Distance Matrix) — **nunca hardcoded no JSON do
+  workflow, nunca em prompt do agente, nunca devolvida na resposta da
+  tool, nunca enviada ao cliente**.
+- Restrição por IP de saída do n8n: avaliar depois SE disponível/compatível
+  com a infra — não é bloqueante se o ambiente tiver IP variável.
+
+**Bloqueada até o usuário provisionar essa chave** — não tenho acesso ao
+Google Cloud Console desse projeto pra criar. Nada mais será construído
+nessa tool até a credencial existir (decisão explícita do usuário:
+esperar, não adiantar outras tools em paralelo).
 
 ### Contrato final de `calcular_frete`
 
