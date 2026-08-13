@@ -1,0 +1,93 @@
+{
+  "name": "Tool - Consultar Carrinho",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "p_cliente_id"
+            },
+            {
+              "name": "p_empresa_id"
+            }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select consultar_carrinho($1::uuid, $2::uuid) as carrinho",
+        "options": {
+          "queryReplacement": "={{ [ $json.p_cliente_id, $json.p_empresa_id ] }}"
+        }
+      },
+      "id": "consultar-carrinho-rpc",
+      "name": "Consultar Carrinho (RPC)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Whitelist explícita obrigatória (regra 13/08, ver auditoria de Data\n// Exposure): nunca passthrough do jsonb da RPC, mesmo quando ela hoje só\n// devolve campos seguros. valor_total já vem somado a partir dos itens\n// reais (nunca da coluna carrinho.valor_total cacheada) -- a RPC garante\n// isso, aqui só reconstruímos o payload campo a campo.\nconst row = $input.first()?.json?.carrinho || { itens: [], valor_total: 0 };\n\nconst itens = (row.itens || []).map(i => ({\n  produto_id: i.produto_id,\n  nome: i.nome,\n  quantidade: i.quantidade,\n  preco_unitario: i.preco_unitario,\n  subtotal: i.subtotal,\n}));\n\nreturn [{ json: {\n  vazio: itens.length === 0,\n  itens,\n  valor_total: row.valor_total,\n} }];"
+      },
+      "id": "montar-resultado",
+      "name": "Montar Resultado",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Consultar Carrinho (RPC)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Carrinho (RPC)": {
+      "main": [
+        [
+          {
+            "node": "Montar Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
