@@ -662,6 +662,97 @@ nem exposta ao agente ainda** — essa é a próxima etapa, depois de revisão.
 - **Retorno esperado**: `{disponivel: true, valor, distancia_km, estimativa_min_min, estimativa_min_max}` ou `{disponivel:false, motivo}` — se não há endereço salvo, o agente deve cair pra `consultar_zona_entrega` como resposta genérica em vez de travar.
 - **Como testar quando construído**: cliente sintético com lat/lng reais de teste, comparar contra o resultado que o site dá pro mesmo endereço.
 
+## `calcular_frete` — auditoria da credencial + contrato final (13/08)
+
+### Auditoria da chave de Google Maps existente (lida direto do código, não suposição)
+
+**Achado central: hoje existe UMA ÚNICA chave (`AIzaSyDKmbywF7XdgUI3LWJ0-...`)
+fazendo papel de client-side E server-side ao mesmo tempo**, em 3 lugares:
+1. `lib/services/distancia_service.dart` (app Flutter) — hardcoded no Dart,
+   compilado dentro do APK, chamadas HTTP diretas a `maps.googleapis.com`
+   (Distance Matrix + Geocoding).
+2. `android/app/src/main/AndroidManifest.xml` — a MESMA chave, como
+   `meta-data` do Maps SDK for Android.
+3. `gestor-loja/.env.local` → `GOOGLE_MAPS_API_KEY` — a MESMA chave,
+   usada server-side em `frete.ts`/`geocoding.ts` (nunca vai pro bundle
+   do browser, mas é a mesma string usada no app).
+
+**APIs usadas**: só Distance Matrix API e Geocoding API (confirmado nos 2
+codebases, nenhuma API adicional).
+
+**Restrições configuradas no Google Cloud Console**: não verificável
+por aqui — preciso de acesso ao Console (`console.cloud.google.com` >
+APIs & Services > Credentials), que não tenho. Mas o PADRÃO DE USO já é
+uma evidência forte: se essa chave tivesse uma restrição de "Android
+apps" (a única forma de restringir corretamente uma chave usada pelo
+Maps SDK for Android), as chamadas server-side do site (`frete.ts`)
+provavelmente teriam parado de funcionar — como o comentário no próprio
+código confirma que funciona, a leitura mais provável é que a chave hoje
+**não tem nenhuma restrição de aplicativo/referrer**, só (na melhor
+hipótese) uma restrição de API habilitada.
+
+**Recomendação: NÃO reaproveitar essa chave pro n8n.** Ela já está numa
+posição ambígua (client-side exposta no APK + server-side ao mesmo
+tempo) que idealmente merece ser corrigida algum dia (chave própria do
+app, restrita por pacote Android+certificado) independente do WhatsApp —
+somar o n8n como mais um consumidor da MESMA chave só reforça essa
+ambiguidade e trava qualquer aperto de segurança futuro sem quebrar 3
+sistemas de uma vez. **Não alterei a chave existente.**
+
+**Ação necessária, só o usuário pode fazer**: provisionar uma chave NOVA
+no Google Cloud Console, exclusiva pro backend (n8n), restrita só às 2
+APIs necessárias (Distance Matrix + Geocoding) e, se possível, por IP de
+saída do servidor n8n (mais seguro que sem restrição nenhuma). Não tenho
+acesso ao Console do Google Cloud desse projeto pra criar isso.
+
+### Contrato final de `calcular_frete`
+
+```
+Entrada:
+  p_empresa_id      (FIXO, contexto do workflow)
+  p_cliente_id       (FIXO — resolve endereço salvo; se não houver, tool retorna disponivel:false)
+  p_modalidade       ('expressa' | 'economica', decidido pelo agente conforme o que o cliente pedir)
+
+Saída:
+  {
+    disponivel: boolean,
+    distancia_km: number | null,
+    zona_nome: string | null,
+    valor_frete: number | null,
+    prazo_estimado_min: [number, number] | null,
+    modalidade: string,
+    origem_calculo: 'distancia_real' | 'sem_endereco',
+    motivo: string | null   -- só quando disponivel=false
+  }
+```
+
+**Separação de responsabilidade, exatamente como o usuário pediu — Google
+Maps NUNCA decide preço**:
+```
+endereço do cliente (clientes.latitude/longitude, se já existir)
+        ↓
+Google Maps Distance Matrix  →  distância em km          [ETAPA EXTERNA]
+        ↓
+calcular_frete_site(empresa_id, distancia_km, subtotal)   [ETAPA DE DOMÍNIO — já existe, testada, sem auth.uid()]
+        ↓
+zona + valor + prazo (regra 100% do banco)
+        ↓
+resultado estruturado devolvido pro agente
+```
+
+O agente nunca vê a distância bruta como algo pra "decidir preço em cima" —
+recebe zona/valor/prazo já resolvidos pelo banco. Se o cliente não tiver
+endereço salvo, a tool retorna `disponivel:false, origem_calculo:
+'sem_endereco'` e o agente cai pra `consultar_zona_entrega` (mostrar as
+faixas gerais) em vez de travar.
+
+**Implementação**: subworkflow n8n dedicado (não RPC pura — envolve uma
+chamada HTTP externa síncrona, que uma função Postgres não faz bem). Nós:
+buscar `clientes.latitude/longitude` (Supabase) → IF tem endereço → HTTP
+Request (Google Maps Distance Matrix, credencial nova) → RPC
+`calcular_frete_site` (Supabase) → monta o retorno estruturado. **Ainda
+não construído** — bloqueado na credencial nova (ver acima).
+
 ## Rollout não-destrutivo (princípio explícito do usuário)
 
 O pipeline `01→03` atende clientes reais agora — nenhuma fase deste plano
