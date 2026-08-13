@@ -1,0 +1,434 @@
+{
+  "name": "Tool - Consultar Zona Entrega",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "empresas",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.p_empresa_id }}"
+            }
+          ]
+        }
+      },
+      "id": "buscar-empresa",
+      "name": "Buscar Empresa",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        224,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "zKVu2zDPVCtxDgq9",
+          "name": "Supabase cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "clientes",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $('When Executed by Another Workflow').item.json.p_cliente_id }}"
+            },
+            {
+              "keyName": "empresa_id",
+              "keyValue": "={{ $('When Executed by Another Workflow').item.json.p_empresa_id }}"
+            }
+          ]
+        }
+      },
+      "id": "buscar-cliente",
+      "name": "Buscar Cliente Zona",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "zKVu2zDPVCtxDgq9",
+          "name": "Supabase cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.endereco }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "tem-endereco",
+      "name": "Cliente Tem Endereço?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "atende",
+              "type": "boolean",
+              "value": null
+            },
+            {
+              "name": "motivo",
+              "type": "string",
+              "value": "sem_endereco_cadastrado"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sem-endereco",
+      "name": "Sem Endereço",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "endereco_origem",
+              "type": "string",
+              "value": "={{ $('Buscar Empresa').item.json.endereco }}, {{ $('Buscar Empresa').item.json.cidade }} - {{ $('Buscar Empresa').item.json.estado }}, {{ $('Buscar Empresa').item.json.cep }}"
+            },
+            {
+              "name": "endereco_destino",
+              "type": "string",
+              "value": "={{ $json.endereco }}, {{ $json.cidade }} - {{ $json.estado }}, {{ $json.cep }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "montar-enderecos",
+      "name": "Montar Endereços",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        880,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://routes.googleapis.com/directions/v2:computeRoutes",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Goog-FieldMask",
+              "value": "routes.distanceMeters"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ origin: { address: $json.endereco_origem }, destination: { address: $json.endereco_destino }, travelMode: 'DRIVE' }) }}",
+        "options": {}
+      },
+      "id": "computar-rota",
+      "name": "Computar Rota (Google Maps)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        -128
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8gjtbsLiLH5AYkEL",
+          "name": "Google Maps Routes API (n8n backend)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rotas = $json.routes;\nif (!rotas || rotas.length === 0 || !rotas[0].distanceMeters) {\n  return [{ json: { prossegue: false, motivo: 'rota_nao_encontrada' } }];\n}\nconst distanciaKm = rotas[0].distanceMeters / 1000;\nreturn [{ json: { distancia_km: distanciaKm, prossegue: true } }];"
+      },
+      "id": "parse-distancia",
+      "name": "Parse Distância",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1328,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.prossegue }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "rota-encontrada",
+      "name": "Rota Encontrada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "atende",
+              "type": "boolean",
+              "value": null
+            },
+            {
+              "name": "motivo",
+              "type": "string",
+              "value": "rota_nao_encontrada"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "rota-nao-encontrada",
+      "name": "Rota Não Encontrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1552,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select consultar_zona_entrega($1::uuid, $2::numeric) as zona",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.p_empresa_id, $json.distancia_km ] }}"
+        }
+      },
+      "id": "identificar-zona-rpc",
+      "name": "Identificar Zona (RPC)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1776,
+        -288
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Nunca expor distancia_km/endereco ao agente aqui -- só o que ele\n// precisa pra responder \"vocês entregam aqui\": se atende, o nome da\n// zona e o prazo. Distância e endereço ficam só dentro deste workflow.\nconst zona = $input.first()?.json?.zona || { atende: false, zona_nome: null, estimativa_min_min: null, estimativa_min_max: null };\nreturn [{ json: zona }];"
+      },
+      "id": "montar-resultado",
+      "name": "Montar Resultado",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        -288
+      ]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Buscar Empresa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Empresa": {
+      "main": [
+        [
+          {
+            "node": "Buscar Cliente Zona",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Cliente Zona": {
+      "main": [
+        [
+          {
+            "node": "Cliente Tem Endereço?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cliente Tem Endereço?": {
+      "main": [
+        [
+          {
+            "node": "Montar Endereços",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sem Endereço",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Endereços": {
+      "main": [
+        [
+          {
+            "node": "Computar Rota (Google Maps)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Computar Rota (Google Maps)": {
+      "main": [
+        [
+          {
+            "node": "Parse Distância",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Distância": {
+      "main": [
+        [
+          {
+            "node": "Rota Encontrada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rota Encontrada?": {
+      "main": [
+        [
+          {
+            "node": "Identificar Zona (RPC)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rota Não Encontrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identificar Zona (RPC)": {
+      "main": [
+        [
+          {
+            "node": "Montar Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
