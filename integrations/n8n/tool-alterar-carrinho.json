@@ -1,0 +1,70 @@
+{
+  "name": "Tool - Alterar Carrinho",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "p_cliente_id" },
+            { "name": "p_empresa_id" },
+            { "name": "p_conversa_id" },
+            { "name": "p_mensagem_id" },
+            { "name": "p_operacao" },
+            { "name": "p_produto_id" },
+            { "name": "p_quantidade" },
+            { "name": "p_tipo_mensagem" }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select alterar_carrinho_whatsapp($1::uuid, $2::uuid, $3::uuid, $4, $5::uuid, $6::int, $7, $8::uuid) as resultado",
+        "options": {
+          "queryReplacement": "={{ [ $json.p_cliente_id, $json.p_empresa_id, $json.p_conversa_id, $json.p_operacao, ($json.p_produto_id === '' || $json.p_produto_id === undefined) ? null : $json.p_produto_id, ($json.p_quantidade === '' || $json.p_quantidade === undefined || $json.p_quantidade === null) ? null : $json.p_quantidade, $json.p_tipo_mensagem, $json.p_mensagem_id ] }}"
+        }
+      },
+      "id": "alterar-carrinho-rpc",
+      "name": "Alterar Carrinho (RPC)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [224, 0],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Whitelist explicita (regra permanente do projeto): a RPC ja devolve so\n// o necessario, mas reconstruimos aqui campo a campo mesmo assim -- nunca\n// passthrough direto do jsonb da RPC, mesmo quando parece seguro hoje.\nconst row = $input.first()?.json?.resultado || {};\nconst carrinho = row.carrinho || { vazio: true, itens: [], valor_total: 0 };\nreturn [{ json: {\n  autorizado: !!row.autorizado,\n  aguardando_confirmacao: !!row.aguardando_confirmacao,\n  motivo: row.motivo || null,\n  operacao: row.operacao,\n  produto_id: row.produto_id,\n  produto_nome: row.produto_nome,\n  quantidade_antes: row.quantidade_antes,\n  quantidade_final: row.quantidade_final,\n  carrinho: {\n    vazio: carrinho.itens ? carrinho.itens.length === 0 : true,\n    itens: (carrinho.itens || []).map(i => ({\n      produto_id: i.produto_id, nome: i.nome, quantidade: i.quantidade,\n      preco_unitario: i.preco_unitario, subtotal: i.subtotal,\n    })),\n    valor_total: carrinho.valor_total,\n  },\n} }];"
+      },
+      "id": "montar-resultado",
+      "name": "Montar Resultado",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [448, 0]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[{ "node": "Alterar Carrinho (RPC)", "type": "main", "index": 0 }]]
+    },
+    "Alterar Carrinho (RPC)": {
+      "main": [[{ "node": "Montar Resultado", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
