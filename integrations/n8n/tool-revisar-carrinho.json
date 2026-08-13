@@ -9,7 +9,8 @@
             { "name": "p_empresa_id" },
             { "name": "p_conversa_id" },
             { "name": "p_mensagem_id" },
-            { "name": "p_tipo_mensagem" }
+            { "name": "p_tipo_mensagem" },
+            { "name": "p_mensagem_cliente" }
           ]
         }
       },
@@ -86,9 +87,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "select revisar_carrinho_whatsapp($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6::jsonb, $7::numeric, $8::boolean, $9::numeric, $10::jsonb) as resultado",
+        "query": "select revisar_carrinho_whatsapp($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7::jsonb, $8::numeric, $9::boolean, $10::numeric, $11::jsonb) as resultado",
         "options": {
-          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.p_cliente_id, $('When Executed by Another Workflow').item.json.p_empresa_id, $('When Executed by Another Workflow').item.json.p_conversa_id, $('When Executed by Another Workflow').item.json.p_mensagem_id, $('When Executed by Another Workflow').item.json.p_tipo_mensagem, JSON.stringify($('Consultar Carrinho').item.json.itens || []), $('Consultar Carrinho').item.json.valor_total, $json.disponivel, $json.valor_frete, JSON.stringify($json.prazo_estimado_min || null) ] }}"
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.p_cliente_id, $('When Executed by Another Workflow').item.json.p_empresa_id, $('When Executed by Another Workflow').item.json.p_conversa_id, $('When Executed by Another Workflow').item.json.p_mensagem_id, $('When Executed by Another Workflow').item.json.p_tipo_mensagem, $('When Executed by Another Workflow').item.json.p_mensagem_cliente, JSON.stringify($('Consultar Carrinho').item.json.itens || []), $('Consultar Carrinho').item.json.valor_total, $json.disponivel, $json.valor_frete, JSON.stringify($json.prazo_estimado_min || null) ] }}"
         }
       },
       "id": "revisar-carrinho-rpc",
