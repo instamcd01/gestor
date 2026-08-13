@@ -586,6 +586,82 @@ nesta sessão.
 Chatwoot; cliente/conversa/mensagens sintéticos apagados no Supabase
 (`count(*) = 0` confirmado).
 
+## Fase 0.2 — Tools de leitura (13/08): documentação + RPCs construídas e testadas, NENHUMA conectada ao agente ainda
+
+Aprovado pelo usuário avançar pra tools de leitura (sem efeito colateral),
+mantendo a separação explícita entre **contexto operacional do workflow**
+(`empresa_id`/`cliente_id`/`conversa_id`/`chatwoot_conversation_id` —
+sempre parâmetro fixo, nunca decidido pelo agente) e **resultado do
+agente** (intenção, texto livre de busca, etc. — isso sim o agente decide).
+Cada tool abaixo é uma RPC própria (`SECURITY DEFINER`, `EXECUTE` revogado
+de `anon`/`authenticated` — só `service_role`), testada isoladamente com
+dados sintéticos (setup → chamada → conferência → limpeza,
+`count(*)=0` confirmado). **Nenhuma foi conectada a nenhum workflow n8n
+nem exposta ao agente ainda** — essa é a próxima etapa, depois de revisão.
+
+### `buscar_contexto_cliente(p_cliente_id, p_empresa_id)`
+- **Objetivo**: dar ao agente uma visão do cliente já identificado na conversa (nome, pets, segmento, PetCash, produtos que costuma comprar e há quantos dias) pra personalizar sem perguntar o que o sistema já sabe.
+- **Parâmetros**: `p_cliente_id uuid` (FIXO — vem do contexto do workflow, resolvido em "Buscar/Criar Cliente"), `p_empresa_id uuid` (FIXO).
+- **Fonte da verdade**: `clientes`, `pets`, `v_ultima_compra_produto` (view já existente) + `produtos.ciclo_recompra_dias`/`empresas.ciclo_recompra_padrao_dias`.
+- **Retorno**: `jsonb` — `{nome, segmento, saldo_petcash, ultima_compra, ticket_medio, pets: [{nome, especie, porte}], produtos_recorrentes: [{produto_nome, dias_desde_ultima_compra, ciclo_dias}]}` (até 5 produtos recorrentes).
+- **Erros possíveis**: cliente não encontrado pra essa empresa → exceção clara ("não deveria acontecer" em uso normal, já que o cliente_id vem do próprio pipeline).
+- **Somente leitura.**
+- **Segurança**: `SECURITY DEFINER`, revogado de anon/authenticated, sempre confere `empresa_id` antes de retornar (nunca vaza cliente de outra empresa mesmo com id certo).
+- **Exemplo**: entrada `{p_cliente_id:"5a12...", p_empresa_id:"3bce..."}` → saída `{"nome":"João","pets":[{"nome":"Thor","especie":"Cachorro","porte":"Médio"}],"segmento":"regular","saldo_petcash":12.5,"produtos_recorrentes":[{"produto_nome":"Ração X","dias_desde_ultima_compra":28,"ciclo_dias":30}]}`.
+- **Testado** (13/08): cliente sintético + pet + pedido entregue há 28 dias (produto com ciclo 30) → retornou pet, ticket médio, saldo PetCash e o produto recorrente corretos. Caso de erro (cliente inexistente) testado, rejeitou corretamente.
+
+### `buscar_produto(p_empresa_id, p_consulta)`
+- **Objetivo**: busca real por nome/necessidade — nunca inventar produto, preço ou disponibilidade.
+- **Parâmetros**: `p_empresa_id uuid` (FIXO), `p_consulta text` (decidido pelo agente — o termo que o cliente mencionou).
+- **Fonte da verdade**: `produtos` (só `ativo=true`/`exibir_no_catalogo=true`) + `estoque` agregado.
+- **Retorno**: até 5 linhas `{produto_id, nome, preco, preco_promocional, estoque_disponivel}`.
+- **Erros possíveis**: nenhum — sem resultado é uma lista vazia, não uma exceção (o agente decide como responder "não achei").
+- **Somente leitura.**
+- **Segurança**: idem acima; nunca retorna produto inativo/oculto do catálogo.
+- **Exemplo**: entrada `{p_empresa_id:"3bce...", p_consulta:"golden cookie"}` → saída `[{"nome":"Biscoito Golden Cookie...","preco":19.90,"estoque_disponivel":12}]`.
+- **Testado** (13/08): produto sintético com nome/preço promocional/estoque conhecidos, busca por termo parcial do nome → achou, preço e estoque batendo exatos.
+
+### `consultar_estoque(p_produto_id, p_empresa_id)`
+- **Objetivo**: reconfirmar disponibilidade de UM produto já identificado (depois de `buscar_produto`), sem repetir a busca por nome — útil quando o cliente demora pra decidir ou volta a perguntar.
+- **Parâmetros**: `p_produto_id uuid` (decidido pelo agente, veio de uma busca anterior), `p_empresa_id uuid` (FIXO).
+- **Fonte da verdade**: `estoque` agregado por `produto_id`.
+- **Retorno**: `integer` (quantidade disponível).
+- **Erros possíveis**: produto não encontrado/não pertence à empresa → exceção clara.
+- **Somente leitura.**
+- **Segurança**: confere `produto_id` pertence à `empresa_id` antes de responder.
+- **Exemplo**: entrada `{p_produto_id:"bcb8...", p_empresa_id:"3bce..."}` → saída `6`.
+- **Testado** (13/08): produto sintético com 7 unidades, 1 já vendida por um pedido de teste → retornou 6 corretamente.
+
+### `consultar_zona_entrega(p_empresa_id)`
+- **Objetivo**: mostrar as faixas de frete por distância — resposta honesta quando ainda não se sabe a distância exata do cliente (mesma fonte que o handler de entrega da Fase 0 já usa).
+- **Parâmetros**: `p_empresa_id uuid` (FIXO).
+- **Fonte da verdade**: `zonas_entrega` (`ativo=true`).
+- **Retorno**: lista `{nome, distancia_min_km, distancia_max_km, valor, valor_minimo_frete_gratis, estimativa_min_min, estimativa_min_max}`, ordenada por distância.
+- **Erros possíveis**: nenhum — loja sem zona configurada retorna lista vazia (agente deve dizer que vai confirmar manualmente).
+- **Somente leitura.**
+- **Segurança**: escopado por empresa.
+- **Exemplo**: saída real da empresa de teste → `[{"nome":"Ate 3km","valor":4.99,...},{"nome":"3 a 5km","valor":7.99,...},{"nome":"5 a 10km","valor":9.99,...}]`.
+- **Testado** (13/08): contra os dados reais da empresa — 3 faixas retornadas corretas e ordenadas.
+
+### `consultar_carrinho(p_cliente_id, p_empresa_id)`
+- **Objetivo**: mostrar o que já está no carrinho ativo do cliente — a MESMA tabela do site (omnichannel de verdade) — pro agente recapitular antes de confirmar ou responder "quanto vai ficar".
+- **Parâmetros**: `p_cliente_id uuid` (FIXO), `p_empresa_id uuid` (FIXO).
+- **Fonte da verdade**: `carrinho`/`carrinho_itens` (`status='ativo'`), unido com `produtos` pro nome atual.
+- **Retorno**: `jsonb` — `{itens: [{produto_id, nome, quantidade, preco_unitario, subtotal}], valor_total}` (vazio se não há carrinho ativo).
+- **Erros possíveis**: nenhum — carrinho vazio é resultado válido.
+- **Somente leitura.**
+- **Segurança**: escopado por cliente+empresa. `valor_total` é somado a partir dos itens de verdade a cada chamada, nunca lido de uma coluna que pode estar dessincronizada.
+- **Exemplo**: saída `{"itens":[{"nome":"Ração Teste","quantidade":2,"subtotal":179.80}],"valor_total":179.80}`.
+- **Testado** (13/08): carrinho sintético com 1 item, quantidade 2 → retornou item e total corretos (achado e corrigido no processo: a 1ª versão lia `carrinho.valor_total` da coluna armazenada, que pode ficar stale — corrigido pra somar os itens direto).
+
+### `calcular_frete` — documentada, **NÃO construída ainda** (decisão de arquitetura pendente)
+- **Objetivo**: taxa de entrega exata (não só a faixa genérica de `consultar_zona_entrega`), a partir da distância real até o endereço do cliente.
+- **Parâmetros propostos**: `p_cliente_id` (FIXO), `p_empresa_id` (FIXO), `p_subtotal` (FIXO, derivado do carrinho atual).
+- **Por que não é só mais uma RPC**: o cálculo real depende de uma chamada ao Google Maps Distance Matrix (feita hoje só do lado do site, em `frete.ts`) — isso não dá pra rodar de forma síncrona dentro de uma função Postgres (a extensão `pg_net` já usada neste projeto pra webhooks é assíncrona, não serve pra uma chamada request-response). **Arquitetura proposta**: não uma RPC pura, mas um **subworkflow n8n** (Workflow Tool) que: (1) busca `clientes.latitude/longitude` (se o cliente já tiver endereço salvo), (2) chama a API do Google Maps direto do n8n, (3) chama `calcular_frete_site(p_empresa_id, p_distancia_km, p_subtotal)` — essa RPC já é 100% reutilizável como está (confirmado nesta sessão: não depende de `auth.uid()`).
+- **Bloqueio real encontrado**: **não existe credencial do Google Maps configurada neste n8n** (chequei a lista de credenciais — só Firebase, WhatsApp, Postgres, Supabase, Google Sheets, OpenAI). Existe uma chave já usada no app Flutter (documentada em memória) que poderia ser reaproveitada, ou o usuário pode preferir provisionar uma nova — decisão dele antes de construir.
+- **Retorno esperado**: `{disponivel: true, valor, distancia_km, estimativa_min_min, estimativa_min_max}` ou `{disponivel:false, motivo}` — se não há endereço salvo, o agente deve cair pra `consultar_zona_entrega` como resposta genérica em vez de travar.
+- **Como testar quando construído**: cliente sintético com lat/lng reais de teste, comparar contra o resultado que o site dá pro mesmo endereço.
+
 ## Rollout não-destrutivo (princípio explícito do usuário)
 
 O pipeline `01→03` atende clientes reais agora — nenhuma fase deste plano
