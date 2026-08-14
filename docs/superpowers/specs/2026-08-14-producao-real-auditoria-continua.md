@@ -1105,3 +1105,35 @@ Testado com os 3 casos reais que falharam na conversa (`ração` +
 categoria "Racao" + espécie "cachorro"; "Golden cão adulto" + fabricante
 Golden + espécie "cachorro") — agora retornam produtos reais
 corretamente. Reconfirmado sem regressão o caso "gato" que já funcionava.
+
+## Alucinação séria: agente afirmou ter adicionado item sem chamar nenhuma ferramenta (14/08)
+
+Achado ao vivo, mais grave que os anteriores de hoje: cliente pediu pra
+adicionar um tapete específico ("Pode ser o 1"), e o agente respondeu
+"Adicionei o Tapete Higiênico Petix ao seu carrinho!" com um resumo
+completo de carrinho (3 itens, R$192,70) — **sem nenhuma chamada real a
+buscar_produto ou alterar_carrinho nesse turno** (confirmado via
+`automacao_eventos`: zero eventos entre o pedido e a resposta). Carrinho
+real no banco continuou com só 2 itens, R$103,80. O modelo pegou o
+PADRÃO textual de uma resposta de sucesso anterior na mesma conversa
+(a adição real da ração Quatree, alguns turnos antes) e reproduziu o
+formato com um produto diferente, sem executar nada.
+
+Isso é uma classe de falha diferente e mais séria que a alucinação de
+UUID corrigida hoje mais cedo — ali o modelo pelo menos TENTAVA chamar a
+ferramenta (com um ID errado); aqui ele simplesmente não chamou nada e
+inventou o resultado inteiro. Reforço aplicado no system prompt (regra
+mais enfática da seção "REGRA FUNDAMENTAL", topo da lista): nunca afirmar
+adição/remoção/alteração de carrinho sem o retorno real de
+alterar_carrinho NESTA MESMA resposta, nunca copiar o formato de uma
+resposta de sucesso anterior sem resultado novo por trás.
+
+**Ressalva explícita**: diferente dos bugs de hoje corrigidos
+estruturalmente (banco decide, não LLM), este é fundamentalmente sobre o
+modelo mentir no TEXTO gerado sem executar a ferramenta — não há como
+o n8n "forçar" isso de fora de forma totalmente confiável só com prompt.
+O reforço de prompt é mitigação, não solução definitiva. Vale considerar,
+se reincidir, um modelo mais forte pro agente principal (hoje
+`gpt-4o-mini`) ou uma auditoria mais agressiva desse padrão específico
+(comparar toda resposta que menciona "adicionei"/"removi" contra
+automacao_eventos do mesmo turno).
