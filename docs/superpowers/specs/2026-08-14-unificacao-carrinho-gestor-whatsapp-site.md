@@ -133,3 +133,15 @@ cenários de regressão: 0-match, INTENCAO→CONFIRMACAO (fluxo completo),
 múltiplos-match, match-único — todos com saída idêntica ao comportamento
 pré-refatoração. Nenhuma mudança de comportamento observável pro
 WhatsApp em produção.
+
+## Task 2 — resultado (14/08)
+
+`consultar_carrinho_app`/`alterar_carrinho_app` criadas, grants
+confirmados (`authenticated`+`service_role`, sem `anon`). Testado via
+`set_config('request.jwt.claims', ...)` + `set local role authenticated`
+dentro de uma transação com `rollback` no fim (nunca persiste nada):
+caminho feliz (consulta e remoção por produto_busca) funcionou
+corretamente pro usuário real da empresa; tentativa de acessar carrinho
+de cliente de OUTRA empresa foi corretamente bloqueada com exceção
+"Cliente não encontrado para essa empresa" — isolamento multi-tenant
+confirmado antes de qualquer wiring no app.
