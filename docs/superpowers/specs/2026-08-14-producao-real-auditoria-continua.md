@@ -1042,3 +1042,41 @@ pra outras notificações do app):
 Estado da conversa de teste do usuário (`7e897edb-...`) foi resetado
 manualmente pra `'processar mensagem'` depois do fix, já que ela ficou
 presa em `'atendente'` de antes da correção existir.
+
+## Fix estrutural do bug de alucinação (reincidiu, corrigido de raiz — 14/08)
+
+O fix de prompt do item anterior NÃO foi suficiente: o mesmo bug
+reproduziu na conversa seguinte, e desta vez com uma evidência mais
+grave — o agente inventou um UUID errado pra remover a areia mesmo
+tendo acabado de ver o ID real (`a7422f57-...`) no retorno de
+`consultar_carrinho` 20 segundos antes, na mesma conversa. 3 tentativas,
+3 UUIDs diferentes, nenhum correto. Isso confirma que o problema é uma
+limitação conhecida de LLM (reproduzir uma string longa/aleatória de
+memória com fidelidade), não falta de instrução — regra de prompt
+sozinha não é confiável pra esse tipo de erro.
+
+**Fix estrutural** (`alterar_carrinho_whatsapp`, novo parâmetro opcional
+`p_produto_busca text`): pra `remover`/`alterar_quantidade` de um item já
+no carrinho, o agente não informa mais produto_id — informa
+`produto_busca` com as palavras do cliente (ex: "sachê", "areia"), e o
+banco resolve o produto certo fazendo `ILIKE` contra os itens do
+carrinho ATIVO do próprio cliente (nunca contra o catálogo geral):
+- 0 correspondências → `produto_nao_encontrado_no_carrinho`.
+- 1 correspondência → resolve automaticamente, segue o fluxo normal.
+- 2+ correspondências → `multiplos_itens_correspondem` +
+  `itens_correspondentes` (nomes reais) — agente pergunta qual, nunca
+  escolhe sozinho.
+
+`produto_id` continua existindo e obrigatório só pra `adicionar` (fluxo
+via `buscar_produto`, que nunca mostrou esse problema — o ID ali é usado
+na mesma resposta em que acabou de ser buscado, não precisa sobreviver
+vários turnos de conversa).
+
+Testado via SQL puro (3 cenários: 0/1/2+ matches) antes de qualquer
+wiring, depois implementado no subworkflow `WhatsApp - Tool - Alterar
+Carrinho` (novo input, query RPC atualizada, `Montar Resultado` passou a
+incluir `itens_correspondentes` só quando existe — whitelist explícita)
+e no agente (`produto_id` e `produto_busca` viram dois `$fromAI`
+separados com instrução clara de qual usar em qual caso). Overload
+antigo da RPC (sem o parâmetro novo) removido depois da migração —
+única chamadora era esse subworkflow, já atualizado.
