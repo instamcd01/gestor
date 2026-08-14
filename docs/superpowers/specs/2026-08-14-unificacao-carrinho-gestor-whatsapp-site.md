@@ -145,3 +145,14 @@ corretamente pro usuário real da empresa; tentativa de acessar carrinho
 de cliente de OUTRA empresa foi corretamente bloqueada com exceção
 "Cliente não encontrado para essa empresa" — isolamento multi-tenant
 confirmado antes de qualquer wiring no app.
+
+## Task 5 — resultado (14/08)
+
+Subworkflow `WhatsApp - Tool - Gerar Link Carrinho` criado e testado
+isoladamente (workflow descartável, depois removido) — retorna a URL
+real do site (`https://deliverypetexpress.com.br/carrinho`, confirmada
+pelo usuário) e a instrução de confirmar telefone. Tool adicionada ao
+agente principal com descrição e seção nova no system prompt. Ainda
+falta o teste final end-to-end via WhatsApp real (pedir o link, abrir,
+logar com o mesmo número, confirmar que o carrinho aparece populado) —
+esse é o teste que valida a Task 0 na prática.
