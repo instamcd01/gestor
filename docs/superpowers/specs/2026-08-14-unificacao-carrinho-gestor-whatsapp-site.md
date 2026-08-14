@@ -123,3 +123,13 @@ problema que a normalização evita daqui pra frente. Esse caso específico
 NÃO foi mesclado automaticamente (decisão de merge de cliente é
 manual/pontual, fora de escopo desta fase) — os outros 3 clientes de
 teste malformados foram normalizados via backfill.
+
+## Task 1 — resultado (14/08)
+
+`_alterar_carrinho_core` extraído, `alterar_carrinho_whatsapp` virou
+casca fina (resolve tipo_mensagem/proposta/idempotência, delega o resto).
+Grants confirmados (`postgres`+`service_role` só). Reexecutados os 5
+cenários de regressão: 0-match, INTENCAO→CONFIRMACAO (fluxo completo),
+múltiplos-match, match-único — todos com saída idêntica ao comportamento
+pré-refatoração. Nenhuma mudança de comportamento observável pro
+WhatsApp em produção.
