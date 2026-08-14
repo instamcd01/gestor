@@ -701,4 +701,169 @@ como estava depois de testado).
 
 Nenhuma implementação feita ainda desta revisão — só investigação e
 desenho, como pedido explicitamente.
+
+---
+
+# Auditor — investigação do fluxo real + arquitetura proposta (14/08, sessão seguinte)
+
+Schema da Fase 2 (`auditorias_atendimento`, `padroes_atendimento`, 4 views)
+já implementado e testado (seção acima). Achado urgente corrigido no
+caminho: agente novo não tinha nenhuma tool de transferência pra humano —
+construída (`transferir_humano_whatsapp` + `WhatsApp - Tool - Transferir
+Humano`), testada ao vivo, `conversas.estado` e reatribuição real no
+Chatwoot confirmados.
+
+Usuário pediu investigação completa do fluxo real ANTES do workflow do
+Auditor, pra não duplicar lógica nem inventar métrica sem fonte. Como eu
+mesmo construí e testei toda a Fase 1/1.5 nesta sessão, a investigação
+abaixo é conhecimento direto (testado ao vivo), não suposição — só
+confirmei via SQL os pontos que não tinha 100% de certeza.
+
+## Mapa consolidado — de onde vem cada dado que o Auditor vai usar
+
+| Dado | Fonte real | Confiabilidade |
+|---|---|---|
+| Sessão do atendimento (início/fim/motivo de fechamento técnico) | `atendimentos` (`iniciado_em`/`encerrado_em`/`motivo_encerramento`) | 🟢 alta — criado por `resolver_atendimento_atual`, fechado por `WhatsApp - Fechar Atendimentos Inativos` |
+| Mensagens (cliente e agente, nas duas direções) | `mensagens` filtrado por `atendimento_id` | 🟢 alta — incoming e outgoing ambos gravados (Bug 6 corrigido); `mensagem_id_origem` correlaciona resposta→pergunta |
+| Toda chamada de tool (input/output real) | `automacao_eventos` `etapa='tool_call'` | 🟢 alta — as 10 tools (9 + transferir_humano) logam aqui |
+| Eventos de negócio (carrinho alterado, revisão confirmada, pedido criado, transferência) | `automacao_eventos` outras `etapa`s, com `motivo` estruturado em `detalhes->'output'` | 🟢 alta |
+| Pedido criado (id, valor, forma de pagamento) | `automacao_eventos` (`tool_nome='criar_pedido', etapa='criado'`) **e** tabela `pedidos` (fonte definitiva) | 🟢 alta — cruzar as duas, `pedidos` é quem manda se divergir |
+| Transferência humana | `automacao_eventos` (`tool_nome='transferir_humano'`) **e** `conversas.estado='atendente'` | 🟢 alta |
+| Erro técnico de tool | `automacao_eventos.sucesso=false` | 🟢 alta |
+| Duração de CADA chamada de tool (não do atendimento inteiro) | `automacao_eventos.duracao_ms` | 🔴 **não disponível** — coluna existe mas nunca foi populada na instrumentação da Fase 1 (achado agora, não presumido). Dá pra aproximar pela diferença entre `created_at` de eventos consecutivos, mas não é uma métrica precisa — o Auditor não deve reportar isso como número exato. |
+| Duração do atendimento inteiro | `atendimentos.encerrado_em - iniciado_em` | 🟢 alta |
+| Produto encontrado/não encontrado | `automacao_eventos` (`buscar_produto`, `output.encontrado`) | 🟢 alta |
+| Problema de estoque | `automacao_eventos` (`alterar_carrinho`/`criar_pedido`, `motivo` em `sem_estoque`/`estoque_insuficiente_ajustado`/`estoque_insuficiente`) | 🟢 alta |
+| Problema de frete | `automacao_eventos` (`revisar_carrinho`/`criar_pedido`, `motivo='frete_indisponivel'`) | 🟢 alta |
+| Fricção/frustração/repetição | Não existe como dado — só a TRANSCRIÇÃO bruta | 🟡 interpretativo — é exatamente o trabalho do Auditor, nunca um fato pré-computado |
+| Abandono | Não existe flag — só inferível (atendimento fechado por timeout, sem pedido, sem transferência, último evento foi resposta do agente sem retorno do cliente) | 🟡 interpretativo, com sinais objetivos de apoio |
+| Score de satisfação do cliente | `pedidos.score_satisfacao` existe na tabela mas **nunca é preenchido por nada** (achado, não presumido — coluna morta desde antes desta sessão) | 🔴 não disponível, não inventar |
+
+**Confirmado por consulta real**: hoje existem 65 linhas em `automacao_eventos`
+(todas de teste meu), zero atendimento de cliente real — o Auditor será
+implementado e testado com esse dado sintético (que reflete cenários reais
+de uso: busca de produto, carrinho, revisão, confirmação, pagamento nos 4
+métodos, transferência humana) até o tráfego real começar.
+
+## Isolamento por canal (reconfirma o que a auditoria de impacto já mostrou)
+
+Nada do Auditor toca em tabela/RPC do site ou do gestor/app — `auditorias_atendimento`/`padroes_atendimento` são novas, isoladas, mesmo padrão de grant (`service_role`-only) já usado em toda tabela WhatsApp desta sessão. O Auditor só LÊ dados que já existem (`mensagens`, `automacao_eventos`, `atendimentos`, `conversas`, `pedidos`) — nunca escreve nas tabelas operacionais, só nas duas novas de análise. Isso satisfaz a exigência do usuário ("Auditor é somente análise; não altera pedidos/carrinhos/pagamentos") por design, não por convenção.
+
+## Arquitetura proposta do Auditor
+
+```
+WhatsApp - Fechar Atendimentos Inativos (já existe, roda a cada 15min)
+      │ fecha atendimentos inativos
+      ▼
+WhatsApp - Auditor de Atendimento (NOVO, Schedule Trigger, ex.: a cada 20min)
+      │
+      ▼
+1. Buscar atendimentos pendentes de auditoria
+   SELECT a.id FROM atendimentos a
+   WHERE a.encerrado_em IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM auditorias_atendimento au WHERE au.atendimento_id = a.id)
+   ORDER BY a.encerrado_em LIMIT 5   -- lote pequeno por execução, controla custo/tempo
+      │
+      ▼ (Split in Batches / loop, 1 atendimento por vez)
+2. Montar Contexto Objetivo — RPC NOVA `montar_contexto_auditoria(p_atendimento_id)`
+   SQL puro, monta o jsonb ANTES do LLM entrar em cena:
+   {
+     atendimento: {id, iniciado_em, encerrado_em, duracao_minutos, motivo_encerramento},
+     cliente: {nome, historico_resumido},  -- sem dado financeiro (saldo/ticket_medio já
+       proibidos desde a auditoria de Data Exposure de 13/08)
+     mensagens: [{direcao, tipo, conteudo, transcricao, created_at}, ...],  -- ordenado
+     eventos: [{tool_nome, etapa, sucesso, motivo, resumo_input, resumo_output, created_at}, ...],
+     fatos_pre_computados: {
+       teve_transferencia_humano: bool,
+       pedido: {id, valor_total, tipo_pagamento, status} | null,   -- de `pedidos`, não do texto
+       teve_erro_tecnico: bool,
+       qtd_mensagens_cliente: int,
+       qtd_mensagens_agente: int,
+       qtd_tool_calls: int,
+       tools_chamadas: [nomes distintos],
+       teve_problema_estoque: bool,
+       teve_problema_frete: bool,
+       teve_busca_sem_resultado: bool
+     }
+   }
+      │
+      ▼
+3. Chamar o Auditor (LLM mais forte, ex. gpt-4o — a confirmar modelo exato
+   disponível na credencial) com o contexto acima + prompt estruturado
+   (ver próxima seção) → JSON estruturado batendo com as colunas de
+   `auditorias_atendimento`
+      │
+      ▼
+4. Gravar em `auditorias_atendimento` (INSERT direto, sem passar o resultado
+   de volta pra nenhum sistema operacional)
+      │
+      ▼
+5. Próximo atendimento do lote (loop) → fim
+```
+
+**Assíncrono por design**: dispara só depois que `Fechar Atendimentos
+Inativos` já fechou o atendimento — nunca no caminho da resposta ao
+cliente, sem qualquer impacto de latência no atendimento real.
+
+## Prompt do Auditor — a cadeia FATO → INTERPRETAÇÃO → PROBLEMA → CAUSA → SOLUÇÃO
+
+Estrutura do prompt (rascunho, ainda não escrito em produção):
+
+1. **Contrato de entrada**: "Você recebe `fatos_pre_computados`, já calculados
+   pelo sistema a partir do banco de dados — nunca contradiga esses valores,
+   mesmo que o texto da conversa pareça sugerir outra coisa. Se o agente
+   disse algo que os fatos não confirmam, ISSO EM SI é um problema
+   (`teve_alucinacao`/`teve_informacao_incorreta`), não um motivo pra você
+   acreditar no texto."
+2. **As 5 dimensões**, uma seção do prompt por dimensão, com a lista de
+   sinais que o usuário deu (excesso de perguntas, repetição, resposta
+   robótica, falta de empatia, burocracia desnecessária, etc. pra
+   Experiência; tool errada/faltante/desnecessária pra Operacional; etc.)
+3. **Regra de bom senso, literal do usuário**: "Nem toda transferência pra
+   humano é problema. Nem toda conversa longa é ruim. Nem toda venda não
+   concluída é culpa do agente. Nem toda pergunta do cliente precisa virar
+   automação. Julgue pelo contexto e evidência, nunca conte eventos
+   mecanicamente."
+4. **Para cada item em `problemas_detectados`**: exigir os 5 campos em
+   cadeia — fato (cita a mensagem/evento exato), interpretação, categoria,
+   causa provável, solução sugerida (com o `tipo_solucao` categorizado:
+   prompt/regra determinística/tool/banco/workflow n8n/UX/catálogo-busca/
+   treinamento/integração/processo operacional/transferência humana/outro),
+   gravidade (baixa/média/alta/crítica).
+5. **Saída JSON estrita** batendo 1:1 com as colunas já criadas em
+   `auditorias_atendimento` (resultado, scores, booleans das 5 dimensões,
+   `fatos_observados`, `problemas_detectados`, `resumo`, `recomendacao`).
+
+## `padroes_atendimento` — segunda passada, agrupamento
+
+Continua como desenhado na seção anterior — subworkflow separado (cadência
+a decidir, proposta semanal), lê `problemas_detectados` de todas as
+auditorias do período, agrupa semanticamente (não por string exata),
+preenche `causa_provavel`/`solucao_sugerida`/`prioridade`. Sem mudança na
+proposta anterior, só reforçando que o exemplo do usuário ("14 de 37
+atendimentos com dificuldade de busca por linguagem natural") é
+exatamente o formato esperado.
+
+## Plano de teste antes de considerar pronto
+
+Dado real disponível hoje: a conversa de teste desta sessão (Fase 1.5) tem
+~14 mensagens reais cobrindo busca de produto, carrinho, revisão,
+confirmação, 4 formas de pagamento testadas, 2 pedidos criados, e 1
+transferência humana — cenário rico o suficiente pra validar o Auditor
+antes de qualquer tráfego real. Como eu sei exatamente o que aconteceu de
+verdade nessa conversa (participei dela), dá pra validar se os `fatos_observados`
+do Auditor batem com a realidade — teste de precisão real, não só "rodou
+sem erro".
+
+## Perguntas antes de implementar
+
+1. **Modelo exato**: `gpt-4o` (mais forte, mesma credencial OpenAI já em
+   uso) — confirma esse modelo especificamente, ou prefere outro?
+2. **Cadência do Auditor**: proposta a cada 20min (perto do ciclo de 15min
+   do fechamento de atendimentos) — confirma, ou prefere outro intervalo?
+3. **Tamanho do lote por execução**: proposta 5 atendimentos por rodada
+   (controla custo/tempo por execução) — confirma?
+
+Nenhuma implementação feita ainda desta seção — só investigação e
+arquitetura, como pedido explicitamente.
 isolado → testar composto → validar com dado real → documentar → commit.
