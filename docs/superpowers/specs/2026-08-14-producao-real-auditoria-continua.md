@@ -966,3 +966,79 @@ um lugar.
 
 Próximo passo: validar com conversa real via WhatsApp (o usuário já testa
 no próprio número pessoal) antes de considerar a fase encerrada.
+
+## Bugs reais achados em conversa ao vivo e corrigidos (14/08, mesma sessão)
+
+Usuário testando no próprio número pediu a auditoria da conversa mais
+recente. Atendimento ainda estava aberto (Auditor formal só processa
+atendimentos encerrados), então li a transcrição + `automacao_eventos`
+diretamente. Achei 2 bugs reais de produção, não relacionados ao
+redesenho do buscar_produto:
+
+### 1. Alucinação de produto_id ao remover item do carrinho por referência vaga
+
+Cliente tinha 2 sachês no carrinho (herdados de um atendimento anterior —
+carrinho é do cliente, não da conversa) e pediu "remover os sachês"
+repetidamente. Depois de remover o primeiro corretamente, o agente
+tentou remover o segundo **4 vezes**, cada vez inventando um
+`produto_id` diferente que não existia em lugar nenhum (nem catálogo nem
+carrinho) — a RPC rejeitou todas as 4 corretamente (`produto_nao_encontrado`,
+nenhuma corrupção de dado), mas a experiência foi péssima. Causa raiz: o
+system prompt já proibia reescrever produto_id de memória, mas só cobria
+o fluxo de ADICIONAR (via buscar_produto); não havia regra equivalente
+pra REMOVER/ALTERAR um item já existente no carrinho, cuja fonte de
+verdade correta é `consultar_carrinho`, nunca `buscar_produto` (o
+catálogo pode não bater 1:1 com o item real do carrinho).
+
+**Fix**: nova regra explícita no system prompt — antes de remover/alterar
+um item referenciado de forma vaga, chamar `consultar_carrinho` na mesma
+resposta pra pegar o produto_id real; se a referência bater com mais de
+um item, perguntar qual em vez de escolher sozinho.
+
+### 2. Bot continuava respondendo depois de transferir pra humano
+
+`conversas.estado='atendente'` estava sendo setado corretamente pela
+RPC, mas o Router (workflow 01) nunca checava esse campo antes de
+invocar o agente — toda mensagem nova do cliente, mesmo depois da
+transferência, continuava caindo no bot normalmente. Descoberta
+colateral: **não existia nenhum mecanismo pra reverter `estado` de volta
+pro bot** — uma vez transferido, o cliente ficaria preso nesse estado
+para sempre.
+
+**Fix em duas partes**:
+- Router: novo node "Anexar Estado da Conversa" + IF "Bot Está Ativo?"
+  antes de "Processar Mensagem" — mensagem do cliente continua sendo
+  salva (histórico/Chatwoot), mas o agente só é chamado se
+  `estado_conversa !== 'atendente'`. Estado default de conversa nova é
+  literalmente a string `'processar mensagem'` (não null) — descoberto
+  lendo o node "Criar Conversa".
+- `WhatsApp - Fechar Atendimentos Inativos`: novo node "Liberar Bot Após
+  Transferência" — ao fechar um atendimento (30min sem atividade), reseta
+  `conversas.estado` de volta pra `'processar mensagem'` se estava
+  `'atendente'`. Fechamento do atendimento = fim natural do episódio
+  atendido pelo humano; a próxima sessão do cliente começa com o bot de
+  novo. Escolhido por ser consistente com o modelo de sessão (atendimento)
+  já usado em todo o resto do projeto, sem exigir ação manual.
+
+### 3. Notificação push ao dono quando cliente pede humano (pedido novo do usuário)
+
+Usuário perguntou como saberia que um cliente pediu atendimento humano —
+hoje só existe a atribuição da conversa no Chatwoot (`assignee_id`), sem
+alerta ativo. Reaproveitada a infraestrutura de push já existente do app
+(`usuarios.fcm_token` + webhook `notificacao-push` → FCM, mesma usada
+pra outras notificações do app):
+
+- `transferir_humano_whatsapp` passou a retornar também `fcm_tokens`
+  (array de tokens de todos os usuários da empresa) e `cliente_nome`.
+- Subworkflow `WhatsApp - Tool - Transferir Humano` ganhou um IF "É
+  Transferência Nova?" + node HTTP que dispara o push **só na primeira
+  vez** (`ja_estava_transferido === false`) — evita spam a cada nova
+  mensagem do cliente já transferido.
+- Testado ao vivo: push de teste disparado com sucesso pro token real do
+  usuário; 1 dos 2 tokens da empresa veio `NotRegistered` (app
+  desinstalado/token velho de outro usuário) — não bloqueia, mas vale
+  limpar tokens mortos no futuro.
+
+Estado da conversa de teste do usuário (`7e897edb-...`) foi resetado
+manualmente pra `'processar mensagem'` depois do fix, já que ela ficou
+presa em `'atendente'` de antes da correção existir.
