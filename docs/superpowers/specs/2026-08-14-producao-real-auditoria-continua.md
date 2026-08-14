@@ -867,3 +867,102 @@ sem erro".
 Nenhuma implementação feita ainda desta seção — só investigação e
 arquitetura, como pedido explicitamente.
 isolado → testar composto → validar com dado real → documentar → commit.
+
+## Redesenho do buscar_produto (Fase 1.6) — implementado e validado 14/08
+
+Motivação: achado real ao ler uma conversa ao vivo — "areia de gato" só
+retornava sempre os mesmos 5 produtos (LIMIT 5 ORDER BY nome, puramente
+alfabético), escondendo 20 de 25 produtos reais / 7 de 9 marcas reais pra
+sempre. Root cause confirmado antes de qualquer implementação.
+
+### Distinção fabricante vs. marca (documentar pra nunca mais confundir)
+
+`fabricante` = marca real reconhecível pelo cliente (PremieRpet, Mars
+Petcare, Quatree...). `produtos.marca` = fornecedor/distribuidor interno,
+NUNCA usado pra filtro ou exibição ao cliente. O site já faz essa
+distinção corretamente em `gestor-loja/src/lib/catalogo.ts:272-278`. O
+WhatsApp agora replica o mesmo padrão — `buscar_produto_v2` filtra e
+retorna sempre `fabricante` (exposto como campo `marca` na resposta pro
+agente, por compatibilidade de nome com o que o cliente entende).
+
+### buscar_produto_v2 (RPC, Supabase)
+
+Princípio: LLM interpreta intenção, banco decide o que existe. Filtros de
+categoria/fabricante/espécie/preço são tratados como restrições da
+intenção do cliente — nunca fatos inventados. Prioridade dura:
+correspondência com intenção > disponibilidade > relevância/destaque >
+diversidade de marca.
+
+- 3 níveis de fallback: (1) todos os termos batem + todos os filtros
+  opcionais, (2) todos os termos batem + só espécie (categoria/
+  fabricante/preço são soltos), (3) qualquer termo bate + só espécie.
+  Espécie NUNCA é solta em nenhum nível — é fato de confiança do cliente,
+  não preferência soft.
+- Diversidade por marca via `ROW_NUMBER() OVER (PARTITION BY fabricante
+  ORDER BY disponivel DESC, destaque DESC, nome ASC)`, resultado final
+  ordenado por disponibilidade > destaque > posição-por-marca > nome —
+  isso dá variedade real sem diluir uma busca por marca específica.
+- Limite fixo de 6 resultados. `ha_mais_opcoes: true` quando há mais.
+- `todas_marcas_encontradas` só é computado quando `p_interesse_marcas`
+  vem true (o agente só marca isso quando o cliente pede explicitamente
+  "tem de outra marca?") — evita ruído no prompt na maioria das buscas.
+- `disponivel` é sempre por produto individual, nunca um valor único pra
+  lista inteira — mantém a mesma separação encontrado≠disponível já
+  corrigida no Auditor (ver seção anterior).
+- 2 bugs achados e corrigidos durante a simulação SQL obrigatória (antes
+  de tocar em n8n): `LIMIT` depois de `jsonb_agg` não limitava nada (só
+  limitava linhas, já 1 pelo agregado) — corrigido movendo `ORDER BY
+  ... LIMIT` pra uma CTE antes do agregado. E o fallback do nível 2
+  originalmente soltava espécie junto com os outros filtros, permitindo
+  ração de cachorro aparecer numa busca filtrada por gato — corrigido
+  tornando espécie não-solta em nenhum nível.
+- Grants: só `service_role`, confirmado sem vazamento pra anon/
+  authenticated.
+- 12 cenários validados via SQL puro antes de qualquer wiring em n8n
+  (existência vs. disponibilidade, múltiplas marcas, busca ampla com
+  corte em 6, zero resultado, produto zerado com alternativa, filtro de
+  marca+espécie combinado, filtro de preço).
+
+### informar_area_atendimento (RPC nova, Supabase)
+
+Complementa `consultar_zona_entrega` (que precisa do endereço já
+cadastrado do cliente) com uma versão sem endereço, pra perguntas
+genéricas tipo "vocês atendem minha região?" antes do cliente ter
+endereço cadastrado. Retorna só `{cidade, zonas: [{nome, prazo_estimado_min:
+[min,max]}]}` — nunca distância exata, preço ou regra interna de cálculo.
+As zonas reais são faixas de distância ("Ate 3km", "3 a 5km", "5 a
+10km"), não bairros nomeados — o system prompt instrui o agente a
+descrever isso em texto natural (ex: "entrega entre 5 e 35 minutos
+dependendo da distância"), nunca ler o nome técnico da zona como se fosse
+um lugar.
+
+### Implementação em n8n
+
+- `WhatsApp - Tool - Buscar Produto` (h2tnSD50pn4sa00z): trigger com 6
+  novos inputs opcionais, node "Normalizar Filtros" (empty/undefined→null,
+  parse numérico seguro, boolean seguro) antes da chamada RPC, RPC
+  trocada pra `buscar_produto_v2(..., 6)`, "Montar Resultado" reescrito
+  pra desempacotar o jsonb único e só incluir `todas_marcas_encontradas`
+  quando não-nulo.
+- `WhatsApp - Tool - Informar Área de Atendimento` (wSL0LYn8oyLmDSjJ):
+  subworkflow novo, mesmo padrão dos outros (trigger→RPC→Montar
+  Resultado→Preparar Log→Logar Tool Call→Restaurar Saída).
+- Agente principal (`WhatsApp - 02 Agente`, vhFKgmonTFMqzZuz): node de
+  chamada do buscar_produto ganhou os 6 novos parâmetros `$fromAI`, cada
+  um com instrução explícita de só preencher com evidência clara na
+  conversa, nunca inventar. Novo node de chamada pra
+  informar_area_atendimento. System prompt atualizado: filtros opcionais
+  documentados como regra dura, disponibilidade por item da lista (nunca
+  generalizada), quando usar cada tool nova, e como descrever as zonas de
+  distância em linguagem natural.
+- Teste isolado de ambos os subworkflows feito via workflow temporário
+  descartável (Schedule Trigger 1min → Execute Workflow com casos reais
+  → inspeção via `/api/v1/executions?includeData=true`), cobrindo filtro
+  combinado marca+espécie, `interesse_marcas: true` (boolean sobrevive ao
+  transporte n8n→Postgres), filtro de preço (numeric sobrevive), e
+  informar_area_atendimento puro — depois deletado. Nenhum bug de
+  plumbing encontrado desta vez (diferente das vezes anteriores nesta
+  sessão).
+
+Próximo passo: validar com conversa real via WhatsApp (o usuário já testa
+no próprio número pessoal) antes de considerar a fase encerrada.
