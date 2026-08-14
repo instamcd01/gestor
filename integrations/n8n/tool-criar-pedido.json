@@ -1,0 +1,272 @@
+{
+  "name": "Tool - Criar Pedido",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "p_cliente_id" },
+            { "name": "p_empresa_id" },
+            { "name": "p_conversa_id" },
+            { "name": "p_mensagem_id" },
+            { "name": "p_tipo_mensagem" },
+            { "name": "p_tipo_pagamento" }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "empresas",
+        "filters": {
+          "conditions": [
+            { "keyName": "id", "keyValue": "={{ $json.p_empresa_id }}" }
+          ]
+        }
+      },
+      "id": "buscar-empresa",
+      "name": "Buscar Empresa",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [224, 0],
+      "credentials": {
+        "supabaseApi": { "id": "zKVu2zDPVCtxDgq9", "name": "Supabase cloud" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "clientes",
+        "filters": {
+          "conditions": [
+            { "keyName": "id", "keyValue": "={{ $('When Executed by Another Workflow').item.json.p_cliente_id }}" },
+            { "keyName": "empresa_id", "keyValue": "={{ $('When Executed by Another Workflow').item.json.p_empresa_id }}" }
+          ]
+        }
+      },
+      "id": "buscar-cliente",
+      "name": "Buscar Cliente Pedido",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [448, 0],
+      "credentials": {
+        "supabaseApi": { "id": "zKVu2zDPVCtxDgq9", "name": "Supabase cloud" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict", "version": 1 },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.endereco }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "tem-endereco",
+      "name": "Cliente Tem Endereço?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [672, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "autorizado", "type": "boolean", "value": false },
+            { "name": "motivo", "type": "string", "value": "endereco_invalido" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sem-endereco",
+      "name": "Sem Endereço",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 160]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "endereco_origem",
+              "type": "string",
+              "value": "={{ $('Buscar Empresa').item.json.endereco }}, {{ $('Buscar Empresa').item.json.cidade }} - {{ $('Buscar Empresa').item.json.estado }}, {{ $('Buscar Empresa').item.json.cep }}"
+            },
+            {
+              "name": "endereco_destino",
+              "type": "string",
+              "value": "={{ $json.endereco }}, {{ $json.cidade }} - {{ $json.estado }}, {{ $json.cep }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "montar-enderecos",
+      "name": "Montar Endereços",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, -160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://routes.googleapis.com/directions/v2:computeRoutes",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-Goog-FieldMask", "value": "routes.distanceMeters" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ origin: { address: $json.endereco_origem }, destination: { address: $json.endereco_destino }, travelMode: 'DRIVE' }) }}",
+        "options": {}
+      },
+      "id": "computar-rota",
+      "name": "Computar Rota (Google Maps)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1104, -160],
+      "credentials": {
+        "httpHeaderAuth": { "id": "8gjtbsLiLH5AYkEL", "name": "Google Maps Routes API (n8n backend)" }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const rotas = $json.routes;\nif (!rotas || rotas.length === 0 || !rotas[0].distanceMeters) {\n  return [{ json: { prossegue: false } }];\n}\nconst distanciaKm = rotas[0].distanceMeters / 1000;\nreturn [{ json: { distancia_km: distanciaKm, prossegue: true } }];"
+      },
+      "id": "parse-distancia",
+      "name": "Parse Distância",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1328, -160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict", "version": 1 },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.prossegue }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "rota-encontrada",
+      "name": "Rota Encontrada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1552, -160]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "autorizado", "type": "boolean", "value": false },
+            { "name": "motivo", "type": "string", "value": "frete_indisponivel" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "rota-nao-encontrada",
+      "name": "Rota Não Encontrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1776, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select criar_pedido_whatsapp($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6::numeric, $7) as resultado",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.p_cliente_id, $('When Executed by Another Workflow').item.json.p_empresa_id, $('When Executed by Another Workflow').item.json.p_conversa_id, $('When Executed by Another Workflow').item.json.p_mensagem_id, $('When Executed by Another Workflow').item.json.p_tipo_mensagem, $json.distancia_km, $('When Executed by Another Workflow').item.json.p_tipo_pagamento ] }}"
+        }
+      },
+      "id": "criar-pedido-rpc",
+      "name": "Criar Pedido (RPC)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1776, -240],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": { "id": "GEzDAcb9DFtH5ozo", "name": "Postgres cloud" }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Whitelist explicita (regra permanente do projeto) -- normaliza os 3\n// caminhos possiveis (sem endereco / rota nao encontrada / resultado real\n// da RPC) num formato so, nunca passthrough.\nconst row = $input.first()?.json || {};\nconst r = row.resultado || row;\nreturn [{ json: {\n  autorizado: !!r.autorizado,\n  motivo: r.motivo || null,\n  pedido_id: r.pedido_id || null,\n  status: r.status || null,\n} }];"
+      },
+      "id": "montar-resultado",
+      "name": "Montar Resultado",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2000, -120]
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[{ "node": "Buscar Empresa", "type": "main", "index": 0 }]]
+    },
+    "Buscar Empresa": {
+      "main": [[{ "node": "Buscar Cliente Pedido", "type": "main", "index": 0 }]]
+    },
+    "Buscar Cliente Pedido": {
+      "main": [[{ "node": "Cliente Tem Endereço?", "type": "main", "index": 0 }]]
+    },
+    "Cliente Tem Endereço?": {
+      "main": [
+        [{ "node": "Montar Endereços", "type": "main", "index": 0 }],
+        [{ "node": "Sem Endereço", "type": "main", "index": 0 }]
+      ]
+    },
+    "Montar Endereços": {
+      "main": [[{ "node": "Computar Rota (Google Maps)", "type": "main", "index": 0 }]]
+    },
+    "Computar Rota (Google Maps)": {
+      "main": [[{ "node": "Parse Distância", "type": "main", "index": 0 }]]
+    },
+    "Parse Distância": {
+      "main": [[{ "node": "Rota Encontrada?", "type": "main", "index": 0 }]]
+    },
+    "Rota Encontrada?": {
+      "main": [
+        [{ "node": "Criar Pedido (RPC)", "type": "main", "index": 0 }],
+        [{ "node": "Rota Não Encontrada", "type": "main", "index": 0 }]
+      ]
+    },
+    "Criar Pedido (RPC)": {
+      "main": [[{ "node": "Montar Resultado", "type": "main", "index": 0 }]]
+    },
+    "Sem Endereço": {
+      "main": [[{ "node": "Montar Resultado", "type": "main", "index": 0 }]]
+    },
+    "Rota Não Encontrada": {
+      "main": [[{ "node": "Montar Resultado", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
