@@ -491,7 +491,7 @@ junto com o resto do cutover.
    começar (volume baixo no início) — confirma, ou prefere diário desde já
    mesmo com poucos dados?
 
-## Ordem de implementação proposta
+## Ordem de implementação proposta (SUPERADA — ver "Fase 2 revisada" abaixo)
 
 Fase 1 (observabilidade + pagamento, sem depender de nenhuma pergunta em
 aberto) → Fase 1.5 (cutover, depende da pergunta 3) → Fase 2 (auditoria,
@@ -501,4 +501,204 @@ investigação do webhook Chatwoot) → Fase 6 (pagamento em produção, depende
 aprovação explícita separada).
 
 Cada fase segue o mesmo processo já validado nesta sessão: construir → testar
+
+---
+
+# Fase 2 revisada — investigação e desenho (14/08, sessão seguinte)
+
+Fase 1 e 1.5 completas (cutover feito, testado com pedido real via
+Chatwoot, ver `docs/superpowers/specs/2026-08-14-mapa-dependencias-cutover-whatsapp.md`).
+Usuário pediu um pedido de Fase 2 bem mais detalhado que o rascunho acima —
+5 dimensões de classificação, exigência de o auditor **propor** melhoria
+agrupada por causa raiz (não só listar problema), e análise do histórico
+real do Chatwoot como baseline. Investigação feita antes de desenhar
+qualquer schema novo, como já é padrão neste projeto.
+
+## Achado crítico — não existe histórico real pra analisar
+
+Consultei a API do Chatwoot diretamente (`GET /accounts/1/conversations?status=all`):
+**a conta inteira tem 4 conversas, nenhuma de cliente real**:
+- Conversa 3 e 4: de 07/03/2026, mesma leva de dado de setup/teste inicial
+  já documentada (131 mensagens todas do mesmo timestamp).
+- Conversa 14: "Beatriz Teste Multimodal", contato sintético meu da sessão
+  de testes multimodais de 13-14/08.
+- Conversa 15: contato sintético desta própria sessão (Fase 1.5).
+
+Só existe 1 inbox no Chatwoot (`Delivery Pet API Oficial`, o número de
+teste). **Não há segundo canal/número com histórico real escondido em
+algum lugar que eu tenha encontrado.** Isso confirma de novo o que a
+memória já registrava: o atendimento real de clientes hoje acontece por
+fora deste sistema inteiramente (pessoalmente, telefone, ou WhatsApp
+pessoal sem integração) — nunca passou pelo Chatwoot.
+
+**Consequência pro pedido do usuário (item 8)**: não dá pra construir o
+"baseline de como os clientes realmente conversam" a partir de dado que
+não existe neste sistema. Duas opções, nenhuma implementada ainda:
+1. **Esperar o tráfego real do cutover acumular** — já está rodando desde
+   a Fase 1.5, mas hoje só no número de TESTE (não recebe cliente real
+   ainda) — então o volume real ainda é zero.
+2. **Se existir histórico real em outro lugar** (WhatsApp Business App
+   pessoal, export de conversas, outro CRM) que o usuário tenha e queira
+   usar como baseline, isso seria uma importação pontual — precisa saber
+   se esse dado existe e em que formato antes de desenhar como importar.
+
+Volume real hoje pra treinar/validar o auditor: 64 linhas em
+`automacao_eventos`, todas de teste sintético meu (Fase 1/1.5), zero
+atendimento de cliente real.
+
+## Schema revisado de `auditorias_atendimento` — 5 dimensões
+
+O rascunho anterior (seção "Fase 2" acima) tinha um schema genérico demais
+pro que o usuário pediu agora — ele quer poder filtrar/agregar por
+dimensão diretamente, não só vasculhar um jsonb. Campos fixos por
+dimensão (mais fácil de indexar/agregar em SQL puro que tudo dentro de
+`problemas_detectados`), evidência sempre obrigatória:
+
+```sql
+CREATE TABLE auditorias_atendimento (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  atendimento_id uuid NOT NULL REFERENCES atendimentos(id) UNIQUE,
+  empresa_id uuid NOT NULL,
+  gerado_em timestamptz NOT NULL DEFAULT now(),
+  modelo_usado text NOT NULL,
+
+  -- Dimensão 1: ATENDIMENTO (resultado objetivo, cruzado com dado real,
+  -- nunca só opinião do auditor -- pedido_id/transferencia vêm de
+  -- automacao_eventos/conversas, não de interpretação livre)
+  resultado text NOT NULL CHECK (resultado IN (
+    'resolvido_agente','transferido_humano','abandonado','pedido_criado','sem_solucao'
+  )),
+  pedido_id uuid REFERENCES pedidos(id),
+
+  -- Dimensão 2: QUALIDADE
+  qualidade_score numeric CHECK (qualidade_score BETWEEN 0 AND 100),
+  teve_alucinacao boolean NOT NULL DEFAULT false,
+  teve_informacao_incorreta boolean NOT NULL DEFAULT false,
+  resposta_incompleta boolean NOT NULL DEFAULT false,
+  resposta_confusa boolean NOT NULL DEFAULT false,
+
+  -- Dimensão 3: EXPERIÊNCIA / fricção (métrica de primeira classe, pedida
+  -- explicitamente) -- friccao_score derivado de sinais objetivos que o
+  -- PRÓPRIO auditor calcula a partir da transcrição, nunca "no chute"
+  friccao_score numeric CHECK (friccao_score BETWEEN 0 AND 100),
+  qtd_perguntas_desnecessarias int NOT NULL DEFAULT 0,
+  qtd_reformulacoes_cliente int NOT NULL DEFAULT 0,
+  cliente_repetiu_informacao boolean NOT NULL DEFAULT false,
+  sentimento_cliente text CHECK (sentimento_cliente IN ('satisfeito','neutro','frustrado','indeterminado')),
+
+  -- Dimensão 4: OPERACIONAL (uso de tools -- cruzado com automacao_eventos
+  -- de verdade, o auditor recebe a lista real de tool_call daquele
+  -- atendimento, não infere sozinho quais tools existem)
+  tools_usadas_incorretamente jsonb NOT NULL DEFAULT '[]', -- [{tool, motivo}]
+  tools_faltantes jsonb NOT NULL DEFAULT '[]', -- [{tool_esperada, motivo}]
+  tools_desnecessarias jsonb NOT NULL DEFAULT '[]',
+  teve_erro_tecnico boolean NOT NULL DEFAULT false,
+
+  -- Dimensão 5: COMERCIAL
+  teve_intencao_compra boolean NOT NULL DEFAULT false,
+  chegou_no_carrinho boolean NOT NULL DEFAULT false,
+  venda_perdida boolean NOT NULL DEFAULT false,
+  venda_perdida_motivo text,
+
+  -- Transversal: toda ocorrência pontual, com evidência textual
+  -- obrigatória (nunca uma alegação sem trecho real por trás)
+  problemas_detectados jsonb NOT NULL DEFAULT '[]',
+  -- [{categoria: precisao|seguranca|ux_friccao|comportamento|uso_ferramentas|comercial,
+  --   tipo: slug curto (livre, é o que a Fase 3 agrupa por similaridade semântica),
+  --   gravidade: baixa|media|alta,
+  --   descricao: texto,
+  --   evidencia: trecho literal da conversa}]
+
+  resumo text NOT NULL, -- 2-3 frases, pro relatório não precisar reprocessar a conversa toda
+  recomendacao text,
+  metadata jsonb NOT NULL DEFAULT '{}'
+);
+CREATE INDEX ON auditorias_atendimento (empresa_id, gerado_em);
+CREATE INDEX ON auditorias_atendimento (resultado);
+REVOKE ALL ON auditorias_atendimento FROM PUBLIC, anon, authenticated;
+```
+
+**Input do auditor pra cada atendimento** (montado por SQL antes de chamar
+o LLM, nunca o LLM "lembrando" sozinho): transcrição completa
+(`mensagens` ordenadas por `atendimento_id`) + toda `automacao_eventos`
+do mesmo período (tool_call + eventos de negócio) + resultado objetivo
+(existe `pedido_id`? `conversas.estado` terminou `atendente`?). O LLM
+preenche os campos SUBJETIVOS (qualidade, fricção, sentimento,
+problemas) em cima desse contexto real — nunca decide sozinho se existe
+pedido ou transferência, isso vem de dado, não de interpretação.
+
+## `padroes_atendimento` — agrupamento por causa raiz, com recomendação concreta
+
+O pedido do usuário é explícito: não quer "atendimento X teve problema",
+quer "39% das buscas com 'sachê' falharam, causa X, sugestão Y". Isso
+exige uma segunda passada de LLM (não dá pra fazer só com `GROUP BY` em
+`tipo`, porque a mesma causa raiz aparece com `tipo`s de superfície
+diferentes — já vimos isso na prática com "sachê de frango").
+
+```sql
+CREATE TABLE padroes_atendimento (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa_id uuid NOT NULL,
+  periodo_inicio timestamptz NOT NULL,
+  periodo_fim timestamptz NOT NULL,
+  categoria text NOT NULL,
+  titulo text NOT NULL, -- "Busca não encontra produtos por nome comercial/apelido"
+  ocorrencias int NOT NULL,
+  total_atendimentos_periodo int NOT NULL,
+  pct_atendimentos numeric NOT NULL,
+  gravidade_media text,
+  causa_provavel text NOT NULL,
+  solucao_sugerida text NOT NULL,
+  prioridade text NOT NULL CHECK (prioridade IN ('baixa','media','alta')),
+  exemplos jsonb NOT NULL DEFAULT '[]', -- [{atendimento_id, chatwoot_conversation_id, evidencia}]
+  gerado_em timestamptz NOT NULL DEFAULT now()
+);
+REVOKE ALL ON padroes_atendimento FROM PUBLIC, anon, authenticated;
+```
+
+Subworkflow `Agrupador - Padroes Atendimento`: lê todo `problemas_detectados`
+do período, manda pro LLM pedindo pra AGRUPAR semanticamente (não por
+`tipo` exato) e, pra cada grupo com >= N ocorrências, preencher
+`causa_provavel`/`solucao_sugerida`/`prioridade` — exatamente o formato
+do exemplo que o usuário deu.
+
+## Relatório — estrutura exata pedida
+
+`relatorios_atendimento` (tabela) + subworkflow gerador, lendo
+`auditorias_atendimento` + `padroes_atendimento` do período:
+- **Resumo executivo**: contagem de atendimentos/resolvidos/transferidos/
+  abandonados/pedidos, taxa de conversão.
+- **Top problemas**: de `padroes_atendimento`, ordenado por
+  `prioridade`+`ocorrencias` — problema/quantidade/impacto/exemplos/causa/
+  solução/prioridade, exatamente os campos que o usuário pediu.
+- **Top oportunidades**: mesma fonte, filtrado por categoria comercial.
+- **Alertas**: qualquer `auditorias_atendimento` com `teve_alucinacao` ou
+  `venda_perdida` ou `qualidade_score` abaixo de um limiar.
+- **Link pro Chatwoot**: `https://chatwoot.lukz.com.br/app/accounts/1/conversations/{chatwoot_conversation_id}`
+  — direto a partir de `conversas.chatwoot_conversation_id`, já existe.
+
+## Perguntas em aberto ANTES de implementar (nenhuma bloqueia a próxima, só a fase específica)
+
+As 4 perguntas antigas (modelo do auditor, canal do relatório, cadência do
+agrupador) continuam sem resposta — refeitas aqui porque a pergunta 3
+antiga (modo de operação no cutover) já foi resolvida (agente responde
+direto, sem humano de prontidão, decisão implícita de manter o cutover
+como estava depois de testado).
+
+1. **Modelo do Auditor**: `gpt-4o-mini` (mesmo do agente, mais barato) ou
+   um modelo mais forte, já que aqui não é tempo real e a qualidade do
+   julgamento pesa mais?
+2. **Canal do relatório**: WhatsApp, e-mail, ou tabela consultável?
+3. **Cadência do agrupador de padrões**: semanal (proposto antes) ou outra?
+4. **NOVA — histórico como baseline**: dado que não existe no Chatwoot,
+   você tem esse histórico em algum outro lugar (WhatsApp Business App,
+   export, outro sistema) que valha a pena importar pontualmente? Ou
+   seguimos só com tráfego novo a partir de agora?
+5. **NOVA — volume mínimo pra começar**: como hoje o número ainda é de
+   teste (não recebe cliente real), a Fase 2 só vai ter dado de verdade
+   pra analisar quando esse número passar a atender cliente de fato —
+   isso já está decidido/planejado, ou ainda está em aberto?
+
+Nenhuma implementação feita ainda desta revisão — só investigação e
+desenho, como pedido explicitamente.
 isolado → testar composto → validar com dado real → documentar → commit.
