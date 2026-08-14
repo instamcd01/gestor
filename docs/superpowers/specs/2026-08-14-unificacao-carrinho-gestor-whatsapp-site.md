@@ -108,3 +108,18 @@ separada — descoberto durante a investigação que esse fluxo tem conceitos
 compartilhada ainda não modela, então unificar de uma vez só seria um
 escopo bem maior e mais arriscado do que o necessário pra resolver a dor
 imediata.
+
+## Task 0 — resultado (14/08)
+
+Confirmado real: todos os 4 clientes de origem WhatsApp tinham telefone
+em formato divergente do E.164 sem `+` que `auth.jwt()->>'phone'` usa
+(ex: `"(21) 99887-7477"` vs `"5521998877477"`). A normalização antiga do
+Router só tratava o caso de vir explicitamente com `+55`. Corrigido pra
+sempre extrair só dígitos e garantir prefixo `55`. Achado colateral
+concreto (não hipotético): o telefone de teste do próprio usuário já
+tinha gerado 2 cadastros divergentes (`Jacó`, via WhatsApp, formato
+antigo; `Lucas`, via login no site, E.164 correto) — exatamente o
+problema que a normalização evita daqui pra frente. Esse caso específico
+NÃO foi mesclado automaticamente (decisão de merge de cliente é
+manual/pontual, fora de escopo desta fase) — os outros 3 clientes de
+teste malformados foram normalizados via backfill.
