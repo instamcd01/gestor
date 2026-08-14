@@ -156,3 +156,35 @@ agente principal com descrição e seção nova no system prompt. Ainda
 falta o teste final end-to-end via WhatsApp real (pedir o link, abrir,
 logar com o mesmo número, confirmar que o carrinho aparece populado) —
 esse é o teste que valida a Task 0 na prática.
+
+## 2 ajustes achados testando ao vivo (14/08, mesmo dia)
+
+### 1. gerar_link_carrinho oferecia o site só por menção de "cartão"
+
+Achado real: agente perguntou "posso pagar no cartão?" → respondeu que
+cartão "ainda não é suportado diretamente aqui", ofereceu o site — mas
+cartão de crédito/débito NA ENTREGA já é 100% suportado nativamente via
+`criar_pedido` (parte da spec de pagamento já implementada). Erro meu na
+escrita do prompt de `gerar_link_carrinho`: confundi "pagamento online"
+(gap real, não construído) com "pagamento por cartão" (já funciona, só
+não online). Corrigido: o site só é oferecido quando o cliente quer
+pagar ONLINE/adiantado, nunca só por mencionar "cartão" — cartão na
+entrega segue o fluxo normal (criar_pedido, perguntar crédito/débito).
+
+Usuário pediu pra "pensar numa estratégia futura" sobre quando oferecer
+o site em paralelo (ex: pra conhecer o catálogo, não só por pagamento)
+— registrado como ideia pra decidir depois, não implementado agora.
+
+### 2. Link do carrinho caía direto em /carrinho, mostrando só o carrinho de convidado parcial
+
+Cliente com item adicionado antes pelo site (carrinho de convidado local,
+ainda sem login) que clicasse no link do WhatsApp caía direto em
+`/carrinho` SEM estar logado — via só os itens locais dele, sem os itens
+reais (que incluem o que foi adicionado via WhatsApp), o que podia
+parecer "carrinho errado/incompleto". Sugestão do próprio usuário,
+aplicada: o link agora manda pro login (`/entrar?redirect=carrinho`) em
+vez do carrinho direto — confirmado que essa rota já existe e funciona
+exatamente assim (`page.tsx:17,27`: lê o `redirect` da URL, usa como
+destino pós-login, e já pula direto pro carrinho se o usuário já estiver
+logado). Depois do login, o merge (guest→real) já garante que o cliente
+vê TUDO junto, nunca uma parte.
