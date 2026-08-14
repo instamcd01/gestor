@@ -1080,3 +1080,28 @@ e no agente (`produto_id` e `produto_busca` viram dois `$fromAI`
 separados com instrução clara de qual usar em qual caso). Overload
 antigo da RPC (sem o parâmetro novo) removido depois da migração —
 única chamadora era esse subworkflow, já atualizado.
+
+## Bug crítico achado em conversa real: filtro de espécie nunca batia pra "cachorro" (14/08, mesma sessão)
+
+Usuário reportou que o agente parou de conseguir buscar ração pra
+cachorro. Causa raiz: `buscar_produto_v2` (implementado mais cedo hoje)
+recebe `p_especie` em linguagem natural do agente ("cachorro", "gato"),
+mas o banco guarda `produtos.especie` em outro vocabulário ("Cães",
+"Gatos", "Cães e Gatos", etc). O filtro usava `LIKE` literal sem
+normalização — "cachorro" nunca é substring de "caes", então TODA busca
+com espécie cachorro inferida retornava zero resultados desde o deploy
+de hoje. Só não foi pego nos testes de validação porque o único teste
+com espécie usado foi "gato", que por coincidência É substring de
+"gatos" (`unaccent(lower("Gatos"))='gatos'`), mascarando o problema.
+
+**Fix**: normalização de sinônimos antes do filtro — `cachorro`/`cão`/
+`canino` → `caes`; `gato`/`gata`/`felino` → `gatos`; qualquer outro valor
+passa direto (unaccent+lower). Aplicado nos 4 pontos onde `p_especie`
+era usado (tier 1, tier 2, tier 3, marcas). Reconfirma o princípio "banco
+decide": a normalização fica no backend, não depende do agente acertar o
+token exato.
+
+Testado com os 3 casos reais que falharam na conversa (`ração` +
+categoria "Racao" + espécie "cachorro"; "Golden cão adulto" + fabricante
+Golden + espécie "cachorro") — agora retornam produtos reais
+corretamente. Reconfirmado sem regressão o caso "gato" que já funcionava.
