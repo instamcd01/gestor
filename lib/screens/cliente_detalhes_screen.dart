@@ -3,10 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/cliente.dart';
+import '../models/item_carrinho_cliente.dart';
 import '../models/movimentacao_saldo.dart';
 import '../models/venda.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
+import '../repositories/carrinho_cliente_repository.dart';
 import '../repositories/saldo_repository.dart';
 import '../repositories/venda_repository.dart';
 import '../utils/telefone_utils.dart';
@@ -40,7 +42,7 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
         : widget.cliente;
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text(cliente.nome),
@@ -62,6 +64,7 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Dados'),
+              Tab(text: 'Carrinho'),
               Tab(text: 'Compras'),
               Tab(text: 'Conta'),
             ],
@@ -70,6 +73,7 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
         body: TabBarView(
           children: [
             _buildDadosTab(context, cliente),
+            _CarrinhoClienteTab(clienteId: cliente.idCliente ?? ''),
             _ComprasClienteTab(clienteId: cliente.idCliente),
             _ContaClienteTab(cliente: cliente),
           ],
@@ -314,6 +318,123 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     }
+  }
+}
+
+/// Aba "Carrinho": o carrinho ATIVO real desse cliente — o mesmo que o
+/// agente de WhatsApp e o site usam (tabela `carrinho`/`carrinho_itens`
+/// compartilhada). Permite ver e remover item na mão, útil quando o bot
+/// trava numa operação ou quando o dono assume um atendimento.
+class _CarrinhoClienteTab extends StatefulWidget {
+  final String clienteId;
+
+  const _CarrinhoClienteTab({required this.clienteId});
+
+  @override
+  State<_CarrinhoClienteTab> createState() => _CarrinhoClienteTabState();
+}
+
+class _CarrinhoClienteTabState extends State<_CarrinhoClienteTab> {
+  final _repository = CarrinhoClienteRepository();
+  late Future<CarrinhoCliente> _futureCarrinho;
+  String? _removendoProdutoId;
+
+  @override
+  void initState() {
+    super.initState();
+    _futureCarrinho = _carregar();
+  }
+
+  Future<CarrinhoCliente> _carregar() {
+    if (widget.clienteId.isEmpty) {
+      return Future.value(CarrinhoCliente(itens: [], valorTotal: 0));
+    }
+    return _repository.consultar(widget.clienteId);
+  }
+
+  Future<void> _recarregar() async {
+    setState(() => _futureCarrinho = _carregar());
+    await _futureCarrinho;
+  }
+
+  Future<void> _removerItem(ItemCarrinhoCliente item) async {
+    setState(() => _removendoProdutoId = item.produtoId);
+    try {
+      final novoCarrinho = await _repository.removerItem(
+        widget.clienteId,
+        produtoId: item.produtoId,
+      );
+      setState(() {
+        _futureCarrinho = Future.value(novoCarrinho);
+        _removendoProdutoId = null;
+      });
+    } catch (e) {
+      setState(() => _removendoProdutoId = null);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível remover: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+
+    return FutureBuilder<CarrinhoCliente>(
+      future: _futureCarrinho,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Erro ao carregar carrinho: ${snapshot.error}'));
+        }
+        final carrinho = snapshot.data!;
+        if (carrinho.vazio) {
+          return RefreshIndicator(
+            onRefresh: _recarregar,
+            child: ListView(
+              children: const [
+                Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Center(child: Text('Nenhum item no carrinho no momento.')),
+                ),
+              ],
+            ),
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: _recarregar,
+          child: ListView.builder(
+            itemCount: carrinho.itens.length + 1,
+            itemBuilder: (context, index) {
+              if (index == carrinho.itens.length) {
+                return Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    'Total: ${currencyFormat.format(carrinho.valorTotal)}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                );
+              }
+              final item = carrinho.itens[index];
+              return ListTile(
+                title: Text(item.nome),
+                subtitle: Text('${item.quantidade}x ${currencyFormat.format(item.precoUnitario)}'),
+                trailing: _removendoProdutoId == item.produtoId
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                    : IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => _removerItem(item),
+                      ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 }
 
