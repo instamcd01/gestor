@@ -1137,3 +1137,15 @@ se reincidir, um modelo mais forte pro agente principal (hoje
 `gpt-4o-mini`) ou uma auditoria mais agressiva desse padrão específico
 (comparar toda resposta que menciona "adicionei"/"removi" contra
 automacao_eventos do mesmo turno).
+
+## Ajuste de UX no carrinho de convidado com item local (14/08)
+
+Usuário testou o cenário de carrinho de convidado NÃO vazio (item
+adicionado antes pelo navegador): o merge com o carrinho real já
+funcionava certo (confirmado pelo usuário — "isso é um bom sinal"), mas
+o botão "Finalizar pedido" não deixava claro que fazer login ali também
+traria itens de outros canais (ex: WhatsApp) — podia parecer confuso ver
+produtos novos aparecerem depois do login sem explicação. Texto de apoio
+atualizado pra avisar isso explicitamente antes do clique, sem mudar
+nenhum comportamento funcional (só clareza). Commit `ed8aa40` em
+`gestor-loja`, pushado.
