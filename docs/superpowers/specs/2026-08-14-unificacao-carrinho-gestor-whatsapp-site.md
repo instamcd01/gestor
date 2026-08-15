@@ -188,3 +188,45 @@ exatamente assim (`page.tsx:17,27`: lê o `redirect` da URL, usa como
 destino pós-login, e já pula direto pro carrinho se o usuário já estiver
 logado). Depois do login, o merge (guest→real) já garante que o cliente
 vê TUDO junto, nunca uma parte.
+
+## Grounding em configurações reais do Gestor, além de pagamento (14/08)
+
+Usuário pediu pra generalizar: não só parcelamento, mas "tudo que existe
+configurado no gestor que seja relevante para o atendimento" — nunca
+mais o agente inventar política/regra da loja. Mapeadas todas as telas
+de Configurações do app (`lib/screens/configuracoes_screen.dart` como
+hub); a maioria é operação interna (custos, entregadores, notas fiscais,
+integrações de marketplace) e não tem valor pra resposta a cliente.
+
+Itens realmente relevantes, e o que foi feito com cada um:
+- **Pagamento/parcelamento** — já resolvido (`informar_condicoes_pagamento`).
+- **Taxa de entrega / frete grátis / tempo por região** — usuário pediu
+  isso especificamente (é a pergunta mais comum). `informar_area_atendimento`
+  estendida (mesma RPC/tool de mais cedo) pra trazer `taxa_entrega` e
+  `frete_gratis_a_partir_de` por zona, além do prazo que já tinha —
+  dados reais confirmados (R$4,99 a R$9,99 dependendo da distância,
+  grátis a partir de R$30 a R$70 por zona).
+- **Horário de funcionamento + "está aberto agora?"** — RPC nova
+  `informar_dados_loja`, calcula `aberto_agora` no servidor comparando o
+  horário real (`empresas.horario_funcionamento`, por dia da semana) com
+  a hora atual em America/Sao_Paulo — nunca deixa o LLM calcular isso
+  sozinho.
+- **PetCash/cashback** — incluído na mesma RPC, com uma observação
+  explícita embutida no próprio dado ("PetCash hoje só é aplicado em
+  pedidos feitos pelo site, não pelo WhatsApp") pra nunca deixar o
+  cliente achar que vai ganhar cashback num pedido do WhatsApp.
+- **Endereço da loja** — descartado a pedido do usuário (loja é só
+  entrega, sem retirada, então endereço físico não é informação
+  relevante pro cliente).
+- **Valor mínimo de pedido** — investigado e descartado por enquanto:
+  campo existe (`empresas.valor_minimo_pedido`) mas hoje está `null`
+  (não configurado) E não é verificado em NENHUMA RPC de checkout
+  (confirmado via busca no `information_schema.routines` — só aparece
+  usado dentro de `validar_cupom`, que na verdade lê `cupons.valor_minimo_pedido`,
+  uma coluna diferente por cupom específico, não a política geral da
+  loja). Construir uma tool pra expor um campo que não é nem configurado
+  nem aplicado seria mais confuso que útil — fica pra quando/se a regra
+  for implementada de verdade.
+
+Ambas as tools novas testadas isoladamente (workflow descartável) antes
+do deploy no agente principal, seguindo o mesmo processo do dia inteiro.
