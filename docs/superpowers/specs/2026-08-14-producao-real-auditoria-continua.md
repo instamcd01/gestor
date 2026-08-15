@@ -1254,3 +1254,70 @@ de alucinações distintas numa única conversa longa é um sinal real —
 registrado explicitamente pro usuário considerar reforçar o modelo do
 agente principal (`gpt-4o-mini`) ou reduzir o ritmo do piloto até a
 confiabilidade melhorar.
+
+## Auditor confirma nota alta mas erra 2 achados reais (15/08) + 4 melhorias a partir do pedido do usuário
+
+Auditor rodado de novo sob demanda: `qualidade_score=90`, `friccao_score=25`,
+`teve_alucinacao=false` — mas errado em 2 pontos reais:
+
+1. **Beijos (Bala de Gelatina Fini) nunca foi adicionado de verdade**
+   — confirmado via `automacao_eventos` (zero eventos pra esse produto_id
+   na conversa inteira). O validador anti-alucinação implementado hoje
+   não pegou esse caso porque a frase real era "**Consegui** adicionar"
+   (não "adicionei"/"adicionado", únicas formas cobertas pela regex
+   original). Regex ampliada pra cobrir "consegui + verbo de ação" com
+   guarda de negação ("não consegui" não dispara), testada contra o
+   caso real (agora detecta corretamente) e contra falsos positivos
+   conhecidos (ofertas/perguntas, falhas honestas) antes do deploy.
+
+2. **"Não podemos finalizar pedidos fora do horário de funcionamento"
+   — também inventado.** Confirmado lendo `_finalizar_pedido_core`:
+   `horario_funcionamento` só é usado pra CALCULAR prazo de frete
+   econômico (pulando dias fechados na conta), não existe nenhum
+   bloqueio real de criação de pedido. O agente inferiu essa regra
+   sozinho a partir de `aberto_agora=false`, e a auditoria aceitou como
+   se fosse limitação real do sistema.
+
+Perguntado ao usuário qual deveria ser o comportamento real: **agente
+funciona 24h, só a entrega respeita o horário — pedido fora do horário
+deve ficar agendado pra próxima abertura, mesmo mecanismo que o site já
+usa.**
+
+### Implementado
+
+- **Agendamento no WhatsApp**: `criar_pedido_whatsapp` ganhou
+  `p_agendar_para_abertura boolean` — quando true, calcula no banco (não
+  no agente) a próxima janela de abertura real a partir de
+  `empresas.horario_funcionamento`, passa como `p_agendado_inicio`/
+  `p_agendado_fim` pro `_finalizar_pedido_core` (mecanismo que já existia,
+  só nunca tinha sido exposto pro WhatsApp). Matemática de data/hora
+  testada isoladamente (função descartável) contra o horário real da
+  empresa antes do deploy — resultado bateu exatamente com a próxima
+  abertura esperada. Overload antigo (sem o parâmetro) removido depois
+  de confirmar o n8n usando a assinatura nova.
+- **Prompt corrigido**: removida a crença de que loja fechada bloqueia
+  pedido; nova regra explícita oferecendo agendamento quando a loja está
+  fechada e o cliente confirma que quer prosseguir.
+- **Busca não refinava com nova informação do cliente**: achado real —
+  cliente pediu "ração pra gato senior" depois de já ver uma lista sem
+  esse filtro, agente disse "não encontramos" **sem buscar de novo**
+  (confirmado via `automacao_eventos`: zero chamada nova de
+  `buscar_produto` nessa resposta). Testado via SQL puro que o produto
+  REALMENTE existe e a RPC encontra ele perfeitamente quando "sênior" é
+  incluído na busca — o bug era comportamental (não re-buscar), não da
+  RPC. Regra dura nova: sempre re-buscar quando o cliente refina/
+  acrescenta característica numa mensagem seguinte.
+- **Pergunta clarificadora antes de lista genérica grande**: a pedido do
+  usuário, nova orientação pra considerar perguntar uma característica
+  (marca preferida, faixa de preço) antes de despejar uma lista grande
+  de produtos de marcas diferentes numa busca muito aberta — com
+  julgamento, não mecânico.
+- **Honestidade em pedidos de múltiplos itens numa mensagem só**: nova
+  regra dura reforçando (além do validador determinístico já existente)
+  que cada item deve ter sua própria chamada real de ferramenta, e a
+  resposta deve refletir exatamente quais itens foram processados de
+  verdade, nunca arredondar pra "consegui todos".
+
+**Pendente**: mudanças 2-4 são de comportamento/prompt, não dá pra
+validar 100% via SQL — precisam de teste ao vivo (o usuário pediu
+"testes mais amplos e diversificados", ainda não feito nesta sessão).
