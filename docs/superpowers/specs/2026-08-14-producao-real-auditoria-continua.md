@@ -1321,3 +1321,149 @@ usa.**
 **Pendente**: mudanças 2-4 são de comportamento/prompt, não dá pra
 validar 100% via SQL — precisam de teste ao vivo (o usuário pediu
 "testes mais amplos e diversificados", ainda não feito nesta sessão).
+
+## Auditoria completa das 10 conversas + 2 correções estruturais (15/08, sessão seguinte)
+
+Usuário pediu explicitamente pra buscar TODOS os problemas ocorridos nas
+conversas já auditadas e corrigir o que fosse necessário — não só a mais
+recente. Investigação cobriu os 10 atendimentos com auditoria salva até
+agora (`auditorias_atendimento`), cruzando `problemas_detectados` de cada
+um com o histórico de commits já aplicado no mesmo dia, pra separar o que
+já tinha sido corrigido (mas a conversa auditada era anterior ao fix) do
+que ainda estava genuinamente pendente.
+
+### Timeline confirmada via `git log`
+
+Todos os fixes de 14-15/08 documentados nas seções acima do timestamp
+`a94b19a` (2026-08-15 03:06:52 UTC, "agendamento pra loja fechada + busca
+sem refinamento") já estavam em produção. Cruzando com `atendimentos.iniciado_em`:
+8 dos 10 atendimentos auditados começaram ANTES do fix correspondente ao
+problema que apresentaram — ou seja, o problema já está resolvido, só a
+auditoria é de um momento anterior. Only 2 atendimentos (`699d0cd0...`,
+03:15 UTC, e `39f56d05...`, 12:55 UTC, ambos DEPOIS do último fix
+conhecido) tinham problemas genuinamente não cobertos por nenhuma correção
+anterior — são os dois investigados e corrigidos abaixo.
+
+### Bug 1 — `criar_pedido` falha repetidamente quando o agente pula a rechamada de `revisar_carrinho`
+
+Achado no atendimento `39f56d05` (o mesmo que a auditoria sob demanda já
+tinha sinalizado como `confirmacao_falhou_repetidamente`, gravidade alta).
+Lendo `automacao_eventos` da janela 13:14-13:19 direto: o cliente disse
+"Sim"/"Sim"/"Pode"/"Avista então" em 4 mensagens seguidas, e em TODAS o
+agente chamou `criar_pedido` diretamente, sem rechamar `revisar_carrinho`
+com o texto novo antes — apesar do system prompt já instruir exatamente
+essa sequência (linha 192: "chame criar_pedido... na MESMA resposta" logo
+depois de `revisar_carrinho` autorizar). `criar_pedido_whatsapp` (RPC)
+exige um evento `revisar_carrinho`/`etapa='confirmado'` recente e não
+consumido — sem ele, sempre retorna `sem_confirmacao_valida`, não importa
+o que o cliente tenha dito. Mesma classe de bug já vista nesta sessão
+("regra crítica de sequenciamento não pode depender só de prompt em
+prosa" — ver achado do `ambiguidade_multiplas_especies` em 13/08).
+
+**Fix estrutural** (não só prompt): `criar_pedido_whatsapp` ganhou um novo
+parâmetro `p_mensagem_cliente text DEFAULT NULL`. Quando a checagem normal
+falha (nenhum `revisar_carrinho` confirmado recente), a RPC agora tenta um
+FALLBACK: se `p_mensagem_cliente` é realmente afirmativo (mesma função
+`mensagem_e_confirmacao_afirmativa` que `revisar_carrinho` já usa) E existe
+`conversas.contexto->revisao_pendente` ainda válido (15min) cujo snapshot
+de itens bate EXATAMENTE com o carrinho atual, a RPC trata como confirmado
+— constrói o mesmo resultado que `revisar_carrinho` teria devolvido e seque
+o fluxo normal de criação de pedido. Nunca decide "confirmado" fora dessas
+duas condições (texto real + snapshot batendo).
+
+**Bug encontrado no próprio teste isolado, corrigido antes do deploy**: a
+primeira versão da migration deixava o evento `confirmado` criado pelo
+fallback SEM `consumido_em` — o que fazia ele ficar "disponível" pra uma
+chamada de `criar_pedido` seguinte e TOTALMENTE não relacionada (outro
+`tipo_pagamento`, outra mensagem) reaproveitar essa autorização por engano
+(achado rodando os cenários de teste em sequência, não em produção — dado
+sintético, sem impacto real). Corrigido gravando `consumido_em` no mesmo
+INSERT que cria o evento do fallback.
+
+**5 cenários testados via SQL puro com dados sintéticos** (cliente/produto/
+carrinho/conversa isolados, `count(*)=0` confirmado no cleanup): caminho
+feliz ("Pode" + resumo pendente batendo → pedido criado); idempotência
+(retry com mesmo `mensagem_id` → mesmo `pedido_id`, `idempotente:true`);
+mensagem não afirmativa ("Crédito em 3 parcelas" → bloqueado); resumo
+expirado (>15min → bloqueado); carrinho mudou depois do resumo → bloqueado;
+chamada não relacionada logo depois (carrinho já vazio, sem
+`revisao_pendente`) → bloqueado, sem vazamento do evento anterior.
+
+**n8n**: `WhatsApp - Tool - Criar Pedido` (`BpAkSUpYvSqCHH2s`) ganhou
+`p_mensagem_cliente` no trigger + no 10º parâmetro da chamada da RPC.
+`WhatsApp - 02 Agente` (`vhFKgmonTFMqzZuz`), node `Call 'Tool - Criar
+Pedido'`, ganhou `p_mensagem_cliente` como expressão FIXA (`{{
+$('Contexto Operacional').item.json.mensagem }}`, nunca `$fromAI` — mesmo
+padrão já usado em `revisar_carrinho`, contexto operacional nunca é
+decidido pela IA). Ambos os PUTs em produção autorizados explicitamente
+pelo usuário antes de aplicar. Re-fetch estrutural confirmou os dois
+workflows ativos com a mudança aplicada. JSON commitado em
+`integrations/n8n/tool-criar-pedido.json` e `integrations/n8n/03-agente-tools-v1.json`.
+
+### Bug 2 — alucinação de `produto_id` ao ADICIONAR um produto já visto antes na conversa
+
+Achado no atendimento `699d0cd0` (não coberto por nenhum fix anterior —
+distinto do bug de alucinação em REMOVER já corrigido em 14/08). O system
+prompt já proíbe reescrever produto_id de memória pra adicionar (linha
+150: "NUNCA reescreva um produto_id de memória"), mas o modelo (`gpt-4o-mini`)
+violou a regra na prática: tentou adicionar "Bala de Gelatina Fini Sabor
+Bananas" e depois "2 de salmão" usando UUIDs inventados (não batiam com
+nenhum produto real, nem com os IDs reais já vistos minutos antes na
+mesma conversa) — a RPC rejeitou corretamente as duas vezes
+(`produto_nao_encontrado`), mas gerou 2 respostas de "dificuldade técnica"
+consecutivas pro cliente.
+
+**Fix estrutural**: `_alterar_carrinho_core` já tinha um fallback
+`p_produto_busca` (ILIKE) pra `remover`/`alterar_quantidade`, restrito ao
+carrinho do cliente — estendido pra também cobrir `adicionar`, mas contra
+o CATÁLOGO inteiro (empresa + `ativo` + `exibir_no_catalogo`), já que aqui
+o produto ainda não está no carrinho. Só entra em ação quando o
+`produto_id` recebido NÃO existe de verdade (nunca substitui um ID válido
+— fluxo normal via `buscar_produto` continua idêntico). 0 matches →
+`produto_nao_encontrado` (comportamento antigo preservado); 1 match →
+resolve automaticamente e segue; 2+ matches → `multiplos_itens_correspondem`
++ `itens_correspondentes`, mesmo formato já usado no fallback de remover.
+
+**Nenhuma mudança de n8n foi necessária** — achado feliz confirmado lendo
+o subworkflow `WhatsApp - Tool - Alterar Carrinho`: `p_produto_busca` já
+era encaminhado incondicionalmente pra RPC em toda chamada, inclusive
+`adicionar` (só não era *usado* pelo lado do banco até agora). O fix ficou
+inteiramente na camada SQL, já live assim que a migration foi aplicada.
+
+**4 cenários testados via SQL puro** (2 produtos sintéticos com nomes
+parecidos, `count(*)=0` no cleanup): produto_id inventado + busca com 1
+match único → resolveu e adicionou certo; produto_id inventado + busca
+ambígua (bate com os 2 produtos de teste) → `multiplos_itens_correspondem`;
+produto_id inventado + busca sem nenhum match → `produto_nao_encontrado`;
+produto_id VÁLIDO (fluxo normal) → comportamento inalterado, fallback
+nunca chamado.
+
+### Achados investigados e conscientemente NÃO corrigidos (baixo valor/fora de escopo)
+
+- **Busca "sabão" não encontrou "Sabonete Sarnicida e Antipulgas Matacura"**
+  (atendimento `e2563b58`) — gap real de vocabulário/sinônimo (não é
+  substring, diferente do já corrigido cachorro→caes), mas a MESMA
+  conversa se recuperou sozinha quando o cliente reformulou pra "sabonete
+  antipulgas". Corrigir isso de verdade exigiria um dicionário de
+  sinônimos mais amplo pro catálogo inteiro — fica registrado como item
+  de backlog de busca, não uma correção pontual.
+- **2 buscas idênticas de "Hills z/d"** (atendimento `39f56d05`, 22s de
+  diferença) — o cliente insistiu ("Tenho certeza que vocês tem, procura
+  direito"), o agente rebuscou uma vez a mais antes de responder de novo
+  que não achou. Comportamento aceitável (dar o benefício da dúvida uma
+  vez), não uma falha de engenharia — o produto genuinamente não existe
+  no catálogo.
+
+### Balanço desta rodada
+
+2 bugs estruturais reais e ainda não cobertos por nenhum fix anterior,
+achados relendo `automacao_eventos`/transcrição bruta dos 2 atendimentos
+mais recentes (não confiando só no resumo do Auditor — ele mesmo já erra
+achados pontuais, ver seção "Auditor confirma nota alta mas erra 2
+achados reais" acima). Ambos corrigidos na camada de banco (SQL isolado
+testado com >=4 cenários cada antes de qualquer wiring), um deles exigiu
+2 PUTs em n8n (autorizados explicitamente), o outro já estava
+completamente encanado e só faltava o banco usar o dado que já chegava.
+**Não testado ao vivo no WhatsApp ainda** — mesmo próximo passo já
+registrado antes nesta spec (usuário pediu "testes mais amplos e
+diversificados").
