@@ -1206,3 +1206,51 @@ citado no texto — se o cliente perguntar por nome de bairro sem
 confirmar que é o endereço cadastrado, o agente deve pedir o endereço
 completo pra confirmar de verdade, nunca reaproveitar o resultado do
 endereço cadastrado como se fosse sobre o bairro perguntado.
+
+## Auditor rodado sob demanda no atendimento problemático (14/08, fim da sessão)
+
+Usuário pediu explicitamente pra rodar o Auditor nas últimas conversas.
+Atendimento (`b61da229-...`) fechado manualmente (só 1m37s de
+inatividade, mas testes tinham pausado) e Auditor disparado na hora via
+o mesmo truque de Schedule Trigger temporário em 1min (revertido pra
+20min depois).
+
+**Resultado real da auditoria**: `qualidade_score=60`, `friccao_score=70`
+(alto), `sentimento_cliente=frustrado`, `teve_alucinacao=true`,
+`teve_informacao_incorreta=true`, `resposta_confusa=true`,
+`teve_erro_tecnico=true`, `venda_perdida=true` (motivo: incapacidade de
+concluir devido a confirmações e problemas técnicos). Confirma
+objetivamente a percepção do usuário de que a experiência estava ruim.
+
+**Achado sobre o próprio Auditor**: o `problemas_detectados` só detalhou
+2 problemas (conflação de "valor mínimo de parcela" com "frete grátis";
+repetições de sincronização do carrinho) — não citou explicitamente o
+Tapete Petix, o parcelamento inventado nem a Barra, embora os campos
+agregados (`teve_alucinacao`/`teve_informacao_incorreta`) estivessem
+corretos. Sinal de que o Auditor pode estar sub-relatando quando há
+MUITOS problemas distintos num único atendimento longo — vale investigar
+se isso é limite de instrução do prompt do Auditor ou do próprio
+`fatos_pre_computados`, mas não investigado agora (fora do escopo desta
+sessão).
+
+**Novo fix aplicado a partir do achado real do Auditor**: confirmado via
+`automacao_eventos` que o agente chamou `informar_condicoes_pagamento`
+corretamente (retornou `valor_minimo_parcela: 100`), mas um minuto depois
+reaproveitou esse mesmo R$100 pra responder "qual o valor mínimo pra
+frete grátis?" — conceito completamente diferente (frete grátis real
+varia de R$30 a R$70 por zona). Regra nova no prompt: nunca misturar
+`valor_minimo_parcela` (pagamento) com `frete_gratis_a_partir_de`
+(entrega) — são fontes e conceitos totalmente diferentes.
+
+**Balanço do dia**: 8 problemas reais distintos encontrados e corrigidos
+em produção real (busca por espécie zerando resultados; alucinação de
+UUID em remoção de carrinho — corrigida estruturalmente com
+produto_busca; bot não travava após transferência humana — corrigido;
+sem notificação de transferência — corrigido; Tapete Petix inventado sem
+chamada de ferramenta; parcelamento inventado — corrigido com tool real;
+Barra respondida com endereço errado; conflação frete grátis/parcela
+mínima). Todos corrigidos e validados no mesmo dia, mas o volume alto
+de alucinações distintas numa única conversa longa é um sinal real —
+registrado explicitamente pro usuário considerar reforçar o modelo do
+agente principal (`gpt-4o-mini`) ou reduzir o ritmo do piloto até a
+confiabilidade melhorar.
