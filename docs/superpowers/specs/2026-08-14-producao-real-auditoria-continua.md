@@ -1179,3 +1179,30 @@ fosse confirmação final do pedido) — a RPC rejeitou corretamente
 se recuperou mostrando o resumo certo (`revisar_carrinho`) na sequência.
 Só a mensagem de recuperação ("houve um problema...") não é a UX ideal
 — fica pra um ajuste futuro se reincidir com frequência.
+
+## "Entrega na Barra?" respondido com o endereço errado (14/08)
+
+Cliente perguntou "Entregam na barra?" (bairro citado no texto, não o
+endereço cadastrado dele) — o agente respondeu "Sim, entregamos na
+Barra! Prazo entre 25 a 45 minutos" com confiança total. Investigado via
+`automacao_eventos`: o agente REALMENTE chamou uma ferramenta
+(`consultar_zona_entrega`), mas essa ferramenta responde sobre o
+ENDEREÇO JÁ CADASTRADO do cliente — que não tem nenhuma relação com
+"Barra" (o cliente de teste mora perto da loja, zona "Até 2km"). O
+agente pegou esse resultado (sobre o endereço real do cliente) e
+apresentou como se tivesse confirmado a distância até o bairro
+mencionado no texto. Diferente das alucinações anteriores (zero tool
+call), aqui a ferramenta FOI chamada de verdade — o erro foi de
+atribuição: usar o resultado certo pra responder a pergunta errada.
+
+Causa estrutural: hoje não existe (nem pode existir de forma confiável
+sem geocodificação de bairro) nenhuma ferramenta que traduza um NOME de
+bairro em distância real — `consultar_zona_entrega`/`calcular_frete` só
+sabem responder sobre o endereço já cadastrado; `informar_area_atendimento`
+dá só uma noção geral por faixa de distância, sem bairro. Fix: regra
+dura nova no prompt, deixando explícito que resultado de
+consultar_zona_entrega/calcular_frete NUNCA responde por um bairro só
+citado no texto — se o cliente perguntar por nome de bairro sem
+confirmar que é o endereço cadastrado, o agente deve pedir o endereço
+completo pra confirmar de verdade, nunca reaproveitar o resultado do
+endereço cadastrado como se fosse sobre o bairro perguntado.
