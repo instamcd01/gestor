@@ -1149,3 +1149,33 @@ produtos novos aparecerem depois do login sem explicação. Texto de apoio
 atualizado pra avisar isso explicitamente antes do clique, sem mudar
 nenhum comportamento funcional (só clareza). Commit `ed8aa40` em
 `gestor-loja`, pushado.
+
+## Alucinação de condição de pagamento: "parcela em até 3x sem juros" (14/08, mesma conversa)
+
+Cliente perguntou "Parcela em quantas vezes?" (sobre pagamento no
+cartão de crédito) e o agente respondeu "O pagamento no cartão de
+crédito pode ser parcelado em até 3 vezes sem juros!" — informação
+100% inventada. Confirmado via `automacao_eventos`: zero chamadas de
+ferramenta pra essa resposta específica. Não existe (nem faz sentido
+existir) nenhuma fonte de dado sobre parcelamento no sistema — cartão
+aqui é sempre passado na maquininha física do entregador na hora da
+entrega, e só a maquininha sabe as condições reais disponíveis naquele
+momento. É a mesma classe de alucinação da resposta "Adicionei o Tapete
+Petix" de mais cedo (o modelo produz texto plausível de e-commerce
+genérico sem nenhuma base real), mas agora envolvendo uma promessa
+financeira — risco de negócio real (cliente pode cobrar a condição na
+entrega e o entregador não conseguir cumprir).
+
+Fix: nova regra dura no prompt, na seção de pagamento — nunca informar
+número de parcelas nem "sem juros", mesmo se perguntado diretamente;
+responder com honestidade que depende da maquininha do entregador no
+momento da entrega.
+
+Achado técnico colateral (não é bug, é o sistema funcionando certo): o
+agente tentou chamar `criar_pedido` prematuramente assim que o cliente
+respondeu "Crédito" (tratando resposta de forma de pagamento como se
+fosse confirmação final do pedido) — a RPC rejeitou corretamente
+(`sem_confirmacao_valida`), sem criar nenhum pedido indevido, e o agente
+se recuperou mostrando o resumo certo (`revisar_carrinho`) na sequência.
+Só a mensagem de recuperação ("houve um problema...") não é a UX ideal
+— fica pra um ajuste futuro se reincidir com frequência.
