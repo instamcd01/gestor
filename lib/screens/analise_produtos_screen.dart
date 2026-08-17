@@ -48,6 +48,19 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
     return Scaffold(
       appBar: AppBar(
         title: const Text('Análise de produtos'),
+        actions: [
+          IconButton(
+            tooltip: 'Atualizar',
+            icon: produtoProvider.carregando
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            onPressed: produtoProvider.carregando ? null : () => produtoProvider.carregarProdutos(),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
