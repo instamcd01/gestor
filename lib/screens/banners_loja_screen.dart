@@ -14,11 +14,29 @@ import '../widgets/estado_erro_lista.dart';
 import '../widgets/form_section.dart';
 import 'cortar_imagem_screen.dart';
 
-/// Proporção do recorte (2:1) — meio-termo entre o 16:9 que o carrossel usa
-/// no celular e o 21:9 que usa no desktop, então corta pouco dos dois lados
-/// em vez de cortar muito de um deles.
-const _proporcaoBanner = 2.0;
+/// Proporção do recorte: 21:9, a mesma que o carrossel do site usa em
+/// desktop (banner-carousel.tsx) — recortar nessa proporção faz o banner
+/// caber em desktop sem cortar NADA. Não existe proporção que sirva pras
+/// duas telas ao mesmo tempo (desktop usa 21:9, celular usa 16:9, ver
+/// comentário no `banner-carousel.tsx`) — a saída é cortar pro maior dos
+/// dois (21:9) e manter o conteúdo importante dentro de uma "área de
+/// segurança" central de 16:9, que é exatamente o que aparece inteiro no
+/// celular (o site sempre recorta a partir do centro). Testado com uma
+/// imagem 2:1 (1774×887) antes disso: cortava lateral no celular (16:9 é
+/// mais estreito que 2:1) E cortava topo/base no desktop (21:9 é mais
+/// largo que 2:1) — a proporção antiga de meio-termo cortava dos dois
+/// jeitos ao mesmo tempo em vez de eliminar o corte de algum dos dois.
+const _proporcaoBanner = 21 / 9;
+
+/// Largura da "área de segurança" central (proporção 16:9 na mesma altura
+/// do canvas) — o que aparece 100% visível no celular. Resto do banner
+/// (as faixas nas duas bordas) só some em telas estreitas.
 const _larguraMinimaRecomendada = 1600;
+
+/// Largura total recomendada do canvas (21:9 na mesma altura da área de
+/// segurança, 1600×900 → 2100×900) — o que aparece 100% visível em
+/// desktop.
+const _larguraTotalRecomendada = 2100;
 
 /// Banner rotativo da home do site — Configurações > Catálogo Online.
 /// Lojista escolhe fotos ou vídeos, reordena por arrastar, ativa/desativa
@@ -56,14 +74,14 @@ class _BannersLojaScreenState extends State<BannersLojaScreen> {
     if (bytesRecortados == null || !mounted) return; // cancelou o recorte
 
     final largura = img.decodeImage(bytesRecortados)?.width ?? 0;
-    if (largura > 0 && largura < _larguraMinimaRecomendada) {
+    if (largura > 0 && largura < _larguraTotalRecomendada) {
       final continuar = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Imagem em baixa resolução'),
           content: Text(
             'Essa imagem tem ${largura}px de largura depois do recorte. Pra boa qualidade em telas grandes, '
-            'o ideal é pelo menos ${_larguraMinimaRecomendada}px (proporção 2:1, ex: 1920×960). '
+            'o ideal é pelo menos ${_larguraTotalRecomendada}px (proporção 21:9, ex: $_larguraTotalRecomendada×900). '
             'Pode continuar mesmo assim, mas pode ficar borrada em desktop.',
           ),
           actions: [
@@ -226,11 +244,17 @@ class _BannersLojaScreenState extends State<BannersLojaScreen> {
                       padding: const EdgeInsets.all(16),
                       child: Text(
                         'Aparecem em ordem no carrossel da home do site. Arraste pra reordenar. Sem nenhum banner '
-                        'ativo, o site mostra o banner padrão. Fotos: use pelo menos ${_larguraMinimaRecomendada}px '
-                        'de largura, proporção 2:1 (ex: 1920×960) — você recorta na hora de adicionar. Vídeos: grave '
-                        'nessa mesma proporção (2:1, bem mais largo que alto) se possível — o site nunca corta o '
-                        'vídeo, então uma proporção muito diferente (ex: vertical de celular) aparece com barras '
-                        'pretas nas bordas. Vídeo sempre começa mudo (regra do navegador), com botão pra ativar o som.',
+                        'ativo, o site mostra o banner padrão. Fotos: o site corta em proporções diferentes no '
+                        'celular (16:9) e no computador (21:9) — pra imagem nenhuma ficar cortada de verdade, envie '
+                        'no tamanho total $_larguraTotalRecomendada×${_larguraTotalRecomendada * 9 ~/ 21}px '
+                        '(proporção 21:9, o que aparece inteiro no computador) e mantenha texto/produto/logo dentro '
+                        'de uma faixa central de ${_larguraMinimaRecomendada}px de largura na mesma altura '
+                        '(proporção 16:9) — é essa faixa central que aparece inteira no celular; as bordas '
+                        '(≈${(_larguraTotalRecomendada - _larguraMinimaRecomendada) ~/ 2}px de cada lado) só aparecem '
+                        'em telas largas. Você recorta pro tamanho total (21:9) na hora de adicionar. Vídeos: grave '
+                        'na mesma proporção (21:9) se possível — o site nunca corta o vídeo, então uma proporção '
+                        'muito diferente (ex: vertical de celular) aparece com barras desfocadas nas bordas. Vídeo '
+                        'sempre começa mudo (regra do navegador), com botão pra ativar o som.',
                         style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ),
@@ -468,8 +492,10 @@ class _BannerFormScreenState extends State<_BannerFormScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Dimensão ideal: pelo menos $_larguraMinimaRecomendada×${_larguraMinimaRecomendada ~/ 2}px '
-                '(proporção 2:1, ex: 1920×960) pra ficar nítido em telas grandes.',
+                'Dimensão ideal: pelo menos $_larguraTotalRecomendada×${_larguraTotalRecomendada * 9 ~/ 21}px '
+                '(proporção 21:9) pra ficar nítido em telas grandes, com o conteúdo importante dentro de uma '
+                'faixa central de ${_larguraMinimaRecomendada}px de largura (16:9) — é essa faixa que aparece '
+                'inteira no celular.',
                 style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ],
