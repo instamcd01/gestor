@@ -14,19 +14,25 @@ import '../widgets/estado_erro_lista.dart';
 import '../widgets/form_section.dart';
 import 'cortar_imagem_screen.dart';
 
-/// Proporção do recorte: 21:9, a mesma que o carrossel do site usa em
-/// desktop (banner-carousel.tsx) — recortar nessa proporção faz o banner
-/// caber em desktop sem cortar NADA. Não existe proporção que sirva pras
-/// duas telas ao mesmo tempo (desktop usa 21:9, celular usa 16:9, ver
-/// comentário no `banner-carousel.tsx`) — a saída é cortar pro maior dos
-/// dois (21:9) e manter o conteúdo importante dentro de uma "área de
-/// segurança" central de 16:9, que é exatamente o que aparece inteiro no
-/// celular (o site sempre recorta a partir do centro). Testado com uma
-/// imagem 2:1 (1774×887) antes disso: cortava lateral no celular (16:9 é
-/// mais estreito que 2:1) E cortava topo/base no desktop (21:9 é mais
-/// largo que 2:1) — a proporção antiga de meio-termo cortava dos dois
-/// jeitos ao mesmo tempo em vez de eliminar o corte de algum dos dois.
+/// Proporção do recorte principal: 21:9, a mesma que o carrossel do site
+/// usa em desktop (banner-carousel.tsx) — recortar nessa proporção faz o
+/// banner caber em desktop sem cortar NADA. Desktop (21:9) e celular
+/// (16:9) usam proporções diferentes (ver comentário no
+/// `banner-carousel.tsx`) — sem uma versão mobile dedicada (`urlMobile`),
+/// o site recorta esta mesma imagem a partir do centro pro celular, então
+/// convém manter o conteúdo importante dentro de uma "área de segurança"
+/// central de 16:9 (ver `_larguraMinimaRecomendada` abaixo). Testado com
+/// uma imagem 2:1 (1774×887) antes disso: cortava lateral no celular
+/// (16:9 é mais estreito que 2:1) E cortava topo/base no desktop (21:9 é
+/// mais largo que 2:1) — a proporção antiga de meio-termo cortava dos
+/// dois jeitos ao mesmo tempo em vez de eliminar o corte de algum dos
+/// dois.
 const _proporcaoBanner = 21 / 9;
+
+/// Proporção da versão mobile dedicada (opcional) — mesma do carrossel do
+/// site no celular. Quem sobe uma imagem própria pra essa versão elimina
+/// de vez a área de segurança: nem desktop nem mobile cortam nada.
+const _proporcaoBannerMobile = 16 / 9;
 
 /// Largura da "área de segurança" central (proporção 16:9 na mesma altura
 /// do canvas) — o que aparece 100% visível no celular. Resto do banner
@@ -245,16 +251,15 @@ class _BannersLojaScreenState extends State<BannersLojaScreen> {
                       child: Text(
                         'Aparecem em ordem no carrossel da home do site. Arraste pra reordenar. Sem nenhum banner '
                         'ativo, o site mostra o banner padrão. Fotos: o site corta em proporções diferentes no '
-                        'celular (16:9) e no computador (21:9) — pra imagem nenhuma ficar cortada de verdade, envie '
-                        'no tamanho total $_larguraTotalRecomendada×${_larguraTotalRecomendada * 9 ~/ 21}px '
-                        '(proporção 21:9, o que aparece inteiro no computador) e mantenha texto/produto/logo dentro '
-                        'de uma faixa central de ${_larguraMinimaRecomendada}px de largura na mesma altura '
-                        '(proporção 16:9) — é essa faixa central que aparece inteira no celular; as bordas '
-                        '(≈${(_larguraTotalRecomendada - _larguraMinimaRecomendada) ~/ 2}px de cada lado) só aparecem '
-                        'em telas largas. Você recorta pro tamanho total (21:9) na hora de adicionar. Vídeos: grave '
-                        'na mesma proporção (21:9) se possível — o site nunca corta o vídeo, então uma proporção '
-                        'muito diferente (ex: vertical de celular) aparece com barras desfocadas nas bordas. Vídeo '
-                        'sempre começa mudo (regra do navegador), com botão pra ativar o som.',
+                        'celular (16:9) e no computador (21:9). Você recorta pro tamanho de computador (21:9) na '
+                        'hora de adicionar — pra ela também não cortar nada no celular, abra o banner depois de '
+                        'salvo e adicione uma "Versão mobile" (recorte 16:9 à parte); sem isso, o site usa a mesma '
+                        'imagem recortada a partir do centro no celular, então mantenha texto/produto/logo dentro '
+                        'de uma faixa central de ${_larguraMinimaRecomendada}px de largura (16:9) — é essa faixa '
+                        'que aparece no celular sem a versão dedicada. Vídeos: grave em 21:9 se possível — o site '
+                        'nunca corta o vídeo, então uma proporção muito diferente (ex: vertical de celular) aparece '
+                        'com barras desfocadas nas bordas. Vídeo sempre começa mudo (regra do navegador), com botão '
+                        'pra ativar o som.',
                         style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ),
@@ -376,9 +381,11 @@ class _BannerFormScreenState extends State<_BannerFormScreen> {
   late final TextEditingController _tituloController;
   late final TextEditingController _linkController;
   late String _url;
+  String? _urlMobile;
   bool _ativo = true;
   bool _salvando = false;
   bool _recortando = false;
+  bool _recortandoMobile = false;
 
   BannerHome get _base => widget.bannerExistente ?? widget.bannerNovo!;
   bool get _editando => widget.bannerExistente != null;
@@ -390,6 +397,7 @@ class _BannerFormScreenState extends State<_BannerFormScreen> {
     _linkController = TextEditingController(text: _base.linkDestino ?? '');
     _ativo = _base.ativo;
     _url = _base.url;
+    _urlMobile = _base.urlMobile;
   }
 
   /// Baixa a imagem atual, deixa recortar de novo e reenvia — usado tanto
@@ -423,6 +431,48 @@ class _BannerFormScreenState extends State<_BannerFormScreen> {
     }
   }
 
+  /// Versão dedicada pro celular (16:9) — opcional. Escolhe uma foto nova
+  /// da galeria (não reaproveita a de computador: são enquadramentos
+  /// diferentes, não faz sentido recortar a mesma imagem já recortada).
+  /// Com essa versão preenchida, nem computador nem celular cortam nada.
+  Future<void> _adicionarOuTrocarMobile() async {
+    XFile? arquivo;
+    try {
+      arquivo = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 95);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao selecionar imagem: $e')));
+      return;
+    }
+    if (arquivo == null || !mounted) return;
+
+    final bytesOriginais = await arquivo.readAsBytes();
+    if (!mounted) return;
+    final bytesRecortados = await Navigator.push<Uint8List>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CortarImagemScreen(imagem: bytesOriginais, aspectRatio: _proporcaoBannerMobile),
+      ),
+    );
+    if (bytesRecortados == null || !mounted) return;
+
+    setState(() => _recortandoMobile = true);
+    try {
+      final empresaId = context.read<AuthProvider>().empresaId;
+      if (empresaId == null) return;
+      final novaUrl = await BannerHomeRepository().uploadImagem(bytes: bytesRecortados, empresaId: empresaId);
+      if (!mounted) return;
+      setState(() => _urlMobile = novaUrl);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao enviar versão mobile: $e')));
+    } finally {
+      if (mounted) setState(() => _recortandoMobile = false);
+    }
+  }
+
+  void _removerMobile() => setState(() => _urlMobile = null);
+
   @override
   void dispose() {
     _tituloController.dispose();
@@ -436,6 +486,7 @@ class _BannerFormScreenState extends State<_BannerFormScreen> {
       id: _base.id,
       tipo: _base.tipo,
       url: _url,
+      urlMobile: _urlMobile,
       urlThumbnail: _base.urlThumbnail,
       titulo: _tituloController.text.trim().isEmpty ? null : _tituloController.text.trim(),
       linkDestino: _linkController.text.trim().isEmpty ? null : _linkController.text.trim(),
@@ -497,6 +548,50 @@ class _BannerFormScreenState extends State<_BannerFormScreen> {
                 'faixa central de ${_larguraMinimaRecomendada}px de largura (16:9) — é essa faixa que aparece '
                 'inteira no celular.',
                 style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 20),
+              Text('Versão mobile (opcional)', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              Text(
+                _urlMobile != null
+                    ? 'Essa foto substitui o recorte automático no celular — nem ela nem a de computador cortam nada.'
+                    : 'Sem uma versão própria, o celular recorta a mesma imagem acima a partir do centro (16:9). '
+                        'Suba uma foto à parte pra também não cortar nada no celular.',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+              if (_urlMobile != null) ...[
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: AspectRatio(
+                    aspectRatio: _proporcaoBannerMobile,
+                    child: Image.network(_urlMobile!, fit: BoxFit.cover),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _recortandoMobile ? null : _adicionarOuTrocarMobile,
+                      icon: _recortandoMobile
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.crop),
+                      label: Text(_recortandoMobile
+                          ? 'Enviando...'
+                          : (_urlMobile != null ? 'Trocar versão mobile' : 'Adicionar versão mobile')),
+                    ),
+                  ),
+                  if (_urlMobile != null) ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Remover versão mobile',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: _recortandoMobile ? null : _removerMobile,
+                    ),
+                  ],
+                ],
               ),
             ],
             const SizedBox(height: 16),
