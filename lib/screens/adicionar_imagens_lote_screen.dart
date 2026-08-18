@@ -144,6 +144,7 @@ class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen>
         final url = await uploadImagemProduto(
           bytes: item.bytes,
           empresaId: _empresaId!,
+          produtoId: produtoId,
           nomeProduto: produto.nome,
           codigoBarras: produto.codigoBarras,
           fabricante: produto.fabricante,
@@ -175,6 +176,10 @@ class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$sucesso de ${pendentes.length} imagens enviadas.')),
     );
+    // Upload grava direto no banco (via repo), sem passar pelo
+    // ProdutoProvider — sem isso, os produtos recém-cadastrados continuavam
+    // aparecendo em "Sem imagem" até um refresh manual.
+    if (sucesso > 0) context.read<ProdutoProvider>().carregarProdutos();
   }
 
   @override

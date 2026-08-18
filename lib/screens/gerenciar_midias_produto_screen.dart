@@ -120,6 +120,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       final url = await uploadImagemProduto(
         bytes: bytesRecortados,
         empresaId: _empresaId!,
+        produtoId: widget.produtoId,
         nomeProduto: produto.nome,
         codigoBarras: produto.codigoBarras,
         fabricante: produto.fabricante,
@@ -134,6 +135,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
         ordem: _imagens.length + 1,
       );
       await _carregar();
+      _atualizarCacheDeProdutos();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -169,6 +171,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       final novaUrl = await uploadImagemProduto(
         bytes: bytesRecortados,
         empresaId: _empresaId!,
+        produtoId: widget.produtoId,
         nomeProduto: produto.nome,
         codigoBarras: produto.codigoBarras,
         fabricante: produto.fabricante,
@@ -177,6 +180,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       );
       await _repo.atualizarUrl(midia.id, novaUrl);
       await _carregar();
+      _atualizarCacheDeProdutos();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -196,6 +200,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
         await _repo.reordenar(restantes);
       }
       await _carregar();
+      _atualizarCacheDeProdutos();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -204,6 +209,19 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
     } finally {
       if (mounted) setState(() => _processando = false);
     }
+  }
+
+  // Adicionar/recortar/remover imagem grava direto no banco (via trigger
+  // que sincroniza produto_midias -> produtos.imagem_url), sem passar pelo
+  // ProdutoProvider — sem isso, a lista em memória usada pela aba "Sem
+  // imagem" e por outras telas fica desatualizada até um refresh manual
+  // (achado real: produto some da lista ao ganhar foto errada, mas não
+  // volta pra lista depois de excluir a foto, porque o cache continua
+  // achando que ele já tem imagem). Dispara em segundo plano, sem esperar —
+  // esta tela não depende do resultado.
+  void _atualizarCacheDeProdutos() {
+    if (!mounted) return;
+    context.read<ProdutoProvider>().carregarProdutos();
   }
 
   Future<void> _reordenarImagens(int oldIndex, int newIndex) async {

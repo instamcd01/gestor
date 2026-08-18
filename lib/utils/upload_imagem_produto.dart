@@ -30,6 +30,14 @@ const _qualidadeJpeg = 82;
 /// (mesmo produto + mesma ordem) deve sobrescrever o arquivo antigo, não
 /// acumular lixo no bucket.
 ///
+/// `codigoBarras` só é usado como chave do arquivo quando é um código real
+/// — "0"/vazio é placeholder de "sem código" usado por dezenas de produtos
+/// (achado em produção: 15 produtos com fabricante vazio + código "0"
+/// dividindo o mesmo path). Nesses casos cai pro `produtoId` (sempre único)
+/// em vez do código, senão o upload de um produto sobrescreve, no mesmo
+/// arquivo do Storage, a foto de outro produto sem relação nenhuma — o
+/// upload aparentava corromper a imagem de um produto ao mexer em outro.
+///
 /// Lança exceção em caso de falha de rede — quem chama decide como
 /// comunicar isso ao usuário. Compartilhado entre cadastro, edição e
 /// galeria de imagens de produto (individual e em lote) pra não
@@ -37,6 +45,7 @@ const _qualidadeJpeg = 82;
 Future<String> uploadImagemProduto({
   required Uint8List bytes,
   required String empresaId,
+  required String produtoId,
   required String nomeProduto,
   required String codigoBarras,
   required int ordem,
@@ -46,7 +55,7 @@ Future<String> uploadImagemProduto({
   final bytesProcessados = _comprimirEAchatarFundo(bytes);
 
   final fabricanteSlug = _slugify(_resolverFabricante(fabricante, nomeProduto, marca));
-  final baseNome = codigoBarras.trim().isNotEmpty ? codigoBarras.trim() : 'sem-codigo';
+  final baseNome = _codigoBarrasValido(codigoBarras) ? codigoBarras.trim() : produtoId;
   final path = '$empresaId/$fabricanteSlug/${baseNome}_$ordem.jpg';
 
   await supabase.storage.from('produtos').uploadBinary(
@@ -78,6 +87,14 @@ Uint8List _comprimirEAchatarFundo(Uint8List bytesOriginais) {
   img.compositeImage(comFundoBranco, redimensionada);
 
   return img.encodeJpg(comFundoBranco, quality: _qualidadeJpeg);
+}
+
+/// "0" e vazio são os dois jeitos que este banco usa pra dizer "sem código
+/// de barras real" (ver achado de colisão de path acima) — nenhum dos dois
+/// serve como chave única de arquivo.
+bool _codigoBarrasValido(String codigoBarras) {
+  final normalizado = codigoBarras.trim();
+  return normalizado.isNotEmpty && normalizado != '0';
 }
 
 /// Resolve o fabricante a usar na pasta do Storage, em ordem de confiança:

@@ -132,7 +132,26 @@ class _AbaSemImagem extends StatefulWidget {
 
 class _AbaSemImagemState extends State<_AbaSemImagem> {
   final Set<String> _selecionados = {};
+  // Ordem em que o usuário marcou cada checkbox — um Set não preserva isso
+  // de forma confiável na hora de montar a lista pra AdicionarImagensLoteScreen
+  // (que vincula a N-ésima foto escolhida ao N-ésimo produto da fila), então
+  // a fila tem que seguir esta lista, não a ordem de `lista` (que é a ordem
+  // do catálogo, não a ordem de seleção).
+  final List<String> _ordemSelecao = [];
   String _busca = '';
+  bool? _filtroExibido;
+  bool? _filtroComEstoque;
+
+  void _alternar(String id, bool selecionado) {
+    setState(() {
+      if (selecionado) {
+        if (_selecionados.add(id)) _ordemSelecao.add(id);
+      } else {
+        _selecionados.remove(id);
+        _ordemSelecao.remove(id);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -140,9 +159,12 @@ class _AbaSemImagemState extends State<_AbaSemImagem> {
     final lista = produtoProvider.produtos
         .where((p) => p.imagemUrl.isEmpty)
         .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) => _filtroExibido == null || p.exibirNoCatalogo == _filtroExibido)
+        .where((p) => _filtroComEstoque == null || (p.estoqueAtual > 0) == _filtroComEstoque)
         .toList();
     final idsValidos = lista.map((p) => p.id).whereType<String>().toSet();
     _selecionados.removeWhere((id) => !idsValidos.contains(id));
+    _ordemSelecao.removeWhere((id) => !_selecionados.contains(id));
 
     return Column(
       children: [
@@ -153,18 +175,48 @@ class _AbaSemImagemState extends State<_AbaSemImagem> {
             onChanged: (v) => setState(() => _busca = v),
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              _FiltroTriEstado(
+                label: 'Site',
+                valor: _filtroExibido,
+                rotuloVerdadeiro: 'Exibidos',
+                rotuloFalso: 'Ocultos',
+                onChanged: (v) => setState(() => _filtroExibido = v),
+              ),
+              _FiltroTriEstado(
+                label: 'Estoque',
+                valor: _filtroComEstoque,
+                rotuloVerdadeiro: 'Com estoque',
+                rotuloFalso: 'Sem estoque',
+                onChanged: (v) => setState(() => _filtroComEstoque = v),
+              ),
+            ],
+          ),
+        ),
         if (lista.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
                 TextButton(
-                  onPressed: () => setState(() => _selecionados.addAll(idsValidos)),
+                  onPressed: () => setState(() {
+                    for (final id in idsValidos) {
+                      if (_selecionados.add(id)) _ordemSelecao.add(id);
+                    }
+                  }),
                   child: const Text('Selecionar todos'),
                 ),
                 if (_selecionados.isNotEmpty)
                   TextButton(
-                    onPressed: () => setState(_selecionados.clear),
+                    onPressed: () => setState(() {
+                      _selecionados.clear();
+                      _ordemSelecao.clear();
+                    }),
                     child: const Text('Limpar seleção'),
                   ),
               ],
@@ -179,17 +231,22 @@ class _AbaSemImagemState extends State<_AbaSemImagem> {
                   itemBuilder: (context, index) {
                     final produto = lista[index];
                     final id = produto.id!;
+                    final comEstoque = produto.estoqueAtual > 0;
+                    final detalhes = [
+                      produto.categoria.isNotEmpty ? produto.categoria : 'Sem categoria',
+                      produto.exibirNoCatalogo ? 'Exibido no site' : 'Oculto no site',
+                      comEstoque ? 'Estoque: ${produto.estoqueAtual}' : 'Sem estoque',
+                    ].join(' • ');
                     return CheckboxListTile(
                       value: _selecionados.contains(id),
-                      onChanged: (v) => setState(() {
-                        if (v == true) {
-                          _selecionados.add(id);
-                        } else {
-                          _selecionados.remove(id);
-                        }
-                      }),
+                      onChanged: (v) => _alternar(id, v == true),
                       title: Text(produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(produto.categoria.isNotEmpty ? produto.categoria : 'Sem categoria'),
+                      subtitle: Text(
+                        detalhes,
+                        style: !produto.exibirNoCatalogo || !comEstoque
+                            ? TextStyle(color: Theme.of(context).colorScheme.error)
+                            : null,
+                      ),
                     );
                   },
                 ),
@@ -201,16 +258,62 @@ class _AbaSemImagemState extends State<_AbaSemImagem> {
               icon: const Icon(Icons.add_photo_alternate_outlined),
               label: const Text('Adicionar fotos'),
               onPressed: () async {
-                final selecionados = lista.where((p) => _selecionados.contains(p.id)).toList();
+                final porId = {for (final p in lista) p.id: p};
+                final selecionados = _ordemSelecao.map((id) => porId[id]).whereType<Produto>().toList();
                 await Navigator.of(context).push(MaterialPageRoute(
                   builder: (_) => AdicionarImagensLoteScreen(produtosPendentes: selecionados),
                 ));
-                if (mounted) setState(_selecionados.clear);
+                if (mounted) {
+                  setState(() {
+                    _selecionados.clear();
+                    _ordemSelecao.clear();
+                  });
+                }
               },
             ),
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Filtro de três estados (todos / sim / não) como um par de chips — usado
+/// pelos filtros "Site" e "Estoque" da aba "Sem imagem", pra dar pra saber
+/// (antes de sair caçando fotos) se o produto sem imagem sequer aparece no
+/// site ou tem estoque — sem isso o único jeito de saber era abrir cada
+/// produto individualmente.
+class _FiltroTriEstado extends StatelessWidget {
+  const _FiltroTriEstado({
+    required this.label,
+    required this.valor,
+    required this.rotuloVerdadeiro,
+    required this.rotuloFalso,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool? valor;
+  final String rotuloVerdadeiro;
+  final String rotuloFalso;
+  final ValueChanged<bool?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<bool?>(
+      initialValue: valor,
+      onSelected: onChanged,
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: null, child: Text('Todos')),
+        PopupMenuItem(value: true, child: Text(rotuloVerdadeiro)),
+        PopupMenuItem(value: false, child: Text(rotuloFalso)),
+      ],
+      child: Chip(
+        label: Text(
+          valor == null ? '$label: todos' : '$label: ${valor! ? rotuloVerdadeiro : rotuloFalso}',
+        ),
+        avatar: const Icon(Icons.filter_list, size: 16),
+      ),
     );
   }
 }
