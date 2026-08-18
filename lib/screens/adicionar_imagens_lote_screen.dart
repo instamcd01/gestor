@@ -69,8 +69,14 @@ class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen>
     }
     if (arquivos.isEmpty) return;
 
+    // O picker devolve os arquivos em ordem invertida à ordem em que foram
+    // tocados na galeria nativa (observado tanto no Android quanto no iOS)
+    // — sem inverter aqui, a 1ª foto escolhida virava a última da lista e
+    // acabava vinculada ao último produto da fila, não ao primeiro.
+    final arquivosNaOrdemEscolhida = arquivos.reversed.toList();
+
     final novos = <_ItemImagemLote>[];
-    for (final arquivo in arquivos) {
+    for (final arquivo in arquivosNaOrdemEscolhida) {
       final item = _ItemImagemLote(bytes: await arquivo.readAsBytes());
       // Vincula automaticamente na ordem da fila (quando veio de "Sem
       // imagem") — o usuário ainda pode trocar tocando no item depois.
