@@ -10,6 +10,7 @@ import '../providers/produto_provider.dart';
 import '../utils/calculadora_desconto.dart';
 import '../utils/calculadora_preco.dart';
 import '../utils/formatadores_input.dart';
+import '../utils/gerador_nome_produto.dart';
 import '../utils/produto_validators.dart';
 import '../repositories/valor_estruturado_repository.dart';
 import '../widgets/campos_estruturados_variante.dart';
@@ -91,6 +92,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
 
   late final CalculadoraPrecoMarkup _calculadora;
   late final CalculadoraDesconto _calculadoraDesconto;
+  late final GeradorNomeProduto _geradorNome;
 
   @override
   void initState() {
@@ -118,6 +120,22 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       precoController: _precoVendaController,
       promocionalController: _precoPromocionalController,
       descontoController: _descontoPromocionalController,
+    );
+    _geradorNome = GeradorNomeProduto(
+      nomeController: _nomeController,
+      categoriaController: _categoriaController,
+      nomeComercialController: _nomeComercialController,
+      doseController: _doseController,
+      composicaoController: _composicaoController,
+      apresentacaoController: _apresentacaoController,
+      especieController: _especieController,
+      faseController: _faseController,
+      porteController: _porteController,
+      saborController: _saborController,
+      pesoController: _pesoController,
+      volumeController: _volumeController,
+      fabricanteController: _fabricanteController,
+      nomeManualOverride: () => _nomeManualOverride,
     );
   }
 
@@ -243,6 +261,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   void dispose() {
     _calculadora.dispose();
     _calculadoraDesconto.dispose();
+    _geradorNome.dispose();
     _nomeController.dispose();
     _precoVendaController.dispose();
     _precoPromocionalController.dispose();
