@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/branding_provider.dart';
 import '../providers/produto_provider.dart';
+import '../providers/kit_produto_provider.dart';
 import '../providers/cliente_provider.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../providers/usuario_provider.dart';
@@ -58,6 +59,7 @@ class _AuthGateState extends State<AuthGate> {
         if (!mounted) return;
         context.read<BrandingProvider>().carregarBranding(empresaId);
         context.read<ProdutoProvider>().definirEmpresa(empresaId);
+        context.read<KitProdutoProvider>().definirEmpresa(empresaId);
         context.read<ClientProvider>().definirEmpresa(empresaId);
         context.read<HistoricoVendasProvider>().definirEmpresa(empresaId);
         context.read<UsuarioProvider>().definirEmpresa(empresaId);

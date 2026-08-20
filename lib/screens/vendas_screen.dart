@@ -3,11 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/produto_provider.dart';
 import '../providers/carrinho_provider.dart';
+import '../providers/kit_produto_provider.dart';
+import '../models/kit_produto.dart';
 import '../models/produto.dart';
 import '../utils/busca_utils.dart';
 import '../widgets/preco_com_desconto.dart';
 import 'cadastro_produto_screen.dart';
 import 'carrinho_screen.dart';
+
+/// Categoria sintética (não vem do banco) pra alternar a grade pra kits —
+/// distinto de um nome de categoria real que o lojista possa ter cadastrado
+/// (inclusive "Kits", já que é a categoria sugerida por padrão no cadastro
+/// de kit) evitando colisão de nome.
+const _categoriaKits = '__kits__';
 
 class VendasScreen extends StatefulWidget {
   const VendasScreen({super.key});
@@ -39,13 +47,16 @@ class _VendasScreenState extends State<VendasScreen> {
 
   Future<void> _carregarProdutosIniciais() async {
     final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
-    await produtoProvider.atualizarProdutosDoFirestore();
+    await Future.wait([
+      produtoProvider.atualizarProdutosDoFirestore(),
+      context.read<KitProdutoProvider>().carregarKits(),
+    ]);
     if (!mounted) return;
     final produtos = produtoProvider.produtos;
     final categoriasDinamicas = produtos.map((p) => p.categoria).toSet().toList();
     categoriasDinamicas.sort();
     setState(() {
-      categorias = ['Tudo', ...categoriasDinamicas];
+      categorias = ['Tudo', ...categoriasDinamicas, _categoriaKits];
       produtosFiltrados = produtos;
       _carregando = false;
     });
@@ -60,6 +71,17 @@ class _VendasScreenState extends State<VendasScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Não foi possível adicionar: estoque insuficiente de ${produto.nome}.')),
+      );
+    }
+  }
+
+  void _adicionarKitAoCarrinho(KitProduto kit) {
+    try {
+      final catalogoProdutos = context.read<ProdutoProvider>().produtos;
+      context.read<CarrinhoProvider>().adicionarKit(kit, catalogoProdutos);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível adicionar o kit "${kit.nome}": $e')),
       );
     }
   }
@@ -81,6 +103,7 @@ class _VendasScreenState extends State<VendasScreen> {
   void _filtrarProdutosPorCategoria(String categoria) {
     setState(() {
       categoriaSelecionada = categoria;
+      if (categoria == _categoriaKits) return; // grade de kits usa KitProdutoProvider direto, ver build()
       final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
       if (categoria == 'Tudo') {
         produtosFiltrados = produtoProvider.produtos;
@@ -153,7 +176,8 @@ class _VendasScreenState extends State<VendasScreen> {
                 final categoria = categorias[index];
                 final selecionada = categoriaSelecionada == categoria;
                 return ChoiceChip(
-                  label: Text(categoria),
+                  avatar: categoria == _categoriaKits ? const Icon(Icons.card_giftcard, size: 16) : null,
+                  label: Text(categoria == _categoriaKits ? 'Kits' : categoria),
                   selected: selecionada,
                   onSelected: (_) => _filtrarProdutosPorCategoria(categoria),
                 );
@@ -164,9 +188,11 @@ class _VendasScreenState extends State<VendasScreen> {
           Expanded(
             child: _carregando
                 ? const Center(child: CircularProgressIndicator())
-                : produtosFiltrados.isEmpty
-                    ? _estadoVazio(colorScheme)
-                    : (isGridView ? _grade(colorScheme) : _lista(colorScheme)),
+                : categoriaSelecionada == _categoriaKits
+                    ? _gradeKits(colorScheme)
+                    : produtosFiltrados.isEmpty
+                        ? _estadoVazio(colorScheme)
+                        : (isGridView ? _grade(colorScheme) : _lista(colorScheme)),
           ),
           _barraCarrinho(colorScheme),
         ],
@@ -236,6 +262,96 @@ class _VendasScreenState extends State<VendasScreen> {
                     PrecoComDesconto(produto: produto, compact: true),
                     Text(
                       semEstoque ? 'Sem estoque' : '${produto.estoqueAtual} em estoque',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: semEstoque ? Colors.red : colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _gradeKits(ColorScheme colorScheme) {
+    final kits = context.watch<KitProdutoProvider>().kits;
+    if (kits.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.card_giftcard, size: 56, color: colorScheme.onSurfaceVariant),
+              const SizedBox(height: 12),
+              Text('Nenhum kit cadastrado ainda', style: TextStyle(fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.72,
+      ),
+      itemCount: kits.length,
+      itemBuilder: (ctx, i) {
+        final kit = kits[i];
+        final semEstoque = kit.estoqueDisponivel <= 0;
+
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: semEstoque ? null : () => _adicionarKitAoCarrinho(kit),
+            child: Opacity(
+              opacity: semEstoque ? 0.5 : 1,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          width: double.infinity,
+                          color: colorScheme.surfaceContainerHighest,
+                          child: kit.imagemUrl.isNotEmpty
+                              ? Image.network(
+                                  kit.imagemUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      Icon(Icons.card_giftcard, color: colorScheme.onSurfaceVariant),
+                                )
+                              : Icon(Icons.card_giftcard, color: colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      kit.nome,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'R\$ ${(kit.precoPromocional ?? kit.preco).toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      semEstoque ? 'Sem estoque' : '${kit.estoqueDisponivel} kits disponíveis',
                       style: TextStyle(
                         fontSize: 11,
                         color: semEstoque ? Colors.red : colorScheme.onSurfaceVariant,

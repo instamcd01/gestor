@@ -466,6 +466,11 @@ class ItemVenda {
   final String? observacaoCliente; // ex: "sem cebola" (order.items[].observations da iFood)
   final List<Map<String, dynamic>>? sugestoesSubstituicao; // bag.items[].replacement.list do virtual-bag
 
+  /// Id do KIT (não do componente) que originou este item, quando ele veio
+  /// da explosão de um kit em produtos reais (ver `CarrinhoProvider.adicionarKit`)
+  /// — null pra item avulso normal. Grava em `itens_pedido.grupo_kit_id`.
+  final String? grupoKitId;
+
   // Custo do produto NO MOMENTO da venda (vem de itens_pedido.custo_unitario
   // ao reidratar do banco). Se não informado, cai pro custo atual do produto
   // — correto só enquanto a venda está sendo montada, nunca pra uma venda
@@ -479,6 +484,7 @@ class ItemVenda {
     required this.precoUnitario,
     this.observacaoCliente,
     this.sugestoesSubstituicao,
+    this.grupoKitId,
     double? custoUnitario,
   }) : _custoUnitarioNoMomento = custoUnitario;
 

@@ -77,6 +77,11 @@ class Produto {
   /// detecção (nunca assume um ciclo que ninguém configurou).
   int? cicloRecompraDias;
 
+  /// Kit/combo (produtos reais agrupados por preço fechado) em vez de um
+  /// produto físico próprio — nunca tem linha em `estoque`; disponibilidade
+  /// é calculada a partir dos componentes (ver `KitComponenteRepository`).
+  bool ehKit;
+
   Produto({
     this.id,
     required this.nome,
@@ -121,6 +126,7 @@ class Produto {
     this.tipoVariacao,
     this.varianteLabel,
     this.cicloRecompraDias,
+    this.ehKit = false,
   });
 
   /// Monta o Produto a partir de uma linha do Supabase.
@@ -182,6 +188,7 @@ class Produto {
       tipoVariacao: row['tipo_variacao']?.toString(),
       varianteLabel: row['variante_label']?.toString(),
       cicloRecompraDias: (row['ciclo_recompra_dias'] as num?)?.toInt(),
+      ehKit: row['eh_kit'] as bool? ?? false,
       // Derivados (não são colunas próprias no banco, calculados aqui pra
       // manter compatibilidade com as telas que já exibem markup/lucro).
       markup: margem != null ? '${margem.toStringAsFixed(1)}%' : null,
@@ -225,6 +232,7 @@ class Produto {
       'apresentacao': apresentacao,
       'nome_manual_override': nomeManualOverride,
       'ciclo_recompra_dias': cicloRecompraDias,
+      'eh_kit': ehKit,
     };
   }
 }

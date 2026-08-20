@@ -69,6 +69,7 @@ class VendaRepository {
         'custo_unitario': item.custoUnitario,
         'subtotal': item.precoTotal,
         'margem_item': margemItem,
+        'grupo_kit_id': item.grupoKitId,
       };
     }).toList();
 
@@ -270,6 +271,7 @@ class VendaRepository {
         custoUnitario: (itemRow['custo_unitario'] as num?)?.toDouble(),
         observacaoCliente: itemRow['observacao_cliente']?.toString(),
         sugestoesSubstituicao: (itemRow['sugestoes_substituicao'] as List?)?.cast<Map<String, dynamic>>(),
+        grupoKitId: itemRow['grupo_kit_id'] as String?,
       );
     }).toList();
 

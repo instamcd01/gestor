@@ -73,6 +73,7 @@ class _ConclusaoVendaScreenState extends State<ConclusaoVendaScreen> {
           produto: produto,
           quantidade: quantidade,
           precoUnitario: precoUnitario,
+          grupoKitId: item['grupoKitId'] as String?,
         );
       }).toList();
 

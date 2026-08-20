@@ -6,6 +6,7 @@ import 'package:gestor/screens/fila_pedidos_screen.dart';
 import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'providers/produto_provider.dart';
+import 'providers/kit_produto_provider.dart';
 import 'providers/cliente_provider.dart';
 import 'providers/branding_provider.dart';
 import 'providers/auth_provider.dart';
@@ -50,6 +51,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ProdutoProvider()),
+        ChangeNotifierProvider(create: (_) => KitProdutoProvider()),
         ChangeNotifierProvider(create: (_) => ClientProvider()),
         ChangeNotifierProvider(create: (_) => HistoricoVendasProvider()),
         ChangeNotifierProvider(create: (_) => CarrinhoProvider()),

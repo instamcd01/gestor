@@ -15,6 +15,7 @@ import '../screens/financas_screen.dart';
 import '../screens/fila_pedidos_screen.dart';
 import '../screens/historico_vendas_screen.dart';
 import '../screens/inicio_screen.dart';
+import '../screens/kits_screen.dart';
 import '../screens/meu_desempenho_screen.dart';
 import '../screens/notificacoes_screen.dart';
 import '../screens/produtos_screen.dart';
@@ -85,6 +86,7 @@ final List<AppDestino> appDestinos = [
     contador: (context) =>
         context.watch<ProdutoProvider>().produtos.where(_produtoComEstoqueBaixo).length,
   ),
+  AppDestino(titulo: 'Kits', icone: Icons.card_giftcard, builder: (_) => const KitsScreen()),
   AppDestino(titulo: 'Histórico', icone: Icons.history, builder: (_) => const HistoricoVendasScreen()),
   AppDestino(titulo: 'Meu Desempenho', icone: Icons.insights_outlined, builder: (_) => const MeuDesempenhoScreen()),
   AppDestino(

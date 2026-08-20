@@ -11,9 +11,14 @@ class ProdutoRepository {
       '*, estoque(id, quantidade_atual, quantidade_minima, deposito_id)';
 
   Future<List<Produto>> listar() async {
+    // eh_kit=false: kit é uma linha de produtos sem estoque próprio — sem
+    // esse filtro apareceria aqui como produto quebrado ("0 em estoque") em
+    // toda tela que lê ProdutoProvider.produtos. Kit tem listagem própria
+    // (KitProdutoProvider/KitsScreen).
     final data = await supabase
         .from('produtos')
         .select(_selectComEstoque)
+        .eq('eh_kit', false)
         .isFilter('deleted_at', null)
         .order('nome');
 
@@ -114,6 +119,7 @@ class ProdutoRepository {
     final data = await supabase
         .from('produtos')
         .select(_selectComEstoque)
+        .eq('eh_kit', false)
         .not('deleted_at', 'is', null)
         .order('deleted_at', ascending: false);
 
