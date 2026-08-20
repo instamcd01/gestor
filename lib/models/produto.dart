@@ -62,13 +62,19 @@ class Produto {
 
   /// Produto "pai" da família de variantes (self-referência em `produtos`,
   /// já existia no schema antes desta feature). `null` = produto não faz
-  /// parte de nenhuma família, ou é ele mesmo o produto âncora.
-  final String? produtoPaiId;
+  /// parte de nenhuma família, ou é ele mesmo o produto âncora. Só é
+  /// alterado via aprovação de sugestão ou `ProdutoProvider.desvincularVariante`
+  /// (RPC `desvincular_variante`, que resolve reparenting da família) — nunca
+  /// direto por um TextFormField.
+  String? produtoPaiId;
 
   /// Eixo (`"peso"`, `"dose"`, `"sabor"`...) e valor desta variante dentro
   /// da família — preenchidos ao aprovar uma sugestão em `sugestoes_variante`.
-  final String? tipoVariacao;
-  final String? varianteLabel;
+  /// `varianteLabel` é editável em editar_produto_screen.dart (corrige o
+  /// rótulo sem precisar desfazer o vínculo); `tipoVariacao` não tem UI de
+  /// edição direta, só muda junto com o vínculo.
+  String? tipoVariacao;
+  String? varianteLabel;
 
   /// Quantos dias esse produto costuma durar pro cliente — usado pra
   /// prever recompra automática (lembrete via WhatsApp). `null` = usa o
@@ -231,6 +237,9 @@ class Produto {
       'composicao': composicao,
       'apresentacao': apresentacao,
       'nome_manual_override': nomeManualOverride,
+      'produto_pai_id': produtoPaiId,
+      'tipo_variacao': tipoVariacao,
+      'variante_label': varianteLabel,
       'ciclo_recompra_dias': cicloRecompraDias,
       'eh_kit': ehKit,
     };

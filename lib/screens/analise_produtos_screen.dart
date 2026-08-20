@@ -6,6 +6,7 @@ import '../models/sugestao_variante.dart';
 import '../providers/produto_provider.dart';
 import '../utils/busca_utils.dart';
 import '../utils/produto_validators.dart';
+import '../utils/variante_label_utils.dart';
 import '../widgets/dialogo_revisao_variante.dart';
 import 'adicionar_imagens_lote_screen.dart';
 import 'sugestoes_variante_rejeitadas_screen.dart';
@@ -318,6 +319,40 @@ class _FiltroTriEstado extends StatelessWidget {
   }
 }
 
+/// Filtro por eixo de variação (peso/dose/sabor...) da aba "Variantes" —
+/// mostra só os eixos que de fato têm sugestão pendente no momento, com a
+/// contagem de produtos de cada um, pra dar pra focar (ex: "só sabor")
+/// quando há eixos que o usuário não quer revisar agora.
+class _FiltroTipoVariante extends StatelessWidget {
+  const _FiltroTipoVariante({
+    required this.valor,
+    required this.contagemPorTipo,
+    required this.onChanged,
+  });
+
+  final String? valor;
+  final Map<String, int> contagemPorTipo;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tipos = contagemPorTipo.keys.toList()..sort();
+    return PopupMenuButton<String?>(
+      initialValue: valor,
+      onSelected: onChanged,
+      itemBuilder: (context) => [
+        PopupMenuItem(value: null, child: const Text('Todos os eixos')),
+        for (final tipo in tipos)
+          PopupMenuItem(value: tipo, child: Text('${rotuloTipoVariacao(tipo)} (${contagemPorTipo[tipo]})')),
+      ],
+      child: Chip(
+        label: Text(valor == null ? 'Eixo: todos' : 'Eixo: ${rotuloTipoVariacao(valor!)}'),
+        avatar: const Icon(Icons.filter_list, size: 16),
+      ),
+    );
+  }
+}
+
 /// ---------------------------------------------------------------------
 /// Aba 2: Sugestões de variante
 /// ---------------------------------------------------------------------
@@ -331,6 +366,8 @@ class _AbaVariantes extends StatefulWidget {
 class _AbaVariantesState extends State<_AbaVariantes> {
   final Set<String> _selecionados = {};
   bool _processando = false;
+  String _busca = '';
+  String? _filtroTipo;
 
   Future<void> _aprovarSelecionadas(List<Produto> produtos, ProdutoProvider provider) async {
     final sugestoes = <SugestaoVariante>[];
@@ -379,14 +416,38 @@ class _AbaVariantesState extends State<_AbaVariantes> {
   @override
   Widget build(BuildContext context) {
     final produtoProvider = context.watch<ProdutoProvider>();
+    final contagemPorTipo = produtoProvider.contagemSugestoesPorTipo;
     final lista = produtoProvider.produtos
         .where((p) => p.id != null && produtoProvider.sugestoesVariantePara(p.id!).isNotEmpty)
+        .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) =>
+            _filtroTipo == null ||
+            produtoProvider.sugestoesVariantePara(p.id!).any((s) => s.tipoVariacao == _filtroTipo))
         .toList();
     final idsValidos = lista.map((p) => p.id).whereType<String>().toSet();
     _selecionados.removeWhere((id) => !idsValidos.contains(id));
 
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: TextField(
+            decoration: const InputDecoration(hintText: 'Buscar por nome', prefixIcon: Icon(Icons.search)),
+            onChanged: (v) => setState(() => _busca = v),
+          ),
+        ),
+        if (contagemPorTipo.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _FiltroTipoVariante(
+                valor: _filtroTipo,
+                contagemPorTipo: contagemPorTipo,
+                onChanged: (v) => setState(() => _filtroTipo = v),
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Align(

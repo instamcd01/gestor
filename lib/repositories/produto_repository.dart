@@ -285,4 +285,13 @@ class ProdutoRepository {
       'revisado_em': null,
     }).eq('id', sugestaoId);
   }
+
+  /// Tira um produto da família de variantes via RPC `desvincular_variante`.
+  /// Precisa ser atômico no servidor porque, quando o produto que sai é a
+  /// própria âncora da família, a função promove um dos filhos a nova âncora
+  /// e reaponta os demais — resolver isso em várias chamadas do cliente
+  /// arriscaria deixar a família inconsistente se uma falhar no meio.
+  Future<void> desvincularVariante(String produtoId) async {
+    await supabase.rpc('desvincular_variante', params: {'p_produto_id': produtoId});
+  }
 }

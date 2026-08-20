@@ -287,6 +287,28 @@ class ProdutoProvider with ChangeNotifier {
     await carregarProdutos();
   }
 
+  /// Todos os produtos da mesma família de variantes que `produto`
+  /// (incluindo a âncora e o próprio `produto`) — usado pra listar as
+  /// "variantes irmãs" em editar_produto_screen.dart. Lista vazia = produto
+  /// não faz parte de nenhuma família. `tipoVariacao` é preenchido tanto na
+  /// âncora quanto nos filhos ao aprovar (ver `aprovar_sugestao_variante`),
+  /// por isso serve pra detectar os dois casos com a mesma checagem.
+  List<Produto> familiaDeVariantes(Produto produto) {
+    if (produto.tipoVariacao == null) return [];
+    final ancoraId = produto.produtoPaiId ?? produto.id;
+    return _produtos.where((p) => p.id == ancoraId || p.produtoPaiId == ancoraId).toList();
+  }
+
+  /// Tira o produto da família de variantes (RPC `desvincular_variante`,
+  /// ver produto_repository.dart pra por que precisa ser atômico no
+  /// servidor). Recarrega o catálogo porque, quando o produto que sai é a
+  /// âncora, outras linhas também mudam (novo âncora promovido, filhos
+  /// reapontados).
+  Future<void> desvincularVariante(String produtoId) async {
+    await _repository.desvincularVariante(produtoId);
+    await carregarProdutos();
+  }
+
   Future<void> rejeitarSugestaoVariante(String sugestaoId) async {
     await _repository.rejeitarSugestaoVariante(sugestaoId);
     _sugestoesVariante.removeWhere((s) => s.id == sugestaoId);

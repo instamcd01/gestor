@@ -14,6 +14,7 @@ import '../utils/produto_validators.dart';
 import '../widgets/campos_estruturados_variante.dart';
 import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
+import '../widgets/familia_variantes_section.dart';
 import '../widgets/fornecedores_produto_section.dart';
 import 'gerenciar_midias_produto_screen.dart';
 
@@ -60,7 +61,9 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _doseController;
   late TextEditingController _composicaoController;
   late TextEditingController _apresentacaoController;
+  late TextEditingController _varianteLabelController;
   bool _nomeManualOverride = false;
+  bool _desvinculandoVariante = false;
 
   late final CalculadoraPrecoMarkup _calculadora;
   late final CalculadoraDesconto _calculadoraDesconto;
@@ -149,6 +152,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _doseController = TextEditingController(text: widget.produto.dose ?? '');
     _composicaoController = TextEditingController(text: widget.produto.composicao ?? '');
     _apresentacaoController = TextEditingController(text: widget.produto.apresentacao ?? '');
+    _varianteLabelController = TextEditingController(text: widget.produto.varianteLabel ?? '');
     _nomeManualOverride = widget.produto.nomeManualOverride;
 
     _destacarProduto = widget.produto.destacar;
@@ -209,6 +213,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _doseController.dispose();
     _composicaoController.dispose();
     _apresentacaoController.dispose();
+    _varianteLabelController.dispose();
     super.dispose();
   }
 
@@ -417,7 +422,16 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       nomeManualOverride: _nomeManualOverride,
       produtoPaiId: widget.produto.produtoPaiId,
       tipoVariacao: widget.produto.tipoVariacao,
-      varianteLabel: widget.produto.varianteLabel,
+      // Só o rótulo é editável direto no formulário (ex: corrigir "10kg"
+      // pra "10 Kg") — o vínculo em si (produtoPaiId/tipoVariacao) só muda
+      // via _desvincularVariante, nunca por aqui, porque tirar/mover um
+      // produto de família pode exigir promover outro a âncora (ver RPC
+      // `desvincular_variante`).
+      varianteLabel: widget.produto.tipoVariacao == null
+          ? null
+          : (_varianteLabelController.text.isNotEmpty
+              ? _varianteLabelController.text
+              : widget.produto.varianteLabel),
     );
 
     if (!mounted) return;
@@ -444,6 +458,42 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     }
   }
 
+  Future<void> _desvincularVariante() async {
+    if (widget.produto.id == null) return;
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remover da família de variantes?'),
+        content: const Text(
+          'Este produto deixa de aparecer agrupado com as outras opções '
+          '(no site e nesta lista). As demais variantes da família não são '
+          'afetadas. Essa ação não apaga o produto, só desfaz o vínculo.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remover')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    setState(() => _desvinculandoVariante = true);
+    try {
+      await Provider.of<ProdutoProvider>(context, listen: false)
+          .desvincularVariante(widget.produto.id!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Produto removido da família de variantes.')));
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erro ao remover da família: $e')));
+    } finally {
+      if (mounted) setState(() => _desvinculandoVariante = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -451,6 +501,9 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     // controller continua com o valor original carregado, então salvar
     // sem esses campos visíveis não perde/zera o dado, só não mostra.
     final isVendedor = context.watch<AuthProvider>().isVendedor;
+    final produtoProvider = context.watch<ProdutoProvider>();
+    final produtoAtual = produtoProvider.getProdutoPorId(widget.produto.id ?? '') ?? widget.produto;
+    final familia = produtoProvider.familiaDeVariantes(produtoAtual);
 
     return Scaffold(
       appBar: AppBar(
@@ -653,6 +706,20 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                 camposVisiveis: _camposPorCategoria[_categoriaController.text],
               ),
               const SizedBox(height: 16.0),
+
+              if (familia.isNotEmpty) ...[
+                FamiliaVariantesSection(
+                  produtoAtual: produtoAtual,
+                  familia: familia,
+                  varianteLabelController: _varianteLabelController,
+                  desvinculando: _desvinculandoVariante,
+                  onAbrirVariante: (irmao) => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: irmao)),
+                  ),
+                  onDesvincular: _desvincularVariante,
+                ),
+                const SizedBox(height: 16.0),
+              ],
 
               FormSection(
                 titulo: 'Preço e custo',

@@ -123,7 +123,7 @@ class _DialogoRevisaoVarianteState extends State<DialogoRevisaoVariante> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Eixo detectado: ${atual.tipoVariacao}',
+                    'Eixo detectado: ${rotuloTipoVariacao(atual.tipoVariacao)}',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
