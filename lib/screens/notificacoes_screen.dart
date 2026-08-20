@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 
 import '../models/notificacao.dart';
 import '../providers/notificacao_provider.dart';
+import '../providers/produto_provider.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'avaliacoes_disputas_screen.dart';
 import 'despesas_screen.dart';
+import 'editar_produto_screen.dart';
 import 'fila_pedidos_screen.dart';
 import 'produtos_screen.dart';
 
@@ -82,6 +84,20 @@ class _NotificacoesScreenState extends State<NotificacoesScreen> {
   Future<void> _abrir(Notificacao notificacao) async {
     await context.read<NotificacaoProvider>().marcarComoLida(notificacao.id);
     if (!mounted) return;
+
+    // Falha de sincronização é sobre UM produto específico — leva direto pra
+    // edição dele (onde "Disponibilidade em Marketplaces" mostra o motivo
+    // completo, sem cortar) em vez de largar o usuário na lista inteira pra
+    // caçar qual produto falhou. Cai pro fallback genérico se o produto não
+    // estiver carregado localmente por algum motivo.
+    if (notificacao.tipo == TipoNotificacao.syncFalhou && notificacao.entidadeId != null) {
+      final produto = context.read<ProdutoProvider>().getProdutoPorId(notificacao.entidadeId!);
+      if (produto != null) {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: produto)));
+        return;
+      }
+    }
+
     final tela = _telaRelacionada(notificacao.tipo);
     if (tela != null) {
       Navigator.push(context, MaterialPageRoute(builder: (_) => tela));
