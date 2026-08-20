@@ -11,6 +11,7 @@ import '../utils/calculadora_desconto.dart';
 import '../utils/calculadora_preco.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
+import '../repositories/valor_estruturado_repository.dart';
 import '../widgets/campos_estruturados_variante.dart';
 import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
@@ -230,7 +231,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
 
   Future<void> _carregarValoresEstruturados() async {
     try {
-      final mapa = await carregarValoresEstruturadosPorCategoria();
+      final mapa = await ValorEstruturadoRepository().carregarPorCategoria();
       if (!mounted) return;
       setState(() => _valoresEstruturadosPorCategoria = mapa);
     } catch (e) {
@@ -335,6 +336,8 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
               ?.salvar(produtoCriado.id!, produtoCriado.preco);
         }
 
+        if (mounted) await _garantirValoresEstruturados(produtoCriado);
+
         if (mounted) {
           if (widget.retornarProdutoCriado) {
             Navigator.of(context).pop(produtoCriado);
@@ -373,6 +376,41 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  /// Popula `valores_estruturados_variante` com o que foi digitado nos 8
+  /// campos estruturados deste produto — assim a sugestão de autocompletar
+  /// fica disponível pro próximo produto sem exigir nenhum passo extra do
+  /// usuário aqui (ver `ValorEstruturadoRepository.garantir`). Falha aqui
+  /// não deve impedir o "produto salvo" já confirmado — só loga.
+  Future<void> _garantirValoresEstruturados(Produto produto) async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    final repository = ValorEstruturadoRepository();
+    final valores = {
+      'nome_comercial': produto.nomeComercial,
+      'especie': produto.especie,
+      'fase': produto.fase,
+      'porte': produto.porte,
+      'sabor': produto.sabor,
+      'dose': produto.dose,
+      'composicao': produto.composicao,
+      'apresentacao': produto.apresentacao,
+    };
+    try {
+      for (final entrada in valores.entries) {
+        final valor = entrada.value;
+        if (valor == null || valor.trim().isEmpty) continue;
+        await repository.garantir(
+          empresaId: empresaId,
+          campo: entrada.key,
+          categoria: produto.categoria,
+          valor: valor,
+        );
+      }
+    } catch (e) {
+      debugPrint('Erro ao atualizar vocabulário de campos estruturados: $e');
     }
   }
 
@@ -527,7 +565,9 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                 nomeManualOverride: _nomeManualOverride,
                 onNomeManualOverrideChanged: (value) => setState(() => _nomeManualOverride = value),
                 camposVisiveis: _camposPorCategoria[_categoriaController.text],
-                valoresExistentes: _valoresEstruturadosPorCategoria[_categoriaController.text] ?? const {},
+                categoria: _categoriaController.text,
+                valoresPorCategoria: _valoresEstruturadosPorCategoria,
+                onValoresAtualizados: _carregarValoresEstruturados,
               ),
               const SizedBox(height: 16.0),
 

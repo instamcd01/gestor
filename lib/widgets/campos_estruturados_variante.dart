@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/supabase_config.dart';
+import '../screens/gerenciar_valores_estruturados_screen.dart';
 import '../utils/busca_utils.dart';
 import 'form_section.dart';
 
@@ -25,45 +26,14 @@ Future<Map<String, Set<String>>> carregarCamposEstruturadosPorCategoria() async 
   return mapa;
 }
 
-/// Carrega, por categoria, os valores já usados em cada campo estruturado
-/// — vira sugestão de autocompletar nos campos (ver `_CampoComSugestao`),
-/// mesma ideia de "escolher entre o que já existe, ou digitar um valor
-/// novo" já usada pra categoria/subcategoria, mas sem precisar de uma tela
-/// de gerenciamento dedicada: esses 8 campos são texto livre, sem tabela
-/// própria pra mesclar/reordenar como `categorias` tem — o valor digitado
-/// e salvo no produto já vira sugestão pro próximo produto sozinho.
-Future<Map<String, Map<String, List<String>>>> carregarValoresEstruturadosPorCategoria() async {
-  final linhas = await supabase
-      .from('produtos')
-      .select('categoria, nome_comercial, especie, fase, porte, sabor, dose, composicao, apresentacao')
-      .limit(5000);
-
-  const campos = ['nome_comercial', 'especie', 'fase', 'porte', 'sabor', 'dose', 'composicao', 'apresentacao'];
-  final porCategoria = <String, Map<String, Set<String>>>{};
-
-  for (final linha in (linhas as List)) {
-    final categoria = linha['categoria'] as String? ?? '';
-    final porCampo = porCategoria.putIfAbsent(categoria, () => {for (final c in campos) c: <String>{}});
-    for (final campo in campos) {
-      final valor = (linha[campo] as String?)?.trim();
-      if (valor != null && valor.isNotEmpty) porCampo[campo]!.add(valor);
-    }
-  }
-
-  return porCategoria.map(
-    (categoria, porCampo) => MapEntry(
-      categoria,
-      porCampo.map((campo, valores) => MapEntry(campo, valores.toList()..sort())),
-    ),
-  );
-}
-
 /// Campo de texto com sugestão dos valores já usados nesse campo/categoria
-/// — tocar no campo já mostra a lista (não precisa digitar nada pra ver as
-/// opções), filtra conforme digita (mesma normalização de acento/maiúscula
-/// da busca de produtos), e digitar algo que não está na lista continua
-/// funcionando normalmente — ver comentário de `carregarValoresEstruturadosPorCategoria`
-/// sobre por que "adicionar" aqui é só digitar e salvar.
+/// (vocabulário curado em `valores_estruturados_variante`, ver
+/// `ValorEstruturadoRepository`) — tocar no campo já mostra a lista (não
+/// precisa digitar nada pra ver as opções), filtra conforme digita (mesma
+/// normalização de acento/maiúscula da busca de produtos), e digitar algo
+/// que não está na lista continua funcionando normalmente: o valor novo
+/// entra no vocabulário sozinho ao salvar o produto (`garantir`), sem
+/// exigir um botão "adicionar" aqui.
 class _CampoComSugestao extends StatefulWidget {
   final TextEditingController controller;
   final String label;
@@ -163,13 +133,22 @@ class CamposEstruturadosVariante extends StatelessWidget {
   /// todos (categoria ainda não configurada em `categoria_campos_estruturados`).
   final Set<String>? camposVisiveis;
 
-  /// Valores já usados em cada campo pra categoria atual (chave = mesmo
-  /// nome de coluna usado em `camposVisiveis`, mais `"nome_comercial"`) —
-  /// vem de `carregarValoresEstruturadosPorCategoria()`, já resolvido pra
-  /// categoria selecionada no momento (a tela chamadora faz o lookup, mesmo
-  /// padrão de `camposVisiveis`). Campo ausente/lista vazia = sem sugestão,
-  /// campo funciona como texto livre normal.
-  final Map<String, List<String>> valoresExistentes;
+  /// Categoria selecionada no momento — usada só pra resolver
+  /// `valoresPorCategoria[categoria]` (sugestões específicas dessa
+  /// categoria, combinadas com as globais em `valoresPorCategoria['']`).
+  final String categoria;
+
+  /// Vocabulário completo (todas as categorias de uma vez, ver
+  /// `ValorEstruturadoRepository.carregarPorCategoria`) — resolvido aqui
+  /// pra [categoria] + globais, em vez de a tela chamadora já mandar
+  /// pré-resolvido, porque a combinação (específico ∪ global) é lógica
+  /// deste widget, não de quem o usa.
+  final Map<String, Map<String, List<String>>> valoresPorCategoria;
+
+  /// Chamado depois de voltar da tela de gerenciamento de valores — a tela
+  /// chamadora recarrega `valoresPorCategoria` (o vocabulário pode ter
+  /// mudado: renomeado, excluído, adicionado).
+  final VoidCallback onValoresAtualizados;
 
   const CamposEstruturadosVariante({
     super.key,
@@ -183,8 +162,10 @@ class CamposEstruturadosVariante extends StatelessWidget {
     required this.apresentacaoController,
     required this.nomeManualOverride,
     required this.onNomeManualOverrideChanged,
+    required this.categoria,
+    required this.onValoresAtualizados,
     this.camposVisiveis,
-    this.valoresExistentes = const {},
+    this.valoresPorCategoria = const {},
   });
 
   bool _visivel(String campo) => camposVisiveis == null || camposVisiveis!.contains(campo);
@@ -214,7 +195,12 @@ class CamposEstruturadosVariante extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    List<String> sugestoesPara(String campo) => valoresExistentes[campo] ?? const [];
+    List<String> sugestoesPara(String campo) {
+      final especificos = valoresPorCategoria[categoria]?[campo] ?? const <String>[];
+      final globais = valoresPorCategoria['']?[campo] ?? const <String>[];
+      if (globais.isEmpty) return especificos;
+      return {...especificos, ...globais}.toList()..sort();
+    }
 
     final campos = [
       MapEntry('especie', _CampoComSugestao(
@@ -258,14 +244,31 @@ class CamposEstruturadosVariante extends StatelessWidget {
     return FormSection(
       titulo: 'Cadastro estruturado de variante (opcional)',
       children: [
-        Text(
-          'Preencha se este produto tem outras opções de peso, dose ou sabor '
-          '(ex: a mesma ração em pesos diferentes). Ajuda o sistema a sugerir '
-          'o agrupamento delas no site automaticamente. Se "Nome comercial" '
-          'for preenchido, o "Nome do Produto" acima é gerado automaticamente '
-          'a partir destes campos ao salvar — a menos que "Editar nome '
-          'manualmente" esteja marcado abaixo.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                'Preencha se este produto tem outras opções de peso, dose ou sabor '
+                '(ex: a mesma ração em pesos diferentes). Ajuda o sistema a sugerir '
+                'o agrupamento delas no site automaticamente. Se "Nome comercial" '
+                'for preenchido, o "Nome do Produto" acima é gerado automaticamente '
+                'a partir destes campos ao salvar — a menos que "Editar nome '
+                'manualmente" esteja marcado abaixo.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Gerenciar valores sugeridos',
+              icon: const Icon(Icons.tune, size: 20),
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => GerenciarValoresEstruturadosScreen(categoriaInicial: categoria),
+                ));
+                onValoresAtualizados();
+              },
+            ),
+          ],
         ),
         _CampoComSugestao(
           controller: nomeComercialController,
