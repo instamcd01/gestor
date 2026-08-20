@@ -91,6 +91,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   bool _fabricantesCarregadas = false;
 
   Map<String, Set<String>> _camposPorCategoria = {};
+  Map<String, Map<String, List<String>>> _valoresEstruturadosPorCategoria = {};
 
   @override
   void initState() {
@@ -178,6 +179,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _carregarSubcategorias();
     _carregarFabricantes();
     _carregarCamposPorCategoria();
+    _carregarValoresEstruturados();
   }
 
   @override
@@ -322,6 +324,16 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       setState(() => _camposPorCategoria = mapa);
     } catch (e) {
       debugPrint("Erro ao carregar campos por categoria: $e");
+    }
+  }
+
+  Future<void> _carregarValoresEstruturados() async {
+    try {
+      final mapa = await carregarValoresEstruturadosPorCategoria();
+      if (!mounted) return;
+      setState(() => _valoresEstruturadosPorCategoria = mapa);
+    } catch (e) {
+      debugPrint("Erro ao carregar valores estruturados: $e");
     }
   }
 
@@ -704,6 +716,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                 nomeManualOverride: _nomeManualOverride,
                 onNomeManualOverrideChanged: (value) => setState(() => _nomeManualOverride = value),
                 camposVisiveis: _camposPorCategoria[_categoriaController.text],
+                valoresExistentes: _valoresEstruturadosPorCategoria[_categoriaController.text] ?? const {},
               ),
               const SizedBox(height: 16.0),
 

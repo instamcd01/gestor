@@ -86,6 +86,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   bool _fabricantesCarregadas = false;
 
   Map<String, Set<String>> _camposPorCategoria = {};
+  Map<String, Map<String, List<String>>> _valoresEstruturadosPorCategoria = {};
 
   late final CalculadoraPrecoMarkup _calculadora;
   late final CalculadoraDesconto _calculadoraDesconto;
@@ -105,6 +106,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     _carregarSubcategorias();
     _carregarFabricantes();
     _carregarCamposPorCategoria();
+    _carregarValoresEstruturados();
     _calculadora = CalculadoraPrecoMarkup(
       precoController: _precoVendaController,
       custoController: _custoController,
@@ -223,6 +225,16 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       setState(() => _camposPorCategoria = mapa);
     } catch (e) {
       debugPrint("Erro ao carregar campos por categoria: $e");
+    }
+  }
+
+  Future<void> _carregarValoresEstruturados() async {
+    try {
+      final mapa = await carregarValoresEstruturadosPorCategoria();
+      if (!mounted) return;
+      setState(() => _valoresEstruturadosPorCategoria = mapa);
+    } catch (e) {
+      debugPrint("Erro ao carregar valores estruturados: $e");
     }
   }
 
@@ -515,6 +527,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                 nomeManualOverride: _nomeManualOverride,
                 onNomeManualOverrideChanged: (value) => setState(() => _nomeManualOverride = value),
                 camposVisiveis: _camposPorCategoria[_categoriaController.text],
+                valoresExistentes: _valoresEstruturadosPorCategoria[_categoriaController.text] ?? const {},
               ),
               const SizedBox(height: 16.0),
 
