@@ -270,6 +270,47 @@ class CamposEstruturadosVariante extends StatelessWidget {
             ),
           ],
         ),
+        if (nomeManualOverride)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 20, color: colorScheme.onErrorContainer),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'O nome não será atualizado automaticamente',
+                        style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onErrorContainer),
+                      ),
+                      Text(
+                        '"Editar nome manualmente" está ativado pra este produto (padrão herdado '
+                        'do catálogo importado) — preencher os campos abaixo não muda o "Nome do '
+                        'Produto" enquanto isso estiver ligado.',
+                        style: TextStyle(fontSize: 12, color: colorScheme.onErrorContainer),
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(0, 32),
+                          foregroundColor: colorScheme.onErrorContainer,
+                        ),
+                        onPressed: () => onNomeManualOverrideChanged(false),
+                        child: const Text('Desativar e gerar automaticamente'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         _CampoComSugestao(
           controller: nomeComercialController,
           label: 'Nome comercial',
