@@ -12,8 +12,14 @@ import '../models/venda.dart';
 /// em `pedidos` (+ `itens_pedido`) no Supabase — a mesma tabela usada pelos
 /// pedidos vindos de WhatsApp/iFood/site, só que com origem = 'loja_fisica'.
 class VendaRepository {
+  // produtos!itens_pedido_produto_id_fkey (não só "produtos(*)") porque
+  // itens_pedido ganhou uma 2ª FK pra produtos (grupo_kit_id, feature de
+  // Kits) — sem desambiguar, o PostgREST não sabe por qual FK embutir e
+  // toda consulta de vendas quebra com PGRST201 "more than one
+  // relationship was found". A chave no JSON de resposta continua
+  // "produtos" (o "!fkey" só escolhe o caminho, não vira alias).
   static const _selectComItensECliente =
-      '*, cliente:clientes(*), itens_pedido(*, produtos(*)), '
+      '*, cliente:clientes(*), itens_pedido(*, produtos!itens_pedido_produto_id_fkey(*)), '
       'marketplace_pedidos(id, rastreio_latitude, rastreio_longitude, rastreio_eta_entrega, rastreio_atualizado_em, '
       'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
       'codigo_retirada_exibicao, link_confirmacao_entrega, agendado, entrega_prevista_inicio, entrega_prevista_fim, '

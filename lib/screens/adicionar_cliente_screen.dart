@@ -68,7 +68,10 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
     final canais = await carregarCanaisOrigem();
     if (mounted) {
       setState(() {
-        _canais = [...canais, 'Outro canal'];
+        // Mesmo cuidado de editar_cliente_screen.dart: `canais` já pode
+        // trazer "Outro canal" (fallback de carregarCanaisOrigem()), então
+        // filtra antes de reacrescentar pra nunca duplicar a opção.
+        _canais = [...canais.where((c) => c != 'Outro canal'), 'Outro canal'];
         _canaisCarregados = true;
       });
     }

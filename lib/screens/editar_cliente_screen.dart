@@ -217,7 +217,11 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     if (!mounted) return;
 
     setState(() {
-      _canais = [...canais, 'Outro canal'];
+      // `canais` já pode trazer "Outro canal" (fallback de carregarCanaisOrigem()
+      // quando a tabela `canais_origem` está vazia/falha, ou um canal real
+      // cadastrado com esse nome) — sem filtrar primeiro, duplicava a opção
+      // e o DropdownButtonFormField quebrava (exige exatamente 1 item por valor).
+      _canais = [...canais.where((c) => c != 'Outro canal'), 'Outro canal'];
       _canaisCarregados = true;
 
       final cliente = widget.clienteSelecionado;
