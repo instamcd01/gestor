@@ -20,6 +20,7 @@ import '../screens/meu_desempenho_screen.dart';
 import '../screens/notificacoes_screen.dart';
 import '../screens/produtos_screen.dart';
 import '../screens/rotas_entrega_screen.dart';
+import '../screens/sugestoes_produto_cliente_screen.dart';
 import '../screens/usuarios_screen.dart';
 import '../screens/vendas_screen.dart';
 
@@ -118,6 +119,12 @@ final List<AppDestino> appDestinos = [
     titulo: 'Avaliações',
     icone: Icons.reviews_outlined,
     builder: (_) => const AvaliacoesDisputasScreen(),
+    papeisPermitidos: ['dono', 'gerente'],
+  ),
+  AppDestino(
+    titulo: 'Sugestões de Clientes',
+    icone: Icons.search_off,
+    builder: (_) => const SugestoesProdutoClienteScreen(),
     papeisPermitidos: ['dono', 'gerente'],
   ),
   AppDestino(
