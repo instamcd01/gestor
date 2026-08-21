@@ -134,8 +134,8 @@ class ClientProvider with ChangeNotifier {
   /// inteira (em vez de só patchar localmente, como `atualizarSaldoLocal`
   /// faz) porque `authUserId` não está no `copyWith` — não vale a pena
   /// adicionar só pra essa ação rara.
-  Future<void> redefinirAcesso(String clienteId) async {
-    await _repository.redefinirAcesso(clienteId);
+  Future<void> redefinirAcesso(String clienteId, {String? novoTelefone}) async {
+    await _repository.redefinirAcesso(clienteId, novoTelefone: novoTelefone);
     await carregarClientes();
     final index = _clientes.indexWhere((c) => c.idCliente == clienteId);
     if (index != -1) {

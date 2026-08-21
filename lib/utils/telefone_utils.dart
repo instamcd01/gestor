@@ -9,6 +9,24 @@ String normalizarTelefoneBr(String texto) {
   return digitos;
 }
 
+/// Normaliza pro formato que o Supabase Auth usa no login por SMS —
+/// dígitos com DDI 55 na frente, sem "+", sem máscara. É o formato que fica
+/// gravado em `auth.users.phone`/`auth.jwt()->>'phone'` depois do OTP
+/// (confirmado direto no banco: `+5521...` enviado pro signInWithOtp vira
+/// `5521...` sem o "+" quando o Supabase grava/expõe no JWT). Usado sempre
+/// que o app escreve `clientes.telefone` esperando que a RPC
+/// `entrar_ou_criar_cliente` consiga casar por telefone depois (ver
+/// `ClienteRepository.redefinirAcesso`) — o campo de "Editar Dados" comum
+/// não passa por aqui, então um telefone salvo só ali (com máscara) não
+/// bate com o JWT até passar por uma ação que normalize.
+String normalizarTelefoneParaAuth(String texto) {
+  var digitos = texto.replaceAll(RegExp(r'[^0-9]'), '');
+  if (!digitos.startsWith('55') || digitos.length < 12) {
+    digitos = '55$digitos';
+  }
+  return digitos;
+}
+
 /// Monta o link do wa.me a partir de um telefone em qualquer formato já
 /// salvo no banco. Sem normalizar primeiro, um número já salvo com o "55"
 /// (comum em dados vindos de outras origens) virava "5555..." no link e o

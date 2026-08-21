@@ -1,6 +1,7 @@
 import '../config/supabase_config.dart';
 import '../models/cliente.dart';
 import '../models/pet.dart';
+import '../utils/telefone_utils.dart';
 
 /// Camada de acesso a dados de clientes e seus pets. O isolamento por
 /// empresa é garantido pelo RLS — não filtramos empresa_id manualmente
@@ -91,8 +92,20 @@ class ClienteRepository {
   /// mesmo cadastro (casa por telefone quando `auth_user_id is null`) em
   /// vez de criar um cliente novo do zero. Gatilho `trg_notificar_cliente_
   /// acesso_redefinido` grava a auditoria (quem fez, quando).
-  Future<void> redefinirAcesso(String clienteId) async {
-    await supabase.from('clientes').update({'auth_user_id': null}).eq('id', clienteId);
+  ///
+  /// [novoTelefone], se informado, já atualiza o telefone na mesma chamada
+  /// (evita a equipe ter que passar por "Editar Dados" antes) — sempre
+  /// normalizado via `normalizarTelefoneParaAuth`, porque a RPC de login só
+  /// casa por telefone se o valor salvo bater exatamente com o formato que
+  /// o Supabase Auth grava no JWT (dígitos + DDI 55, sem máscara) — salvar
+  /// com máscara (como o "Editar Dados" comum faz) deixaria essa
+  /// redefinição inútil na prática.
+  Future<void> redefinirAcesso(String clienteId, {String? novoTelefone}) async {
+    final payload = <String, dynamic>{'auth_user_id': null};
+    if (novoTelefone != null && novoTelefone.trim().isNotEmpty) {
+      payload['telefone'] = normalizarTelefoneParaAuth(novoTelefone);
+    }
+    await supabase.from('clientes').update(payload).eq('id', clienteId);
   }
 
   Future<void> excluir(String clienteId) async {

@@ -11,6 +11,8 @@ import '../providers/cliente_provider.dart';
 import '../repositories/carrinho_cliente_repository.dart';
 import '../repositories/saldo_repository.dart';
 import '../repositories/venda_repository.dart';
+import '../utils/cliente_validators.dart';
+import '../utils/formatadores_input.dart';
 import '../utils/telefone_utils.dart';
 import '../widgets/categoria_cliente_badge.dart';
 import '../widgets/form_section.dart';
@@ -249,29 +251,68 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
   }
 
   Future<void> _confirmarRedefinirAcesso(BuildContext context, Cliente cliente) async {
+    final formKey = GlobalKey<FormState>();
+    // Pré-preenche já mascarado, a partir só dos dígitos (sem o DDI 55, se
+    // houver) — o telefone salvo pode estar em formatos diferentes
+    // dependendo de como o cliente entrou (site vs cadastro manual no
+    // app), e o TelefoneInputFormatter só entende DDD+número puro.
+    final digitosAtuais = normalizarTelefoneBr(cliente.celular);
+    final telefoneController = TextEditingController(
+      text: TelefoneInputFormatter()
+          .formatEditUpdate(TextEditingValue.empty, TextEditingValue(text: digitosAtuais))
+          .text,
+    );
+
     final confirmou = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Redefinir acesso ao login?'),
-        content: const Text(
-          'Use isso quando o cliente perdeu o telefone antigo e não '
-          'consegue mais receber o código de verificação. Confirme antes '
-          'que o telefone cadastrado já está atualizado com o número novo '
-          '(em "Editar Dados").\n\n'
-          'Depois de redefinir, o cliente precisa entrar de novo no site '
-          'com o telefone atual — o histórico de pedidos, saldo e endereço '
-          'continuam os mesmos, nada é apagado.',
+        title: const Text('Redefinir acesso ao login'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Use isso quando o cliente perdeu o telefone antigo e não '
+                'consegue mais receber o código de verificação. Confirme o '
+                'número atual dele abaixo — o histórico de pedidos, saldo '
+                'e endereço continuam os mesmos, nada é apagado.',
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: telefoneController,
+                decoration: const InputDecoration(labelText: 'Telefone atual'),
+                keyboardType: TextInputType.phone,
+                inputFormatters: [TelefoneInputFormatter()],
+                validator: ClienteValidators.celular,
+                autofocus: true,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Redefinir')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() != true) return;
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Redefinir'),
+          ),
         ],
       ),
     );
-    if (confirmou != true || !context.mounted) return;
+
+    if (confirmou != true || !context.mounted) {
+      telefoneController.dispose();
+      return;
+    }
+    final novoTelefone = telefoneController.text;
+    telefoneController.dispose();
 
     try {
-      await context.read<ClientProvider>().redefinirAcesso(cliente.idCliente!);
+      await context.read<ClientProvider>().redefinirAcesso(cliente.idCliente!, novoTelefone: novoTelefone);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Acesso redefinido — o cliente já pode entrar com o telefone atual.')),
