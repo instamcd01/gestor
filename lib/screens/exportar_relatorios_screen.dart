@@ -1,9 +1,8 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -73,12 +72,18 @@ class _ExportarRelatoriosScreenState extends State<ExportarRelatoriosScreen> {
   }
 
   Future<void> _exportarESalvar(Excel workbook, String nomeArquivo, String textoCompartilhar) async {
-    final directory = await getApplicationDocumentsDirectory();
-    final file = File('${directory.path}/$nomeArquivo');
     final bytes = workbook.encode();
     if (bytes == null) throw Exception('Falha ao gerar a planilha.');
-    await file.writeAsBytes(bytes);
-    await Share.shareXFiles([XFile(file.path)], text: textoCompartilhar);
+    await Share.shareXFiles(
+      [
+        XFile.fromData(
+          Uint8List.fromList(bytes),
+          name: nomeArquivo,
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ),
+      ],
+      text: textoCompartilhar,
+    );
   }
 
   Future<void> _exportarVendas() async {

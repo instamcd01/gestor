@@ -1,11 +1,9 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -104,13 +102,10 @@ class _ReciboScreenState extends State<ReciboScreen> {
       final byteData = await imagem.toByteData(format: ui.ImageByteFormat.png);
       final pngBytes = byteData!.buffer.asUint8List();
 
-      final directory = await getApplicationDocumentsDirectory();
       final nomeArquivo = 'recibo_${widget.venda.idVenda ?? DateTime.now().millisecondsSinceEpoch}.png';
-      final file = File('${directory.path}/$nomeArquivo');
-      await file.writeAsBytes(pngBytes);
 
       await Share.shareXFiles(
-        [XFile(file.path)],
+        [XFile.fromData(pngBytes, name: nomeArquivo, mimeType: 'image/png')],
         text: 'Recibo da venda de ${widget.venda.cliente.nome}',
       );
     } catch (e) {

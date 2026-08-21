@@ -1,9 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:excel/excel.dart';
 import "package:file_picker/file_picker.dart";
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
@@ -87,13 +87,18 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx', 'xls'],
+      withData: true,
     );
     if (result == null || !mounted) return;
 
     setState(() => _processando = true);
     try {
-      final file = File(result.files.single.path!);
-      final bytesCorrigidos = corrigirNumFmtsInvalidos(file.readAsBytesSync());
+      // `bytes` (não `path`) — no Web não existe caminho de arquivo real,
+      // `withData: true` acima garante que o file_picker sempre traga os
+      // bytes prontos, em qualquer plataforma.
+      final bytesArquivo = result.files.single.bytes;
+      if (bytesArquivo == null) throw StateError('Não foi possível ler o arquivo selecionado.');
+      final bytesCorrigidos = corrigirNumFmtsInvalidos(bytesArquivo);
       final excel = Excel.decodeBytes(bytesCorrigidos);
 
       final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
@@ -397,13 +402,19 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
       // perder tempo preenchendo algo que seria ignorado.
     ]);
 
-    final directory = await getApplicationDocumentsDirectory();
-    final file = File('${directory.path}/produtos_template.xlsx');
     final bytes = excel.encode() ?? [];
-    await file.writeAsBytes(bytes);
 
     await SharePlus.instance.share(
-      ShareParams(files: [XFile(file.path)], text: 'Aqui está a planilha de produtos para preenchimento!'),
+      ShareParams(
+        files: [
+          XFile.fromData(
+            Uint8List.fromList(bytes),
+            name: 'produtos_template.xlsx',
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          ),
+        ],
+        text: 'Aqui está a planilha de produtos para preenchimento!',
+      ),
     );
   }
 
@@ -477,15 +488,18 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
         ]);
       }
 
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/planilha_mestre_atualizada.xlsx');
       final bytes = excel.encode() ?? [];
-      await file.writeAsBytes(bytes);
 
       if (!mounted) return;
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(file.path)],
+          files: [
+            XFile.fromData(
+              Uint8List.fromList(bytes),
+              name: 'planilha_mestre_atualizada.xlsx',
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ),
+          ],
           text: 'Planilha mestre atualizada com os ${produtos.length} produtos do catálogo atual.',
         ),
       );

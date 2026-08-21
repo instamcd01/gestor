@@ -1,10 +1,8 @@
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -159,12 +157,12 @@ class _PedidoCompraDetalheScreenState extends State<PedidoCompraDetalheScreen> {
       final byteData = await imagem.toByteData(format: ui.ImageByteFormat.png);
       final pngBytes = byteData!.buffer.asUint8List();
 
-      final directory = await getApplicationDocumentsDirectory();
       final nomeArquivo = 'pedido_compra_${_pedido?.numeroSequencial ?? DateTime.now().millisecondsSinceEpoch}.png';
-      final file = File('${directory.path}/$nomeArquivo');
-      await file.writeAsBytes(pngBytes);
 
-      await Share.shareXFiles([XFile(file.path)], text: 'Pedido de compra — ${_pedido?.fornecedor.nome ?? ''}');
+      await Share.shareXFiles(
+        [XFile.fromData(pngBytes, name: nomeArquivo, mimeType: 'image/png')],
+        text: 'Pedido de compra — ${_pedido?.fornecedor.nome ?? ''}',
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível gerar a imagem: $e')));

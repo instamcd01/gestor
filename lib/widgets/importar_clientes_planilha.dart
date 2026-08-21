@@ -1,9 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../providers/auth_provider.dart';
@@ -60,13 +60,18 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx', 'xls'],
+      withData: true,
     );
     if (result == null || !mounted) return;
 
     setState(() => _processando = true);
     try {
-      final file = File(result.files.single.path!);
-      final bytesCorrigidos = corrigirNumFmtsInvalidos(file.readAsBytesSync());
+      // `bytes` (não `path`) — no Web não existe caminho de arquivo real,
+      // `withData: true` acima garante que o file_picker sempre traga os
+      // bytes prontos, em qualquer plataforma.
+      final bytesArquivo = result.files.single.bytes;
+      if (bytesArquivo == null) throw StateError('Não foi possível ler o arquivo selecionado.');
+      final bytesCorrigidos = corrigirNumFmtsInvalidos(bytesArquivo);
       final excel = Excel.decodeBytes(bytesCorrigidos);
 
       final clienteProvider = Provider.of<ClientProvider>(context, listen: false);
@@ -346,15 +351,18 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
         ]);
       }
 
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/clientes_atuais.xlsx');
       final bytes = excel.encode() ?? [];
-      await file.writeAsBytes(bytes);
 
       if (!mounted) return;
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(file.path)],
+          files: [
+            XFile.fromData(
+              Uint8List.fromList(bytes),
+              name: 'clientes_atuais.xlsx',
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ),
+          ],
           text: 'Planilha com os ${clientes.length} clientes cadastrados.',
         ),
       );
