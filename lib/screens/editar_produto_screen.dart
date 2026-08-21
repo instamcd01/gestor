@@ -408,8 +408,11 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       ativo: _ativo,
       preco: ProdutoValidators.parseNumero(_precoController.text) ??
           widget.produto.preco,
-      precoPromocional: ProdutoValidators.parseNumero(_precoPromocionalController.text) ??
-          widget.produto.precoPromocional,
+      // Sem fallback pro valor antigo: campo opcional, limpar o texto e
+      // salvar precisa efetivamente limpar o valor (null), não manter o
+      // que já estava lá — era um bug real, campo "travava" no primeiro
+      // valor preenchido e nunca mais dava pra remover pela edição.
+      precoPromocional: ProdutoValidators.parseNumero(_precoPromocionalController.text),
       descricao: _descricaoController.text,
       codigoBarras: _codigoBarrasController.text,
       custo: ProdutoValidators.parseNumero(_custoController.text) ??
@@ -433,17 +436,12 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       lucro: _lucroController.text.isNotEmpty
           ? _lucroController.text
           : widget.produto.lucro,
-      validade: _validadeController.text.isNotEmpty
-          ? _validadeController.text
-          : widget.produto.validade,
-      empresa: _empresaController.text.isNotEmpty
-          ? _empresaController.text
-          : widget.produto.empresa,
-      fabricante: _fabricanteController.text.isNotEmpty
-          ? _fabricanteController.text
-          : widget.produto.fabricante,
-      precoConcorrencia: ProdutoValidators.parseNumero(_precoConcorrenciaController.text) ??
-          widget.produto.precoConcorrencia,
+      // Mesmo bug do precoPromocional acima: sem fallback pro valor antigo
+      // nestes 4, senão limpar o campo e salvar não limpava de verdade.
+      validade: _validadeController.text.isNotEmpty ? _validadeController.text : null,
+      empresa: _empresaController.text.isNotEmpty ? _empresaController.text : null,
+      fabricante: _fabricanteController.text.isNotEmpty ? _fabricanteController.text : null,
+      precoConcorrencia: ProdutoValidators.parseNumero(_precoConcorrenciaController.text),
       estoqueId: widget.produto.estoqueId,
       unidadeMedida: widget.produto.unidadeMedida,
       permiteFracionamento: widget.produto.permiteFracionamento,

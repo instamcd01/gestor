@@ -39,12 +39,9 @@ class ProdutoValidators {
     return null;
   }
 
-  static String? descricao(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Por favor, insira a descrição';
-    }
-    return null;
-  }
+  /// Opcional — nem todo produto tem uma descrição própria pra escrever
+  /// (ex: itens simples cujo nome já é autoexplicativo).
+  static String? descricao(String? value) => null;
 
   static String? categoria(String? value) {
     if (value == null || value.isEmpty) {
