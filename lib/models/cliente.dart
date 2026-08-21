@@ -62,6 +62,12 @@ class Cliente {
   final double? latitude;
   final double? longitude;
 
+  /// Vínculo com o login do cliente (Supabase Auth) — só leitura aqui,
+  /// nunca vai em `toSupabaseMap()`. Usado só pra decidir se mostra a ação
+  /// "Redefinir acesso" (não faz sentido pra cliente que nunca logou,
+  /// `authUserId == null`).
+  final String? authUserId;
+
   Cliente({
     this.idCliente,
     required this.nome,
@@ -103,6 +109,7 @@ class Cliente {
     this.estimativaEntrega,
     this.latitude,
     this.longitude,
+    this.authUserId,
   });
 
   List<String> get especies => pets.map((p) => p.especie).toSet().toList();
@@ -227,6 +234,7 @@ class Cliente {
       estimativaEntrega: (metadata['estimativaEntrega'] as num?)?.toInt(),
       latitude: (row['latitude'] as num?)?.toDouble(),
       longitude: (row['longitude'] as num?)?.toDouble(),
+      authUserId: row['auth_user_id'] as String?,
     );
   }
 

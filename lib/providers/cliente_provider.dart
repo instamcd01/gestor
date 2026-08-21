@@ -128,6 +128,22 @@ class ClientProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Desfaz o vínculo de login do cliente — ver `ClienteRepository.
+  /// redefinirAcesso` pra por que isso é necessário depois de trocar o
+  /// telefone de um cliente que já tinha logado antes. Recarrega a lista
+  /// inteira (em vez de só patchar localmente, como `atualizarSaldoLocal`
+  /// faz) porque `authUserId` não está no `copyWith` — não vale a pena
+  /// adicionar só pra essa ação rara.
+  Future<void> redefinirAcesso(String clienteId) async {
+    await _repository.redefinirAcesso(clienteId);
+    await carregarClientes();
+    final index = _clientes.indexWhere((c) => c.idCliente == clienteId);
+    if (index != -1) {
+      _clienteSelecionado = _clientes[index];
+    }
+    notifyListeners();
+  }
+
   void setClienteSelecionado(Cliente cliente) {
     _clienteSelecionado = cliente;
     notifyListeners();

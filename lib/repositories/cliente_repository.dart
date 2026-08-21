@@ -83,6 +83,18 @@ class ClienteRepository {
     await supabase.from('clientes').update({'metadata': metadata}).eq('id', clienteId);
   }
 
+  /// Desfaz o vínculo de login do cliente (`auth_user_id`) — usado quando
+  /// ele perdeu o telefone antigo e não consegue mais receber o SMS de
+  /// verificação. Editar `telefone` sozinho não resolve: o login continua
+  /// preso à sessão antiga até esse vínculo ser limpo. No próximo login
+  /// com o número atualizado, `entrar_ou_criar_cliente` reconecta este
+  /// mesmo cadastro (casa por telefone quando `auth_user_id is null`) em
+  /// vez de criar um cliente novo do zero. Gatilho `trg_notificar_cliente_
+  /// acesso_redefinido` grava a auditoria (quem fez, quando).
+  Future<void> redefinirAcesso(String clienteId) async {
+    await supabase.from('clientes').update({'auth_user_id': null}).eq('id', clienteId);
+  }
+
   Future<void> excluir(String clienteId) async {
     await supabase
         .from('clientes')

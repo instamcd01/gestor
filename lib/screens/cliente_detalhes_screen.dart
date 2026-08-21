@@ -231,8 +231,57 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
           style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
           child: const Text('Editar Dados'),
         ),
+
+        // Só faz sentido pra cliente que já logou alguma vez (authUserId
+        // != null) — editar o telefone sozinho não reconecta o login, ver
+        // ClienteRepository.redefinirAcesso.
+        if (cliente.authUserId != null) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => _confirmarRedefinirAcesso(context, cliente),
+            icon: const Icon(Icons.link_off),
+            label: const Text('Redefinir acesso ao login'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _confirmarRedefinirAcesso(BuildContext context, Cliente cliente) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Redefinir acesso ao login?'),
+        content: const Text(
+          'Use isso quando o cliente perdeu o telefone antigo e não '
+          'consegue mais receber o código de verificação. Confirme antes '
+          'que o telefone cadastrado já está atualizado com o número novo '
+          '(em "Editar Dados").\n\n'
+          'Depois de redefinir, o cliente precisa entrar de novo no site '
+          'com o telefone atual — o histórico de pedidos, saldo e endereço '
+          'continuam os mesmos, nada é apagado.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Redefinir')),
+        ],
+      ),
+    );
+    if (confirmou != true || !context.mounted) return;
+
+    try {
+      await context.read<ClientProvider>().redefinirAcesso(cliente.idCliente!);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Acesso redefinido — o cliente já pode entrar com o telefone atual.')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível redefinir: $e')),
+      );
+    }
   }
 
   Widget _buildClienteInfo(String label, String? value) {
