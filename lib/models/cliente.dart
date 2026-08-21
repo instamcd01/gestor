@@ -13,6 +13,12 @@ class Cliente {
   final String cep;
   final String complemento;
   final String cpf;
+  /// 'fisica' | 'juridica' — cadastro unificado do site (21/08/2026, ver
+  /// [[gestor_loja_lista_melhorias_ondas]]). Pessoa jurídica usa cnpj/
+  /// razaoSocial no lugar de cpf; cpf fica vazio nesse caso e vice-versa.
+  final String tipoPessoa;
+  final String cnpj;
+  final String razaoSocial;
   final String observacao;
   final double saldo;
   /// PetCash (cashback) disponível — gerido pelo site (gerar_petcash_pedido/consumir_petcash), só leitura aqui.
@@ -81,6 +87,9 @@ class Cliente {
     this.cep = '',
     required this.complemento,
     required this.cpf,
+    this.tipoPessoa = 'fisica',
+    this.cnpj = '',
+    this.razaoSocial = '',
     required this.observacao,
     required this.saldo,
     this.saldoPetCash = 0.0,
@@ -128,6 +137,9 @@ class Cliente {
       cep: cep,
       complemento: complemento,
       cpf: cpf,
+      tipoPessoa: tipoPessoa,
+      cnpj: cnpj,
+      razaoSocial: razaoSocial,
       observacao: observacao,
       saldo: saldo ?? this.saldo,
       pets: pets,
@@ -153,6 +165,10 @@ class Cliente {
       estimativaEntrega: estimativaEntrega ?? this.estimativaEntrega,
       latitude: latitude,
       longitude: longitude,
+      // Faltava aqui — qualquer copyWith() (ex: atualizarSaldoLocal) jogava
+      // authUserId fora, escondendo o botão "Redefinir acesso" até a
+      // lista recarregar do servidor. Achado corrigindo o CNPJ ao lado.
+      authUserId: authUserId,
     );
   }
 
@@ -197,6 +213,9 @@ class Cliente {
       cep: row['cep']?.toString() ?? '',
       complemento: row['complemento']?.toString() ?? '',
       cpf: row['cpf']?.toString() ?? '',
+      tipoPessoa: row['tipo_pessoa']?.toString() ?? 'fisica',
+      cnpj: row['cnpj']?.toString() ?? '',
+      razaoSocial: row['razao_social']?.toString() ?? '',
       observacao: metadata['observacao']?.toString() ?? '',
       saldo: (row['saldo'] as num?)?.toDouble() ?? 0.0,
       saldoPetCash: (row['saldo_petcash'] as num?)?.toDouble() ?? 0.0,
@@ -253,6 +272,9 @@ class Cliente {
       'cep': cep,
       'complemento': complemento,
       'cpf': cpf,
+      'tipo_pessoa': tipoPessoa,
+      'cnpj': cnpj,
+      'razao_social': razaoSocial,
       'latitude': latitude,
       'longitude': longitude,
       'saldo': saldo,

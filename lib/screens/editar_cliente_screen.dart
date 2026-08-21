@@ -258,6 +258,14 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
       cep: _cepController.text.trim(),
       complemento: _complementoController.text.trim(),
       cpf: _cpfController.text.trim(),
+      // tipoPessoa/cnpj/razaoSocial ainda não são editáveis nesta tela —
+      // sem preservar explicitamente do cliente original, qualquer salvamento
+      // aqui (mesmo só corrigindo endereço) apagaria silenciosamente esses
+      // 3 campos (voltando pro default 'fisica'/'' do construtor), mesma
+      // classe de bug já documentada com Venda.copyWith().
+      tipoPessoa: widget.clienteSelecionado.tipoPessoa,
+      cnpj: widget.clienteSelecionado.cnpj,
+      razaoSocial: widget.clienteSelecionado.razaoSocial,
       observacao: _observacaoController.text.trim(),
       saldo: ClienteValidators.parseNumero(_saldoController.text) ?? 0.0,
       pets: _pets,

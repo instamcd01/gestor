@@ -134,7 +134,11 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
           children: [
             _buildClienteInfo('Celular/WhatsApp', cliente.celular),
             _buildClienteInfo('E-mail', cliente.email),
-            _buildClienteInfo('CPF/CNPJ', cliente.cpf),
+            if (cliente.tipoPessoa == 'juridica') ...[
+              _buildClienteInfo('CNPJ', cliente.cnpj),
+              _buildClienteInfo('Razão social', cliente.razaoSocial),
+            ] else
+              _buildClienteInfo('CPF', cliente.cpf),
             _buildClienteInfo('Endereço', cliente.enderecoCompleto),
             _buildClienteInfo('Complemento', cliente.complemento),
             _buildClienteInfo('Distância',
