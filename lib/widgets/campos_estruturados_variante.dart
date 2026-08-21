@@ -317,8 +317,8 @@ class CamposEstruturadosVariante extends StatelessWidget {
         _CampoComSugestao(
           controller: tipoProdutoController,
           label: 'Tipo de produto',
-          helperText: 'Ex: "Antibiótico", "Antipulgas", "Ração" — início do nome gerado '
-              '(sem categoria/sem misturar espécie, pra "Para {Espécie}" não repetir)',
+          helperText: 'Ex: "Antibiótico", "Antipulgas", "Ração" — início do nome gerado. '
+              'Em branco, esse trecho simplesmente não aparece (não usa a categoria)',
           sugestoes: sugestoesPara('tipo_produto'),
         ),
         _CampoComSugestao(

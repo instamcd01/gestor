@@ -56,8 +56,8 @@ class Produto {
   /// "Vermífugo") — separado de `categoria` porque categoria é taxonomia
   /// de navegação do site (às vezes genérica como "Farmácia", às vezes já
   /// embute espécie como "Antipulgas Cães") e nem sempre funciona bem como
-  /// início de nome de produto. Vazio = `compor_nome_produto` cai pra
-  /// `categoria` (comportamento de antes deste campo existir).
+  /// início de nome de produto. Vazio = `compor_nome_produto` simplesmente
+  /// não inclui esse segmento (decisão do usuário: não cai pra `categoria`).
   String? tipoProduto;
   String? especie;
   String? fase;
