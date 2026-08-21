@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Catalogo Sync (iFood)\n\nDisparado pelos triggers trg_notificar_catalogo_produto_canal (preco/disponivel) e trg_notificar_catalogo_estoque (quantidade) via pg_net, sempre que um produto ligado a um marketplace ativo muda.\n\nEnvia para POST /item/v1.0/ingestion/{merchantId} (upsert por barcode). Produtos sem codigo_barras nao disparam o trigger no banco.\n\nO resultado (sucesso ou erro) e gravado de volta em produto_canal.sincronizacao_status para o app mostrar.\n\n---\n## Branch 99Food adicionada 2026-08-06\nReaproveita \"Buscar credenciais empresa\" (ja generico por empresa_id+marketplace_id) e \"Marcar canal sincronizado\" (generico). Autenticacao MD5 propria (auth/authtoken/get), nao usa o token OAuth do iFood. Usa updateItems (add/update no mesmo endpoint, sem PUT-vs-PATCH como no iFood) - MAS updateItems exige app_category_id ja existente na 99Food, entao ate o seed inicial (uploadGrocery) rodar com sucesso e categoria_marketplace_config ser populada, todo evento cai em \"Log categoria 99Food nao sincronizada\" e nao tenta a chamada. Sem chamada de Stock API (setstockSync) nesta v1 - a doc pede pra \"comunicar com o time da DiDiFood\" antes de usar, so o campo status (1/2, calculado por estoque>0) controla disponibilidade por enquanto.",
+        "content": "## Catalogo Sync (iFood)\n\nOs triggers trg_notificar_catalogo_produto_canal (preco/disponivel), trg_notificar_catalogo_estoque (quantidade) e trg_notificar_catalogo_produto_dados (nome/categoria/imagem/etc) chamam notificar_catalogo_marketplace(), que so ENFILEIRA em catalogo_sync_pendente (produto_id+marketplace_id, payload jsonb pronto) - nao dispara mais net.http_post direto (mudou 2026-08-21, ver abaixo).\n\n\"Agendamento fila (5s)\" -> \"Buscar fila pendente\" (reivindica ate 50 linhas com solicitado_em ha 3s+, atomically via UPDATE...RETURNING) -> \"Tem pendencia?\" (guarda contra o item fantasma {success:true} que o Postgres node emite quando 0 linhas batem) -> \"Webhook\" (Code node RENOMEADO de proposito - NAO é um webhook de verdade, é so pra nao ter que trocar as ~40 expressoes $('Webhook').item.json.body.X espalhadas pelo resto do fluxo).\n\nEnvia para o Catalog v2 (PUT/PATCH /catalog/v2.0/merchants/{merchantId}/items) - NAO mais o Item API antigo (POST /item/v1.0/ingestion), essa migracao foi feita 2026-07-29. PATCH barato (so status+price) quando motivo_sync != 'dados_produto' e o item ja existe; PUT completo (categoria/imagem/nome) nos outros casos.\n\nSucesso ou \"nada a fazer\" (marketplace nao suportado, categoria 99Food ainda nao mapeada) -> \"Limpar da fila (sucesso)\" (DELETE por versao, nao por timestamp - ver bug abaixo). Erro real -> \"Backoff ou desistir (erro)\" (ate 4 retentativas com folga, depois desiste e a linha some).\n\nO resultado (sucesso ou erro) e gravado de volta em produto_canal.sincronizacao_status para o app mostrar. notificar_sync_falhou() so avisa o usuario na 1a falha (nao span nas retentativas).\n\n---\n## Fila de debounce adicionada 2026-08-21\nMotivo: editar um produto toca produtos + produto_canal em 2 UPDATEs/transacoes separadas -> 2 triggers -> 2 net.http_post quase simultaneos pro MESMO item -> iFood as vezes rejeitava o 2o com 400 \"being concurrently modified\". A fila colapsa edicoes proximas (produto_id+marketplace_id é PK, ON CONFLICT sempre pega o payload mais recente) numa unica sincronizacao.\nBug achado ao vivo, ja corrigido: comparar solicitado_em (timestamptz, microssegundos) depois de ida-e-volta pelo node-postgres/JS (so guarda milissegundos) NUNCA bate por igualdade - a fila nunca esvaziava. Trocado por um contador inteiro simples (versao), que o driver ida-e-volta sem perder precisao. Se mexer nas queries de \"Limpar da fila\"/\"Backoff ou desistir\", usar versao pra comparar, nunca solicitado_em.\n\n---\n## Branch 99Food adicionada 2026-08-06\nReaproveita \"Buscar credenciais empresa\" (ja generico por empresa_id+marketplace_id) e \"Marcar canal sincronizado\" (generico). Autenticacao MD5 propria (auth/authtoken/get), nao usa o token OAuth do iFood. Usa updateItems (add/update no mesmo endpoint, sem PUT-vs-PATCH como no iFood) - MAS updateItems exige app_category_id ja existente na 99Food, entao ate o seed inicial (uploadGrocery) rodar com sucesso e categoria_marketplace_config ser populada, todo evento cai em \"Log categoria 99Food nao sincronizada\" e nao tenta a chamada. Sem chamada de Stock API (setstockSync) nesta v1 - a doc pede pra \"comunicar com o time da DiDiFood\" antes de usar, so o campo status (1/2, calculado por estoque>0) controla disponibilidade por enquanto.",
         "height": 300,
         "width": 460
       },
@@ -15,26 +15,6 @@
         -700,
         -380
       ]
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "catalogo-sync",
-        "responseMode": "onReceived",
-        "responseCode": 202,
-        "options": {
-          "rawBody": true
-        }
-      },
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "id": "w1",
-      "name": "Webhook",
-      "position": [
-        -700,
-        0
-      ],
-      "webhookId": "a3f0c9e2-5d41-4b7a-9c3e-1f8b6d4a2e70"
     },
     {
       "parameters": {
@@ -420,11 +400,11 @@
             {
               "id": "c2",
               "leftValue": "={{$('Webhook').item.json.body.motivo_sync}}",
-              "rightValue": "preco_estoque",
+              "rightValue": "dados_produto",
               "operator": {
                 "type": "string",
-                "operation": "equals",
-                "name": "filter.operator.equals"
+                "operation": "notEquals",
+                "name": "filter.operator.notEquals"
               }
             }
           ],
@@ -1185,6 +1165,152 @@
           "name": "Postgres cloud"
         }
       }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds",
+              "secondsInterval": 5
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "id": "fila1",
+      "name": "Agendamento fila (5s)",
+      "position": [
+        -940,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update catalogo_sync_pendente\nset processando_desde = now()\nwhere (produto_id, marketplace_id) in (\n  select produto_id, marketplace_id from catalogo_sync_pendente\n  where solicitado_em <= now() - interval '3 seconds'\n    and (processando_desde is null or processando_desde < now() - interval '30 seconds')\n  order by solicitado_em\n  limit 50\n)\nreturning produto_id, marketplace_id, motivo, payload, solicitado_em, tentativas, versao;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "fila2",
+      "name": "Buscar fila pendente",
+      "position": [
+        -820,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    body: $json.payload,\n    _fila_versao: $json.versao,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "fila3",
+      "name": "Webhook",
+      "position": [
+        -580,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "delete from catalogo_sync_pendente\nwhere produto_id = $1 and marketplace_id = $2 and versao = $3;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, $('Webhook').item.json._fila_versao] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "fila4",
+      "name": "Limpar da fila (sucesso)",
+      "position": [
+        1820,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with excluido as (\n  delete from catalogo_sync_pendente\n  where produto_id = $1 and marketplace_id = $2 and versao = $3 and tentativas >= 4\n  returning 1\n)\nupdate catalogo_sync_pendente\nset tentativas = tentativas + 1, solicitado_em = now(), processando_desde = null\nwhere produto_id = $1 and marketplace_id = $2 and versao = $3\n  and not exists (select 1 from excluido);",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, $('Webhook').item.json._fila_versao] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "fila5",
+      "name": "Backoff ou desistir (erro)",
+      "position": [
+        2960,
+        220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fila-guard-1",
+              "leftValue": "={{$json.produto_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true,
+                "name": "filter.operator.notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "fila6",
+      "name": "Tem pendencia?",
+      "position": [
+        -700,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "fila7",
+      "name": "Fila vazia (nada a fazer)",
+      "position": [
+        -700,
+        160
+      ]
     }
   ],
   "connections": {
@@ -1361,7 +1487,13 @@
     },
     "Marcar canal sincronizado": {
       "main": [
-        []
+        [
+          {
+            "node": "Limpar da fila (sucesso)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Baixar imagem base64": {
@@ -1699,6 +1831,101 @@
         [
           {
             "node": "Marcar canal com erro 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agendamento fila (5s)": {
+      "main": [
+        [
+          {
+            "node": "Buscar fila pendente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar fila pendente": {
+      "main": [
+        [
+          {
+            "node": "Tem pendencia?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log marketplace nao suportado": {
+      "main": [
+        [
+          {
+            "node": "Limpar da fila (sucesso)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log categoria 99Food nao sincronizada": {
+      "main": [
+        [
+          {
+            "node": "Limpar da fila (sucesso)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar canal com erro": {
+      "main": [
+        [
+          {
+            "node": "Backoff ou desistir (erro)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar canal com erro (criacao)": {
+      "main": [
+        [
+          {
+            "node": "Backoff ou desistir (erro)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar canal com erro 99Food": {
+      "main": [
+        [
+          {
+            "node": "Backoff ou desistir (erro)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem pendencia?": {
+      "main": [
+        [
+          {
+            "node": "Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fila vazia (nada a fazer)",
             "type": "main",
             "index": 0
           }
