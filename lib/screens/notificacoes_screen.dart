@@ -146,9 +146,10 @@ class _NotificacoesScreenState extends State<NotificacoesScreen> {
               onPressed: () => _limparLidas(context),
             ),
           if (provider.totalNaoLidas > 0)
-            TextButton(
+            IconButton(
+              icon: const Icon(Icons.done_all),
+              tooltip: 'Marcar todas como lidas',
               onPressed: () => provider.marcarTodasComoLidas(),
-              child: const Text('Marcar todas como lidas'),
             ),
         ],
       ),
