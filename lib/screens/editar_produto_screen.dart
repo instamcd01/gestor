@@ -18,6 +18,7 @@ import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
 import '../widgets/familia_variantes_section.dart';
 import '../widgets/fornecedores_produto_section.dart';
+import '../widgets/vincular_variante_dialog.dart';
 import 'gerenciar_midias_produto_screen.dart';
 
 class EditarProdutoScreen extends StatefulWidget {
@@ -567,6 +568,17 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     }
   }
 
+  Future<void> _abrirVincularVariante(Produto produtoAtual) async {
+    final vinculado = await showDialog<bool>(
+      context: context,
+      builder: (_) => VincularVarianteDialog(produto: produtoAtual),
+    );
+    if (vinculado == true && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Produto vinculado à família de variantes.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -794,6 +806,16 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                     MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: irmao)),
                   ),
                   onDesvincular: _desvincularVariante,
+                ),
+                const SizedBox(height: 16.0),
+              ] else ...[
+                // Só aparece quando o produto ainda não faz parte de nenhuma
+                // família — pro caso do algoritmo de sugestão automática
+                // (sugestoes_variante) não ter detectado o vínculo sozinho.
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.link),
+                  label: const Text('Vincular a outro produto como variante'),
+                  onPressed: () => _abrirVincularVariante(produtoAtual),
                 ),
                 const SizedBox(height: 16.0),
               ],

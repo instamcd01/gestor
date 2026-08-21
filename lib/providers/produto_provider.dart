@@ -287,6 +287,25 @@ class ProdutoProvider with ChangeNotifier {
     await carregarProdutos();
   }
 
+  /// Vínculo manual pra quando o produto não aparece nas sugestões
+  /// automáticas — mesmo RPC/resolução de âncora que a aprovação usa.
+  Future<void> vincularVarianteManualmente({
+    required String produtoId,
+    required String produtoCandidatoId,
+    required String tipoVariacao,
+    required String varianteLabelProduto,
+    required String varianteLabelCandidato,
+  }) async {
+    await _repository.vincularVarianteManualmente(
+      produtoId: produtoId,
+      produtoCandidatoId: produtoCandidatoId,
+      tipoVariacao: tipoVariacao,
+      varianteLabelProduto: varianteLabelProduto,
+      varianteLabelCandidato: varianteLabelCandidato,
+    );
+    await carregarProdutos();
+  }
+
   /// Todos os produtos da mesma família de variantes que `produto`
   /// (incluindo a âncora e o próprio `produto`) — usado pra listar as
   /// "variantes irmãs" em editar_produto_screen.dart. Lista vazia = produto

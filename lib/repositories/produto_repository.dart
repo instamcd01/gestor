@@ -286,6 +286,26 @@ class ProdutoRepository {
     }).eq('id', sugestaoId);
   }
 
+  /// Vínculo manual (produto que o algoritmo de sugestão não pegou) — RPC
+  /// `vincular_variante_manualmente` reaproveita no servidor a mesma
+  /// resolução de âncora de `aprovar_sugestao_variante`, sem depender de
+  /// uma sugestão pendente.
+  Future<void> vincularVarianteManualmente({
+    required String produtoId,
+    required String produtoCandidatoId,
+    required String tipoVariacao,
+    required String varianteLabelProduto,
+    required String varianteLabelCandidato,
+  }) async {
+    await supabase.rpc('vincular_variante_manualmente', params: {
+      'p_produto_id': produtoId,
+      'p_produto_candidato_id': produtoCandidatoId,
+      'p_tipo_variacao': tipoVariacao,
+      'p_variante_label_produto': varianteLabelProduto,
+      'p_variante_label_candidato': varianteLabelCandidato,
+    });
+  }
+
   /// Tira um produto da família de variantes via RPC `desvincular_variante`.
   /// Precisa ser atômico no servidor porque, quando o produto que sai é a
   /// própria âncora da família, a função promove um dos filhos a nova âncora
