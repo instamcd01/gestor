@@ -5,6 +5,7 @@ import '../utils/busca_utils.dart';
 /// tanto no seletor de campo da tela de gerenciamento quanto em qualquer
 /// outro lugar que precise mostrar o nome de um campo pro usuário.
 const Map<String, String> rotulosCamposEstruturados = {
+  'tipo_produto': 'Tipo de produto',
   'nome_comercial': 'Nome comercial',
   'especie': 'Espécie',
   'fase': 'Fase',

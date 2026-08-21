@@ -63,6 +63,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   final _empresaController = TextEditingController();
   final _fabricanteController = TextEditingController();
   final _precoConcorrenciaController = TextEditingController();
+  final _tipoProdutoController = TextEditingController();
   final _nomeComercialController = TextEditingController();
   final _especieController = TextEditingController();
   final _faseController = TextEditingController();
@@ -124,6 +125,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     _geradorNome = GeradorNomeProduto(
       nomeController: _nomeController,
       categoriaController: _categoriaController,
+      tipoProdutoController: _tipoProdutoController,
       nomeComercialController: _nomeComercialController,
       doseController: _doseController,
       composicaoController: _composicaoController,
@@ -283,6 +285,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     _empresaController.dispose();
     _fabricanteController.dispose();
     _precoConcorrenciaController.dispose();
+    _tipoProdutoController.dispose();
     _nomeComercialController.dispose();
     _especieController.dispose();
     _faseController.dispose();
@@ -331,6 +334,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       empresa: _empresaController.text.isNotEmpty ? _empresaController.text : null,
       fabricante: _fabricanteController.text.isNotEmpty ? _fabricanteController.text : null,
       nomeComercial: _nomeComercialController.text.isNotEmpty ? _nomeComercialController.text : null,
+      tipoProduto: _tipoProdutoController.text.isNotEmpty ? _tipoProdutoController.text : null,
       especie: _especieController.text.isNotEmpty ? _especieController.text : null,
       fase: _faseController.text.isNotEmpty ? _faseController.text : null,
       porte: _porteController.text.isNotEmpty ? _porteController.text : null,
@@ -408,6 +412,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     if (empresaId == null) return;
     final repository = ValorEstruturadoRepository();
     final valores = {
+      'tipo_produto': produto.tipoProduto,
       'nome_comercial': produto.nomeComercial,
       'especie': produto.especie,
       'fase': produto.fase,
@@ -573,6 +578,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
               const SizedBox(height: 16.0),
 
               CamposEstruturadosVariante(
+                tipoProdutoController: _tipoProdutoController,
                 nomeComercialController: _nomeComercialController,
                 especieController: _especieController,
                 faseController: _faseController,

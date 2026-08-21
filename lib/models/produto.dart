@@ -51,6 +51,14 @@ class Produto {
   // no banco recompõe `nome` automaticamente a partir destes campos (a menos
   // que nomeManualOverride seja true). Ver docs/superpowers/specs/2026-08-03-variantes-produto-design.md.
   String? nomeComercial;
+
+  /// Rótulo pro início do nome gerado (ex: "Antibiótico", "Antipulgas",
+  /// "Vermífugo") — separado de `categoria` porque categoria é taxonomia
+  /// de navegação do site (às vezes genérica como "Farmácia", às vezes já
+  /// embute espécie como "Antipulgas Cães") e nem sempre funciona bem como
+  /// início de nome de produto. Vazio = `compor_nome_produto` cai pra
+  /// `categoria` (comportamento de antes deste campo existir).
+  String? tipoProduto;
   String? especie;
   String? fase;
   String? porte;
@@ -120,6 +128,7 @@ class Produto {
     this.permiteFracionamento = false,
     this.revisarPreco = false,
     this.nomeComercial,
+    this.tipoProduto,
     this.especie,
     this.fase,
     this.porte,
@@ -182,6 +191,7 @@ class Produto {
       validade: row['validade']?.toString(),
       revisarPreco: row['revisar_preco'] as bool? ?? false,
       nomeComercial: row['nome_comercial']?.toString(),
+      tipoProduto: row['tipo_produto']?.toString(),
       especie: row['especie']?.toString(),
       fase: row['fase']?.toString(),
       porte: row['porte']?.toString(),
@@ -229,6 +239,7 @@ class Produto {
       'preco_concorrencia': precoConcorrencia,
       'validade': validade,
       'nome_comercial': nomeComercial,
+      'tipo_produto': tipoProduto,
       'especie': especie,
       'fase': fase,
       'porte': porte,

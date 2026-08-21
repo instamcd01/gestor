@@ -55,6 +55,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _empresaController;
   late TextEditingController _fabricanteController;
   late TextEditingController _precoConcorrenciaController;
+  late TextEditingController _tipoProdutoController;
   late TextEditingController _nomeComercialController;
   late TextEditingController _especieController;
   late TextEditingController _faseController;
@@ -148,6 +149,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
         TextEditingController(text: widget.produto.fabricante ?? '');
     _precoConcorrenciaController = TextEditingController(
         text: ProdutoValidators.formatarMoeda(widget.produto.precoConcorrencia));
+    _tipoProdutoController = TextEditingController(text: widget.produto.tipoProduto ?? '');
     _nomeComercialController = TextEditingController(text: widget.produto.nomeComercial ?? '');
     _especieController = TextEditingController(text: widget.produto.especie ?? '');
     _faseController = TextEditingController(text: widget.produto.fase ?? '');
@@ -180,6 +182,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _geradorNome = GeradorNomeProduto(
       nomeController: _nomeController,
       categoriaController: _categoriaController,
+      tipoProdutoController: _tipoProdutoController,
       nomeComercialController: _nomeComercialController,
       doseController: _doseController,
       composicaoController: _composicaoController,
@@ -227,6 +230,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _empresaController.dispose();
     _fabricanteController.dispose();
     _precoConcorrenciaController.dispose();
+    _tipoProdutoController.dispose();
     _nomeComercialController.dispose();
     _especieController.dispose();
     _faseController.dispose();
@@ -444,6 +448,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       unidadeMedida: widget.produto.unidadeMedida,
       permiteFracionamento: widget.produto.permiteFracionamento,
       nomeComercial: _nomeComercialController.text.isNotEmpty ? _nomeComercialController.text : null,
+      tipoProduto: _tipoProdutoController.text.isNotEmpty ? _tipoProdutoController.text : null,
       especie: _especieController.text.isNotEmpty ? _especieController.text : null,
       fase: _faseController.text.isNotEmpty ? _faseController.text : null,
       porte: _porteController.text.isNotEmpty ? _porteController.text : null,
@@ -502,6 +507,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     if (empresaId == null) return;
     final repository = ValorEstruturadoRepository();
     final valores = {
+      'tipo_produto': produto.tipoProduto,
       'nome_comercial': produto.nomeComercial,
       'especie': produto.especie,
       'fase': produto.fase,
@@ -762,6 +768,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
               const SizedBox(height: 16.0),
 
               CamposEstruturadosVariante(
+                tipoProdutoController: _tipoProdutoController,
                 nomeComercialController: _nomeComercialController,
                 especieController: _especieController,
                 faseController: _faseController,

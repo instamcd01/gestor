@@ -106,10 +106,11 @@ class _CampoComSugestaoState extends State<_CampoComSugestao> {
   }
 }
 
-/// Campos estruturados de variante (nome comercial, espécie, fase, porte,
-/// sabor, dose, composição, apresentação) — usados em cadastro/edição de
-/// produto. Reaproveitado entre CadastroProdutoScreen e EditarProdutoScreen
-/// pra não duplicar os 8 campos + a lógica de aviso do nome automático.
+/// Campos estruturados de variante (tipo de produto, nome comercial,
+/// espécie, fase, porte, sabor, dose, composição, apresentação) — usados
+/// em cadastro/edição de produto. Reaproveitado entre CadastroProdutoScreen
+/// e EditarProdutoScreen pra não duplicar os 9 campos + a lógica de aviso
+/// do nome automático.
 ///
 /// Todos os campos são opcionais. Quando "Nome comercial" é preenchido, o
 /// trigger `gerar_nome_produto_estruturado` do banco recompõe o campo
@@ -117,6 +118,7 @@ class _CampoComSugestaoState extends State<_CampoComSugestao> {
 /// `nomeManualOverride` esteja marcado) — ver
 /// docs/superpowers/specs/2026-08-03-variantes-produto-design.md.
 class CamposEstruturadosVariante extends StatelessWidget {
+  final TextEditingController tipoProdutoController;
   final TextEditingController nomeComercialController;
   final TextEditingController especieController;
   final TextEditingController faseController;
@@ -152,6 +154,7 @@ class CamposEstruturadosVariante extends StatelessWidget {
 
   const CamposEstruturadosVariante({
     super.key,
+    required this.tipoProdutoController,
     required this.nomeComercialController,
     required this.especieController,
     required this.faseController,
@@ -311,6 +314,13 @@ class CamposEstruturadosVariante extends StatelessWidget {
               ],
             ),
           ),
+        _CampoComSugestao(
+          controller: tipoProdutoController,
+          label: 'Tipo de produto',
+          helperText: 'Ex: "Antibiótico", "Antipulgas", "Ração" — início do nome gerado '
+              '(sem categoria/sem misturar espécie, pra "Para {Espécie}" não repetir)',
+          sugestoes: sugestoesPara('tipo_produto'),
+        ),
         _CampoComSugestao(
           controller: nomeComercialController,
           label: 'Nome comercial',

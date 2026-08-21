@@ -19,6 +19,7 @@ import 'produto_validators.dart';
 class GeradorNomeProduto {
   final TextEditingController nomeController;
   final TextEditingController categoriaController;
+  final TextEditingController tipoProdutoController;
   final TextEditingController nomeComercialController;
   final TextEditingController doseController;
   final TextEditingController composicaoController;
@@ -42,6 +43,7 @@ class GeradorNomeProduto {
   GeradorNomeProduto({
     required this.nomeController,
     required this.categoriaController,
+    required this.tipoProdutoController,
     required this.nomeComercialController,
     required this.doseController,
     required this.composicaoController,
@@ -62,6 +64,7 @@ class GeradorNomeProduto {
 
   List<TextEditingController> get _controladoresObservados => [
         categoriaController,
+        tipoProdutoController,
         nomeComercialController,
         doseController,
         composicaoController,
@@ -108,6 +111,7 @@ class GeradorNomeProduto {
         'p_peso': ProdutoValidators.parseNumero(pesoController.text),
         'p_volume': ProdutoValidators.parseNumero(volumeController.text),
         'p_fabricante': fabricanteController.text.isEmpty ? null : fabricanteController.text,
+        'p_tipo_produto': tipoProdutoController.text.isEmpty ? null : tipoProdutoController.text,
       });
 
       if (_disposed) return;
