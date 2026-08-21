@@ -3,10 +3,17 @@ import 'package:provider/provider.dart';
 
 import '../models/produto.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/valor_estruturado_repository.dart';
 import '../utils/busca_utils.dart';
 import '../utils/variante_label_utils.dart';
+import 'campo_com_sugestao.dart';
 
 const List<String> _tiposVariacao = ['peso', 'volume', 'dose', 'sabor', 'apresentacao', 'outro'];
+
+/// Só estes 3 eixos têm vocabulário curado em `valores_estruturados_variante`
+/// (peso/volume são colunas numéricas próprias, sem lista de valores; "outro"
+/// é livre por natureza) — os demais caem pra campo de texto comum.
+const List<String> _tiposComVocabulario = ['dose', 'sabor', 'apresentacao'];
 
 /// Vincula manualmente dois produtos como variantes um do outro — pra
 /// quando o produto não aparece nas sugestões automáticas (ver
@@ -24,6 +31,7 @@ class VincularVarianteDialog extends StatefulWidget {
 }
 
 class _VincularVarianteDialogState extends State<VincularVarianteDialog> {
+  final _valorRepository = ValorEstruturadoRepository();
   Produto? _candidato;
   final _buscaController = TextEditingController();
   late TextEditingController _labelProdutoController;
@@ -31,11 +39,39 @@ class _VincularVarianteDialogState extends State<VincularVarianteDialog> {
   String _tipoVariacao = 'peso';
   bool _processando = false;
 
+  /// Mesmo formato de `CamposEstruturadosVariante`: categoria -> campo ->
+  /// valores. Carregado uma vez só (igual cadastro/edição de produto),
+  /// os campos de "Opção" combinam categoria específica + globais na hora
+  /// de montar a lista de sugestões.
+  Map<String, Map<String, List<String>>> _valoresPorCategoria = {};
+
   @override
   void initState() {
     super.initState();
-    _labelProdutoController = TextEditingController(text: widget.produto.varianteLabel ?? '');
+    // labelPadraoVariante() cai pro campo estruturado correspondente
+    // (peso/dose/sabor...) quando `varianteLabel` ainda não existe — que é
+    // sempre o caso aqui, já que este diálogo só aparece pra produto ainda
+    // solto (nunca foi vinculado antes, nunca teve variante_label setado).
+    _labelProdutoController = TextEditingController(text: labelPadraoVariante(widget.produto, _tipoVariacao));
     _labelCandidatoController = TextEditingController();
+    _carregarValores();
+  }
+
+  Future<void> _carregarValores() async {
+    try {
+      final valores = await _valorRepository.carregarPorCategoria();
+      if (mounted) setState(() => _valoresPorCategoria = valores);
+    } catch (e) {
+      debugPrint('Erro ao carregar vocabulário de variante: $e');
+    }
+  }
+
+  List<String> _sugestoesPara(String campo, String categoria) {
+    if (!_tiposComVocabulario.contains(campo)) return const [];
+    final especificos = _valoresPorCategoria[categoria]?[campo] ?? const <String>[];
+    final globais = _valoresPorCategoria['']?[campo] ?? const <String>[];
+    if (globais.isEmpty) return especificos;
+    return {...especificos, ...globais}.toList()..sort();
   }
 
   @override
@@ -154,15 +190,17 @@ class _VincularVarianteDialogState extends State<VincularVarianteDialog> {
             ),
             const SizedBox(height: 16),
             Text(widget.produto.nome, style: const TextStyle(fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
-            TextField(
+            CampoComSugestao(
               controller: _labelProdutoController,
-              decoration: const InputDecoration(labelText: 'Opção deste produto'),
+              label: 'Opção deste produto',
+              sugestoes: _sugestoesPara(_tipoVariacao, widget.produto.categoria),
             ),
             const SizedBox(height: 16),
             Text(candidato.nome, style: const TextStyle(fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
-            TextField(
+            CampoComSugestao(
               controller: _labelCandidatoController,
-              decoration: const InputDecoration(labelText: 'Opção do outro produto'),
+              label: 'Opção do outro produto',
+              sugestoes: _sugestoesPara(_tipoVariacao, candidato.categoria),
             ),
           ],
         ),

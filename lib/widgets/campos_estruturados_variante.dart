@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/supabase_config.dart';
 import '../screens/gerenciar_valores_estruturados_screen.dart';
-import '../utils/busca_utils.dart';
+import 'campo_com_sugestao.dart';
 import 'form_section.dart';
 
 /// Busca, pra cada categoria, quais dos 7 campos estruturados opcionais
@@ -26,85 +26,8 @@ Future<Map<String, Set<String>>> carregarCamposEstruturadosPorCategoria() async 
   return mapa;
 }
 
-/// Campo de texto com sugestão dos valores já usados nesse campo/categoria
-/// (vocabulário curado em `valores_estruturados_variante`, ver
-/// `ValorEstruturadoRepository`) — tocar no campo já mostra a lista (não
-/// precisa digitar nada pra ver as opções), filtra conforme digita (mesma
-/// normalização de acento/maiúscula da busca de produtos), e digitar algo
-/// que não está na lista continua funcionando normalmente: o valor novo
-/// entra no vocabulário sozinho ao salvar o produto (`garantir`), sem
-/// exigir um botão "adicionar" aqui.
-class _CampoComSugestao extends StatefulWidget {
-  final TextEditingController controller;
-  final String label;
-  final String? helperText;
-  final List<String> sugestoes;
-
-  const _CampoComSugestao({
-    required this.controller,
-    required this.label,
-    this.helperText,
-    required this.sugestoes,
-  });
-
-  @override
-  State<_CampoComSugestao> createState() => _CampoComSugestaoState();
-}
-
-class _CampoComSugestaoState extends State<_CampoComSugestao> {
-  final _focusNode = FocusNode();
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return RawAutocomplete<String>(
-      textEditingController: widget.controller,
-      focusNode: _focusNode,
-      optionsBuilder: (value) {
-        if (value.text.isEmpty) return widget.sugestoes;
-        return widget.sugestoes.where((s) => contemTodasPalavras(s, value.text));
-      },
-      fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
-        return TextFormField(
-          controller: textEditingController,
-          focusNode: focusNode,
-          decoration: InputDecoration(labelText: widget.label, helperText: widget.helperText),
-        );
-      },
-      optionsViewBuilder: (context, onSelected, options) {
-        final lista = options.toList();
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(8),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 320),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: lista.length,
-                itemBuilder: (context, index) {
-                  final opcao = lista[index];
-                  return ListTile(
-                    dense: true,
-                    title: Text(opcao),
-                    onTap: () => onSelected(opcao),
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
+// Campo com sugestão movido pra widgets/campo_com_sugestao.dart (`CampoComSugestao`,
+// público) — reaproveitado também em vincular_variante_dialog.dart.
 
 /// Campos estruturados de variante (tipo de produto, nome comercial,
 /// espécie, fase, porte, sabor, dose, composição, apresentação) — usados
@@ -206,37 +129,37 @@ class CamposEstruturadosVariante extends StatelessWidget {
     }
 
     final campos = [
-      MapEntry('especie', _CampoComSugestao(
+      MapEntry('especie', CampoComSugestao(
         controller: especieController,
         label: 'Espécie',
         sugestoes: sugestoesPara('especie'),
       )),
-      MapEntry('fase', _CampoComSugestao(
+      MapEntry('fase', CampoComSugestao(
         controller: faseController,
         label: 'Fase',
         sugestoes: sugestoesPara('fase'),
       )),
-      MapEntry('porte', _CampoComSugestao(
+      MapEntry('porte', CampoComSugestao(
         controller: porteController,
         label: 'Porte',
         sugestoes: sugestoesPara('porte'),
       )),
-      MapEntry('sabor', _CampoComSugestao(
+      MapEntry('sabor', CampoComSugestao(
         controller: saborController,
         label: 'Sabor',
         sugestoes: sugestoesPara('sabor'),
       )),
-      MapEntry('dose', _CampoComSugestao(
+      MapEntry('dose', CampoComSugestao(
         controller: doseController,
         label: 'Dose',
         sugestoes: sugestoesPara('dose'),
       )),
-      MapEntry('apresentacao', _CampoComSugestao(
+      MapEntry('apresentacao', CampoComSugestao(
         controller: apresentacaoController,
         label: 'Apresentação',
         sugestoes: sugestoesPara('apresentacao'),
       )),
-      MapEntry('composicao', _CampoComSugestao(
+      MapEntry('composicao', CampoComSugestao(
         controller: composicaoController,
         label: 'Composição/princípio ativo',
         helperText: 'Mostrado entre parênteses no nome gerado',
@@ -314,14 +237,14 @@ class CamposEstruturadosVariante extends StatelessWidget {
               ],
             ),
           ),
-        _CampoComSugestao(
+        CampoComSugestao(
           controller: tipoProdutoController,
           label: 'Tipo de produto',
           helperText: 'Ex: "Antibiótico", "Antipulgas", "Ração" — início do nome gerado. '
               'Em branco, esse trecho simplesmente não aparece (não usa a categoria)',
           sugestoes: sugestoesPara('tipo_produto'),
         ),
-        _CampoComSugestao(
+        CampoComSugestao(
           controller: nomeComercialController,
           label: 'Nome comercial',
           helperText: 'Ex: "Agemoxi", "Golden Fórmula" — nome da linha/marca do produto',
