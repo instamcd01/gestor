@@ -10,6 +10,8 @@ import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
 import '../models/cliente.dart';
 import '../repositories/cliente_repository.dart';
+import '../repositories/importacao_planilha_repository.dart';
+import '../screens/historico_importacoes_screen.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/planilha_utils.dart';
 import '../utils/telefone_utils.dart';
@@ -55,6 +57,9 @@ class ImportarClientesScreen extends StatefulWidget {
 
 class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
   bool _processando = false;
+  int _progressoAtual = 0;
+  int _progressoTotal = 0;
+  String? _nomeArquivoAtual;
 
   Future<void> _iniciarImportacao() async {
     final result = await FilePicker.platform.pickFiles(
@@ -64,7 +69,11 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
     );
     if (result == null || !mounted) return;
 
-    setState(() => _processando = true);
+    _nomeArquivoAtual = result.files.single.name;
+    setState(() {
+      _processando = true;
+      _progressoTotal = 0;
+    });
     try {
       // `bytes` (não `path`) — no Web não existe caminho de arquivo real,
       // `withData: true` acima garante que o file_picker sempre traga os
@@ -235,6 +244,20 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
         linhasCelularDuplicado,
       );
     } catch (e) {
+      final empresaId = mounted ? context.read<AuthProvider>().empresaId : null;
+      if (empresaId != null) {
+        await ImportacaoPlanilhaRepository().registrar(
+          empresaId: empresaId,
+          tipo: 'clientes',
+          nomeArquivo: _nomeArquivoAtual,
+          totalLinhas: 0,
+          novos: 0,
+          atualizados: 0,
+          linhasIgnoradas: 0,
+          status: 'erro',
+          mensagemErro: 'Erro ao ler a planilha: $e',
+        );
+      }
       if (mounted) {
         setState(() => _processando = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao ler a planilha: $e')));
@@ -287,14 +310,19 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
     );
     if (confirmado != true || !mounted) return;
 
-    setState(() => _processando = true);
+    setState(() {
+      _processando = true;
+      _progressoAtual = 0;
+      _progressoTotal = linhas.length;
+    });
+    var criados = 0;
+    var atualizados = 0;
+    String? empresaId;
     try {
       final clienteProvider = Provider.of<ClientProvider>(context, listen: false);
-      final empresaId = context.read<AuthProvider>().empresaId;
+      empresaId = context.read<AuthProvider>().empresaId;
       if (empresaId == null) throw StateError('Empresa não identificada.');
 
-      var criados = 0;
-      var atualizados = 0;
       // Volume de clientes é ordens de grandeza menor que o de produtos —
       // chamadas sequenciais (sem lote) são simples e rápidas o bastante.
       for (final l in linhas) {
@@ -305,9 +333,24 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
           await ClienteRepository().criar(l.cliente, empresaId: empresaId);
           criados++;
         }
+        if (mounted) setState(() => _progressoAtual = criados + atualizados);
       }
 
       await clienteProvider.carregarClientes();
+
+      await ImportacaoPlanilhaRepository().registrar(
+        empresaId: empresaId,
+        tipo: 'clientes',
+        nomeArquivo: _nomeArquivoAtual,
+        totalLinhas: linhas.length,
+        novos: criados,
+        atualizados: atualizados,
+        linhasIgnoradas: linhasSemNome.length +
+            linhasSemCelular.length +
+            linhasCelularInvalido.length +
+            linhasCelularDuplicado.length,
+        status: 'sucesso',
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -317,6 +360,19 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
         ),
       );
     } catch (e) {
+      if (empresaId != null) {
+        await ImportacaoPlanilhaRepository().registrar(
+          empresaId: empresaId,
+          tipo: 'clientes',
+          nomeArquivo: _nomeArquivoAtual,
+          totalLinhas: linhas.length,
+          novos: criados,
+          atualizados: atualizados,
+          linhasIgnoradas: 0,
+          status: 'erro',
+          mensagemErro: 'Erro ao importar: $e',
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao importar: $e')));
       }
@@ -330,7 +386,10 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
   /// clientes ainda, como modelo em branco já com os cabeçalhos certos
   /// (não precisa de um gerador de modelo genérico separado).
   Future<void> _exportarClientesAtual() async {
-    setState(() => _processando = true);
+    setState(() {
+      _processando = true;
+      _progressoTotal = 0;
+    });
     try {
       final clienteProvider = Provider.of<ClientProvider>(context, listen: false);
       await clienteProvider.carregarClientes();
@@ -405,9 +464,30 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Importar Clientes')),
-      body: Stack(
+    return PopScope(
+      canPop: !_processando,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aguarde a importação terminar antes de sair desta tela.')),
+        );
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Importar Clientes'),
+          actions: [
+            IconButton(
+              tooltip: 'Histórico de importações',
+              icon: const Icon(Icons.history),
+              onPressed: _processando
+                  ? null
+                  : () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const HistoricoImportacoesScreen(tipo: 'clientes')),
+                      ),
+            ),
+          ],
+        ),
+        body: Stack(
         children: [
           Center(
             child: Padding(
@@ -443,8 +523,40 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
               ),
             ),
           ),
-          if (_processando) Container(color: Colors.black26, child: const Center(child: CircularProgressIndicator())),
+          if (_processando)
+            Container(
+              color: Colors.black26,
+              child: Center(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_progressoTotal > 0) ...[
+                          Text('Importando clientes — $_progressoAtual de $_progressoTotal'),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: 220,
+                            child: LinearProgressIndicator(value: _progressoAtual / _progressoTotal),
+                          ),
+                          const SizedBox(height: 4),
+                          Text('${((_progressoAtual / _progressoTotal) * 100).toStringAsFixed(0)}%'),
+                        ] else
+                          const CircularProgressIndicator(),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Não feche esta tela até a importação terminar.',
+                          style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
+      ),
       ),
     );
   }

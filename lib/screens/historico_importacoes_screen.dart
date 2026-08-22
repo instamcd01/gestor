@@ -5,7 +5,9 @@ import '../models/importacao_planilha.dart';
 import '../repositories/importacao_planilha_repository.dart';
 
 class HistoricoImportacoesScreen extends StatefulWidget {
-  const HistoricoImportacoesScreen({super.key});
+  /// 'produtos' | 'clientes' | null (mostra os dois tipos misturados).
+  final String? tipo;
+  const HistoricoImportacoesScreen({super.key, this.tipo});
 
   @override
   State<HistoricoImportacoesScreen> createState() => _HistoricoImportacoesScreenState();
@@ -17,18 +19,23 @@ class _HistoricoImportacoesScreenState extends State<HistoricoImportacoesScreen>
   @override
   void initState() {
     super.initState();
-    _futuro = ImportacaoPlanilhaRepository().listar();
+    _futuro = ImportacaoPlanilhaRepository().listar(tipo: widget.tipo);
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futuro = ImportacaoPlanilhaRepository().listar());
+    setState(() => _futuro = ImportacaoPlanilhaRepository().listar(tipo: widget.tipo));
     await _futuro;
   }
 
   @override
   Widget build(BuildContext context) {
+    final sufixo = widget.tipo == 'produtos'
+        ? ' — Produtos'
+        : widget.tipo == 'clientes'
+            ? ' — Clientes'
+            : '';
     return Scaffold(
-      appBar: AppBar(title: const Text('Histórico de Importações')),
+      appBar: AppBar(title: Text('Histórico de Importações$sufixo')),
       body: RefreshIndicator(
         onRefresh: _recarregar,
         child: FutureBuilder<List<ImportacaoPlanilha>>(

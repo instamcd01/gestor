@@ -100,7 +100,10 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     if (result == null || !mounted) return;
 
     _nomeArquivoAtual = result.files.single.name;
-    setState(() => _processando = true);
+    setState(() {
+      _processando = true;
+      _progressoTotal = 0;
+    });
     try {
       // `bytes` (não `path`) — no Web não existe caminho de arquivo real,
       // `withData: true` acima garante que o file_picker sempre traga os
@@ -571,7 +574,10 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
   /// essa mesma planilha pode voltar a ser reimportada depois de editada,
   /// como atualização (casando pelo ID/SKU).
   Future<void> _exportarCatalogoAtual() async {
-    setState(() => _processando = true);
+    setState(() {
+      _processando = true;
+      _progressoTotal = 0;
+    });
     try {
       final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
       await produtoProvider.carregarProdutos();
@@ -682,7 +688,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
               onPressed: _processando
                   ? null
                   : () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const HistoricoImportacoesScreen()),
+                        MaterialPageRoute(builder: (_) => const HistoricoImportacoesScreen(tipo: 'produtos')),
                       ),
             ),
           ],
