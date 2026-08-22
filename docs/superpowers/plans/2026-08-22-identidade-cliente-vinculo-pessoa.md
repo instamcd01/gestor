@@ -1185,6 +1185,28 @@ git commit -m "Mostra indicador de vínculo na ficha do cliente"
 
 ---
 
+## Task 12 (achada testando ao vivo, 22/08/2026): índice único de CPF/CNPJ bloqueava o próprio cenário que o plano resolve
+
+**Teste ponta a ponta feito direto no banco** (sem emulador — sessão simulada via `SET LOCAL request.jwt.claims`, mesmo padrão que o Supabase usa de verdade): criado um cliente antigo (WhatsApp, CPF real, 1 pedido) e uma conta `auth.users` de teste simulando um novo login no site; chamado `completar_cadastro_cliente` de verdade com o mesmo CPF.
+
+**Bug encontrado**: `ERROR: duplicate key value violates unique constraint "clientes_cpf_unico"`. Causa: o índice único era `(empresa_id, cpf)` — como `completar_cadastro_cliente` agora SEMPRE insere um cadastro novo isolado (nunca mescla automático), qualquer CPF que já existisse em OUTRO canal bloqueava o INSERT antes mesmo de chegar na lógica de detecção de vínculo. Era exatamente o bug original que motivou a sessão inteira, reintroduzido pela própria correção.
+
+**Corrigido** (migration `unicidade_cpf_cnpj_por_canal_nao_global`): índice único mudou de `(empresa_id, cpf)` pra `(empresa_id, canal_origem, cpf)` — mesma proteção contra duplicata dentro do MESMO canal (ex: staff salvando "Adicionar Cliente" duas vezes), mas permite o mesmo CPF/CNPJ coexistir em canais diferentes até um vínculo real ser aprovado. Mesma mudança pro CNPJ.
+
+**Reteste completo, tudo passou**:
+1. `completar_cadastro_cliente` (sessão simulada, novo cliente) com CPF de um cliente WhatsApp existente → cadastro isolado criado (`pessoa_id null`, telefone sem DDI, `auth_user_id` certo) + sugestão em `vinculos_cliente_pendentes` (`status='pendente'`).
+2. Query exata do `VinculoClienteRepository.listarPendentes()` (embed com `!fkey` duplo) — formato bate 100% com `VinculoCliente.fromSupabase()`; nomes reais das constraints (`vinculos_cliente_pendentes_cliente_novo_id_fkey`/`..._cliente_encontrado_id_fkey`) conferidos.
+3. `vincular_clientes` (sessão simulada como o dono real, `usuarios.papel='dono'`) → `pessoa_id` setado certo, `vinculos_cliente_pendentes` marcado `aprovado` com `revisado_por`/`revisado_em`, métricas (`total_pedidos`/`total_gasto`) consolidadas nos DOIS cadastros (1 pedido/R$80 nos dois, mesmo só um deles tendo o pedido de verdade).
+4. `listar_grupo_pessoa` a partir do cadastro novo devolveu os 2 ids — a aba Compras veria o pedido do cadastro antigo.
+5. Segundo cenário independente pra testar `rejeitar_vinculo` — `status='rejeitado'`, `pessoa_id` continuou null nos dois lados (nada vinculado).
+6. Trava de "já revisado" — tentar `vincular_clientes` num vínculo já rejeitado devolveu o erro certo (`Essa sugestão já foi revisada`).
+
+Todos os dados de teste (4 clientes, 1 pedido, 2 vínculos, 2 contas `auth.users`) apagados ao final, confirmado zero sobra.
+
+**Conclusão**: pipeline completo (detecção → fila → aprovação/rejeição → consolidação de métricas → histórico de compras) validado ponta a ponta contra o banco real, com sessões simuladas fielmente (mesmo mecanismo de JWT que o Supabase usa em produção). Só falta o teste visual da tela `VinculosClientesScreen` no emulador/app de verdade — os dados e RPCs por trás dela já estão provados corretos.
+
+---
+
 ## Self-Review
 
 **Cobertura do que foi discutido**: senha mínima e cadastro fantasma já estavam resolvidos antes deste plano (sessão anterior); este plano cobre especificamente a arquitetura de vínculo por pessoa (Tasks 1-6 backend, 7-11 app) — CPF/CNPJ nunca mais mescla sozinho (Task 4), telefone/email continuam automáticos (nenhuma mudança em `entrar_ou_criar_cliente`), staff revisa (Tasks 6, 10), site do cliente não muda em nada (nenhuma task toca `gestor-loja`).
