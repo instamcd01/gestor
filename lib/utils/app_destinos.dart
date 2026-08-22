@@ -6,6 +6,7 @@ import '../providers/historico_vendas_provider.dart';
 import '../providers/notificacao_provider.dart';
 import '../providers/produto_provider.dart';
 import '../screens/avaliacoes_disputas_screen.dart';
+import '../screens/campanhas_ativacao_screen.dart';
 import '../screens/catalogo_online_screen.dart';
 import '../screens/cliente_screen.dart';
 import '../screens/configuracoes_screen.dart';
@@ -97,6 +98,12 @@ final List<AppDestino> appDestinos = [
     papeisPermitidos: ['dono', 'gerente'],
   ),
   AppDestino(titulo: 'Clientes', icone: Icons.person, builder: (_) => ClientesScreen()),
+  AppDestino(
+    titulo: 'Campanhas de Ativação',
+    icone: Icons.campaign_outlined,
+    builder: (_) => const CampanhasAtivacaoScreen(),
+    papeisPermitidos: ['dono', 'gerente'],
+  ),
   AppDestino(
     titulo: 'Catálogo Online',
     icone: Icons.book_online,
