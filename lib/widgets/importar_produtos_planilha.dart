@@ -290,7 +290,14 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
           if (avisoValor) linhasComValorInvalido.add(numeroLinha);
           linhas.add(_LinhaImportada(numeroLinha: numeroLinha, produto: produto, atualizacao: existente != null));
 
-          if (produto.precoIfood != null && (skuExterno != null || produto.codigoBarras.isNotEmpty)) {
+          // "> 0", não só "!= null": um 0 literal aqui não é "sem preço no
+          // iFood", vira um preço de verdade sincronizado pro canal real
+          // (produto_canal.preco, ver ProdutoCanalRepository/n8n) — mesma
+          // classe do bug do preco_promocional, mas aqui o risco é o produto
+          // aparecer cobrando R$0,00 no iFood de verdade, não só no site.
+          if (produto.precoIfood != null &&
+              produto.precoIfood! > 0 &&
+              (skuExterno != null || produto.codigoBarras.isNotEmpty)) {
             canaisIfood.add(_LinhaCanalIfood(
               sku: skuExterno,
               codigoBarras: produto.codigoBarras,
