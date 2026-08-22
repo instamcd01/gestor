@@ -229,6 +229,33 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
             exibirNoCatalogo: parseBooleanoPlanilha(mapa.celula(row, 'exibir_no_catalogo'), padrao: true),
             ativo: existente?.ativo ?? true,
             permiteFracionamento: parseBooleanoPlanilha(mapa.celula(row, 'fracionado')),
+            // A planilha não tem coluna pra nenhum desses — sem preservar o
+            // que já existe, toSupabaseMap() manda tudo isso como null/false
+            // no UPDATE e apaga silenciosamente fabricante, peso/volume,
+            // todo o cadastro estruturado de variantes (nome comercial,
+            // espécie, dose...), o vínculo de família de variante
+            // (produto_pai_id/tipo_variacao/variante_label), ciclo de
+            // recompra e o flag de kit de QUALQUER produto que passe pela
+            // importação — mesmo bug que já existia pro estoqueId.
+            peso: existente?.peso,
+            volume: existente?.volume,
+            fabricante: existente?.fabricante,
+            unidadeMedida: existente?.unidadeMedida ?? 'un',
+            nomeComercial: existente?.nomeComercial,
+            tipoProduto: existente?.tipoProduto,
+            especie: existente?.especie,
+            fase: existente?.fase,
+            porte: existente?.porte,
+            sabor: existente?.sabor,
+            dose: existente?.dose,
+            composicao: existente?.composicao,
+            apresentacao: existente?.apresentacao,
+            nomeManualOverride: existente?.nomeManualOverride ?? false,
+            produtoPaiId: existente?.produtoPaiId,
+            tipoVariacao: existente?.tipoVariacao,
+            varianteLabel: existente?.varianteLabel,
+            cicloRecompraDias: existente?.cicloRecompraDias,
+            ehKit: existente?.ehKit ?? false,
           );
 
           if (avisoValor) linhasComValorInvalido.add(numeroLinha);
