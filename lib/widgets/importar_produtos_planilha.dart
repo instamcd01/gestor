@@ -8,9 +8,11 @@ import 'package:share_plus/share_plus.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../models/produto.dart';
+import '../repositories/importacao_planilha_repository.dart';
 import '../repositories/marketplace_repository.dart';
 import '../repositories/produto_canal_repository.dart';
 import '../repositories/produto_repository.dart';
+import '../screens/historico_importacoes_screen.dart';
 import '../utils/planilha_utils.dart';
 
 class _LinhaCanalIfood {
@@ -77,6 +79,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
   // numa tacada só, não dá pra acompanhar item a item do mesmo jeito).
   int _progressoAtual = 0;
   int _progressoTotal = 0;
+  String? _nomeArquivoAtual;
 
   /// Devolve (categoria, subcategoria) — a planilha real guarda os dois
   /// juntos numa célula só, separados por "|" (ex: "Areia | Granulado").
@@ -96,6 +99,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     );
     if (result == null || !mounted) return;
 
+    _nomeArquivoAtual = result.files.single.name;
     setState(() => _processando = true);
     try {
       // `bytes` (não `path`) — no Web não existe caminho de arquivo real,
@@ -284,6 +288,20 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
 
       await _confirmarEExecutar(linhas, linhasSemNome, linhasComValorInvalido, canaisIfood);
     } catch (e) {
+      final empresaId = mounted ? context.read<AuthProvider>().empresaId : null;
+      if (empresaId != null) {
+        await ImportacaoPlanilhaRepository().registrar(
+          empresaId: empresaId,
+          tipo: 'produtos',
+          nomeArquivo: _nomeArquivoAtual,
+          totalLinhas: 0,
+          novos: 0,
+          atualizados: 0,
+          linhasIgnoradas: 0,
+          status: 'erro',
+          mensagemErro: 'Erro ao ler a planilha: $e',
+        );
+      }
       if (mounted) {
         setState(() => _processando = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao ler a planilha: $e')));
@@ -309,6 +327,20 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     }
     final duplicados = novosPorSku.entries.where((e) => e.value.length > 1).toList();
     if (duplicados.isNotEmpty) {
+      final empresaIdErro = mounted ? context.read<AuthProvider>().empresaId : null;
+      if (empresaIdErro != null) {
+        await ImportacaoPlanilhaRepository().registrar(
+          empresaId: empresaIdErro,
+          tipo: 'produtos',
+          nomeArquivo: _nomeArquivoAtual,
+          totalLinhas: linhas.length,
+          novos: 0,
+          atualizados: 0,
+          linhasIgnoradas: 0,
+          status: 'erro',
+          mensagemErro: 'IDs duplicados na planilha: ${duplicados.map((e) => e.key).join(", ")}',
+        );
+      }
       if (!mounted) return;
       await showDialog<void>(
         context: context,
@@ -433,6 +465,17 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
         }
       }
 
+      await ImportacaoPlanilhaRepository().registrar(
+        empresaId: empresaId,
+        tipo: 'produtos',
+        nomeArquivo: _nomeArquivoAtual,
+        totalLinhas: linhas.length,
+        novos: inseridos,
+        atualizados: atualizados,
+        linhasIgnoradas: linhasSemNome.length + linhasComValorInvalido.length,
+        status: 'sucesso',
+      );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -444,14 +487,30 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
         ),
       );
     } catch (e) {
+      // 23505 (unique_sku_loja) sobrevivendo ao pré-check acima só acontece
+      // se o ID já existir num produto EXCLUÍDO (soft-delete) — o pré-check
+      // só pega duplicata dentro da própria planilha, não contra o banco.
+      final mensagem = e.toString().contains('23505')
+          ? 'Erro ao importar: um dos IDs já existe no Gestor (possivelmente um produto excluído antes). '
+              'Confira se algum ID da planilha corresponde a um produto já excluído.'
+          : 'Erro ao importar: $e';
+
+      final empresaIdErro = mounted ? context.read<AuthProvider>().empresaId : null;
+      if (empresaIdErro != null) {
+        await ImportacaoPlanilhaRepository().registrar(
+          empresaId: empresaIdErro,
+          tipo: 'produtos',
+          nomeArquivo: _nomeArquivoAtual,
+          totalLinhas: linhas.length,
+          novos: 0,
+          atualizados: _progressoAtual,
+          linhasIgnoradas: 0,
+          status: 'erro',
+          mensagemErro: mensagem,
+        );
+      }
+
       if (mounted) {
-        // 23505 (unique_sku_loja) sobrevivendo ao pré-check acima só acontece
-        // se o ID já existir num produto EXCLUÍDO (soft-delete) — o pré-check
-        // só pega duplicata dentro da própria planilha, não contra o banco.
-        final mensagem = e.toString().contains('23505')
-            ? 'Erro ao importar: um dos IDs já existe no Gestor (possivelmente um produto excluído antes). '
-                'Confira se algum ID da planilha corresponde a um produto já excluído.'
-            : 'Erro ao importar: $e';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensagem)));
       }
     } finally {
@@ -601,9 +660,34 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Importar Produtos')),
-      body: Stack(
+    return PopScope(
+      // Sair no meio de uma importação em lote deixa a operação pela
+      // metade (parte dos produtos atualizados, parte não) sem nenhum
+      // jeito de saber onde parou — bloqueia a saída enquanto _processando,
+      // com um aviso, em vez de deixar acontecer sem querer.
+      canPop: !_processando,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aguarde a importação terminar antes de sair desta tela.')),
+        );
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Importar Produtos'),
+          actions: [
+            IconButton(
+              tooltip: 'Histórico de importações',
+              icon: const Icon(Icons.history),
+              onPressed: _processando
+                  ? null
+                  : () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const HistoricoImportacoesScreen()),
+                      ),
+            ),
+          ],
+        ),
+        body: Stack(
         children: [
           Center(
             child: Padding(
@@ -663,17 +747,38 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text('${((_progressoAtual / _progressoTotal) * 100).toStringAsFixed(0)}%'),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Não feche esta tela até a importação terminar.',
+                                style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                              ),
                             ],
                           ),
                         ),
                       )
                     // Sem produtos pra atualizar (só inserção em lote, ou
                     // ainda lendo/validando a planilha) — não tem progresso
-                    // item a item pra mostrar, só o spinner genérico mesmo.
-                    : const CircularProgressIndicator(),
+                    // item a item pra mostrar, só o aviso + spinner genérico.
+                    : Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 12),
+                              Text(
+                                'Não feche esta tela até a importação terminar.',
+                                style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
               ),
             ),
         ],
+      ),
       ),
     );
   }
