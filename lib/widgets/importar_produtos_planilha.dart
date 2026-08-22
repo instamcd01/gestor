@@ -192,10 +192,22 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
           final skuExterno = mapa.celula(row, 'id_externo');
           final existente = skuExterno != null ? existentesPorSku[skuExterno] : null;
 
-          final custo = valor('custo') ?? 0.0;
-          final preco = valor('preco') ?? 0.0;
-          final estoqueAtual =
-              int.tryParse(parseMoedaPlanilha(mapa.celula(row, 'estoque_atual'))?.toStringAsFixed(0) ?? '') ?? 0;
+          // Célula vazia/não reconhecida (ex: fórmula de busca sem match)
+          // preserva o custo/preço que já estava salvo em vez de zerar — só
+          // um produto NOVO (sem `existente`) cai no 0.0, porque não tem
+          // valor anterior pra preservar. Mesma classe do bug real do
+          // preco_promocional (ver `valorPromocional` acima): zerar um valor
+          // financeiro por falha de leitura é sempre pior que manter o que já
+          // estava certo.
+          final custo = valor('custo') ?? existente?.custo ?? 0.0;
+          final preco = valor('preco') ?? existente?.preco ?? 0.0;
+          // Mesmo raciocínio acima, ainda mais crítico aqui: zerar estoque
+          // por falha de leitura não só erra o número — o trigger
+          // `trg_sincronizar_visibilidade_catalogo` (2026-08-22) tira o
+          // produto do catálogo do site sozinho assim que o estoque chega a
+          // zero, então uma célula vazia/"CONFERIR" podia derrubar do ar um
+          // produto que continua em estoque de verdade.
+          final estoqueAtual = valor('estoque_atual')?.round() ?? existente?.estoqueAtual ?? 0;
 
           // Markup/Lucro/Ativo NÃO são lidos da planilha, mesmo tendo colunas
           // com esses nomes: nessa planilha real, essas três colunas contêm
@@ -232,8 +244,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
             precoConcorrencia: valor('preco_concorrencia'),
             validade: mapa.celula(row, 'validade'),
             estoqueAtual: estoqueAtual,
-            estoqueMinimo:
-                int.tryParse(parseMoedaPlanilha(mapa.celula(row, 'estoque_minimo'))?.toStringAsFixed(0) ?? '') ?? 0,
+            estoqueMinimo: valor('estoque_minimo')?.round() ?? existente?.estoqueMinimo ?? 0,
             markup: custo > 0 ? '${(lucroValor / custo * 100).toStringAsFixed(1)}%' : null,
             lucro: lucroValor.toStringAsFixed(2),
             empresa: mapa.celula(row, 'empresa'),
