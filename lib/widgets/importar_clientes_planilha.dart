@@ -85,12 +85,20 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
 
       final clienteProvider = Provider.of<ClientProvider>(context, listen: false);
       await clienteProvider.carregarClientes();
-      // Chave de correlação é o telefone normalizado — é a mesma que o
-      // banco já usa (constraint UNIQUE(empresa_id, telefone)), diferente
-      // de produtos onde o código de barras não é confiável como único.
+      // Chave de correlação é o telefone normalizado no formato COM DDI 55
+      // (normalizarTelefoneParaAuth, não normalizarTelefoneBr) — é o mesmo
+      // formato que `entrar_ou_criar_cliente` usa pra casar `auth.jwt()->>
+      // 'phone'` com `clientes.telefone` no primeiro login pelo site. Sem
+      // isso, um cliente importado (base de outra plataforma, WhatsApp)
+      // nunca é reconhecido no primeiro acesso — o site cria um cadastro
+      // NOVO em vez de vincular o que já foi importado (endereço, saldo,
+      // observações ficam "perdidos" na linha antiga, sem auth_user_id).
+      // Normaliza os dois lados (já existentes + planilha) pro mesmo
+      // formato, então funciona mesmo com o banco tendo telefone salvo em
+      // formatos mistos hoje (com/sem DDI, com máscara).
       final existentesPorTelefone = <String, Cliente>{
         for (final c in clienteProvider.clientes)
-          if (c.celular.isNotEmpty) normalizarTelefoneBr(c.celular): c,
+          if (c.celular.isNotEmpty) normalizarTelefoneParaAuth(c.celular): c,
       };
 
       // Primeira aba com "nome" e "celular" reconhecidos — diferente de
@@ -135,8 +143,11 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
             continue;
           }
 
-          final celular = normalizarTelefoneBr(celularTexto);
-          if (celular.length < 10 || celular.length > 11) {
+          final celular = normalizarTelefoneParaAuth(celularTexto);
+          // 12-13 dígitos = DDI 55 + 10-11 dígitos do número (fixo/celular)
+          // — mesma faixa de antes, só deslocada pelos 2 dígitos do DDI que
+          // normalizarTelefoneParaAuth sempre garante.
+          if (celular.length < 12 || celular.length > 13) {
             linhasCelularInvalido.add(numeroLinha);
             continue;
           }
