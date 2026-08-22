@@ -42,11 +42,19 @@ class VendaRepository {
 
   /// Histórico de compras de um cliente específico (usado na aba "Compras"
   /// da tela de detalhes do cliente).
+  /// Pedidos do cliente E de qualquer outro cadastro (outro canal) já
+  /// vinculado a ele como a mesma pessoa (ver `listar_grupo_pessoa`,
+  /// plano "Identidade de Cliente Cross-Canal") — sem vínculo nenhum,
+  /// `listar_grupo_pessoa` devolve só o próprio id, comportamento
+  /// idêntico ao de antes.
   Future<List<Venda>> listarPorCliente(String clienteId) async {
+    final grupo = await supabase.rpc('listar_grupo_pessoa', params: {'p_cliente_id': clienteId});
+    final ids = (grupo as List).map((r) => r['id'] as String).toList();
+
     final data = await supabase
         .from('pedidos')
         .select(_selectComItensECliente)
-        .eq('cliente_id', clienteId)
+        .inFilter('cliente_id', ids)
         .isFilter('deleted_at', null)
         .order('created_at', ascending: false);
 
