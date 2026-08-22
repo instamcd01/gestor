@@ -183,6 +183,34 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
             categoriaCliente: existente?.categoriaCliente,
             latitude: existente?.latitude,
             longitude: existente?.longitude,
+            // Mesmo bug de "reconstruir sem listar tudo" que já foi achado
+            // e corrigido em editar_cliente_screen.dart nesta sessão — mas
+            // essa tela de importação nunca tinha sido tocada por aquele
+            // fix. tipoPessoa/cnpj/razaoSocial têm valor padrão no
+            // construtor ('fisica'/''/'') — sem isso, todo cliente PJ
+            // reimportado pela planilha voltava a virar PF, apagando
+            // CNPJ/razão social. aceitaLembreteWhatsapp também tem default
+            // false — sem preservar, reimportar apagava o opt-in de
+            // lembrete de recompra que o cliente já tinha dado.
+            tipoPessoa: existente?.tipoPessoa ?? 'fisica',
+            cnpj: existente?.cnpj ?? '',
+            razaoSocial: existente?.razaoSocial ?? '',
+            aceitaLembreteWhatsapp: existente?.aceitaLembreteWhatsapp ?? false,
+            proximaVisita: existente?.proximaVisita,
+            motivoUltimaVisita: existente?.motivoUltimaVisita,
+            ultimoContato: existente?.ultimoContato,
+            canalPreferido: existente?.canalPreferido,
+            interesses: existente?.interesses,
+            documentos: existente?.documentos,
+            observacoesExtras: existente?.observacoesExtras,
+            rangeDistancia: existente?.rangeDistancia,
+            estimativaEntrega: existente?.estimativaEntrega,
+            quantidadeCompras: existente?.quantidadeCompras,
+            totalGasto: existente?.totalGasto,
+            numeroCompras: existente?.numeroCompras,
+            ultimaCompra: existente?.ultimaCompra,
+            ticketMedio: existente?.ticketMedio,
+            intervaloMedioRecompraDias: existente?.intervaloMedioRecompraDias,
           );
 
           linhas.add(_LinhaImportada(numeroLinha: numeroLinha, cliente: cliente, atualizacao: existente != null));
