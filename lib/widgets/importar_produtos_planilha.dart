@@ -259,6 +259,43 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     List<int> linhasComValorInvalido,
     List<_LinhaCanalIfood> canaisIfood,
   ) async {
+    // Duas linhas marcadas como "produto novo" com o mesmo ID quebram o
+    // INSERT em lote (unique_sku_loja) com um erro cru do Postgres, sem
+    // dizer qual produto é — checa e mostra ANTES de tentar importar, em
+    // vez de deixar o usuário caçando duplicata na planilha às cegas.
+    final novosPorSku = <String, List<int>>{};
+    for (final l in linhas.where((l) => !l.atualizacao)) {
+      final sku = l.produto.sku;
+      if (sku == null || sku.isEmpty) continue;
+      novosPorSku.putIfAbsent(sku, () => []).add(l.numeroLinha);
+    }
+    final duplicados = novosPorSku.entries.where((e) => e.value.length > 1).toList();
+    if (duplicados.isNotEmpty) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('IDs duplicados na planilha'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Esses IDs aparecem em mais de uma linha marcada como produto novo — '
+                  'deixe só uma linha por ID na planilha e importe de novo:',
+                ),
+                const SizedBox(height: 8),
+                ...duplicados.map((e) => Text('• ID ${e.key} — linhas ${e.value.join(", ")}')),
+              ],
+            ),
+          ),
+          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendi'))],
+        ),
+      );
+      return;
+    }
+
     final novos = linhas.where((l) => !l.atualizacao).length;
     final atualizacoes = linhas.where((l) => l.atualizacao).length;
 
@@ -365,7 +402,14 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao importar: $e')));
+        // 23505 (unique_sku_loja) sobrevivendo ao pré-check acima só acontece
+        // se o ID já existir num produto EXCLUÍDO (soft-delete) — o pré-check
+        // só pega duplicata dentro da própria planilha, não contra o banco.
+        final mensagem = e.toString().contains('23505')
+            ? 'Erro ao importar: um dos IDs já existe no Gestor (possivelmente um produto excluído antes). '
+                'Confira se algum ID da planilha corresponde a um produto já excluído.'
+            : 'Erro ao importar: $e';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensagem)));
       }
     } finally {
       if (mounted) setState(() => _processando = false);
