@@ -196,6 +196,12 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
 
           final produto = Produto(
             id: existente?.id,
+            // Sem isso, ProdutoRepository.atualizar() pula o UPDATE da
+            // tabela `estoque` inteiro (ela só roda `if (estoqueId != null)`)
+            // — a planilha atualizava nome/preço normalmente, mas a
+            // quantidade em estoque nunca mudava de verdade, mesmo o app
+            // reportando sucesso na importação.
+            estoqueId: existente?.estoqueId,
             sku: skuExterno,
             nome: nome,
             categoria: categoria,
