@@ -72,6 +72,11 @@ class ImportarProdutosScreen extends StatefulWidget {
 
 class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
   bool _processando = false;
+  // Só a etapa de atualização tem progresso real pra mostrar — é a única
+  // que faz uma chamada por produto (criarEmLote insere em blocos de 300
+  // numa tacada só, não dá pra acompanhar item a item do mesmo jeito).
+  int _progressoAtual = 0;
+  int _progressoTotal = 0;
 
   /// Devolve (categoria, subcategoria) — a planilha real guarda os dois
   /// juntos numa célula só, separados por "|" (ex: "Areia | Granulado").
@@ -328,14 +333,18 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     );
     if (confirmado != true || !mounted) return;
 
-    setState(() => _processando = true);
+    final novosProdutos = linhas.where((l) => !l.atualizacao).map((l) => l.produto).toList();
+    final atualizacoesLista = linhas.where((l) => l.atualizacao).toList();
+
+    setState(() {
+      _processando = true;
+      _progressoAtual = 0;
+      _progressoTotal = atualizacoesLista.length;
+    });
     try {
       final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
       final empresaId = context.read<AuthProvider>().empresaId;
       if (empresaId == null) throw StateError('Empresa não identificada.');
-
-      final novosProdutos = linhas.where((l) => !l.atualizacao).map((l) => l.produto).toList();
-      final atualizacoesLista = linhas.where((l) => l.atualizacao).toList();
 
       var inseridos = 0;
       if (novosProdutos.isNotEmpty) {
@@ -346,6 +355,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
       for (final l in atualizacoesLista) {
         await ProdutoRepository().atualizar(l.produto);
         atualizados++;
+        if (mounted) setState(() => _progressoAtual = atualizados);
       }
 
       await produtoProvider.carregarProdutos();
@@ -601,7 +611,35 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
               ),
             ),
           ),
-          if (_processando) Container(color: Colors.black26, child: const Center(child: CircularProgressIndicator())),
+          if (_processando)
+            Container(
+              color: Colors.black26,
+              child: Center(
+                child: _progressoTotal > 0
+                    ? Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('Atualizando produtos — $_progressoAtual de $_progressoTotal'),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: 220,
+                                child: LinearProgressIndicator(value: _progressoAtual / _progressoTotal),
+                              ),
+                              const SizedBox(height: 4),
+                              Text('${((_progressoAtual / _progressoTotal) * 100).toStringAsFixed(0)}%'),
+                            ],
+                          ),
+                        ),
+                      )
+                    // Sem produtos pra atualizar (só inserção em lote, ou
+                    // ainda lendo/validando a planilha) — não tem progresso
+                    // item a item pra mostrar, só o spinner genérico mesmo.
+                    : const CircularProgressIndicator(),
+              ),
+            ),
         ],
       ),
     );
