@@ -24,6 +24,7 @@ import '../screens/rotas_entrega_screen.dart';
 import '../screens/sugestoes_produto_cliente_screen.dart';
 import '../screens/usuarios_screen.dart';
 import '../screens/vendas_screen.dart';
+import '../screens/vinculos_clientes_screen.dart';
 
 bool _produtoComEstoqueBaixo(Produto p) =>
     p.ativo && p.estoqueMinimo > 0 && p.estoqueAtual > 0 && p.estoqueAtual <= p.estoqueMinimo;
@@ -102,6 +103,12 @@ final List<AppDestino> appDestinos = [
     titulo: 'Campanhas de Ativação',
     icone: Icons.campaign_outlined,
     builder: (_) => const CampanhasAtivacaoScreen(),
+    papeisPermitidos: ['dono', 'gerente'],
+  ),
+  AppDestino(
+    titulo: 'Vínculos de Clientes',
+    icone: Icons.link,
+    builder: (_) => const VinculosClientesScreen(),
     papeisPermitidos: ['dono', 'gerente'],
   ),
   AppDestino(
