@@ -74,6 +74,14 @@ class Cliente {
   /// `authUserId == null`).
   final String? authUserId;
 
+  /// Vínculo com o cadastro canônico da mesma pessoa em outro canal (ver
+  /// plano "Identidade de Cliente Cross-Canal", 22/08/2026) — null
+  /// significa "não vinculado, é sua própria pessoa". Só leitura aqui,
+  /// nunca vai em `toSupabaseMap()` — o vínculo só é criado pelas RPCs
+  /// `vincular_clientes`/`detectar_vinculo_por_documento`, nunca pelo
+  /// formulário genérico de editar cliente.
+  final String? pessoaId;
+
   Cliente({
     this.idCliente,
     required this.nome,
@@ -119,6 +127,7 @@ class Cliente {
     this.latitude,
     this.longitude,
     this.authUserId,
+    this.pessoaId,
   });
 
   List<String> get especies => pets.map((p) => p.especie).toSet().toList();
@@ -169,6 +178,7 @@ class Cliente {
       // authUserId fora, escondendo o botão "Redefinir acesso" até a
       // lista recarregar do servidor. Achado corrigindo o CNPJ ao lado.
       authUserId: authUserId,
+      pessoaId: pessoaId,
     );
   }
 
@@ -254,6 +264,7 @@ class Cliente {
       latitude: (row['latitude'] as num?)?.toDouble(),
       longitude: (row['longitude'] as num?)?.toDouble(),
       authUserId: row['auth_user_id'] as String?,
+      pessoaId: row['pessoa_id'] as String?,
     );
   }
 
