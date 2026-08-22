@@ -177,6 +177,17 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
             return v;
           }
 
+          // Preço promocional de R$0,00 nunca é uma promoção real (a loja não
+          // dá produto de graça) — é sempre planilha de origem preenchendo 0
+          // em vez de deixar em branco pra "sem promoção ativa" (achado real:
+          // importação de 22/08/2026 zerou 851 dos 967 produtos assim, cada um
+          // aparecendo no site como 100% de desconto). Trata igual a célula
+          // vazia em vez de confiar que a planilha nunca vai mandar 0 de novo.
+          double? valorPromocional(String campo) {
+            final v = valor(campo);
+            return (v == null || v <= 0) ? null : v;
+          }
+
           final (categoria, subcategoria) = _splitCategoria(mapa.celula(row, 'grupo'));
           final skuExterno = mapa.celula(row, 'id_externo');
           final existente = skuExterno != null ? existentesPorSku[skuExterno] : null;
@@ -216,7 +227,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
             codigoBarras: mapa.celula(row, 'codigo_barras') ?? '',
             custo: custo,
             preco: preco,
-            precoPromocional: valor('preco_promocional'),
+            precoPromocional: valorPromocional('preco_promocional'),
             precoIfood: valor('preco_ifood'),
             precoConcorrencia: valor('preco_concorrencia'),
             validade: mapa.celula(row, 'validade'),
