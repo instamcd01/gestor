@@ -13,6 +13,7 @@ import '../utils/formatadores_input.dart';
 import '../utils/gerador_nome_produto.dart';
 import '../utils/produto_validators.dart';
 import '../repositories/valor_estruturado_repository.dart';
+import '../services/descricao_produto_service.dart';
 import '../widgets/campos_estruturados_variante.dart';
 import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
@@ -68,6 +69,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _varianteLabelController;
   bool _nomeManualOverride = false;
   bool _desvinculandoVariante = false;
+  bool _gerandoDescricao = false;
 
   late final CalculadoraPrecoMarkup _calculadora;
   late final CalculadoraDesconto _calculadoraDesconto;
@@ -579,6 +581,32 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     }
   }
 
+  Future<void> _gerarDescricaoComIA() async {
+    if (_nomeController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Preencha o nome do produto antes de gerar a descrição.')));
+      return;
+    }
+
+    setState(() => _gerandoDescricao = true);
+    try {
+      final descricao = await DescricaoProdutoService.gerar(
+        nome: _nomeController.text.trim(),
+        categoria: _categoriaController.text.trim().isEmpty ? null : _categoriaController.text.trim(),
+        fabricante: _fabricanteController.text.trim().isEmpty ? null : _fabricanteController.text.trim(),
+        especie: _especieController.text.trim().isEmpty ? null : _especieController.text.trim(),
+        descricaoAtual: _descricaoController.text.trim().isEmpty ? null : _descricaoController.text.trim(),
+      );
+      if (!mounted) return;
+      setState(() => _descricaoController.text = descricao);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _gerandoDescricao = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -753,10 +781,29 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                             setState(() => _subcategoriaController.text = value ?? '');
                           },
                         ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton.icon(
+                        onPressed: _gerandoDescricao ? null : _gerarDescricaoComIA,
+                        icon: _gerandoDescricao
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.auto_awesome, size: 18),
+                        label: Text(_gerandoDescricao ? 'Gerando...' : 'Gerar descrição com IA'),
+                      ),
+                    ],
+                  ),
                   TextFormField(
                     controller: _descricaoController,
-                    decoration: const InputDecoration(labelText: 'Descrição'),
-                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Descrição',
+                      helperText: 'Revise o texto gerado pela IA antes de salvar — ela pode errar.',
+                    ),
+                    maxLines: 5,
                     validator: ProdutoValidators.descricao,
                   ),
                   TextFormField(
