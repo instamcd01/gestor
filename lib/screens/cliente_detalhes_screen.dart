@@ -11,6 +11,7 @@ import '../providers/cliente_provider.dart';
 import '../repositories/carrinho_cliente_repository.dart';
 import '../repositories/saldo_repository.dart';
 import '../repositories/venda_repository.dart';
+import '../utils/canal_venda_utils.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/telefone_utils.dart';
@@ -548,6 +549,10 @@ class _ComprasClienteTabState extends State<_ComprasClienteTab> {
   final _repository = VendaRepository();
   late Future<List<Venda>> _futureVendas;
 
+  // null = "Todos" — só filtra quando o cliente tem pedido de mais de uma
+  // plataforma (senão o filtro não ajuda em nada, só ocupa espaço).
+  String? _canalSelecionado;
+
   @override
   void initState() {
     super.initState();
@@ -593,40 +598,84 @@ class _ComprasClienteTabState extends State<_ComprasClienteTab> {
           );
         }
 
+        // Só as plataformas que esse cliente específico já usou — não faz
+        // sentido mostrar um chip "iFood" pra quem nunca pediu por lá.
+        final canais = vendas.map((v) => v.canalVenda).toSet().toList()..sort();
+        final vendasFiltradas = _canalSelecionado == null
+            ? vendas
+            : vendas.where((v) => v.canalVenda == _canalSelecionado).toList();
+
         return RefreshIndicator(
           onRefresh: _recarregar,
-          child: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: vendas.length,
-            itemBuilder: (context, index) {
-              final venda = vendas[index];
-              final cancelada = venda.cancelada;
-
-              return Card(
-                child: ListTile(
-                  leading: Icon(
-                    cancelada ? Icons.block : Icons.receipt,
-                    color: cancelada ? Colors.grey : Theme.of(context).colorScheme.primary,
-                  ),
-                  title: Text(
-                    currencyFormat.format(venda.valorTotal),
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      decoration: cancelada ? TextDecoration.lineThrough : null,
-                      color: cancelada ? Colors.grey[600] : null,
-                    ),
-                  ),
-                  subtitle: Text(
-                    '${dateFormat.format(venda.dataVenda)} • ${venda.metodoPagamento}${cancelada ? ' • CANCELADA' : ''}',
-                    style: cancelada ? TextStyle(color: Colors.grey[600]) : null,
-                  ),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => VendaDetalhesScreen(venda: venda)),
+          child: Column(
+            children: [
+              if (canais.length > 1)
+                SizedBox(
+                  height: 44,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text('Todos (${vendas.length})'),
+                          selected: _canalSelecionado == null,
+                          onSelected: (_) => setState(() => _canalSelecionado = null),
+                        ),
+                      ),
+                      for (final canal in canais)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            avatar: Icon(iconeCanalVenda(canal), size: 16),
+                            label: Text(
+                              '${rotuloCanalVenda(canal)} (${vendas.where((v) => v.canalVenda == canal).length})',
+                            ),
+                            selected: _canalSelecionado == canal,
+                            onSelected: (_) => setState(() => _canalSelecionado = canal),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-              );
-            },
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: vendasFiltradas.length,
+                  itemBuilder: (context, index) {
+                    final venda = vendasFiltradas[index];
+                    final cancelada = venda.cancelada;
+
+                    return Card(
+                      child: ListTile(
+                        leading: Icon(
+                          cancelada ? Icons.block : iconeCanalVenda(venda.canalVenda),
+                          color: cancelada ? Colors.grey : Theme.of(context).colorScheme.primary,
+                        ),
+                        title: Text(
+                          currencyFormat.format(venda.valorTotal),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            decoration: cancelada ? TextDecoration.lineThrough : null,
+                            color: cancelada ? Colors.grey[600] : null,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${dateFormat.format(venda.dataVenda)} • ${venda.metodoPagamento} • '
+                          '${rotuloCanalVenda(venda.canalVenda)}${cancelada ? ' • CANCELADA' : ''}',
+                          style: cancelada ? TextStyle(color: Colors.grey[600]) : null,
+                        ),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => VendaDetalhesScreen(venda: venda)),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
         );
       },
