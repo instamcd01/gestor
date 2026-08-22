@@ -9,6 +9,7 @@ import '../repositories/campanha_ativacao_repository.dart';
 import '../utils/planilha_utils.dart';
 import '../utils/produto_validators.dart';
 import '../utils/telefone_utils.dart';
+import '../widgets/estado_erro_lista.dart';
 
 String _formatarReais(double valor) => 'R\$ ${ProdutoValidators.formatarMoeda(valor)}';
 
@@ -161,10 +162,47 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     }
   }
 
+  Future<void> _excluirCampanha() async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Excluir campanha'),
+        content: Text(
+          'Tem certeza que deseja excluir "${widget.campanha.nome}"? '
+          'Todos os contatos importados nela também serão removidos. Essa ação não pode ser desfeita.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    try {
+      await CampanhaAtivacaoRepository().excluir(widget.campanha.id);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível excluir: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.campanha.nome)),
+      appBar: AppBar(
+        title: Text(widget.campanha.nome),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Excluir campanha',
+            onPressed: _excluirCampanha,
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _processando ? null : _importarContatos,
         icon: const Icon(Icons.upload_file),
@@ -181,6 +219,12 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
               FutureBuilder<MetricasCampanha>(
                 future: _futuroMetricas,
                 builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return EstadoErroLista(
+                      mensagem: 'Não foi possível carregar as métricas: ${snapshot.error}',
+                      onTentarNovamente: _recarregar,
+                    );
+                  }
                   if (!snapshot.hasData) {
                     return const Padding(
                       padding: EdgeInsets.all(24),
@@ -196,6 +240,12 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
               FutureBuilder<List<ContatoCampanha>>(
                 future: _futuroContatos,
                 builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return EstadoErroLista(
+                      mensagem: 'Não foi possível carregar os contatos: ${snapshot.error}',
+                      onTentarNovamente: _recarregar,
+                    );
+                  }
                   if (!snapshot.hasData) {
                     return const Padding(
                       padding: EdgeInsets.all(24),

@@ -44,6 +44,12 @@ class CampanhaAtivacaoRepository {
     return contatos.length;
   }
 
+  /// Cascade no banco já remove os contatos da campanha junto
+  /// (campanha_contatos_campanha_id_fkey é ON DELETE CASCADE).
+  Future<void> excluir(String campanhaId) async {
+    await supabase.from('campanhas_ativacao').delete().eq('id', campanhaId);
+  }
+
   Future<MetricasCampanha> obterMetricas(String campanhaId) async {
     final data = await supabase.rpc('obter_metricas_campanha', params: {'p_campanha_id': campanhaId});
     final row = (data as List).first as Map<String, dynamic>;

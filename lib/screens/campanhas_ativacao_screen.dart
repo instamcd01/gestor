@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/campanha_ativacao.dart';
 import '../providers/auth_provider.dart';
 import '../repositories/campanha_ativacao_repository.dart';
+import '../widgets/estado_erro_lista.dart';
 import 'campanha_detalhe_screen.dart';
 
 /// Lista de campanhas de ativação (convite pra base externa/WhatsApp criar
@@ -82,6 +83,33 @@ class _CampanhasAtivacaoScreenState extends State<CampanhasAtivacaoScreen> {
     );
   }
 
+  Future<void> _excluirCampanha(CampanhaAtivacao campanha) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Excluir campanha'),
+        content: Text(
+          'Tem certeza que deseja excluir "${campanha.nome}"? '
+          'Todos os contatos importados nela também serão removidos. Essa ação não pode ser desfeita.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    try {
+      await CampanhaAtivacaoRepository().excluir(campanha.id);
+      await _recarregar();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível excluir: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -96,6 +124,12 @@ class _CampanhasAtivacaoScreenState extends State<CampanhasAtivacaoScreen> {
         child: FutureBuilder<List<CampanhaAtivacao>>(
           future: _futuro,
           builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return EstadoErroLista(
+                mensagem: 'Não foi possível carregar as campanhas: ${snapshot.error}',
+                onTentarNovamente: _recarregar,
+              );
+            }
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
@@ -126,7 +160,17 @@ class _CampanhasAtivacaoScreenState extends State<CampanhasAtivacaoScreen> {
                   child: ListTile(
                     title: Text(c.nome),
                     subtitle: c.descricao != null ? Text(c.descricao!) : null,
-                    trailing: Text(DateFormat('dd/MM/yyyy').format(c.criadoEm.toLocal())),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(DateFormat('dd/MM/yyyy').format(c.criadoEm.toLocal())),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: 'Excluir campanha',
+                          onPressed: () => _excluirCampanha(c),
+                        ),
+                      ],
+                    ),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => CampanhaDetalheScreen(campanha: c)),
                     ),
