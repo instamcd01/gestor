@@ -102,6 +102,17 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
             ),
           ),
         ),
+        if (cliente.pessoaId != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Center(
+              child: Chip(
+                avatar: const Icon(Icons.link, size: 16),
+                label: const Text('Vinculado a outro cadastro — histórico consolidado'),
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              ),
+            ),
+          ),
         const SizedBox(height: 8),
         Center(child: CategoriaClienteBadge(categoria: cliente.categoriaCliente)),
         const SizedBox(height: 16),
