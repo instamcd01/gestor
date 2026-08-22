@@ -3,7 +3,20 @@ import '../models/campanha_ativacao.dart';
 
 class CampanhaAtivacaoRepository {
   Future<List<CampanhaAtivacao>> listar() async {
-    final data = await supabase.from('campanhas_ativacao').select().order('criado_em', ascending: false);
+    final data = await supabase
+        .from('campanhas_ativacao')
+        .select()
+        .isFilter('deleted_at', null)
+        .order('criado_em', ascending: false);
+    return (data as List).map((row) => CampanhaAtivacao.fromSupabase(row as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<CampanhaAtivacao>> listarArquivadas() async {
+    final data = await supabase
+        .from('campanhas_ativacao')
+        .select()
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', ascending: false);
     return (data as List).map((row) => CampanhaAtivacao.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 
@@ -44,10 +57,18 @@ class CampanhaAtivacaoRepository {
     return contatos.length;
   }
 
-  /// Cascade no banco já remove os contatos da campanha junto
-  /// (campanha_contatos_campanha_id_fkey é ON DELETE CASCADE).
-  Future<void> excluir(String campanhaId) async {
-    await supabase.from('campanhas_ativacao').delete().eq('id', campanhaId);
+  /// Soft-delete (mesmo padrão de `clientes`/`produtos`) — os contatos e o
+  /// histórico da campanha continuam intactos, só some da lista principal.
+  /// Métricas de OUTRAS campanhas nunca são afetadas: são sempre calculadas
+  /// na hora a partir de `clientes`/`pedidos`, nunca guardadas na campanha.
+  Future<void> arquivar(String campanhaId) async {
+    await supabase
+        .from('campanhas_ativacao')
+        .update({'deleted_at': DateTime.now().toIso8601String()}).eq('id', campanhaId);
+  }
+
+  Future<void> desarquivar(String campanhaId) async {
+    await supabase.from('campanhas_ativacao').update({'deleted_at': null}).eq('id', campanhaId);
   }
 
   Future<MetricasCampanha> obterMetricas(String campanhaId) async {

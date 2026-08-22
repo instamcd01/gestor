@@ -3,12 +3,16 @@ class CampanhaAtivacao {
   final String nome;
   final String? descricao;
   final DateTime criadoEm;
+  final DateTime? arquivadaEm;
+
+  bool get arquivada => arquivadaEm != null;
 
   CampanhaAtivacao({
     required this.id,
     required this.nome,
     this.descricao,
     required this.criadoEm,
+    this.arquivadaEm,
   });
 
   factory CampanhaAtivacao.fromSupabase(Map<String, dynamic> row) {
@@ -17,6 +21,7 @@ class CampanhaAtivacao {
       nome: row['nome'] as String,
       descricao: row['descricao'] as String?,
       criadoEm: DateTime.parse(row['criado_em'] as String),
+      arquivadaEm: row['deleted_at'] != null ? DateTime.parse(row['deleted_at'] as String) : null,
     );
   }
 }

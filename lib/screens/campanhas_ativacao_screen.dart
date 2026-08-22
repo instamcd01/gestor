@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../repositories/campanha_ativacao_repository.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'campanha_detalhe_screen.dart';
+import 'campanhas_arquivadas_screen.dart';
 
 /// Lista de campanhas de ativação (convite pra base externa/WhatsApp criar
 /// cadastro no site em vez de importar os dados direto — ver
@@ -83,29 +84,29 @@ class _CampanhasAtivacaoScreenState extends State<CampanhasAtivacaoScreen> {
     );
   }
 
-  Future<void> _excluirCampanha(CampanhaAtivacao campanha) async {
+  Future<void> _arquivarCampanha(CampanhaAtivacao campanha) async {
     final confirmou = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Excluir campanha'),
+        title: const Text('Arquivar campanha'),
         content: Text(
-          'Tem certeza que deseja excluir "${campanha.nome}"? '
-          'Todos os contatos importados nela também serão removidos. Essa ação não pode ser desfeita.',
+          'Arquivar "${campanha.nome}"? Ela sai da lista principal, mas os contatos e o histórico '
+          'continuam salvos — dá pra desarquivar depois em "Campanhas arquivadas".',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Arquivar')),
         ],
       ),
     );
     if (confirmou != true || !mounted) return;
 
     try {
-      await CampanhaAtivacaoRepository().excluir(campanha.id);
+      await CampanhaAtivacaoRepository().arquivar(campanha.id);
       await _recarregar();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível excluir: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível arquivar: $e')));
       }
     }
   }
@@ -113,7 +114,18 @@ class _CampanhasAtivacaoScreenState extends State<CampanhasAtivacaoScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Campanhas de Ativação')),
+      appBar: AppBar(
+        title: const Text('Campanhas de Ativação'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.archive_outlined),
+            tooltip: 'Campanhas arquivadas',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CampanhasArquivadasScreen()),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _criarCampanha,
         icon: const Icon(Icons.add),
@@ -165,15 +177,18 @@ class _CampanhasAtivacaoScreenState extends State<CampanhasAtivacaoScreen> {
                       children: [
                         Text(DateFormat('dd/MM/yyyy').format(c.criadoEm.toLocal())),
                         IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: 'Excluir campanha',
-                          onPressed: () => _excluirCampanha(c),
+                          icon: const Icon(Icons.archive_outlined),
+                          tooltip: 'Arquivar campanha',
+                          onPressed: () => _arquivarCampanha(c),
                         ),
                       ],
                     ),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => CampanhaDetalheScreen(campanha: c)),
-                    ),
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => CampanhaDetalheScreen(campanha: c)),
+                      );
+                      if (mounted) _recarregar();
+                    },
                   ),
                 );
               },

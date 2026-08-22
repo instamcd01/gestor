@@ -9,6 +9,7 @@ import '../repositories/campanha_ativacao_repository.dart';
 import '../utils/planilha_utils.dart';
 import '../utils/produto_validators.dart';
 import '../utils/telefone_utils.dart';
+import '../widgets/aviso_banner.dart';
 import '../widgets/estado_erro_lista.dart';
 
 String _formatarReais(double valor) => 'R\$ ${ProdutoValidators.formatarMoeda(valor)}';
@@ -162,52 +163,74 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     }
   }
 
-  Future<void> _excluirCampanha() async {
+  Future<void> _arquivarCampanha() async {
     final confirmou = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Excluir campanha'),
+        title: const Text('Arquivar campanha'),
         content: Text(
-          'Tem certeza que deseja excluir "${widget.campanha.nome}"? '
-          'Todos os contatos importados nela também serão removidos. Essa ação não pode ser desfeita.',
+          'Arquivar "${widget.campanha.nome}"? Ela sai da lista principal, mas os contatos e o histórico '
+          'continuam salvos — dá pra desarquivar depois em "Campanhas arquivadas".',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Arquivar')),
         ],
       ),
     );
     if (confirmou != true || !mounted) return;
 
     try {
-      await CampanhaAtivacaoRepository().excluir(widget.campanha.id);
+      await CampanhaAtivacaoRepository().arquivar(widget.campanha.id);
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível excluir: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível arquivar: $e')));
+      }
+    }
+  }
+
+  Future<void> _desarquivarCampanha() async {
+    try {
+      await CampanhaAtivacaoRepository().desarquivar(widget.campanha.id);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível desarquivar: $e')));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final arquivada = widget.campanha.arquivada;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.campanha.nome),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Excluir campanha',
-            onPressed: _excluirCampanha,
-          ),
+          if (arquivada)
+            IconButton(
+              icon: const Icon(Icons.unarchive_outlined),
+              tooltip: 'Desarquivar campanha',
+              onPressed: _desarquivarCampanha,
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.archive_outlined),
+              tooltip: 'Arquivar campanha',
+              onPressed: _arquivarCampanha,
+            ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _processando ? null : _importarContatos,
-        icon: const Icon(Icons.upload_file),
-        label: const Text('Importar contatos'),
-      ),
+      floatingActionButton: arquivada
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _processando ? null : _importarContatos,
+              icon: const Icon(Icons.upload_file),
+              label: const Text('Importar contatos'),
+            ),
       body: RefreshIndicator(
         onRefresh: _recarregar,
         child: SingleChildScrollView(
@@ -216,6 +239,13 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (arquivada) ...[
+                const AvisoBanner(
+                  texto: 'Campanha arquivada — desarquive pra importar novos contatos.',
+                  tipo: TipoAviso.alerta,
+                ),
+                const SizedBox(height: 16),
+              ],
               FutureBuilder<MetricasCampanha>(
                 future: _futuroMetricas,
                 builder: (context, snapshot) {
