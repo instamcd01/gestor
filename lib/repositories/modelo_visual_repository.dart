@@ -10,7 +10,7 @@ class ModeloVisualRepository {
         .from('modelos_visuais')
         .select()
         .eq('ativo', true)
-        .order('ordem');
+        .order('ordem', ascending: true);
 
     return (data as List).map((row) => ModeloVisual.fromSupabase(row as Map<String, dynamic>)).toList();
   }

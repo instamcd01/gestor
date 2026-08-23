@@ -48,7 +48,7 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
       final categoriasSalvas = await supabase
           .from('categorias')
           .select('id, nome, ordem')
-          .order('ordem');
+          .order('ordem', ascending: true);
 
       List<Map<String, dynamic>> categorias =
           List<Map<String, dynamic>>.from(categoriasSalvas);

@@ -11,7 +11,7 @@ import '../models/banner_home.dart';
 /// bucket `produtos` (`{empresaId}/...`), ver `upload_imagem_produto.dart`.
 class BannerHomeRepository {
   Future<List<BannerHome>> listar() async {
-    final data = await supabase.from('banners_home').select().order('ordem');
+    final data = await supabase.from('banners_home').select().order('ordem', ascending: true);
     return (data as List).map((row) => BannerHome.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 

@@ -251,7 +251,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       final data = await supabase
           .from('categorias')
           .select('nome')
-          .order('ordem');
+          .order('ordem', ascending: true);
       final categorias = (data as List)
           .map((row) => row['nome'] as String? ?? '')
           .where((c) => c.isNotEmpty)
@@ -306,7 +306,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                       .from('subcategorias')
                       .select('nome')
                       .eq('categoria_id', categoria['id'])
-                      .order('ordem')) as List)
+                      .order('ordem', ascending: true)) as List)
               .map((row) => row['nome'] as String)
               .toList();
       if (!mounted) return;
@@ -325,7 +325,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
 
   Future<void> _carregarFabricantes() async {
     try {
-      final data = await supabase.from('fabricantes').select('nome').order('ordem');
+      final data = await supabase.from('fabricantes').select('nome').order('ordem', ascending: true);
       final fabricantes = (data as List).map((row) => row['nome'] as String? ?? '').where((f) => f.isNotEmpty).toSet();
 
       final produtosData = await supabase.from('produtos').select('fabricante');

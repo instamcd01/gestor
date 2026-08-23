@@ -91,7 +91,8 @@ class _GerenciarCategoriasScreenState extends State<GerenciarCategoriasScreen>
   // ---------------------------------------------------------------------
 
   Future<void> _carregarDepartamentos() async {
-    final data = await supabase.from('departamentos').select('id, nome, ordem').order('ordem');
+    final data =
+        await supabase.from('departamentos').select('id, nome, ordem').order('ordem', ascending: true);
     _departamentos = List<Map<String, dynamic>>.from(data);
   }
 
@@ -172,7 +173,7 @@ class _GerenciarCategoriasScreenState extends State<GerenciarCategoriasScreen>
     final data = await supabase
         .from('categorias')
         .select('id, nome, ordem, departamento_id, ncm, cest')
-        .order('ordem');
+        .order('ordem', ascending: true);
     _categorias = List<Map<String, dynamic>>.from(data);
   }
 
@@ -321,7 +322,7 @@ class _GerenciarCategoriasScreenState extends State<GerenciarCategoriasScreen>
         .from('subcategorias')
         .select('id, nome, ordem, categoria_id')
         .eq('categoria_id', _categoriaSelecionadaId!)
-        .order('ordem');
+        .order('ordem', ascending: true);
     _subcategorias = List<Map<String, dynamic>>.from(data);
   }
 

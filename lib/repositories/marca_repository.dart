@@ -11,7 +11,11 @@ import '../models/marca_ativo.dart';
 /// aparece em cada posição do app/site.
 class MarcaRepository {
   Future<List<MarcaAtivo>> listarAtivos() async {
-    final data = await supabase.from('marca_ativos').select().order('tipo').order('ordem');
+    final data = await supabase
+        .from('marca_ativos')
+        .select()
+        .order('tipo', ascending: true)
+        .order('ordem', ascending: true);
     return (data as List).map((row) => MarcaAtivo.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 

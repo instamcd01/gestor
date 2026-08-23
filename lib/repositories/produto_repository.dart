@@ -167,7 +167,7 @@ class ProdutoRepository {
   /// "Gerenciar categorias") unida com o que já está em uso em
   /// `produtos.categoria` (que pode ter nomes ainda não formalizados lá).
   Future<List<String>> listarCategoriasDisponiveis() async {
-    final data = await supabase.from('categorias').select('nome').order('ordem');
+    final data = await supabase.from('categorias').select('nome').order('ordem', ascending: true);
     final categorias = (data as List).map((r) => r['nome'] as String).toSet();
 
     final produtosData = await supabase.from('produtos').select('categoria');
@@ -180,7 +180,7 @@ class ProdutoRepository {
   /// Mesma lógica de [listarCategoriasDisponiveis], mas pra fabricantes
   /// (tabela `fabricantes` + o que já está em uso em `produtos.fabricante`).
   Future<List<String>> listarFabricantesDisponiveis() async {
-    final data = await supabase.from('fabricantes').select('nome').order('ordem');
+    final data = await supabase.from('fabricantes').select('nome').order('ordem', ascending: true);
     final fabricantes = (data as List).map((r) => r['nome'] as String? ?? '').where((f) => f.isNotEmpty).toSet();
 
     final produtosData = await supabase.from('produtos').select('fabricante');

@@ -11,8 +11,8 @@ class ProdutoMidiaRepository {
         .from('produto_midias')
         .select()
         .eq('produto_id', produtoId)
-        .order('tipo')
-        .order('ordem');
+        .order('tipo', ascending: true)
+        .order('ordem', ascending: true);
 
     return (data as List)
         .map((row) => ProdutoMidia.fromSupabase(row as Map<String, dynamic>))

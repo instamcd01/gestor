@@ -48,7 +48,8 @@ class _FabricanteScreenState extends State<FabricanteScreen> {
       final empresaId = await _obterEmpresaId();
       if (empresaId == null) return;
 
-      final salvos = await supabase.from('fabricantes').select('id, nome, ordem').order('ordem');
+      final salvos =
+          await supabase.from('fabricantes').select('id, nome, ordem').order('ordem', ascending: true);
       final fabricantes = List<Map<String, dynamic>>.from(salvos);
 
       // Mesmo backfill lazy que CategoriaScreen faz pra categoria: cobre

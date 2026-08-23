@@ -31,7 +31,8 @@ class RotaEntregaRepository {
   }
 
   Future<List<RotaPedidoItem>> pedidosDaRota(String rotaId) async {
-    final rows = await supabase.from('rota_pedidos').select().eq('rota_id', rotaId).order('ordem');
+    final rows =
+        await supabase.from('rota_pedidos').select().eq('rota_id', rotaId).order('ordem', ascending: true);
     return (rows as List).map((r) => RotaPedidoItem.fromSupabase(r as Map<String, dynamic>)).toList();
   }
 
