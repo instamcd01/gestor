@@ -59,11 +59,12 @@ class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen>
   Future<void> _carregarTudo() async {
     setState(() => _carregando = true);
     try {
-      final categorias = await supabase.from('categorias').select('id, nome').order('ordem');
+      final categorias =
+          await supabase.from('categorias').select('id, nome').order('ordem', ascending: true);
       final linhas = await supabase
           .from('categoria_campos_estruturados')
           .select('categoria, campo, ordem')
-          .order('ordem');
+          .order('ordem', ascending: true);
       final estrutura = <String, List<String>>{};
       for (final linha in (linhas as List)) {
         (estrutura[linha['categoria'] as String] ??= []).add(linha['campo'] as String);

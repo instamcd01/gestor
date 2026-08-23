@@ -23,7 +23,7 @@ import 'form_section.dart';
 /// seguro pra categoria nova/não configurada ainda.
 Future<Map<String, List<String>>> carregarCamposEstruturadosPorCategoria() async {
   final linhas =
-      await supabase.from('categoria_campos_estruturados').select('categoria, campo').order('ordem');
+      await supabase.from('categoria_campos_estruturados').select('categoria, campo').order('ordem', ascending: true);
   final mapa = <String, List<String>>{};
   for (final linha in (linhas as List)) {
     final categoria = linha['categoria'] as String;
