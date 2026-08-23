@@ -20,7 +20,7 @@ class ProdutoRepository {
         .select(_selectComEstoque)
         .eq('eh_kit', false)
         .isFilter('deleted_at', null)
-        .order('nome');
+        .order('nome', ascending: true);
 
     return (data as List)
         .map((row) => Produto.fromSupabase(row as Map<String, dynamic>))
@@ -231,7 +231,7 @@ class ProdutoRepository {
         .from('sugestoes_variante')
         .select()
         .eq('status', 'pendente')
-        .order('criado_em');
+        .order('criado_em', ascending: true);
 
     return (data as List)
         .map((row) => SugestaoVariante.fromSupabase(row as Map<String, dynamic>))

@@ -14,7 +14,7 @@ class ClienteRepository {
         .from('clientes')
         .select(_selectComPets)
         .isFilter('deleted_at', null)
-        .order('nome');
+        .order('nome', ascending: true);
 
     return (data as List)
         .map((row) => Cliente.fromSupabase(row as Map<String, dynamic>))

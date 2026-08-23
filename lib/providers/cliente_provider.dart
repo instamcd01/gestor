@@ -165,7 +165,7 @@ class ClientProvider with ChangeNotifier {
 /// vindos do Supabase (tabela `canais_origem`, editável por empresa).
 Future<List<String>> carregarCanaisOrigem() async {
   try {
-    final data = await supabase.from('canais_origem').select('nome').order('nome');
+    final data = await supabase.from('canais_origem').select('nome').order('nome', ascending: true);
     final canais = (data as List).map((row) => row['nome'] as String).toList();
     return canais.isNotEmpty ? canais : ['WhatsApp', 'Instagram', 'Ifood', 'Outro canal'];
   } catch (e) {

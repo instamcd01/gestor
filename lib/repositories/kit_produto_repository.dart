@@ -16,7 +16,7 @@ class KitProdutoRepository {
         .select()
         .eq('eh_kit', true)
         .isFilter('deleted_at', null)
-        .order('nome');
+        .order('nome', ascending: true);
 
     final kitIds = (kitsData as List).map((r) => r['id'] as String).toList();
     if (kitIds.isEmpty) return [];

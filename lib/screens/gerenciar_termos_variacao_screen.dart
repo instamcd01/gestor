@@ -49,12 +49,12 @@ class _GerenciarTermosVariacaoScreenState extends State<GerenciarTermosVariacaoS
 
   Future<void> _carregar() async {
     try {
-      final tipos = await supabase.from('tipos_variacao').select('nome').order('nome');
+      final tipos = await supabase.from('tipos_variacao').select('nome').order('nome', ascending: true);
       final termos = await supabase
           .from('termos_variacao')
           .select('id, tipo_variacao, termo, categoria')
-          .order('tipo_variacao')
-          .order('termo');
+          .order('tipo_variacao', ascending: true)
+          .order('termo', ascending: true);
 
       if (!mounted) return;
       setState(() {

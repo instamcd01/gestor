@@ -7,7 +7,7 @@ class FornecedorRepository {
         .from('fornecedores')
         .select()
         .isFilter('deleted_at', null)
-        .order('nome');
+        .order('nome', ascending: true);
 
     return (data as List).map((row) => Fornecedor.fromSupabase(row as Map<String, dynamic>)).toList();
   }

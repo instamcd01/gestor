@@ -13,7 +13,7 @@ class VinculoClienteRepository {
           cliente_encontrado:clientes!vinculos_cliente_pendentes_cliente_encontrado_id_fkey(id, nome, telefone, canal_origem, total_pedidos, saldo, saldo_petcash)
         ''')
         .eq('status', 'pendente')
-        .order('created_at');
+        .order('created_at', ascending: true);
 
     return (data as List)
         .map((row) => VinculoCliente.fromSupabase(row as Map<String, dynamic>))

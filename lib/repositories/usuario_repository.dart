@@ -8,7 +8,7 @@ class UsuarioRepository {
   static const _caracteresCodigo = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem O/0, I/1 (confunde na leitura)
 
   Future<List<Usuario>> listar() async {
-    final data = await supabase.from('usuarios').select().order('created_at');
+    final data = await supabase.from('usuarios').select().order('created_at', ascending: true);
     return (data as List).map((row) => Usuario.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 

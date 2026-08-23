@@ -51,7 +51,7 @@ class _GerenciarValoresEstruturadosScreenState extends State<GerenciarValoresEst
 
   Future<void> _carregarCategorias() async {
     try {
-      final data = await supabase.from('categorias').select('nome').order('nome');
+      final data = await supabase.from('categorias').select('nome').order('nome', ascending: true);
       if (!mounted) return;
       setState(() => _categoriasDisponiveis = (data as List).map((c) => c['nome'] as String).toList());
     } catch (e) {

@@ -6,7 +6,8 @@ import '../models/entregador.dart';
 /// (`entregadores_isolamento`).
 class EntregadorRepository {
   Future<List<Entregador>> listar() async {
-    final data = await supabase.from('entregadores').select().isFilter('deleted_at', null).order('nome');
+    final data =
+        await supabase.from('entregadores').select().isFilter('deleted_at', null).order('nome', ascending: true);
     return (data as List).map((row) => Entregador.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 

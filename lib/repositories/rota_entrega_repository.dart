@@ -12,7 +12,7 @@ class RotaEntregaRepository {
         .from('rotas_entrega')
         .select('*, entregador:entregadores(nome, custo_modo)')
         .eq('data_rota', dataIso)
-        .order('created_at');
+        .order('created_at', ascending: true);
     return (rows as List).map((r) => RotaEntrega.fromSupabase(r as Map<String, dynamic>)).toList();
   }
 

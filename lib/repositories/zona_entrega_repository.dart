@@ -14,7 +14,7 @@ class ZonaEntregaRepository {
   ZonaEntregaRepository({this.tabela = 'zonas_entrega'});
 
   Future<List<ZonaEntrega>> listar() async {
-    final data = await supabase.from(tabela).select().order('distancia_min_km');
+    final data = await supabase.from(tabela).select().order('distancia_min_km', ascending: true);
 
     return (data as List)
         .map((row) => ZonaEntrega.fromSupabase(row as Map<String, dynamic>))

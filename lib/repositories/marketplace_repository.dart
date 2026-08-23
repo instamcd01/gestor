@@ -10,7 +10,7 @@ class MarketplaceRepository {
         .from('marketplaces')
         .select()
         .eq('ativo', true)
-        .order('nome');
+        .order('nome', ascending: true);
 
     return (data as List)
         .map((row) => Marketplace.fromSupabase(row as Map<String, dynamic>))

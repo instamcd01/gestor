@@ -50,7 +50,7 @@ class ValorEstruturadoRepository {
   }) async {
     var query = supabase.from('valores_estruturados_variante').select('id, campo, categoria, valor').eq('campo', campo);
     query = categoria == null ? query.isFilter('categoria', null) : query.eq('categoria', categoria);
-    final data = await query.order('valor');
+    final data = await query.order('valor', ascending: true);
     return List<Map<String, dynamic>>.from(data);
   }
 
