@@ -39,6 +39,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
   bool _aceitaPedidosOnline = false;
   bool _aceitaRetirada = true;
   bool _mostrarEstoqueBaixo = false;
+  bool _precoAncoraMarketplaceAtivo = false;
   String _modelo = 'classico';
   String _taxaServicoTipo = 'percentual';
 
@@ -79,7 +80,8 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
               'mostrar_estoque_baixo, catalogo_modelo, retirada_prazo_min, '
               'frete_economico_valor, frete_economico_prazo_dias, '
               'taxa_servico_tipo, taxa_servico_valor, '
-              'whatsapp_catalogo, instagram, facebook, catalogo_info_extra')
+              'whatsapp_catalogo, instagram, facebook, catalogo_info_extra, '
+              'preco_ancora_marketplace_ativo')
           .eq('id', empresaId)
           .single();
 
@@ -99,6 +101,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
       _aceitaPedidosOnline = data['aceita_pedidos_online'] as bool? ?? false;
       _aceitaRetirada = data['aceita_retirada'] as bool? ?? true;
       _mostrarEstoqueBaixo = data['mostrar_estoque_baixo'] as bool? ?? false;
+      _precoAncoraMarketplaceAtivo = data['preco_ancora_marketplace_ativo'] as bool? ?? false;
       _modelo = data['catalogo_modelo']?.toString() ?? 'classico';
 
       if (mounted) {
@@ -160,6 +163,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
         'aceita_pedidos_online': _aceitaPedidosOnline,
         'aceita_retirada': _aceitaRetirada,
         'mostrar_estoque_baixo': _mostrarEstoqueBaixo,
+        'preco_ancora_marketplace_ativo': _precoAncoraMarketplaceAtivo,
         'catalogo_modelo': _modelo,
         'whatsapp_catalogo': _whatsappController.text.trim(),
         'instagram': _instagramController.text.trim(),
@@ -273,6 +277,18 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                               'pode passar imagem de loja pequena com pouco de cada item'),
                           value: _mostrarEstoqueBaixo,
                           onChanged: (v) => setState(() => _mostrarEstoqueBaixo = v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Comparar preço com marketplaces'),
+                          subtitle: const Text(
+                            'Produto sem promoção cadastrada, mas com preço maior em algum marketplace '
+                            '(iFood, 99Food...), passa a mostrar esse preço maior riscado no site — como se '
+                            'estivesse com desconto comparado a ele. Não menciona o marketplace, só cria o '
+                            'efeito visual de oferta.',
+                          ),
+                          value: _precoAncoraMarketplaceAtivo,
+                          onChanged: (v) => setState(() => _precoAncoraMarketplaceAtivo = v),
                         ),
                         TextFormField(
                           controller: _slugController,
