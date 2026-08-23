@@ -14,7 +14,25 @@ const Map<String, String> rotulosCamposEstruturados = {
   'dose': 'Dose',
   'composicao': 'Composição/princípio ativo',
   'apresentacao': 'Apresentação',
+  'peso': 'Peso',
+  'volume': 'Volume',
+  'fabricante': 'Fabricante',
 };
+
+/// Ordem/conjunto padrão pra categoria nunca customizada em
+/// `categoria_campos_estruturados` — mesma ordem que `compor_nome_produto`
+/// usa como fallback no banco quando não há linha configurada. Fonte única
+/// pro formulário de cadastro/edição de produto (`CamposEstruturadosVariante`,
+/// que segue essa ordem pra exibir os campos) e pra tela "Estrutura do
+/// Nome" (que a usa como ponto de partida ao editar uma categoria nova e
+/// como lista de candidatos pra "campos disponíveis"). Peso, Volume e
+/// Fabricante entram aqui só pra fins de ORDEM no nome gerado — os campos
+/// de entrada deles continuam na seção "Logística e fornecedor" do
+/// formulário, não em "Cadastro estruturado de variante".
+const List<String> ordemPadraoCamposEstruturados = [
+  'tipo_produto', 'nome_comercial', 'dose', 'composicao', 'apresentacao', 'especie', 'fase', 'porte', 'sabor',
+  'peso', 'volume', 'fabricante',
+];
 
 /// Vocabulário curado dos 8 campos estruturados de variante
 /// (`valores_estruturados_variante`) — fonte das sugestões de autocompletar

@@ -97,7 +97,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   List<String> _fabricantes = [];
   bool _fabricantesCarregadas = false;
 
-  Map<String, Set<String>> _camposPorCategoria = {};
+  Map<String, List<String>> _camposPorCategoria = {};
   Map<String, Map<String, List<String>>> _valoresEstruturadosPorCategoria = {};
 
   @override

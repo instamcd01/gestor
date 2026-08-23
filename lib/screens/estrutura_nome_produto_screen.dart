@@ -19,16 +19,12 @@ const Map<String, String> _exemplosCampo = {
   'sabor': 'Frango',
 };
 
-/// Ordem/estado padrão pra categoria nunca customizada — mesmo fallback já
-/// em vigor hoje (mostrar tudo), refletido explicitamente aqui pra abrir o
-/// diálogo de edição com o que já está acontecendo de fato, em vez de vazio.
-const _ordemPadrao = [
-  'tipo_produto', 'nome_comercial', 'dose', 'composicao', 'apresentacao', 'especie', 'fase', 'porte', 'sabor',
-];
-
 /// Único campo que nunca pode ser removido da estrutura — sem nome
 /// comercial o produto fica sem identidade no nome gerado. Pode ser
-/// reordenado, só não desativado.
+/// reordenado, só não desativado. Fabricante/Peso/Volume, ao contrário,
+/// são tão configuráveis (posição e presença) quanto os outros — inclusive
+/// dá pra tirar o fabricante do nome de uma categoria específica, se fizer
+/// sentido pra ela.
 const _campoFixo = 'nome_comercial';
 
 /// Tela pra montar/cadastrar, categoria por categoria, quais campos entram
@@ -36,12 +32,12 @@ const _campoFixo = 'nome_comercial';
 /// QUE ORDEM — e ver de relance o que já está configurado em cada
 /// categoria. Sem nenhuma linha em `categoria_campos_estruturados` pra uma
 /// categoria, o padrão é mostrar todos os campos na ordem histórica
-/// (`_ordemPadrao`), igual já acontecia antes de essa tabela existir.
+/// (`ordemPadraoCamposEstruturados`), igual já acontecia antes de essa tabela existir.
 ///
-/// Fabricante e Peso/Volume não entram aqui: fabricante sempre é o último
-/// segmento do nome (regra sem exceção do catálogo), peso/volume aparecem
-/// sozinhos, automaticamente, quando o produto tiver — nenhum dos dois é
-/// escolha de categoria.
+/// Os campos de entrada de Peso/Volume/Fabricante continuam na seção
+/// "Logística e fornecedor" do cadastro/edição de produto (servem também
+/// pra frete e organização de imagens, não só pro nome) — só a posição
+/// deles dentro do nome gerado é decidida aqui.
 class EstruturaNomeProdutoScreen extends StatefulWidget {
   const EstruturaNomeProdutoScreen({super.key});
 
@@ -90,7 +86,7 @@ class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen>
       context: context,
       builder: (ctx) => _DialogoEstruturaCategoria(
         categoriaNome: categoriaNome,
-        ordemInicial: atual ?? List.of(_ordemPadrao),
+        ordemInicial: atual ?? List.of(ordemPadraoCamposEstruturados),
         eraPersonalizado: atual != null,
       ),
     );
@@ -109,9 +105,9 @@ class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen>
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Text(
                     'Escolha quais campos entram no "Nome do Produto" gerado automaticamente em '
-                    'cada categoria, e em que ordem. Fabricante sempre aparece por último; '
-                    'peso/volume aparecem sozinhos quando o produto tiver. Categoria sem '
-                    'configuração usa a ordem padrão com todos os campos.',
+                    'cada categoria, e em que ordem — inclusive Fabricante, Peso e Volume. '
+                    'Nome comercial não pode ser removido. Categoria sem configuração usa a '
+                    'ordem padrão com todos os campos.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -131,7 +127,7 @@ class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen>
                               child: ListTile(
                                 title: Text(categoriaNome),
                                 subtitle: Text(
-                                  (ordem ?? _ordemPadrao)
+                                  (ordem ?? ordemPadraoCamposEstruturados)
                                       .map((c) => rotulosCamposEstruturados[c] ?? c)
                                       .join('  →  '),
                                 ),
@@ -169,7 +165,7 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
   bool _salvando = false;
 
   List<String> get _disponiveis => [
-        for (final c in _ordemPadrao)
+        for (final c in ordemPadraoCamposEstruturados)
           if (!_ativos.contains(c)) c,
       ];
 
@@ -194,9 +190,12 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
         'p_fase': _exemplosCampo['fase'],
         'p_porte': _exemplosCampo['porte'],
         'p_sabor': _exemplosCampo['sabor'],
-        'p_peso': null,
-        'p_volume': null,
-        'p_fabricante': 'Fabricante',
+        // Peso e volume são mutuamente exclusivos na formatação real (peso
+        // tem prioridade) — manda só peso no preview quando os dois
+        // estiverem ativos, pra não sugerir que os dois apareceriam juntos.
+        'p_peso': _ativos.contains('peso') ? 10 : null,
+        'p_volume': !_ativos.contains('peso') && _ativos.contains('volume') ? 500 : null,
+        'p_fabricante': _ativos.contains('fabricante') ? 'Fabricante' : null,
         'p_ordem_campos': _ativos,
       });
       if (!mounted) return;
@@ -238,7 +237,7 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
 
       // Categoria nunca personalizada antes (fallback = ordem padrão) mas o
       // resultado final é idêntico ao padrão: não precisa gravar nada.
-      if (!widget.eraPersonalizado && paraRemover.isEmpty && _listEquals(_ativos, _ordemPadrao)) {
+      if (!widget.eraPersonalizado && paraRemover.isEmpty && _listEquals(_ativos, ordemPadraoCamposEstruturados)) {
         if (mounted) Navigator.pop(context, true);
         return;
       }
@@ -313,8 +312,8 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
               ),
               const SizedBox(height: 4),
               Text(
-                'Prévia com valores de exemplo. Peso/volume e fabricante aparecem sozinhos '
-                'sempre no fim, não fazem parte desta configuração.',
+                'Prévia com valores de exemplo. Peso e volume nunca aparecem juntos — '
+                'quando um produto tem os dois preenchidos, peso tem prioridade.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: 16),

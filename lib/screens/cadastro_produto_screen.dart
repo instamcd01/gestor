@@ -90,7 +90,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   List<String> _fabricantes = [];
   bool _fabricantesCarregadas = false;
 
-  Map<String, Set<String>> _camposPorCategoria = {};
+  Map<String, List<String>> _camposPorCategoria = {};
   Map<String, Map<String, List<String>>> _valoresEstruturadosPorCategoria = {};
 
   late final CalculadoraPrecoMarkup _calculadora;
