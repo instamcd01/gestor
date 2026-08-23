@@ -237,13 +237,14 @@ class CamposEstruturadosVariante extends StatelessWidget {
               ],
             ),
           ),
-        CampoComSugestao(
-          controller: tipoProdutoController,
-          label: 'Tipo de produto',
-          helperText: 'Ex: "Antibiótico", "Antipulgas", "Ração" — início do nome gerado. '
-              'Em branco, esse trecho simplesmente não aparece (não usa a categoria)',
-          sugestoes: sugestoesPara('tipo_produto'),
-        ),
+        if (_visivel('tipo_produto'))
+          CampoComSugestao(
+            controller: tipoProdutoController,
+            label: 'Tipo de produto',
+            helperText: 'Ex: "Antibiótico", "Antipulgas", "Ração" — posição no nome configurável em '
+                'Configurações do Produto > Estrutura do Nome. Em branco, esse trecho não aparece.',
+            sugestoes: sugestoesPara('tipo_produto'),
+          ),
         CampoComSugestao(
           controller: nomeComercialController,
           label: 'Nome comercial',

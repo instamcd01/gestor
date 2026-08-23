@@ -4,37 +4,44 @@ import 'package:provider/provider.dart';
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
 import '../repositories/valor_estruturado_repository.dart';
-import '../widgets/campos_estruturados_variante.dart';
 
-/// Definição de um dos 7 campos opcionais que podem entrar no nome
-/// (`categoria_campos_estruturados.campo`, restrito pelo CHECK do banco),
-/// na mesma ordem em que a função `compor_nome_produto` os monta — assim o
-/// preview do diálogo casa com a ordem real do nome gerado.
-class _CampoEstrutura {
-  final String campo;
-  final String exemplo;
-  const _CampoEstrutura(this.campo, this.exemplo);
-}
+/// Exemplo mostrado no preview de cada campo, na mesma formatação que
+/// `compor_nome_produto` aplica (parênteses, "Para ", "de Porte ", "Sabor ").
+const Map<String, String> _exemplosCampo = {
+  'tipo_produto': 'Tipo de Produto',
+  'nome_comercial': 'Nome Comercial',
+  'dose': '250mg',
+  'composicao': 'Princípio Ativo',
+  'apresentacao': '10 Comprimidos',
+  'especie': 'Cães e Gatos',
+  'fase': 'Adultos',
+  'porte': 'Pequeno',
+  'sabor': 'Frango',
+};
 
-const _camposEstrutura = [
-  _CampoEstrutura('dose', '250mg'),
-  _CampoEstrutura('composicao', 'Princípio Ativo'),
-  _CampoEstrutura('apresentacao', '10 Comprimidos'),
-  _CampoEstrutura('especie', 'Cães e Gatos'),
-  _CampoEstrutura('fase', 'Adultos'),
-  _CampoEstrutura('porte', 'Pequeno'),
-  _CampoEstrutura('sabor', 'Frango'),
+/// Ordem/estado padrão pra categoria nunca customizada — mesmo fallback já
+/// em vigor hoje (mostrar tudo), refletido explicitamente aqui pra abrir o
+/// diálogo de edição com o que já está acontecendo de fato, em vez de vazio.
+const _ordemPadrao = [
+  'tipo_produto', 'nome_comercial', 'dose', 'composicao', 'apresentacao', 'especie', 'fase', 'porte', 'sabor',
 ];
 
-/// Tela pra montar/cadastrar, categoria por categoria, quais dos 7 campos
-/// estruturados opcionais entram no "Nome do Produto" gerado automaticamente
-/// (`compor_nome_produto`) — e ver de relance o que já está configurado em
-/// cada categoria. Sem nenhuma linha em `categoria_campos_estruturados` pra
-/// uma categoria, o padrão (já em vigor hoje, ver `campos_estruturados_variante.dart`)
-/// é mostrar todos os 7 campos no formulário de cadastro/edição.
+/// Único campo que nunca pode ser removido da estrutura — sem nome
+/// comercial o produto fica sem identidade no nome gerado. Pode ser
+/// reordenado, só não desativado.
+const _campoFixo = 'nome_comercial';
+
+/// Tela pra montar/cadastrar, categoria por categoria, quais campos entram
+/// no "Nome do Produto" gerado automaticamente (`compor_nome_produto`) e EM
+/// QUE ORDEM — e ver de relance o que já está configurado em cada
+/// categoria. Sem nenhuma linha em `categoria_campos_estruturados` pra uma
+/// categoria, o padrão é mostrar todos os campos na ordem histórica
+/// (`_ordemPadrao`), igual já acontecia antes de essa tabela existir.
 ///
-/// "Tipo de produto" e "Nome comercial" não entram aqui: sempre aparecem
-/// quando preenchidos, não fazem parte do CHECK dessa tabela.
+/// Fabricante e Peso/Volume não entram aqui: fabricante sempre é o último
+/// segmento do nome (regra sem exceção do catálogo), peso/volume aparecem
+/// sozinhos, automaticamente, quando o produto tiver — nenhum dos dois é
+/// escolha de categoria.
 class EstruturaNomeProdutoScreen extends StatefulWidget {
   const EstruturaNomeProdutoScreen({super.key});
 
@@ -45,7 +52,7 @@ class EstruturaNomeProdutoScreen extends StatefulWidget {
 class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen> {
   bool _carregando = true;
   List<Map<String, dynamic>> _categorias = [];
-  Map<String, Set<String>> _estrutura = {};
+  Map<String, List<String>> _estrutura = {};
 
   @override
   void initState() {
@@ -57,7 +64,14 @@ class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen>
     setState(() => _carregando = true);
     try {
       final categorias = await supabase.from('categorias').select('id, nome').order('ordem');
-      final estrutura = await carregarCamposEstruturadosPorCategoria();
+      final linhas = await supabase
+          .from('categoria_campos_estruturados')
+          .select('categoria, campo, ordem')
+          .order('ordem');
+      final estrutura = <String, List<String>>{};
+      for (final linha in (linhas as List)) {
+        (estrutura[linha['categoria'] as String] ??= []).add(linha['campo'] as String);
+      }
       if (!mounted) return;
       setState(() {
         _categorias = List<Map<String, dynamic>>.from(categorias);
@@ -72,18 +86,11 @@ class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen>
 
   Future<void> _abrirEdicao(String categoriaNome) async {
     final atual = _estrutura[categoriaNome];
-    // Categoria sem configuração ainda: hoje já mostra todos os campos
-    // (fallback do formulário) — refletir isso marcando tudo, em vez de
-    // abrir com as caixas vazias e dar a impressão errada de "nada aparece".
-    final selecionados = {
-      for (final c in _camposEstrutura) c.campo: atual == null || atual.contains(c.campo),
-    };
-
     final salvou = await showDialog<bool>(
       context: context,
       builder: (ctx) => _DialogoEstruturaCategoria(
         categoriaNome: categoriaNome,
-        selecionadosIniciais: selecionados,
+        ordemInicial: atual ?? List.of(_ordemPadrao),
         eraPersonalizado: atual != null,
       ),
     );
@@ -101,9 +108,10 @@ class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen>
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Text(
-                    'Escolha quais campos entram no "Nome do Produto" gerado automaticamente '
-                    'em cada categoria. "Tipo de produto" e "Nome comercial" sempre aparecem '
-                    'quando preenchidos. Categoria sem configuração usa todos os campos.',
+                    'Escolha quais campos entram no "Nome do Produto" gerado automaticamente em '
+                    'cada categoria, e em que ordem. Fabricante sempre aparece por último; '
+                    'peso/volume aparecem sozinhos quando o produto tiver. Categoria sem '
+                    'configuração usa a ordem padrão com todos os campos.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -117,21 +125,16 @@ class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen>
                           itemCount: _categorias.length,
                           itemBuilder: (context, index) {
                             final categoriaNome = _categorias[index]['nome'] as String;
-                            final configurados = _estrutura[categoriaNome];
+                            final ordem = _estrutura[categoriaNome];
                             return Card(
                               margin: const EdgeInsets.only(bottom: 8),
                               child: ListTile(
                                 title: Text(categoriaNome),
-                                subtitle: configurados == null
-                                    ? const Text('Padrão — todos os campos')
-                                    : Text(
-                                        configurados.isEmpty
-                                            ? 'Nenhum campo opcional'
-                                            : _camposEstrutura
-                                                .where((c) => configurados.contains(c.campo))
-                                                .map((c) => rotulosCamposEstruturados[c.campo])
-                                                .join(', '),
-                                      ),
+                                subtitle: Text(
+                                  (ordem ?? _ordemPadrao)
+                                      .map((c) => rotulosCamposEstruturados[c] ?? c)
+                                      .join('  →  '),
+                                ),
                                 trailing: const Icon(Icons.chevron_right),
                                 onTap: () => _abrirEdicao(categoriaNome),
                               ),
@@ -147,12 +150,12 @@ class _EstruturaNomeProdutoScreenState extends State<EstruturaNomeProdutoScreen>
 
 class _DialogoEstruturaCategoria extends StatefulWidget {
   final String categoriaNome;
-  final Map<String, bool> selecionadosIniciais;
+  final List<String> ordemInicial;
   final bool eraPersonalizado;
 
   const _DialogoEstruturaCategoria({
     required this.categoriaNome,
-    required this.selecionadosIniciais,
+    required this.ordemInicial,
     required this.eraPersonalizado,
   });
 
@@ -161,14 +164,20 @@ class _DialogoEstruturaCategoria extends StatefulWidget {
 }
 
 class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> {
-  late Map<String, bool> _selecionados;
+  late List<String> _ativos;
   String? _preview;
   bool _salvando = false;
+
+  List<String> get _disponiveis => [
+        for (final c in _ordemPadrao)
+          if (!_ativos.contains(c)) c,
+      ];
 
   @override
   void initState() {
     super.initState();
-    _selecionados = Map.of(widget.selecionadosIniciais);
+    _ativos = List.of(widget.ordemInicial);
+    if (!_ativos.contains(_campoFixo)) _ativos.add(_campoFixo);
     _atualizarPreview();
   }
 
@@ -176,18 +185,19 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
     try {
       final resultado = await supabase.rpc('compor_nome_produto', params: {
         'p_categoria': widget.categoriaNome,
-        'p_nome_comercial': 'Nome Comercial',
-        'p_tipo_produto': null,
-        'p_dose': _selecionados['dose']! ? _exemploDe('dose') : null,
-        'p_composicao': _selecionados['composicao']! ? _exemploDe('composicao') : null,
-        'p_apresentacao': _selecionados['apresentacao']! ? _exemploDe('apresentacao') : null,
-        'p_especie': _selecionados['especie']! ? _exemploDe('especie') : null,
-        'p_fase': _selecionados['fase']! ? _exemploDe('fase') : null,
-        'p_porte': _selecionados['porte']! ? _exemploDe('porte') : null,
-        'p_sabor': _selecionados['sabor']! ? _exemploDe('sabor') : null,
+        'p_nome_comercial': _exemplosCampo['nome_comercial'],
+        'p_tipo_produto': _exemplosCampo['tipo_produto'],
+        'p_dose': _exemplosCampo['dose'],
+        'p_composicao': _exemplosCampo['composicao'],
+        'p_apresentacao': _exemplosCampo['apresentacao'],
+        'p_especie': _exemplosCampo['especie'],
+        'p_fase': _exemplosCampo['fase'],
+        'p_porte': _exemplosCampo['porte'],
+        'p_sabor': _exemplosCampo['sabor'],
         'p_peso': null,
         'p_volume': null,
         'p_fabricante': 'Fabricante',
+        'p_ordem_campos': _ativos,
       });
       if (!mounted) return;
       setState(() => _preview = resultado as String?);
@@ -196,7 +206,25 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
     }
   }
 
-  String _exemploDe(String campo) => _camposEstrutura.firstWhere((c) => c.campo == campo).exemplo;
+  void _adicionar(String campo) {
+    setState(() => _ativos.add(campo));
+    _atualizarPreview();
+  }
+
+  void _remover(String campo) {
+    if (campo == _campoFixo) return;
+    setState(() => _ativos.remove(campo));
+    _atualizarPreview();
+  }
+
+  void _reordenar(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex--;
+    setState(() {
+      final item = _ativos.removeAt(oldIndex);
+      _ativos.insert(newIndex, item);
+    });
+    _atualizarPreview();
+  }
 
   Future<void> _salvar() async {
     setState(() => _salvando = true);
@@ -204,15 +232,13 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
       final empresaId = context.read<AuthProvider>().empresaId;
       if (empresaId == null) return;
 
-      final atuais = widget.selecionadosIniciais.entries.where((e) => e.value).map((e) => e.key).toSet();
-      final novos = _selecionados.entries.where((e) => e.value).map((e) => e.key).toSet();
+      final atuais = widget.ordemInicial.toSet();
+      final novos = _ativos.toSet();
       final paraRemover = atuais.difference(novos);
-      final paraAdicionar = novos.difference(atuais);
 
-      // Categoria nunca personalizada antes (fallback "todos") mas o usuário
-      // deixou tudo marcado: nada muda de fato, não precisa gravar linha
-      // nenhuma — só grava quando o conjunto final é diferente do fallback.
-      if (!widget.eraPersonalizado && paraRemover.isEmpty && novos.length == _camposEstrutura.length) {
+      // Categoria nunca personalizada antes (fallback = ordem padrão) mas o
+      // resultado final é idêntico ao padrão: não precisa gravar nada.
+      if (!widget.eraPersonalizado && paraRemover.isEmpty && _listEquals(_ativos, _ordemPadrao)) {
         if (mounted) Navigator.pop(context, true);
         return;
       }
@@ -224,12 +250,11 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
             .eq('categoria', widget.categoriaNome)
             .inFilter('campo', paraRemover.toList());
       }
-      if (paraAdicionar.isNotEmpty) {
-        await supabase.from('categoria_campos_estruturados').insert([
-          for (final campo in paraAdicionar)
-            {'empresa_id': empresaId, 'categoria': widget.categoriaNome, 'campo': campo},
-        ]);
-      }
+      await supabase.from('categoria_campos_estruturados').upsert([
+        for (var i = 0; i < _ativos.length; i++)
+          {'empresa_id': empresaId, 'categoria': widget.categoriaNome, 'campo': _ativos[i], 'ordem': i},
+      ], onConflict: 'empresa_id,categoria,campo');
+
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       debugPrint('Erro ao salvar estrutura de nome: $e');
@@ -239,6 +264,14 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
     } finally {
       if (mounted) setState(() => _salvando = false);
     }
+  }
+
+  bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   Future<void> _restaurarPadrao() async {
@@ -260,7 +293,7 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
     return AlertDialog(
       title: Text(widget.categoriaNome),
       content: SizedBox(
-        width: 400,
+        width: 420,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -280,22 +313,57 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
               ),
               const SizedBox(height: 4),
               Text(
-                'Prévia com valores de exemplo. Peso/volume aparecem sozinhos quando o '
-                'produto tiver, não fazem parte desta configuração.',
+                'Prévia com valores de exemplo. Peso/volume e fabricante aparecem sozinhos '
+                'sempre no fim, não fazem parte desta configuração.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
               ),
-              const SizedBox(height: 12),
-              for (final c in _camposEstrutura)
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: Text(rotulosCamposEstruturados[c.campo] ?? c.campo),
-                  value: _selecionados[c.campo],
-                  onChanged: (v) {
-                    setState(() => _selecionados[c.campo] = v ?? false);
-                    _atualizarPreview();
-                  },
+              const SizedBox(height: 16),
+              Text('Campos usados, na ordem do nome (arraste para reordenar)',
+                  style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 4),
+              ReorderableListView(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                onReorder: _reordenar,
+                children: [
+                  for (final campo in _ativos)
+                    ListTile(
+                      key: ValueKey(campo),
+                      dense: true,
+                      contentPadding: const EdgeInsets.only(left: 4),
+                      title: Text(rotulosCamposEstruturados[campo] ?? campo),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (campo != _campoFixo)
+                            IconButton(
+                              tooltip: 'Remover',
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () => _remover(campo),
+                            ),
+                          const Icon(Icons.drag_handle),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              if (_disponiveis.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('Campos disponíveis', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final campo in _disponiveis)
+                      ActionChip(
+                        label: Text(rotulosCamposEstruturados[campo] ?? campo),
+                        avatar: const Icon(Icons.add, size: 16),
+                        onPressed: () => _adicionar(campo),
+                      ),
+                  ],
                 ),
+              ],
             ],
           ),
         ),
