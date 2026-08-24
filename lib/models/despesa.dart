@@ -14,6 +14,7 @@ const categoriasDespesaSugeridas = [
   'Utilidades',
   'Marketing',
   'Manutenção',
+  'Infraestrutura/Tecnologia',
   'Outros',
 ];
 

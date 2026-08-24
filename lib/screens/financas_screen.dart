@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../widgets/menu_secao.dart';
+import 'custos_operacao_screen.dart';
 import 'dashboard_marketplace_screen.dart';
 import 'despesas_screen.dart';
 import 'entradas_screen.dart';
@@ -33,6 +34,7 @@ class FinancasScreen extends StatelessWidget {
           MenuSecao(
             titulo: 'Gestão',
             itens: [
+              MenuItem('Custos da Operação', Icons.insights_outlined, const CustosOperacaoScreen()),
               MenuItem('Contas a Pagar', Icons.payment_outlined, const DespesasScreen(apenasPendentes: true)),
               MenuItem('Métricas de Contas a Pagar', Icons.bar_chart_outlined, const MetricasDespesasScreen()),
               MenuItem('Fornecedores', Icons.business_outlined, const FornecedoresScreen()),
