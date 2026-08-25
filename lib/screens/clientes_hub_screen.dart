@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
 import 'campanhas_ativacao_screen.dart';
 import 'cliente_screen.dart';
+import 'push_campanha_screen.dart';
 import 'sugestoes_produto_cliente_screen.dart';
 import 'vinculos_clientes_screen.dart';
 
@@ -32,6 +33,8 @@ class ClientesHubScreen extends StatelessWidget {
               MenuItem('Clientes', Icons.person_outline, ClientesScreen()),
               if (podeVerGerencial)
                 MenuItem('Campanhas de Ativação', Icons.campaign_outlined, const CampanhasAtivacaoScreen()),
+              if (podeVerGerencial)
+                MenuItem('Campanha de Push', Icons.notifications_active_outlined, const PushCampanhaScreen()),
               if (podeVerGerencial)
                 MenuItem('Vínculos de Clientes', Icons.link, const VinculosClientesScreen()),
               if (podeVerGerencial)
