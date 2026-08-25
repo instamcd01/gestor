@@ -5,26 +5,19 @@ import '../models/produto.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../providers/notificacao_provider.dart';
 import '../providers/produto_provider.dart';
-import '../screens/avaliacoes_disputas_screen.dart';
-import '../screens/campanhas_ativacao_screen.dart';
-import '../screens/catalogo_online_screen.dart';
-import '../screens/cliente_screen.dart';
+import '../screens/clientes_hub_screen.dart';
 import '../screens/configuracoes_screen.dart';
-import '../screens/desempenho_equipe_screen.dart';
-import '../screens/estatisticas_screen.dart';
+import '../screens/desempenho_hub_screen.dart';
 import '../screens/financas_screen.dart';
 import '../screens/fila_pedidos_screen.dart';
 import '../screens/historico_vendas_screen.dart';
 import '../screens/inicio_screen.dart';
 import '../screens/kits_screen.dart';
-import '../screens/meu_desempenho_screen.dart';
 import '../screens/notificacoes_screen.dart';
 import '../screens/produtos_screen.dart';
 import '../screens/rotas_entrega_screen.dart';
-import '../screens/sugestoes_produto_cliente_screen.dart';
 import '../screens/usuarios_screen.dart';
 import '../screens/vendas_screen.dart';
-import '../screens/vinculos_clientes_screen.dart';
 
 bool _produtoComEstoqueBaixo(Produto p) =>
     p.ativo && p.estoqueMinimo > 0 && p.estoqueAtual > 0 && p.estoqueAtual <= p.estoqueMinimo;
@@ -91,54 +84,18 @@ final List<AppDestino> appDestinos = [
   ),
   AppDestino(titulo: 'Kits', icone: Icons.card_giftcard, builder: (_) => const KitsScreen()),
   AppDestino(titulo: 'Histórico', icone: Icons.history, builder: (_) => const HistoricoVendasScreen()),
-  AppDestino(titulo: 'Meu Desempenho', icone: Icons.insights_outlined, builder: (_) => const MeuDesempenhoScreen()),
-  AppDestino(
-    titulo: 'Desempenho da Equipe',
-    icone: Icons.groups_outlined,
-    builder: (_) => const DesempenhoEquipeScreen(),
-    papeisPermitidos: ['dono', 'gerente'],
-  ),
-  AppDestino(titulo: 'Clientes', icone: Icons.person, builder: (_) => ClientesScreen()),
-  AppDestino(
-    titulo: 'Campanhas de Ativação',
-    icone: Icons.campaign_outlined,
-    builder: (_) => const CampanhasAtivacaoScreen(),
-    papeisPermitidos: ['dono', 'gerente'],
-  ),
-  AppDestino(
-    titulo: 'Vínculos de Clientes',
-    icone: Icons.link,
-    builder: (_) => const VinculosClientesScreen(),
-    papeisPermitidos: ['dono', 'gerente'],
-  ),
-  AppDestino(
-    titulo: 'Catálogo Online',
-    icone: Icons.book_online,
-    builder: (_) => const CatalogoOnlineScreen(),
-    papeisPermitidos: ['dono', 'gerente'],
-  ),
+  // Desempenho e Clientes: hubs que agrupam telas que antes ficavam soltas
+  // aqui (Meu Desempenho/Desempenho da Equipe/Estatísticas/Avaliações, e
+  // Clientes/Campanhas/Vínculos/Sugestões) — sem restrição de papel no
+  // destino em si porque o primeiro item de cada hub (Meu Desempenho,
+  // Clientes) é visível pra todo mundo; os demais itens dentro de cada
+  // hub continuam exigindo dono/gerente, como já exigiam soltos aqui.
+  AppDestino(titulo: 'Desempenho', icone: Icons.insights_outlined, builder: (_) => const DesempenhoHubScreen()),
+  AppDestino(titulo: 'Clientes', icone: Icons.person, builder: (_) => const ClientesHubScreen()),
   AppDestino(
     titulo: 'Finanças',
     icone: Icons.money,
     builder: (_) => const FinancasScreen(),
-    papeisPermitidos: ['dono', 'gerente'],
-  ),
-  AppDestino(
-    titulo: 'Estatísticas',
-    icone: Icons.area_chart,
-    builder: (_) => const EstatisticasScreen(),
-    papeisPermitidos: ['dono', 'gerente'],
-  ),
-  AppDestino(
-    titulo: 'Avaliações',
-    icone: Icons.reviews_outlined,
-    builder: (_) => const AvaliacoesDisputasScreen(),
-    papeisPermitidos: ['dono', 'gerente'],
-  ),
-  AppDestino(
-    titulo: 'Sugestões de Clientes',
-    icone: Icons.search_off,
-    builder: (_) => const SugestoesProdutoClienteScreen(),
     papeisPermitidos: ['dono', 'gerente'],
   ),
   AppDestino(

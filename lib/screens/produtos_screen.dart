@@ -73,41 +73,62 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
       appBar: AppBar(
         title: Text('Produtos (${produtoProvider.produtos.length})'),
         actions: [
-          if (!isVendedor) ...[
-            IconButton(
-              tooltip: 'Produtos excluídos',
-              icon: const Icon(Icons.restore_from_trash_outlined),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const ProdutosExcluidosScreen(),
-              )),
+          if (!isVendedor)
+            PopupMenuButton<VoidCallback>(
+              tooltip: 'Mais opções',
+              icon: const Icon(Icons.more_vert),
+              onSelected: (acao) => acao(),
+              itemBuilder: (context) => [
+                PopupMenuItem<VoidCallback>(
+                  value: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const ProdutosExcluidosScreen(),
+                  )),
+                  child: const ListTile(
+                    leading: Icon(Icons.restore_from_trash_outlined),
+                    title: Text('Produtos excluídos'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem<VoidCallback>(
+                  value: _importarProdutos,
+                  child: const ListTile(
+                    leading: Icon(Icons.upload_file_outlined),
+                    title: Text('Importar planilha'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem<VoidCallback>(
+                  value: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const AdicionarImagensLoteScreen(),
+                  )),
+                  child: const ListTile(
+                    leading: Icon(Icons.add_photo_alternate_outlined),
+                    title: Text('Adicionar imagens em massa'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem<VoidCallback>(
+                  value: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const AnaliseProdutosScreen(),
+                  )),
+                  child: const ListTile(
+                    leading: Icon(Icons.fact_check_outlined),
+                    title: Text('Análise de produtos em massa'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem<VoidCallback>(
+                  value: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const ConfiguracoesProdutoScreen(),
+                  )),
+                  child: const ListTile(
+                    leading: Icon(Icons.settings_outlined),
+                    title: Text('Configurações do Produto'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: 'Importar planilha',
-              icon: const Icon(Icons.upload_file_outlined),
-              onPressed: _importarProdutos,
-            ),
-            IconButton(
-              tooltip: 'Adicionar imagens em massa',
-              icon: const Icon(Icons.add_photo_alternate_outlined),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const AdicionarImagensLoteScreen(),
-              )),
-            ),
-            IconButton(
-              tooltip: 'Análise de produtos em massa',
-              icon: const Icon(Icons.fact_check_outlined),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const AnaliseProdutosScreen(),
-              )),
-            ),
-            IconButton(
-              tooltip: 'Configurações do Produto',
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const ConfiguracoesProdutoScreen(),
-              )),
-            ),
-          ],
           IconButton(
             tooltip: 'Atualizar',
             icon: const Icon(Icons.refresh),
