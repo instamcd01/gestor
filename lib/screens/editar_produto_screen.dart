@@ -69,6 +69,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _varianteLabelController;
   bool _nomeManualOverride = false;
   bool _desvinculandoVariante = false;
+  final Set<String> _removendoIrmaoIds = {};
   bool _gerandoDescricao = false;
 
   late final CalculadoraPrecoMarkup _calculadora;
@@ -570,6 +571,45 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     }
   }
 
+  // Remove um IRMÃO da família direto da tela do produto atual, sem precisar
+  // navegar até a tela dele — resolve o caso de famílias com muitas opções
+  // (ex: 10+ pesos de uma ração), onde antes só dava pra sair da própria
+  // família (o produto que está aberto), nunca tirar um outro membro.
+  Future<void> _removerIrmaoDaFamilia(Produto irmao) async {
+    if (irmao.id == null) return;
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remover da família de variantes?'),
+        content: Text(
+          '"${irmao.nome}" deixa de aparecer agrupado com as outras opções '
+          '(no site e nesta lista). As demais variantes da família não são '
+          'afetadas. Essa ação não apaga o produto, só desfaz o vínculo.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remover')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    setState(() => _removendoIrmaoIds.add(irmao.id!));
+    try {
+      await Provider.of<ProdutoProvider>(context, listen: false)
+          .desvincularVariante(irmao.id!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('"${irmao.nome}" removido da família de variantes.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erro ao remover da família: $e')));
+    } finally {
+      if (mounted) setState(() => _removendoIrmaoIds.remove(irmao.id));
+    }
+  }
+
   Future<void> _abrirVincularVariante(Produto produtoAtual) async {
     final vinculado = await showDialog<bool>(
       context: context,
@@ -853,6 +893,8 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                     MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: irmao)),
                   ),
                   onDesvincular: _desvincularVariante,
+                  onRemoverIrmao: _removerIrmaoDaFamilia,
+                  removendoIrmaoIds: _removendoIrmaoIds,
                 ),
                 const SizedBox(height: 16.0),
               ] else ...[

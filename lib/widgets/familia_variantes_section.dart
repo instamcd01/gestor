@@ -17,6 +17,11 @@ class FamiliaVariantesSection extends StatelessWidget {
   final bool desvinculando;
   final ValueChanged<Produto> onAbrirVariante;
   final VoidCallback onDesvincular;
+  // Remove QUALQUER irmão listado sem precisar abrir o produto dele antes —
+  // famílias com muitas opções (ex: 10+ pesos de uma ração) exigiam navegar
+  // pra dentro de cada variante só pra desvinculá-la uma a uma.
+  final ValueChanged<Produto> onRemoverIrmao;
+  final Set<String> removendoIrmaoIds;
 
   const FamiliaVariantesSection({
     super.key,
@@ -26,6 +31,8 @@ class FamiliaVariantesSection extends StatelessWidget {
     required this.desvinculando,
     required this.onAbrirVariante,
     required this.onDesvincular,
+    required this.onRemoverIrmao,
+    this.removendoIrmaoIds = const {},
   });
 
   @override
@@ -65,7 +72,24 @@ class FamiliaVariantesSection extends StatelessWidget {
                     '${irmao.varianteLabel?.isNotEmpty == true ? irmao.varianteLabel : "sem rótulo"} • '
                     'R\$ ${irmao.preco.toStringAsFixed(2)}',
                   ),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (removendoIrmaoIds.contains(irmao.id))
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8),
+                          child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(Icons.link_off, size: 20),
+                          tooltip: 'Remover ${irmao.nome} da família',
+                          color: Theme.of(context).colorScheme.error,
+                          onPressed: () => onRemoverIrmao(irmao),
+                        ),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
                   onTap: () => onAbrirVariante(irmao),
                 ),
             ],
