@@ -68,6 +68,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _apresentacaoController;
   late TextEditingController _varianteLabelController;
   bool _nomeManualOverride = false;
+  List<String>? _camposEstruturadosPersonalizados;
   bool _desvinculandoVariante = false;
   final Set<String> _removendoIrmaoIds = {};
   bool _gerandoDescricao = false;
@@ -164,6 +165,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _apresentacaoController = TextEditingController(text: widget.produto.apresentacao ?? '');
     _varianteLabelController = TextEditingController(text: widget.produto.varianteLabel ?? '');
     _nomeManualOverride = widget.produto.nomeManualOverride;
+    _camposEstruturadosPersonalizados = widget.produto.camposEstruturadosPersonalizados;
 
     _destacarProduto = widget.produto.destacar;
     _exibirNoCatalogo = widget.produto.exibirNoCatalogo;
@@ -471,6 +473,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
           : (_varianteLabelController.text.isNotEmpty
               ? _varianteLabelController.text
               : widget.produto.varianteLabel),
+      camposEstruturadosPersonalizados: _camposEstruturadosPersonalizados,
     );
 
     if (!mounted) return;
@@ -880,6 +883,9 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                 categoria: _categoriaController.text,
                 valoresPorCategoria: _valoresEstruturadosPorCategoria,
                 onValoresAtualizados: _carregarValoresEstruturados,
+                produtoId: widget.produto.id,
+                camposPersonalizados: _camposEstruturadosPersonalizados,
+                onCamposPersonalizadosChanged: (v) => setState(() => _camposEstruturadosPersonalizados = v),
               ),
               const SizedBox(height: 16.0),
 

@@ -84,6 +84,14 @@ class Produto {
   String? tipoVariacao;
   String? varianteLabel;
 
+  /// Override por ESTE produto de quais campos do "Cadastro estruturado de
+  /// variante" aparecem e em que ordem — a ordem na lista é a ordem de
+  /// exibição, estar ausente da lista é "desativado". `null` = sem
+  /// personalização, usa o padrão configurado pra categoria em
+  /// `categoria_campos_estruturados` (comportamento de sempre). Ver
+  /// `PersonalizarCamposProdutoDialog`.
+  List<String>? camposEstruturadosPersonalizados;
+
   /// Quantos dias esse produto costuma durar pro cliente — usado pra
   /// prever recompra automática (lembrete via WhatsApp). `null` = usa o
   /// padrão da loja (`empresas.ciclo_recompra_padrao_dias`), se houver;
@@ -140,6 +148,7 @@ class Produto {
     this.produtoPaiId,
     this.tipoVariacao,
     this.varianteLabel,
+    this.camposEstruturadosPersonalizados,
     this.cicloRecompraDias,
     this.ehKit = false,
   });
@@ -203,6 +212,8 @@ class Produto {
       produtoPaiId: row['produto_pai_id'] as String?,
       tipoVariacao: row['tipo_variacao']?.toString(),
       varianteLabel: row['variante_label']?.toString(),
+      camposEstruturadosPersonalizados:
+          (row['campos_estruturados_personalizados'] as List?)?.map((e) => e.toString()).toList(),
       cicloRecompraDias: (row['ciclo_recompra_dias'] as num?)?.toInt(),
       ehKit: row['eh_kit'] as bool? ?? false,
       // Derivados (não são colunas próprias no banco, calculados aqui pra
@@ -251,6 +262,7 @@ class Produto {
       'produto_pai_id': produtoPaiId,
       'tipo_variacao': tipoVariacao,
       'variante_label': varianteLabel,
+      'campos_estruturados_personalizados': camposEstruturadosPersonalizados,
       'ciclo_recompra_dias': cicloRecompraDias,
       'eh_kit': ehKit,
     };

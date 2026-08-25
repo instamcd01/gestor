@@ -5,6 +5,7 @@ import '../repositories/valor_estruturado_repository.dart';
 import '../screens/gerenciar_valores_estruturados_screen.dart';
 import 'campo_com_sugestao.dart';
 import 'form_section.dart';
+import 'personalizar_campos_produto_dialog.dart';
 
 /// Busca, pra cada categoria, quais dos 9 campos estruturados aparecem no
 /// formulário e EM QUE ORDEM (`categoria_campos_estruturados.ordem`) — ex:
@@ -84,6 +85,16 @@ class CamposEstruturadosVariante extends StatelessWidget {
   /// mudado: renomeado, excluído, adicionado).
   final VoidCallback onValoresAtualizados;
 
+  /// Id do produto atual (null pra produto novo, ainda sem id) — só usado
+  /// pra excluir ele mesmo da lista de "copiar de outro produto".
+  final String? produtoId;
+
+  /// Override por ESTE produto de quais campos aparecem e em que ordem —
+  /// tem prioridade sobre [camposVisiveis] (o padrão da categoria) quando
+  /// não-nulo. Ver `Produto.camposEstruturadosPersonalizados`.
+  final List<String>? camposPersonalizados;
+  final ValueChanged<List<String>?> onCamposPersonalizadosChanged;
+
   const CamposEstruturadosVariante({
     super.key,
     required this.tipoProdutoController,
@@ -99,17 +110,21 @@ class CamposEstruturadosVariante extends StatelessWidget {
     required this.onNomeManualOverrideChanged,
     required this.categoria,
     required this.onValoresAtualizados,
+    required this.produtoId,
+    required this.camposPersonalizados,
+    required this.onCamposPersonalizadosChanged,
     this.camposVisiveis,
     this.valoresPorCategoria = const {},
   });
 
-  /// Ordem efetiva: a configurada, ou o padrão se a categoria nunca foi
-  /// customizada. "Nome comercial" nunca pode ficar de fora (garantido
-  /// também na tela que grava essa configuração) — reforçado aqui de novo
-  /// pra este formulário nunca ficar sem como preencher o nome do produto,
-  /// mesmo que a configuração salva esteja incompleta por algum motivo.
+  /// Ordem efetiva: a personalização deste produto, se houver; senão a
+  /// configurada pra categoria; senão o padrão. "Nome comercial" nunca pode
+  /// ficar de fora (garantido também nas telas que gravam essas
+  /// configurações) — reforçado aqui de novo pra este formulário nunca
+  /// ficar sem como preencher o nome do produto, mesmo que a configuração
+  /// salva esteja incompleta por algum motivo.
   List<String> get _ordemEfetiva {
-    final ordem = camposVisiveis ?? ordemPadraoCamposEstruturados;
+    final ordem = camposPersonalizados ?? camposVisiveis ?? ordemPadraoCamposEstruturados;
     return ordem.contains('nome_comercial') ? ordem : [...ordem, 'nome_comercial'];
   }
 
@@ -215,6 +230,23 @@ class CamposEstruturadosVariante extends StatelessWidget {
                 'configurada em Configurações do Produto > Estrutura do Nome — a '
                 'menos que "Editar nome manualmente" esteja marcado abaixo.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Personalizar campos deste produto',
+              icon: Icon(
+                Icons.reorder,
+                size: 20,
+                color: camposPersonalizados != null ? colorScheme.primary : null,
+              ),
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => PersonalizarCamposProdutoDialog(
+                  produtoAtualId: produtoId,
+                  ordemAtual: _ordemEfetiva.where((c) => camposPorNome.containsKey(c)).toList(),
+                  onSalvar: onCamposPersonalizadosChanged,
+                  onRestaurarPadrao: () => onCamposPersonalizadosChanged(null),
+                ),
               ),
             ),
             IconButton(

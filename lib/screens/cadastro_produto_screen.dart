@@ -74,6 +74,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   final _composicaoController = TextEditingController();
   final _apresentacaoController = TextEditingController();
   bool _nomeManualOverride = false;
+  List<String>? _camposEstruturadosPersonalizados;
 
   bool _destacarProduto = false;
   bool _exibirNoCatalogo = true;
@@ -345,6 +346,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       composicao: _composicaoController.text.isNotEmpty ? _composicaoController.text : null,
       apresentacao: _apresentacaoController.text.isNotEmpty ? _apresentacaoController.text : null,
       nomeManualOverride: _nomeManualOverride,
+      camposEstruturadosPersonalizados: _camposEstruturadosPersonalizados,
     );
 
     try {
@@ -640,6 +642,9 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                 categoria: _categoriaController.text,
                 valoresPorCategoria: _valoresEstruturadosPorCategoria,
                 onValoresAtualizados: _carregarValoresEstruturados,
+                produtoId: null,
+                camposPersonalizados: _camposEstruturadosPersonalizados,
+                onCamposPersonalizadosChanged: (v) => setState(() => _camposEstruturadosPersonalizados = v),
               ),
               const SizedBox(height: 16.0),
 
