@@ -82,10 +82,54 @@ class _VincularVarianteDialogState extends State<VincularVarianteDialog> {
     super.dispose();
   }
 
+  // Mesmo critério do trigger `detectar_sugestao_variante` (banco): compara
+  // os 5 campos variáveis entre os dois produtos e, se exatamente 1 for
+  // diferente, é esse o eixo real da variação. Ambíguo (0 ou 2+ diferentes)
+  // não tenta adivinhar — mantém o eixo que já estava selecionado.
+  static const _camposVariaveis = ['dose', 'apresentacao', 'sabor', 'peso', 'volume'];
+
+  Object? _valorCampo(Produto p, String campo) {
+    switch (campo) {
+      case 'dose':
+        return p.dose;
+      case 'apresentacao':
+        return p.apresentacao;
+      case 'sabor':
+        return p.sabor;
+      case 'peso':
+        return p.peso;
+      case 'volume':
+        return p.volume;
+    }
+    return null;
+  }
+
+  String? _detectarEixo(Produto a, Produto b) {
+    String? campoDiferente;
+    var diferentes = 0;
+    for (final campo in _camposVariaveis) {
+      if (_valorCampo(a, campo) != _valorCampo(b, campo)) {
+        diferentes++;
+        campoDiferente = campo;
+      }
+    }
+    return diferentes == 1 ? campoDiferente : null;
+  }
+
+  // Sempre repõe os dois rótulos a partir do que já está no cadastro
+  // estruturado de cada produto pro eixo atual — nunca deixa um rótulo de
+  // um eixo anterior sobrar quando o eixo muda.
+  void _repreencherRotulos(Produto candidato) {
+    _labelProdutoController.text = labelPadraoVariante(widget.produto, _tipoVariacao);
+    _labelCandidatoController.text = labelPadraoVariante(candidato, _tipoVariacao);
+  }
+
   void _selecionarCandidato(Produto p) {
     setState(() {
       _candidato = p;
-      _labelCandidatoController.text = labelPadraoVariante(p, _tipoVariacao);
+      final eixoDetectado = _detectarEixo(widget.produto, p);
+      if (eixoDetectado != null) _tipoVariacao = eixoDetectado;
+      _repreencherRotulos(p);
     });
   }
 
@@ -183,9 +227,7 @@ class _VincularVarianteDialogState extends State<VincularVarianteDialog> {
               ],
               onChanged: (v) => setState(() {
                 _tipoVariacao = v!;
-                if (_labelCandidatoController.text.isEmpty) {
-                  _labelCandidatoController.text = labelPadraoVariante(candidato, _tipoVariacao);
-                }
+                _repreencherRotulos(candidato);
               }),
             ),
             const SizedBox(height: 16),
