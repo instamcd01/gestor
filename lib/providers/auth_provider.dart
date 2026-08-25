@@ -13,6 +13,7 @@ import '../config/supabase_config.dart';
 class AuthProvider with ChangeNotifier {
   String? _empresaId;
   String? _papel;
+  String? _nome;
   bool _carregando = true;
   String? _erro;
 
@@ -20,6 +21,7 @@ class AuthProvider with ChangeNotifier {
   bool get estaLogado => usuarioAtual != null;
   String? get empresaId => _empresaId;
   String? get papel => _papel;
+  String? get nome => _nome;
   bool get carregando => _carregando;
   String? get erro => _erro;
 
@@ -51,6 +53,7 @@ class AuthProvider with ChangeNotifier {
     if (!estaLogado) {
       _empresaId = null;
       _papel = null;
+      _nome = null;
       _carregando = false;
       notifyListeners();
       return;
@@ -59,12 +62,13 @@ class AuthProvider with ChangeNotifier {
     try {
       final data = await supabase
           .from('usuarios')
-          .select('empresa_id, papel')
+          .select('empresa_id, papel, nome')
           .eq('id', usuarioAtual!.id)
           .maybeSingle();
 
       _empresaId = data?['empresa_id'];
       _papel = data?['papel'];
+      _nome = data?['nome'];
     } catch (e) {
       debugPrint('Erro ao verificar vínculo empresa/usuário: $e');
       _empresaId = null;

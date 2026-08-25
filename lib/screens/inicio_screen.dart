@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/venda.dart';
 import '../providers/auth_provider.dart';
@@ -8,6 +9,7 @@ import '../providers/despesa_provider.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../providers/produto_provider.dart';
 import '../widgets/metric_card.dart';
+import 'custos_operacao_screen.dart';
 import 'fila_pedidos_screen.dart';
 import 'fluxo_caixa_screen.dart';
 import 'produtos_screen.dart';
@@ -33,12 +35,37 @@ class InicioScreen extends StatefulWidget {
 }
 
 class _InicioScreenState extends State<InicioScreen> {
+  // Lucro líquido real do mês (obter_resumo_custos_operacao) — ao contrário
+  // das outras métricas desta tela, não vem de um provider já carregado em
+  // outro lugar, então é buscado à parte só quando o papel pode ver
+  // Finanças. null = ainda carregando ou sem permissão.
+  double? _lucroLiquidoReal;
+
   @override
   void initState() {
     super.initState();
     Provider.of<HistoricoVendasProvider>(context, listen: false).carregarVendas();
     Provider.of<ProdutoProvider>(context, listen: false).carregarProdutos();
     Provider.of<DespesaProvider>(context, listen: false).carregar();
+    _carregarLucroLiquido();
+  }
+
+  Future<void> _carregarLucroLiquido() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.podeVerFinancas || auth.empresaId == null) return;
+    final hoje = DateTime.now();
+    try {
+      final resumo = await Supabase.instance.client.rpc('obter_resumo_custos_operacao', params: {
+        'p_empresa_id': auth.empresaId,
+        'p_data_inicio': DateTime(hoje.year, hoje.month, 1).toIso8601String().split('T').first,
+        'p_data_fim': hoje.toIso8601String().split('T').first,
+      });
+      final linha = (resumo as List).first as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() => _lucroLiquidoReal = (linha['lucro_liquido_real'] as num).toDouble());
+    } catch (e) {
+      debugPrint('Erro ao carregar lucro líquido real: $e');
+    }
   }
 
   Future<void> _recarregarTudo() async {
@@ -46,6 +73,7 @@ class _InicioScreenState extends State<InicioScreen> {
       context.read<HistoricoVendasProvider>().carregarVendas(),
       context.read<ProdutoProvider>().carregarProdutos(),
       context.read<DespesaProvider>().carregar(),
+      _carregarLucroLiquido(),
     ]);
   }
 
@@ -74,6 +102,7 @@ class _InicioScreenState extends State<InicioScreen> {
                 _cabecalho(context),
                 const SizedBox(height: 20),
                 _botaoVender(context),
+                _bannerPedidosPendentes(context),
                 const SizedBox(height: 28),
                 _secaoVendas(context),
                 // Resumo agregado de estoque (contagem de produtos/estoque
@@ -108,9 +137,53 @@ class _InicioScreenState extends State<InicioScreen> {
   Widget _cabecalho(BuildContext context) {
     final hora = DateTime.now().hour;
     final saudacao = hora < 12 ? 'Bom dia' : (hora < 18 ? 'Boa tarde' : 'Boa noite');
+    final nomeCompleto = context.watch<AuthProvider>().nome;
+    final primeiroNome = (nomeCompleto != null && nomeCompleto.trim().isNotEmpty)
+        ? nomeCompleto.trim().split(' ').first
+        : null;
     return Text(
-      saudacao,
+      primeiroNome != null ? '$saudacao, $primeiroNome' : saudacao,
       style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+    );
+  }
+
+  /// Alerta operacional: pedido parado aguardando confirmação é o que mais
+  /// trava a loja, então ganha destaque acima das seções em vez de competir
+  /// em pé de igualdade com os outros números dentro de "Pedidos".
+  Widget _bannerPedidosPendentes(BuildContext context) {
+    final pendente =
+        context.watch<HistoricoVendasProvider>().vendas.where((v) => v.status == StatusPedido.pendente).length;
+    if (pendente == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Material(
+        color: Colors.orange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _abrir(const FilaPedidosScreen()),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                const Icon(Icons.hourglass_empty, color: Colors.orange),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    pendente == 1
+                        ? '1 pedido aguardando confirmação'
+                        : '$pendente pedidos aguardando confirmação',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                const Text('Ver agora', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.orange)),
+                const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.orange),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -193,6 +266,14 @@ class _InicioScreenState extends State<InicioScreen> {
 
     double somar(List<Venda> lista) => lista.fold(0.0, (soma, v) => soma + v.valorTotal);
 
+    // Comparação hoje vs ontem só faz sentido se ontem teve alguma venda —
+    // com base 0 a variação percentual dispara pra infinito e não diz nada.
+    final totalOntem = somar(vendasOntem);
+    final variacaoPct = totalOntem > 0 ? ((somar(vendasHoje) - totalOntem) / totalOntem * 100) : null;
+    final subtituloHoje = variacaoPct == null
+        ? '${vendasHoje.length} venda(s)'
+        : '${vendasHoje.length} venda(s) · ${variacaoPct >= 0 ? '▲' : '▼'} ${variacaoPct.abs().toStringAsFixed(0)}% vs ontem';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -204,7 +285,8 @@ class _InicioScreenState extends State<InicioScreen> {
               icone: Icons.today,
               titulo: 'Hoje',
               valor: _moeda.format(somar(vendasHoje)),
-              subtitulo: '${vendasHoje.length} venda(s)',
+              subtitulo: subtituloHoje,
+              corSubtitulo: variacaoPct == null ? null : (variacaoPct >= 0 ? Colors.green : Colors.red),
             ),
             MetricCard(
               icone: Icons.history_toggle_off,
@@ -319,7 +401,7 @@ class _InicioScreenState extends State<InicioScreen> {
 
     final receita = vendasMes.fold(0.0, (soma, v) => soma + v.valorTotal);
     final despesas = despesasPagasMes.fold(0.0, (soma, d) => soma + d.valor);
-    final saldo = receita - despesas;
+    final lucro = _lucroLiquidoReal;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,10 +426,14 @@ class _InicioScreenState extends State<InicioScreen> {
             ),
             MetricCard(
               icone: Icons.account_balance_wallet_outlined,
-              titulo: 'Saldo do mês',
-              valor: _moeda.format(saldo),
-              corIcone: saldo >= 0 ? Colors.green : Colors.red,
-              onTap: () => _abrir(const FluxoCaixaScreen()),
+              titulo: 'Lucro líquido real',
+              // Diferente de Receita/Despesas (fluxo de caixa simples), já
+              // desconta comissão de marketplace, maquininha, embalagem,
+              // entrega própria e despesas fixas — ver Custos da Operação.
+              valor: lucro == null ? '—' : _moeda.format(lucro),
+              subtitulo: lucro == null ? 'Carregando...' : null,
+              corIcone: lucro == null ? null : (lucro >= 0 ? Colors.green : Colors.red),
+              onTap: () => _abrir(const CustosOperacaoScreen()),
             ),
           ],
         ),

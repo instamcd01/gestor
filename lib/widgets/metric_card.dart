@@ -9,6 +9,7 @@ class MetricCard extends StatelessWidget {
   final String valor;
   final String? subtitulo;
   final Color? corIcone;
+  final Color? corSubtitulo;
   final VoidCallback? onTap;
 
   const MetricCard({
@@ -18,6 +19,7 @@ class MetricCard extends StatelessWidget {
     required this.valor,
     this.subtitulo,
     this.corIcone,
+    this.corSubtitulo,
     this.onTap,
   });
 
@@ -69,7 +71,10 @@ class MetricCard extends StatelessWidget {
                     subtitulo!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: corSubtitulo ?? colorScheme.onSurfaceVariant),
                   ),
                 ],
               ],
