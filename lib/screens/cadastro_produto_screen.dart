@@ -645,6 +645,9 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                 produtoId: null,
                 camposPersonalizados: _camposEstruturadosPersonalizados,
                 onCamposPersonalizadosChanged: (v) => setState(() => _camposEstruturadosPersonalizados = v),
+                pesoController: _pesoController,
+                volumeController: _volumeController,
+                fabricanteController: _fabricanteController,
               ),
               const SizedBox(height: 16.0),
 

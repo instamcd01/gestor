@@ -886,6 +886,9 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                 produtoId: widget.produto.id,
                 camposPersonalizados: _camposEstruturadosPersonalizados,
                 onCamposPersonalizadosChanged: (v) => setState(() => _camposEstruturadosPersonalizados = v),
+                pesoController: _pesoController,
+                volumeController: _volumeController,
+                fabricanteController: _fabricanteController,
               ),
               const SizedBox(height: 16.0),
 

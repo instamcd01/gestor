@@ -89,11 +89,20 @@ class CamposEstruturadosVariante extends StatelessWidget {
   /// pra excluir ele mesmo da lista de "copiar de outro produto".
   final String? produtoId;
 
-  /// Override por ESTE produto de quais campos aparecem e em que ordem —
-  /// tem prioridade sobre [camposVisiveis] (o padrão da categoria) quando
-  /// não-nulo. Ver `Produto.camposEstruturadosPersonalizados`.
+  /// Override por ESTE produto de quais campos entram no NOME gerado e em
+  /// que ordem (inclusive Peso/Volume/Fabricante, que nem aparecem neste
+  /// formulário — moram em "Logística e fornecedor") — nunca afeta quais
+  /// campos aparecem AQUI no formulário, isso continua só pela categoria
+  /// ([camposVisiveis]). Ver `Produto.camposEstruturadosPersonalizados`.
   final List<String>? camposPersonalizados;
   final ValueChanged<List<String>?> onCamposPersonalizadosChanged;
+
+  // Só pra alimentar a prévia do nome dentro do diálogo de personalização —
+  // estes 3 campos são editados na seção "Logística e fornecedor", não
+  // aqui, mas entram na composição do nome gerado.
+  final TextEditingController pesoController;
+  final TextEditingController volumeController;
+  final TextEditingController fabricanteController;
 
   const CamposEstruturadosVariante({
     super.key,
@@ -113,20 +122,31 @@ class CamposEstruturadosVariante extends StatelessWidget {
     required this.produtoId,
     required this.camposPersonalizados,
     required this.onCamposPersonalizadosChanged,
+    required this.pesoController,
+    required this.volumeController,
+    required this.fabricanteController,
     this.camposVisiveis,
     this.valoresPorCategoria = const {},
   });
 
-  /// Ordem efetiva: a personalização deste produto, se houver; senão a
-  /// configurada pra categoria; senão o padrão. "Nome comercial" nunca pode
-  /// ficar de fora (garantido também nas telas que gravam essas
-  /// configurações) — reforçado aqui de novo pra este formulário nunca
-  /// ficar sem como preencher o nome do produto, mesmo que a configuração
-  /// salva esteja incompleta por algum motivo.
+  /// Ordem efetiva do FORMULÁRIO: só o padrão da categoria (ou o padrão
+  /// geral, se a categoria nunca foi configurada) — nunca influenciada pela
+  /// personalização de nome do produto, decisão explícita do usuário pra
+  /// manter as duas coisas independentes. "Nome comercial" nunca pode
+  /// ficar de fora (garantido também na tela que grava essa configuração)
+  /// — reforçado aqui de novo pra este formulário nunca ficar sem como
+  /// preencher o nome do produto, mesmo que a configuração salva esteja
+  /// incompleta por algum motivo.
   List<String> get _ordemEfetiva {
-    final ordem = camposPersonalizados ?? camposVisiveis ?? ordemPadraoCamposEstruturados;
+    final ordem = camposVisiveis ?? ordemPadraoCamposEstruturados;
     return ordem.contains('nome_comercial') ? ordem : [...ordem, 'nome_comercial'];
   }
+
+  /// Ponto de partida pro diálogo de personalização de NOME: a
+  /// personalização já salva pro produto, senão o padrão da categoria (a
+  /// mesma fonte que `compor_nome_produto` usa quando não há override),
+  /// senão o padrão geral. Cobre os 12 campos (não só os 9 do formulário).
+  List<String> get _ordemNomeEfetiva => camposPersonalizados ?? camposVisiveis ?? ordemPadraoCamposEstruturados;
 
   /// Agrupa os campos em pares (Row de 2), na ordem recebida — o último
   /// fica sozinho (ocupando a linha inteira) quando o total for ímpar.
@@ -233,7 +253,7 @@ class CamposEstruturadosVariante extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'Personalizar campos deste produto',
+              tooltip: 'Personalizar ordem do nome deste produto',
               icon: Icon(
                 Icons.reorder,
                 size: 20,
@@ -243,7 +263,20 @@ class CamposEstruturadosVariante extends StatelessWidget {
                 context: context,
                 builder: (_) => PersonalizarCamposProdutoDialog(
                   produtoAtualId: produtoId,
-                  ordemAtual: _ordemEfetiva.where((c) => camposPorNome.containsKey(c)).toList(),
+                  ordemAtual: _ordemNomeEfetiva,
+                  categoria: categoria,
+                  tipoProduto: tipoProdutoController.text,
+                  nomeComercial: nomeComercialController.text,
+                  dose: doseController.text,
+                  composicao: composicaoController.text,
+                  apresentacao: apresentacaoController.text,
+                  especie: especieController.text,
+                  fase: faseController.text,
+                  porte: porteController.text,
+                  sabor: saborController.text,
+                  peso: double.tryParse(pesoController.text.replaceAll(',', '.')),
+                  volume: double.tryParse(volumeController.text.replaceAll(',', '.')),
+                  fabricante: fabricanteController.text,
                   onSalvar: onCamposPersonalizadosChanged,
                   onRestaurarPadrao: () => onCamposPersonalizadosChanged(null),
                 ),

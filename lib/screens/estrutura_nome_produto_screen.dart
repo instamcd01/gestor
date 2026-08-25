@@ -198,6 +198,7 @@ class _DialogoEstruturaCategoriaState extends State<_DialogoEstruturaCategoria> 
         'p_volume': !_ativos.contains('peso') && _ativos.contains('volume') ? 500 : null,
         'p_fabricante': _ativos.contains('fabricante') ? 'Fabricante' : null,
         'p_ordem_campos': _ativos,
+        'p_empresa_id': context.read<AuthProvider>().empresaId,
       });
       if (!mounted) return;
       setState(() => _preview = resultado as String?);
