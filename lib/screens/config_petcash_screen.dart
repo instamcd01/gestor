@@ -26,6 +26,7 @@ class _ConfigPetCashScreenState extends State<ConfigPetCashScreen> {
   bool _salvando = false;
 
   bool _ativo = false;
+  bool _whatsappAtivo = false;
   final _percentualController = TextEditingController();
   final _validadeController = TextEditingController(text: '60');
   final _usoMaximoController = TextEditingController(text: '20');
@@ -53,13 +54,14 @@ class _ConfigPetCashScreenState extends State<ConfigPetCashScreen> {
       final data = await supabase
           .from('empresas')
           .select(
-              'petcash_ativo, petcash_percentual, petcash_validade_dias, petcash_uso_maximo_percentual, petcash_pedido_minimo_uso')
+              'petcash_ativo, petcash_percentual, petcash_validade_dias, petcash_uso_maximo_percentual, petcash_pedido_minimo_uso, petcash_whatsapp_ativo')
           .eq('id', empresaId)
           .single();
 
       if (!mounted) return;
       setState(() {
         _ativo = data['petcash_ativo'] as bool? ?? false;
+        _whatsappAtivo = data['petcash_whatsapp_ativo'] as bool? ?? false;
         final percentual = (data['petcash_percentual'] as num?)?.toDouble();
         if (percentual != null) _percentualController.text = ProdutoValidators.formatarMoeda(percentual);
         final validade = data['petcash_validade_dias'] as int?;
@@ -84,6 +86,7 @@ class _ConfigPetCashScreenState extends State<ConfigPetCashScreen> {
     try {
       await supabase.from('empresas').update({
         'petcash_ativo': _ativo,
+        'petcash_whatsapp_ativo': _whatsappAtivo,
         'petcash_percentual': ProdutoValidators.parseNumero(_percentualController.text),
         'petcash_validade_dias': int.tryParse(_validadeController.text.trim()) ?? 60,
         'petcash_uso_maximo_percentual': ProdutoValidators.parseNumero(_usoMaximoController.text),
@@ -120,9 +123,9 @@ class _ConfigPetCashScreenState extends State<ConfigPetCashScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const AvisoBanner(
-              texto: 'Cliente ganha um percentual de volta em crédito (PetCash) quando um pedido do SITE é '
-                  'entregue — pra usar em compras futuras, incentivando ele a voltar. Não afeta vendas na loja '
-                  'física, WhatsApp ou marketplaces.',
+              texto: 'Cliente ganha um percentual de volta em crédito (PetCash) quando um pedido é entregue — pra '
+                  'usar em compras futuras, incentivando ele a voltar. Não afeta vendas na loja física ou '
+                  'marketplaces. Pedidos do WhatsApp só entram se você ligar a opção abaixo.',
             ),
             const SizedBox(height: 16),
             FormSection(
@@ -154,6 +157,17 @@ class _ConfigPetCashScreenState extends State<ConfigPetCashScreen> {
                       helperText: 'Contados da data em que o PetCash foi concedido.',
                     ),
                     keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Gerar PetCash também para pedidos do WhatsApp'),
+                    subtitle: const Text(
+                      'Desligado por padrão — a automação de WhatsApp ainda está em ajuste. Ligue quando quiser '
+                      'começar a testar.',
+                    ),
+                    value: _whatsappAtivo,
+                    onChanged: (v) => setState(() => _whatsappAtivo = v),
                   ),
                 ],
               ],

@@ -42,6 +42,8 @@ class OpcoesPagamentoScreen extends StatefulWidget {
 
 class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
   final _chavePixController = TextEditingController();
+  final _bancoPixController = TextEditingController();
+  bool _comprovanteWhatsappAtivo = false;
   final Set<String> _metodosAtivos = {...metodosPagamentoDisponiveis};
   final Set<String> _bandeirasAtivas = {};
   // Parcela 1 (à vista) sempre oferecida — não faz sentido desligar.
@@ -62,6 +64,7 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
   @override
   void dispose() {
     _chavePixController.dispose();
+    _bancoPixController.dispose();
     for (final c in _jurosControllers.values) {
       c.dispose();
     }
@@ -79,7 +82,8 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
     try {
       final data = await supabase
           .from('empresas')
-          .select('metodos_pagamento_ativos, chave_pix, bandeiras_aceitas, taxas_parcelamento, valor_minimo_parcela')
+          .select(
+              'metodos_pagamento_ativos, chave_pix, banco_pix, comprovante_pagamento_ativo, bandeiras_aceitas, taxas_parcelamento, valor_minimo_parcela')
           .eq('id', empresaId)
           .single();
 
@@ -90,6 +94,8 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
           ..addAll(metodos.map((m) => m.toString()));
       }
       _chavePixController.text = data['chave_pix']?.toString() ?? '';
+      _bancoPixController.text = data['banco_pix']?.toString() ?? '';
+      _comprovanteWhatsappAtivo = data['comprovante_pagamento_ativo'] as bool? ?? false;
 
       final bandeiras = data['bandeiras_aceitas'] as List?;
       if (bandeiras != null) {
@@ -142,6 +148,8 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
       await supabase.from('empresas').update({
         'metodos_pagamento_ativos': _metodosAtivos.toList(),
         'chave_pix': _chavePixController.text.trim(),
+        'banco_pix': _bancoPixController.text.trim(),
+        'comprovante_pagamento_ativo': _comprovanteWhatsappAtivo,
         'bandeiras_aceitas': _bandeirasAtivas.toList(),
         'taxas_parcelamento': taxasParcelamento,
         'valor_minimo_parcela': valorMinimoParcela,
@@ -220,6 +228,27 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
                         helperText: 'Mostrada ao caixa na tela de pagamento via Pix',
                       ),
                       inputFormatters: [FilteringTextInputFormatter.singleLineFormatter],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _bancoPixController,
+                      decoration: const InputDecoration(
+                        labelText: 'Banco da chave Pix (Opcional)',
+                        helperText: 'Mostrado ao cliente no WhatsApp, pra ele conferir antes de transferir',
+                      ),
+                      inputFormatters: [FilteringTextInputFormatter.singleLineFormatter],
+                    ),
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Aceitar comprovante de pagamento pelo WhatsApp'),
+                      subtitle: const Text(
+                        'Desligado por padrão — ainda estamos ajustando o design do comprovante. Quando '
+                        'ligado, o assistente do WhatsApp anexa a foto do comprovante ao pedido, mas a '
+                        'confirmação do pagamento continua manual pela equipe.',
+                      ),
+                      value: _comprovanteWhatsappAtivo,
+                      onChanged: (v) => setState(() => _comprovanteWhatsappAtivo = v),
                     ),
                   ],
                 ),
