@@ -37,6 +37,17 @@ class GeradorNomeProduto {
   /// manualmente".
   final bool Function() nomeManualOverride;
 
+  /// Empresa do produto — sem isso, `compor_nome_produto` agrega
+  /// `categoria_campos_estruturados` de TODAS as empresas com uma
+  /// categoria de mesmo nome, duplicando cada segmento do nome (bug real
+  /// achado e corrigido em 25/08, ver memória do projeto).
+  final String? Function() empresaId;
+
+  /// Personalização de ordem/presença do NOME por produto, se houver
+  /// (`Produto.camposEstruturadosPersonalizados`) — `null` cai pro padrão
+  /// da categoria dentro da própria função SQL.
+  final List<String>? Function() ordemCampos;
+
   Timer? _debounce;
   bool _disposed = false;
 
@@ -56,6 +67,8 @@ class GeradorNomeProduto {
     required this.volumeController,
     required this.fabricanteController,
     required this.nomeManualOverride,
+    required this.empresaId,
+    required this.ordemCampos,
   }) {
     for (final controller in _controladoresObservados) {
       controller.addListener(_aoMudarCampo);
@@ -112,6 +125,8 @@ class GeradorNomeProduto {
         'p_volume': ProdutoValidators.parseNumero(volumeController.text),
         'p_fabricante': fabricanteController.text.isEmpty ? null : fabricanteController.text,
         'p_tipo_produto': tipoProdutoController.text.isEmpty ? null : tipoProdutoController.text,
+        'p_ordem_campos': ordemCampos(),
+        'p_empresa_id': empresaId(),
       });
 
       if (_disposed) return;

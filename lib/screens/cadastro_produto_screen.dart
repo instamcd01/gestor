@@ -141,6 +141,8 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       volumeController: _volumeController,
       fabricanteController: _fabricanteController,
       nomeManualOverride: () => _nomeManualOverride,
+      empresaId: () => context.read<AuthProvider>().empresaId,
+      ordemCampos: () => _camposEstruturadosPersonalizados,
     );
   }
 

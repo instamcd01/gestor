@@ -201,6 +201,8 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       volumeController: _volumeController,
       fabricanteController: _fabricanteController,
       nomeManualOverride: () => _nomeManualOverride,
+      empresaId: () => context.read<AuthProvider>().empresaId,
+      ordemCampos: () => _camposEstruturadosPersonalizados,
     );
 
     _carregarCategoriasDoSupabase();
