@@ -60,8 +60,26 @@ Relatório periódico (reaproveitando o padrão já usado no Auditor de Atendime
 
 1. Mix de pilares: **20/20/20/15/15/10** (Venda/Engajamento/Educação/Entretenimento/Comunidade/Marca), como sugerido pelo usuário.
 2. Fase 3 (geração de imagem): **HTML/CSS self-hosted** (renderizado por headless browser), não serviço de template pago.
-3. Frequência: **1 post por pilar por dia** (6-7 posts/dia no total, um por objetivo). **Ressalva levantada, não resolvida ainda**: 6-7 posts/dia no Instagram é bem mais que o volume comum de perfis de pequeno negócio (a maioria posta 1x/dia ou menos no feed; Stories aguenta mais frequência sem cansar o público, mas Feed não) — vale reconfirmar se a intenção é 1 POR PILAR POR DIA no total (todos os canais somados, distribuindo Feed/Stories por pilar) ou se pode ser repensado como frequência semanal por pilar. Não implementar o volume diário sem essa confirmação.
+3. Frequência: **substituída após pesquisa** (usuário pediu pra pesquisar em vez de assumir) — ver seção "Pesquisa de estratégia" abaixo. 6-7 posts/dia no Feed foi descartado: dado real mostra que isso reduziria alcance, não aumentaria.
 4. Fase 0 (Instagram): autorizado e já investigado — ver achado acima (conta já pronta, falta só confirmar/ativar o produto Instagram Graph API no app existente).
+
+## Pesquisa de estratégia (25/08) — usuário pediu pra pesquisar antes de decidir frequência, e deixou claro: quer ser SUPERIOR aos outros petshops, não igual
+
+Pesquisa real (não suposição), fontes no fim desta seção.
+
+**Achado que descarta "1 post por pilar por dia" (6-7/dia no Feed)**: o algoritmo de 2026 não recompensa mais volume — frequência de postagem nem é mais um sinal de ranking central. Postar demais com pouco esforço faz o alcance CAIR (o algoritmo suprime ativamente). O ponto ótimo pra pequeno negócio é **3-5 posts de Feed por semana** — o maior ganho de alcance vem de sair de 1-2/semana pra 3-5/semana; postar mais que isso não ajuda e pode prejudicar. Consistência (um "batimento" regular) gera 5x mais engajamento que volume esporádico alto.
+
+**Achado que muda o escopo do projeto — Reels (vídeo curto)**: é hoje o formato de MAIOR alcance (2-3x mais que imagem estática), mix ideal sugerido pros pequenos negócios é ~40% Reels, resto carrossel/imagem estática. O plano original (só imagem estática renderizada em HTML) fica sem o formato que mais entrega alcance. Feed e Reels são ranqueados por sinais DIFERENTES (Feed: força de relacionamento, salvamentos, resposta real no comentário; Reels: tempo assistido, replay, envios/compartilhamentos) — reforça a ideia de "um objetivo por post", que já bate com o desenho por pilar.
+
+**Onde está a superioridade de verdade, pra quem tem loja física de pet (não é postar mais)**: a pesquisa aponta que pet shop compete com loja virtual grande em 2 coisas que ela não tem — **expertise real** (ex: vídeo explicando diferença nutricional entre rações — o pilar Educação já cobria isso) e **comunidade/conexão local** (o pilar Comunidade já cobria isso). Autenticidade e conteúdo original bem feito superam concorrente que só posta oferta genérica — o diferencial não é "postar 6x mais", é fazer os pilares Educação/Comunidade de verdade bem, com vídeo, em vez de tratá-los como preenchimento.
+
+**Recomendação revisada** (ainda não implementada, aguardando confirmação):
+- **Feed**: 3-5 posts/semana, rotacionando os 6 pilares pelo mix 20/20/20/15/15/10 ao longo da SEMANA (não do dia) — ex. numa semana de 5 posts: 1 Venda, 1 Engajamento, 1 Educação, 1 Entretenimento/Comunidade (alternando), 1 Marca a cada 2 semanas.
+- **Stories**: aguenta frequência bem maior sem o mesmo risco de supressão (é outro algoritmo, mais tolerante) — pode ser diário, inclusive múltiplos por dia, sem o mesmo custo de "cansar" o algoritmo do Feed.
+- **Status do WhatsApp**: não tem algoritmo nenhum (só timeline dos seus contatos) — pode reaproveitar o que já foi aprovado pro Stories sem problema de frequência.
+- **Reels vira parte do escopo**: pelo menos os pilares Educação e Venda deveriam ter versão em vídeo curto além (ou no lugar) da imagem estática, dado que é o formato de maior alcance — implica estender a Fase 3 pra também gerar vídeo (ex: `Remotion`, framework que renderiza React/HTML+CSS em vídeo — mesma filosofia self-hosted já escolhida pra imagem, só que pra vídeo), não só imagem parada. Isso é escopo REAL a mais, não incremental — vale decidir se entra já na v1 ou fica pra uma fase 2 depois do pipeline de imagem estar validado.
+
+Fontes: [Buffer — How the Instagram Algorithm Works: Your 2026 Guide](https://buffer.com/resources/instagram-algorithms/), [Buffer — How Often Should You Post on Instagram in 2026?](https://buffer.com/resources/how-often-to-post-on-instagram/), [Hootsuite — Instagram algorithm tips for 2026](https://blog.hootsuite.com/instagram-algorithm/), [Aibrify — Instagram Reels vs Posts Reach 2026](https://aibrify.com/blog/instagram-algorithm-2026-reels-vs-static-posts), [Moonb — Reels vs Post Instagram](https://www.moonb.io/blog/reels-vs-post-instagram), [SocialChamp — Instagram Marketing Strategy For Small Business In 2026](https://www.socialchamp.com/blog/instagram-marketing-strategy-for-small-business/), [Thryv — Pet Store Marketing Ideas](https://www.thryv.com/blog/pet-store-marketing/), [Conbersa — How Should Pet Stores Use Social Media Marketing?](https://www.conbersa.ai/learn/social-media-for-pet-stores).
 
 ## Pergunta feita pelo usuário: essa automação fica vinculada ao Gestor (app)/site/app da loja?
 
