@@ -84,12 +84,27 @@ Usuário rejeitou a v2 com força: "exagerou demais... muito poluído... precisa
 
 Commit `2167fd7`. Retestado com produto+mascote reais, galeria republicada (mesma URL).
 
+### v4 dos templates (26/08) — correção de cor de marca + design/motion, pesquisa de Remotion/Claude profissional
+
+Usuário rejeitou a v3 de novo: layout "meio estranho", logo pequena, foto de produto "muito quadrada" (queria cantos arredondados), **e a cor verde não combina com a cor da marca**; vídeo "muito ruim ainda... parece que uma criança de 5 anos fez". Pediu explicitamente pra ver o que profissionais fazem com Remotion+Claude antes de tentar de novo.
+
+**Correção crítica de dado, não só de design**: `empresas.cor_secundaria` (verde `#059F0B` no banco) NUNCA foi a cor secundária real da marca — o usuário confirmou que esse campo só personaliza itens internos do app Gestor, sem relação com a identidade visual da loja/site. A cor secundária real é **laranja** (cor do mascote), sem campo próprio no banco ainda. Extraída por amostragem de pixel direto da arte do mascote (histograma de cor via Playwright+canvas, não chutada): `#D8540C`. Confirmado visualmente depois: o mascote usa exatamente azul (uniforme/sacola, bate com `cor_primaria` `#409BFD`) + laranja (pelagem) — os 2 tons reais. Novo `src/lib/cores.ts` centraliza `paletaMarca(corPrimaria, corSecundaria)`, recebendo as 2 cores reais como parâmetro (nunca hardcoded por empresa) e documentando por que `cor_secundaria` do banco não pode ser usada aqui.
+
+**Pesquisa aplicada** (fontes: dplooy.com sobre Remotion+Claude Code — springs `{damping:200,stiffness:100,mass:0.5}`, `<Sequence>` modular com timing escalonado, "pensar em frames"; artigo do Medium sobre o mesmo tema retornou HTTP 403, não pôde ser lido): emoji cru em peça de marca lê como "barato/genérico" — ícone de linha customizado (estilo Lucide) é o padrão profissional; tipografia cinética (revelação palavra por palavra com atraso escalonado) é a técnica real de reels profissionais pra dar "emoção"; formato vertical 9:16 com conteúdo curto dead-center deixa muito vazio em cima/embaixo — resolvido com um eco GIGANTE e quase invisível (~5% opacidade) do mesmo ícone da dica atrás do texto, que usa o espaço sem virar mais um elemento competindo por atenção (mantém a disciplina de restrição já validada na v3).
+
+**Aplicado**:
+- `oferta_relampago`: paleta real (azul+laranja) no lugar do verde; logo dobrada de tamanho; cartão branco com cantos arredondados (raio 32px) pro produto; badge de desconto ANCORADO no canto desse cartão (não mais solto na linha de preço) — fluxo de leitura: marca → produto+urgência (mesmo bloco) → identidade → preço → CTA.
+- `tres_dicas`: ícones SVG de linha customizados (jarro/sol/troca) no lugar dos emoji; tipografia cinética por palavra (com destaque opcional de palavra-chave via `**palavra**`); eco gigante do ícone da dica no fundo; marca discreta (logo+nome) persistente durante as 3 dicas, não só abertura/encerramento; reposicionamento vertical pra zona de leitura segura (evita a área onde Instagram/WhatsApp sobrepõe UI embaixo); paleta real aplicada também aqui.
+
+Commit `de17355`. Retestado com produto+mascote reais (vídeo completo renderizado, ~1,3MB), galeria republicada (mesma URL).
+
 **Pendências reais antes de considerar a Fase 3 pronta pra produção**:
-1. Usuário cadastrar pelo menos 1 mascote real no Kit de Marca.
+1. ~~Usuário cadastrar pelo menos 1 mascote real no Kit de Marca~~ — feito em 26/08.
 2. Criar o repositório remoto no GitHub (ou outro host) e dar push.
 3. Testar o build Docker de verdade.
 4. Deploy no Easypanel + configurar `SUPABASE_SERVICE_ROLE_KEY`/`RENDER_API_KEY`.
 5. Implementar os outros 18 formatos (incremental, conforme o uso real for pedindo).
+6. Se uma empresa nova precisar da cor secundária real, hoje só existe via extração manual do mascote (sem campo no banco) — considerar um campo dedicado no Kit de Marca se isso virar recorrente.
 
 ### Fase 2 — motor de decisão ✅ CONSTRUÍDA (25/08)
 
