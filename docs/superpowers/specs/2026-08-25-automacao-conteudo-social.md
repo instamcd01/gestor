@@ -46,8 +46,19 @@ Schema criado no Supabase (`dwswpwxnzjgoohucngbb`): `criativos_templates` (empre
 
 Só a METADATA de cada template está pronta (o que é, tom, CTA, canal, se usa mascote/vídeo) — o layout visual real (HTML/Remotion) é construído na Fase 3, ainda não iniciada.
 
-### Fase 2 — motor de decisão (pilar + formato do dia)
-Função/RPC que, dado o histórico recente em `posts_conteudo`, sorteia o pilar (ponderado pelo mix — usar sua sugestão 20/20/20/15/15/10 como padrão, ajustável depois) e o formato dentro dele, excluindo o que já foi usado nos últimos N dias (config, sugestão inicial: não repetir o mesmo formato em 3 dias, não repetir o mesmo produto em 7 dias pro pilar Venda).
+### Fase 2 — motor de decisão ✅ CONSTRUÍDA (25/08)
+
+Tabela nova `pilares_mix_conteudo` (empresa_id, pilar, peso) — pesos ajustáveis sem mudar código, seed com 20/20/20/15/15/10 pra Delivery Pet.
+
+RPC `selecionar_proximo_conteudo(p_empresa_id, p_canal, p_dias_sem_repetir_formato default 3, p_dias_sem_repetir_produto default 7)`: sorteia o pilar (ponderado, só entre os que têm template ativo pro canal pedido E não usado nos últimos N dias nesse canal — com fallback que ignora a anti-repetição se TODOS os pilares elegíveis ficarem de fora), sorteia o formato dentro do pilar (mesma lógica de anti-repetição+fallback), resolve produto real via `_resolver_produto_conteudo_venda` quando o pilar é Venda, e grava a linha em `posts_conteudo` com `status='planejado'`. `anon` sem acesso a nenhuma das duas funções (confirmado via `has_function_privilege`), `authenticated` com EXECUTE nas duas.
+
+`_resolver_produto_conteudo_venda(empresa_id, formato, dias_sem_repetir_produto)` resolve produto real do catálogo (nunca inventado) por formato: `oferta_relampago` → produto com promoção ativa; `mais_vendido_semana` → melhor ranking em `catalogo_mais_vendidos_publico`; `lancamento_novidade` → produto mais recente ainda não usado; `kit_combo` → kit ativo (`eh_kit=true`) — hoje retorna `null` porque a Delivery Pet ainda não tem nenhum kit cadastrado, comportamento correto, não é bug.
+
+**2 bugs reais achados e corrigidos testando** (não só lendo o código):
+1. **Sorteio ponderado quebrado**: `where acumulado >= random() * total` chama `random()` UMA VEZ POR LINHA (é volátil), não uma vez só pro sorteio inteiro — destrói a técnica de distribuição cumulativa. Testado com 600 sorteios antes do fix: Venda (peso 20) saiu com só 1,5% em vez de ~20%. Corrigido calculando `v_sorteio := random() * peso_total` UMA VEZ em variável plpgsql, comparando essa mesma variável fixa contra o acumulado de cada pilar. Reteste com 600 sorteios (anti-repetição desligada de propósito pra isolar só a distribuição): Venda 20,2%, Engajamento 21,7%, Educação 20,2%, Comunidade 14,8%, Entretenimento 14,3%, Marca 8,8% — todos dentro da variação estatística esperada do alvo 20/20/20/15/15/10.
+2. **Vazamento de grant recorrente do projeto**: revogar de `anon` não bastou — o Supabase concede `EXECUTE` pra `PUBLIC` por padrão na criação da função, e `anon` herda isso através do `PUBLIC` mesmo com o `REVOKE ... FROM anon` explícito. Corrigido com `REVOKE ALL ... FROM PUBLIC` nas duas funções. Achado também: `selecionar_proximo_conteudo` não é `SECURITY DEFINER` (roda com o privilégio de quem chama), então a chamada interna pro helper `_resolver_produto_conteudo_venda` também precisava de `GRANT EXECUTE` pra `authenticated` — só revogar não bastava, faltava conceder de volta.
+
+Testado ponta a ponta como o role `authenticated` de verdade (`SET LOCAL ROLE authenticated` + `SET LOCAL request.jwt.claims` com um usuário real da Delivery Pet, não só a conexão privilegiada usada nos testes de distribuição) — sem erro de permissão, produto resolvido corretamente pro pilar Venda. Dados de teste sempre limpos depois (`count(*)=0` confirmado).
 
 ### Fase 3 — geração da imagem
 **Decisão em aberto, dois caminhos**:
