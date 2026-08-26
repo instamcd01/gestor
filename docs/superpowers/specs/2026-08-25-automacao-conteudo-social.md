@@ -29,8 +29,22 @@ Nem toda decisão dessa automação deve passar por LLM — só onde criatividad
 ### Fase 0 — pré-requisito (bloqueia só a publicação, não o resto)
 Verificar/configurar conta Instagram Business ou Creator vinculada a uma Página do Facebook no mesmo Business Manager do WhatsApp. Posso investigar e (com autorização, via browser já logado, mesmo processo usado antes pra provisionar a chave do Google Maps) configurar isso.
 
-### Fase 1 — biblioteca de templates (começar pequeno, crescer depois)
-Em vez de 30-50 templates de cara, começar com **3-4 por pilar (~20 no total)** — valida o pipeline inteiro (dados → copy → imagem → aprovação → publicação) antes de investir em variedade. Schema: tabela `criativos_templates` (pilar, formato, tom, cta_padrao, canais_aplicaveis, ativo, layout_html — o template visual em si). Tabela `posts_conteudo` (histórico: pilar, formato, tema, canal, produto_id opcional, status: pendente_aprovacao/aprovado/recusado/publicado, imagem_url, data) — é a fonte pro controle de repetição E pro relatório futuro.
+### Fase 1 — biblioteca de templates ✅ CONSTRUÍDA (25/08)
+
+Schema criado no Supabase (`dwswpwxnzjgoohucngbb`): `criativos_templates` (empresa_id, pilar, formato, tipo_midia imagem/video, tom, cta_padrao, canais_aplicaveis text[], usa_mascote, descricao, ativo) e `posts_conteudo` (histórico: empresa_id, template_id, pilar, formato, tema, produto_id opcional, canal, status pendente_aprovacao/aprovado/recusado/publicado/cancelado, midia_url, copy_texto, motivo_recusa, tentativas, meta_publicacao_id, criado_em/publicado_em) — fonte pro controle de repetição (Fase 2) e pro relatório (Fase 7). RLS habilitado nas duas (`empresa_id = get_empresa_id()`), `anon` sem acesso, confirmado via `has_table_privilege`. Índices por `(empresa_id, pilar, criado_em)` e `(empresa_id, produto_id, criado_em)` pra sustentar as consultas de não-repetição da Fase 2.
+
+**20 templates seed pra Delivery Pet**, quantidade proporcional ao mix (Venda/Engajamento/Educação 4 cada, Entretenimento/Comunidade 3 cada, Marca 2) — 7 em vídeo (35%, perto do ~40% recomendado pela pesquisa), 8 usam o mascote como personagem:
+
+| Pilar | Formatos (video=🎬, mascote=🐾) |
+|---|---|
+| Venda | oferta_relampago, mais_vendido_semana, lancamento_novidade 🎬🐾, kit_combo |
+| Engajamento | enquete_rapida 🐾, quiz_multipla_escolha 🐾, complete_a_frase, pergunta_divertida_video 🎬🐾 |
+| Educação | tres_dicas 🎬🐾, mito_ou_verdade, comparativo_produtos, passo_a_passo 🎬🐾 |
+| Entretenimento | meme_tutor, pov_mascote 🎬🐾, ranking_divertido |
+| Comunidade | pet_da_semana, aniversariante_semana 🎬🐾, pergunta_para_comunidade |
+| Marca | bastidores_loja 🎬, valores_novidades |
+
+Só a METADATA de cada template está pronta (o que é, tom, CTA, canal, se usa mascote/vídeo) — o layout visual real (HTML/Remotion) é construído na Fase 3, ainda não iniciada.
 
 ### Fase 2 — motor de decisão (pilar + formato do dia)
 Função/RPC que, dado o histórico recente em `posts_conteudo`, sorteia o pilar (ponderado pelo mix — usar sua sugestão 20/20/20/15/15/10 como padrão, ajustável depois) e o formato dentro dele, excluindo o que já foi usado nos últimos N dias (config, sugestão inicial: não repetir o mesmo formato em 3 dias, não repetir o mesmo produto em 7 dias pro pilar Venda).
