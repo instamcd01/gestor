@@ -44,7 +44,32 @@ Schema criado no Supabase (`dwswpwxnzjgoohucngbb`): `criativos_templates` (empre
 | Comunidade | pet_da_semana, aniversariante_semana 🎬🐾, pergunta_para_comunidade |
 | Marca | bastidores_loja 🎬, valores_novidades |
 
-Só a METADATA de cada template está pronta (o que é, tom, CTA, canal, se usa mascote/vídeo) — o layout visual real (HTML/Remotion) é construído na Fase 3, ainda não iniciada.
+Só a METADATA de cada template está pronta (o que é, tom, CTA, canal, se usa mascote/vídeo) — o layout visual real (HTML/Remotion) é construído na Fase 3.
+
+### Fase 3 — renderizador ✅ v1 CONSTRUÍDA E TESTADA (25/26-08)
+
+Repositório novo e separado: `gestor-conteudo-social` (Node.js/TypeScript, fora do monorepo Flutter de propósito — stack diferente, deploy independente). Commit inicial `be31664`.
+
+**Confirmado antes de construir**: n8n e Easypanel rodam na MESMA VPS (Hostinger KVM 2, 8GB RAM, Campinas — README do `gestor-loja`) — não existe distinção real entre "deployar no servidor do n8n" e "deployar no Easypanel", é a mesma máquina. Deploy previsto ali.
+
+**Stack**: imagem via Chromium headless (Playwright) renderizando HTML/CSS; vídeo via Remotion (composições React), navegador aberto/fechado a cada render de propósito (não mantém instância persistente — VPS de 8GB compartilhada com n8n+site). Bucket novo `conteudo-social` no Storage (RLS por empresa, leitura pública, mesmo padrão de `produtos`/`banners`/`logos`).
+
+**2 templates reais implementados e testados de ponta a ponta** (dos 20 seed — os outros 18 ficam pendentes, implementação incremental):
+- `oferta_relampago` (imagem, 1080x1080) — testado com produto e logo REAIS da Delivery Pet (Antipulgas Banni 3, R$59,90→R$39,90, badge "33% OFF" calculado certo). Resultado conferido visualmente.
+- `tres_dicas` (vídeo, 1080x1920, Remotion) — abertura+3 dicas+encerramento com logo, testado gerando MP4 real (1,7MB, ~18s) e conferindo 3 frames individuais (abertura, dica 1, encerramento) visualmente.
+
+**Achado real durante a construção — Kit de Marca não tem NENHUM mascote cadastrado** (`marca_ativos` só tem `logo_completa`/`nome_loja_imagem` pra Delivery Pet, zero linhas `tipo='mascote'`) — apesar de todo o plano (a pedido do próprio usuário) depender do mascote como "personagem" dos vídeos. Os testes usaram um placeholder (emoji 🐾 num círculo branco) só pra provar o pipeline de composição/animação — **nenhum vídeo real deve ser publicado até o usuário cadastrar pelo menos 1 mascote de verdade no Kit de Marca do app** (Configurações > Kit de Marca, só dono).
+
+**2 bugs reais achados e corrigidos construindo**: (1) Remotion não aceita `_` no id de composição (só a-z/A-Z/0-9/hífen) — `formato` do banco usa snake_case; corrigido convertendo `_`→`-` só na hora de chamar o Remotion, sem mudar a convenção do resto do projeto; (2) imports dentro da pasta `src/remotion/` (bundlados pelo webpack do Remotion) não podem ter extensão `.js` como os do resto do serviço (que roda via Node/tsx, exige extensão em import relativo) — as duas convenções coexistem no mesmo repo por motivos diferentes, documentado em comentário no código pra não confundir depois.
+
+**Não verificado nesta sessão**: build Docker real (Docker Desktop não estava rodando na máquina) — Dockerfile segue o padrão oficial da imagem do Playwright (`mcr.microsoft.com/playwright`), mas precisa de um build de verdade antes do primeiro deploy. Repositório só existe local (`git init` feito, sem remoto no GitHub ainda — `gh` CLI não disponível neste ambiente pra criar automaticamente).
+
+**Pendências reais antes de considerar a Fase 3 pronta pra produção**:
+1. Usuário cadastrar pelo menos 1 mascote real no Kit de Marca.
+2. Criar o repositório remoto no GitHub (ou outro host) e dar push.
+3. Testar o build Docker de verdade.
+4. Deploy no Easypanel + configurar `SUPABASE_SERVICE_ROLE_KEY`/`RENDER_API_KEY`.
+5. Implementar os outros 18 formatos (incremental, conforme o uso real for pedindo).
 
 ### Fase 2 — motor de decisão ✅ CONSTRUÍDA (25/08)
 
