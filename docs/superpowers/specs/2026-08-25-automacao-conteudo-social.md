@@ -42,6 +42,10 @@ Função/RPC que, dado o histórico recente em `posts_conteudo`, sorteia o pilar
 
 Cada template puxa: foto do produto (quando aplicável) do Storage já existente, ativos do Kit de Marca (logo/mascote), copy gerado na Fase 4, e gera as proporções certas por canal (1:1 feed, 9:16 stories/status).
 
+**Vídeo/Reels confirmado na v1 (25/08)** — usuário decidiu incluir desde o início, não deixar pra depois. **O mascote (já existente em `marca_ativos`/Kit de Marca, galeria de variações) supre a necessidade de "gente de verdade" nos vídeos** — decisão explícita do usuário, evita precisar filmar funcionário/cliente real. Implicação técnica: os vídeos são **motion graphics montados a partir de arte estática já existente** (mascote + foto de produto + logo + texto), nunca filmagem real nem geração de vídeo por IA — renderizados via `Remotion` (framework que compõe vídeo a partir de React/HTML+CSS, mesma filosofia self-hosted já escolhida pra imagem), com animações simples (zoom/pan tipo Ken Burns, mascote entrando na cena, balão de fala com o texto/CTA, texto aparecendo). Cada template de vídeo referencia qual variação do mascote usar (da galeria já existente) como o "personagem" — pilares onde isso faz mais sentido primeiro: Engajamento, Entretenimento, Comunidade, Educação (mascote "explicando" a dica) e Venda (mascote "apresentando" a oferta).
+
+**Ressalva operacional a registrar**: renderizar vídeo é mais lento que imagem estática (segundos a minutos, não instantâneo) — o loop de aprovação por WhatsApp (Fase 5) precisa considerar esse tempo maior de espera entre "recusar com motivo" e "nova versão chegar", principalmente se cair no limite de 3 tentativas.
+
 ### Fase 4 — geração de copy (LLM com guardrails)
 Workflow n8n novo, mesmo padrão do gerador de descrição de produto: prompt estruturado por formato (ex: formato "3 dicas" tem uma estrutura fixa diferente de formato "oferta"), nunca inventa dado de produto (preço/composição sempre vêm prontos da Fase 2/dados reais), sempre gera dentro do tom configurado no template.
 
