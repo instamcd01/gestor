@@ -74,6 +74,16 @@ Feedback direto depois de ver a v1: a imagem "parecia print de catálogo" (sem t
 
 Commit `e9dc10f` no `gestor-conteudo-social`. Nova galeria publicada no mesmo Artifact de antes (mesma URL, republicado).
 
+### v3 dos templates (26/08) — pesquisa real de design antes de tentar de novo
+
+Usuário rejeitou a v2 com força: "exagerou demais... muito poluído... precisa melhorar pelo menos uns 1000%" e pediu estudo real (não mais tentativa e erro). Pesquisei (WebSearch) princípios reais de: banner/flash-sale design (regra dos 3 segundos — cada elemento precisa justificar o espaço; urgência é 1 elemento nítido, não vários empilhados), hierarquia visual e whitespace (restrição sinaliza profissionalismo — marcas com espaço em branco generoso são percebidas como mais modernas/confiantes), e pacing de Reels/TikTok (cortes de ~2,5-4s pra Reels; conteúdo educativo "salvável" tolera o lado mais lento dessa faixa — confirma que os 4s por dica já estavam certos, o problema da v2 era só visual).
+
+**Aplicado**:
+- `oferta_relampago`: de 4 cores competindo (verde+vermelho/laranja+amarelo×2+mascote) pra 1 fundo verde plano + 1 único acento âmbar. Mascote SAIU do formato (o produto é o herói de uma oferta, a marca não precisa estar no meio disso). Preço é o elemento tipográfico dominante (Fraunces 900, 92px); desconto e economia viram apoio discreto abaixo, não elementos gritando junto.
+- `tres_dicas`: removido o "bounce" contínuo (seno) que fazia tudo entrar E continuar balançando — exatamente o que lia como "flutuando aleatoriamente" mesmo depois de assentar. Ícone de cada dica virou um chip pequeno achatado (mesmo âmbar da imagem, sem brilho/sombra pesada) — apoio, não protagonista. O TEXTO da dica é agora o elemento dominante da cena (consistente com o que Reels educativo "pra salvar" realmente entrega).
+
+Commit `2167fd7`. Retestado com produto+mascote reais, galeria republicada (mesma URL).
+
 **Pendências reais antes de considerar a Fase 3 pronta pra produção**:
 1. Usuário cadastrar pelo menos 1 mascote real no Kit de Marca.
 2. Criar o repositório remoto no GitHub (ou outro host) e dar push.
