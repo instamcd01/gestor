@@ -64,6 +64,16 @@ Repositório novo e separado: `gestor-conteudo-social` (Node.js/TypeScript, fora
 
 **Não verificado nesta sessão**: build Docker real (Docker Desktop não estava rodando na máquina) — Dockerfile segue o padrão oficial da imagem do Playwright (`mcr.microsoft.com/playwright`), mas precisa de um build de verdade antes do primeiro deploy. Repositório só existe local (`git init` feito, sem remoto no GitHub ainda — `gh` CLI não disponível neste ambiente pra criar automaticamente).
 
+### v2 dos templates (26/08) — usuário testou e pediu mais estratégia real
+
+Feedback direto depois de ver a v1: a imagem "parecia print de catálogo" (sem técnica de venda nenhuma) e o vídeo tinha "o mascote minúsculo flutuando aleatoriamente" durante as dicas. Princípio explícito do usuário, registrado em [[feedback_estrategia_humana_em_conteudo_visual]]: toda peça precisa ser desenhada pensando em quem vai assistir/ver e no comportamento humano — extensão do mesmo princípio já aplicado ao agente WhatsApp.
+
+**Corrigido e retestado com produto e mascote reais**:
+- `oferta_relampago`: faixa de urgência ("⚡ Oferta relâmpago — por tempo limitado"), selo de desconto em formato de estrela (não pílula discreta), tagline de benefício, **"Você economiza R$X" (dado real calculado — preço de menos preço por, nunca inventado)**, CTA em formato de botão, mascote virou selo de marca no canto (não mais central — o produto é o protagonista).
+- `tres_dicas`: mascote agora só na abertura (recebe o espectador) e no encerramento (assinatura de marca) — **nunca mais durante as dicas**. Cada dica ganhou um **ícone contextual grande** específico do conteúdo dela (🫙 pote hermético / ☀️ sol / 🔀 não misturar) no lugar do mascote repetido — reforço visual real (dual-coding: quem rola rápido entende do que se trata só pelo ícone). Adicionado indicador "Dica X de 3" (pontinhos de progresso) pra dar noção de ritmo a quem assiste.
+
+Commit `e9dc10f` no `gestor-conteudo-social`. Nova galeria publicada no mesmo Artifact de antes (mesma URL, republicado).
+
 **Pendências reais antes de considerar a Fase 3 pronta pra produção**:
 1. Usuário cadastrar pelo menos 1 mascote real no Kit de Marca.
 2. Criar o repositório remoto no GitHub (ou outro host) e dar push.
