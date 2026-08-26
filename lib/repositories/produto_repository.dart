@@ -88,15 +88,24 @@ class ProdutoRepository {
     return totalInseridos;
   }
 
-  Future<void> atualizar(Produto produto) async {
+  /// Retorna o produto RECÉM-LIDO do banco após o update, nunca o objeto
+  /// que o client mandou — campos calculados no servidor (nome gerado por
+  /// `gerar_nome_produto_estruturado`, margem, revisar_preco...) mudam via
+  /// trigger DEPOIS do UPDATE, e o objeto local não sabe disso. Sem isso, a
+  /// tela via o nome/margem antigos até o próximo `listar()` completo (ex:
+  /// reabrir o app) — foi o que fez "gerar nome automaticamente" parecer
+  /// quebrado quando na real o banco já tinha gerado certo.
+  Future<Produto> atualizar(Produto produto) async {
     if (produto.id == null) {
       throw ArgumentError('Produto sem id não pode ser atualizado');
     }
 
-    await supabase
+    final produtoAtualizado = await supabase
         .from('produtos')
         .update(produto.toSupabaseMap())
-        .eq('id', produto.id!);
+        .eq('id', produto.id!)
+        .select()
+        .single();
 
     if (produto.estoqueId != null) {
       await supabase.from('estoque').update({
@@ -104,6 +113,19 @@ class ProdutoRepository {
         'quantidade_minima': produto.estoqueMinimo,
       }).eq('id', produto.estoqueId!);
     }
+
+    return Produto.fromSupabase({
+      ...produtoAtualizado,
+      'estoque': produto.estoqueId != null
+          ? [
+              {
+                'id': produto.estoqueId,
+                'quantidade_atual': produto.estoqueAtual,
+                'quantidade_minima': produto.estoqueMinimo,
+              }
+            ]
+          : [],
+    });
   }
 
   /// Exclusão lógica — preserva histórico (vendas antigas continuam

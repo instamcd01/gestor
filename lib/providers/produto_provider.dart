@@ -91,10 +91,10 @@ class ProdutoProvider with ChangeNotifier {
       return;
     }
     try {
-      await _repository.atualizar(produto);
+      final produtoAtualizado = await _repository.atualizar(produto);
       final index = _produtos.indexWhere((p) => p.id == produto.id);
       if (index != -1) {
-        _produtos[index] = produto;
+        _produtos[index] = produtoAtualizado;
       }
       notifyListeners();
     } catch (e) {
