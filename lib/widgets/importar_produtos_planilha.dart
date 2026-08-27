@@ -63,6 +63,22 @@ const _aliasesProdutos = {
   'exibir_no_catalogo': ['exibir no catálogo', 'exibir no catalogo'],
   'ativo': ['ativo'],
   'fracionado': ['fracionado?', 'fracionado'],
+  // Cadastro estruturado de variante — permite editar em massa pela
+  // planilha em vez de produto por produto no app. Célula vazia preserva o
+  // valor já salvo (mesmo padrão de custo/preço/estoque abaixo); só troca
+  // de verdade o que a pessoa escrever. `nome` continua fora daqui de
+  // propósito (ver proteção de nomeManualOverride mais abaixo).
+  'fabricante': ['fabricante'],
+  'tipo_produto': ['tipo de produto', 'tipo produto'],
+  'nome_comercial': ['nome comercial'],
+  'especie': ['espécie', 'especie'],
+  'fase': ['fase'],
+  'porte': ['porte'],
+  'sabor': ['sabor'],
+  'dose': ['dose'],
+  'composicao': ['composição', 'composicao'],
+  'apresentacao': ['apresentação', 'apresentacao'],
+  'peso': ['peso (kg)', 'peso'],
 };
 
 class ImportarProdutosScreen extends StatefulWidget {
@@ -188,6 +204,10 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
             return (v == null || v <= 0) ? null : v;
           }
 
+          // Texto do cadastro estruturado: célula vazia preserva o que já
+          // está salvo, mesmo raciocínio do `valor()` acima pra número.
+          String? textoOuExistente(String campo, String? atual) => mapa.celula(row, campo) ?? atual;
+
           final (categoria, subcategoria) = _splitCategoria(mapa.celula(row, 'grupo'));
           final skuExterno = mapa.celula(row, 'id_externo');
           final existente = skuExterno != null ? existentesPorSku[skuExterno] : null;
@@ -233,7 +253,14 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
             // reportando sucesso na importação.
             estoqueId: existente?.estoqueId,
             sku: skuExterno,
-            nome: nome,
+            // Produto com nome travado (nomeManualOverride) nunca aceita o
+            // texto da planilha de volta — sem isso, reimportar uma planilha
+            // desatualizada (ex: arquivo antigo do fornecedor) sobrescreve
+            // silenciosamente o nome estruturado manualmente, mesmo a flag
+            // impedindo só a fórmula automática de mexer nele, não o próprio
+            // app. Mesma classe do bug já corrigido abaixo pros campos
+            // internos (peso, fabricante, cadastro estruturado...).
+            nome: (existente?.nomeManualOverride ?? false) ? existente!.nome : nome,
             categoria: categoria,
             subcategoria: subcategoria,
             codigoBarras: mapa.celula(row, 'codigo_barras') ?? '',
@@ -258,27 +285,30 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
             exibirNoCatalogo: parseBooleanoPlanilha(mapa.celula(row, 'exibir_no_catalogo'), padrao: true),
             ativo: existente?.ativo ?? true,
             permiteFracionamento: parseBooleanoPlanilha(mapa.celula(row, 'fracionado')),
-            // A planilha não tem coluna pra nenhum desses — sem preservar o
-            // que já existe, toSupabaseMap() manda tudo isso como null/false
-            // no UPDATE e apaga silenciosamente fabricante, peso/volume,
-            // todo o cadastro estruturado de variantes (nome comercial,
-            // espécie, dose...), o vínculo de família de variante
-            // (produto_pai_id/tipo_variacao/variante_label), ciclo de
-            // recompra e o flag de kit de QUALQUER produto que passe pela
-            // importação — mesmo bug que já existia pro estoqueId.
-            peso: existente?.peso,
+            // Volume, vínculo de família de variante (produto_pai_id/
+            // tipo_variacao/variante_label), ciclo de recompra e flag de kit
+            // não têm coluna na planilha — sem preservar o que já existe,
+            // toSupabaseMap() mandaria tudo isso como null/false no UPDATE e
+            // apagaria silenciosamente esses campos de QUALQUER produto que
+            // passasse pela importação (mesmo bug que já existia pro
+            // estoqueId). Fabricante e todo o cadastro estruturado (nome
+            // comercial, espécie, dose...) agora TÊM coluna própria — ver
+            // `textoOuExistente` acima — pra permitir edição em massa pela
+            // planilha, mas continuam preservando o valor atual quando a
+            // célula vem vazia.
+            peso: valor('peso') ?? existente?.peso,
             volume: existente?.volume,
-            fabricante: existente?.fabricante,
+            fabricante: textoOuExistente('fabricante', existente?.fabricante),
             unidadeMedida: existente?.unidadeMedida ?? 'un',
-            nomeComercial: existente?.nomeComercial,
-            tipoProduto: existente?.tipoProduto,
-            especie: existente?.especie,
-            fase: existente?.fase,
-            porte: existente?.porte,
-            sabor: existente?.sabor,
-            dose: existente?.dose,
-            composicao: existente?.composicao,
-            apresentacao: existente?.apresentacao,
+            nomeComercial: textoOuExistente('nome_comercial', existente?.nomeComercial),
+            tipoProduto: textoOuExistente('tipo_produto', existente?.tipoProduto),
+            especie: textoOuExistente('especie', existente?.especie),
+            fase: textoOuExistente('fase', existente?.fase),
+            porte: textoOuExistente('porte', existente?.porte),
+            sabor: textoOuExistente('sabor', existente?.sabor),
+            dose: textoOuExistente('dose', existente?.dose),
+            composicao: textoOuExistente('composicao', existente?.composicao),
+            apresentacao: textoOuExistente('apresentacao', existente?.apresentacao),
             nomeManualOverride: existente?.nomeManualOverride ?? false,
             produtoPaiId: existente?.produtoPaiId,
             tipoVariacao: existente?.tipoVariacao,
@@ -637,6 +667,20 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
         TextCellValue('Exibir no Catálogo'),
         TextCellValue('Ativo'),
         TextCellValue('Fracionado'),
+        TextCellValue('Fabricante'),
+        TextCellValue('Tipo de Produto'),
+        TextCellValue('Nome Comercial'),
+        TextCellValue('Espécie'),
+        TextCellValue('Fase'),
+        TextCellValue('Porte'),
+        TextCellValue('Sabor'),
+        TextCellValue('Dose'),
+        TextCellValue('Composição'),
+        TextCellValue('Apresentação'),
+        TextCellValue('Peso (kg)'),
+        // Só informativo — não é lido de volta na reimportação, pra não dar
+        // brecha de destravar o nome sem querer editando essa célula.
+        TextCellValue('Cadastro Manual'),
       ]);
 
       for (final p in produtos) {
@@ -666,6 +710,18 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
           TextCellValue(p.exibirNoCatalogo ? 'Sim' : 'Não'),
           TextCellValue(p.ativo ? 'Sim' : 'Não'),
           TextCellValue(p.permiteFracionamento ? 'Sim' : 'Não'),
+          TextCellValue(p.fabricante ?? ''),
+          TextCellValue(p.tipoProduto ?? ''),
+          TextCellValue(p.nomeComercial ?? ''),
+          TextCellValue(p.especie ?? ''),
+          TextCellValue(p.fase ?? ''),
+          TextCellValue(p.porte ?? ''),
+          TextCellValue(p.sabor ?? ''),
+          TextCellValue(p.dose ?? ''),
+          TextCellValue(p.composicao ?? ''),
+          TextCellValue(p.apresentacao ?? ''),
+          p.peso != null ? DoubleCellValue(p.peso!) : TextCellValue(''),
+          TextCellValue(p.nomeManualOverride ? 'Sim' : 'Não'),
         ]);
       }
 
