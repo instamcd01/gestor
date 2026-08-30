@@ -36,6 +36,16 @@
        <meta-data
            android:name="com.google.firebase.messaging.default_notification_channel_id"
            android:value="notificacoes_padrao" />
+       <!-- Sem isso, o FCM usa o ícone de launcher (colorido) como ícone de
+            notificação — o Android (API 21+) só olha o canal alfa pra
+            renderizar, então vira um quadrado sólido em vez da marca. Mesmo
+            ícone/cor já usados no app de cliente (gestor-loja/android). -->
+       <meta-data
+           android:name="com.google.firebase.messaging.default_notification_icon"
+           android:resource="@drawable/ic_stat_notify" />
+       <meta-data
+           android:name="com.google.firebase.messaging.default_notification_color"
+           android:resource="@color/notification_color" />
     </application>
 
     <!-- Sem isso, o Android 11+ (API 30+) esconde por padrão a

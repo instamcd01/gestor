@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Cor de fundo do ícone de notificação (FCM) — mesmo valor já usado
+         no app de cliente (gestor-loja/android), pra manter os dois
+         visualmente consistentes. -->
+    <color name="notification_color">#2C9FE0</color>
+</resources>
