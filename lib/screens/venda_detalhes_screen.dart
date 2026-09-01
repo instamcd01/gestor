@@ -403,6 +403,25 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     final podeEstornar = authProvider.isDono || authProvider.isGerente;
     final cancelada = venda.cancelada;
 
+    // Antes era 1 ListView só com tudo empilhado — difícil de escanear
+    // rápido quando o que importa muda conforme o papel de quem olha
+    // (vendedor só quer telefone/endereço pra despachar, dono também quer
+    // conferir pagamento/financeiro). Pedido explícito do usuário: manter
+    // status/total sempre visíveis no topo (não dependem de aba nenhuma) e
+    // separar o resto em abas por assunto, mesmo padrão de
+    // `cliente_detalhes_screen.dart` (`DefaultTabController`/`TabBar`), só
+    // que com a área fixa fora da AppBar, entre ela e as abas.
+    final abas = <Tab>[
+      const Tab(text: 'Itens'),
+      const Tab(text: 'Pagamento e Entrega'),
+      if (podeVerFinancas) const Tab(text: 'Financeiro'),
+    ];
+    final conteudoAbas = <Widget>[
+      _abaItens(venda, currencyFormat, podeVerFinancas),
+      _abaPagamentoEntrega(venda, currencyFormat, podeEstornar, temEntrega),
+      if (podeVerFinancas) _abaFinanceiro(venda, currencyFormat),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Venda - ${venda.cliente.nome}'),
@@ -430,218 +449,243 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             ),
         ],
       ),
-      body: Stack(
-        children: [
-          Opacity(
-            opacity: cancelada ? 0.6 : 1,
-            child: ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                if (cancelada) _bannerCancelada(),
-                if (!cancelada && venda.pagoOnline) _bannerPagoOnline(),
-                if (!cancelada && venda.aguardandoPagamento) ...[
-                  _bannerAguardandoPagamento(),
+      body: DefaultTabController(
+        length: abas.length,
+        child: Stack(
+          children: [
+            Opacity(
+              opacity: cancelada ? 0.6 : 1,
+              child: Column(
+                children: [
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: _processando ? null : _verificarPagamentoAgora,
-                        icon: const Icon(Icons.refresh, size: 16),
-                        label: const Text('Verificar pagamento agora'),
-                      ),
-                    ),
-                  ),
-                ],
-
-                // 3 cards por assunto (Pedido / Pagamento / Retirada ou
-                // Entrega) em vez de 1 card só misturando os 3 — antes tudo
-                // ficava numa lista só, difícil de escanear rápido quando o
-                // que importa muda conforme o papel de quem olha (vendedor
-                // só quer telefone/endereço pra despachar, dono também quer
-                // conferir o pagamento).
-                _card(
-                  titulo: 'Pedido',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _linhaInfo(iconeCanalVenda(venda.canalVenda), 'Canal', rotuloCanalVenda(venda.canalVenda)),
-                      if (venda.numeroExibicaoMarketplace != null)
-                        _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (iFood)',
-                            '#${venda.numeroExibicaoMarketplace}'),
-                      _linhaInfo(
-                          Icons.calendar_today, 'Data', DateFormat('dd/MM/yyyy • HH:mm').format(venda.dataVenda)),
-                      _linhaInfo(Icons.receipt_long, 'ID da Venda', venda.idVenda ?? '-'),
-                    ],
-                  ),
-                ),
-
-                _card(
-                  titulo: 'Pagamento',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _linhaInfo(
-                        Icons.payment,
-                        'Forma de Pagamento',
-                        venda.ehMarketplace
-                            ? '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}'
-                            : venda.pagoOnline
-                                // "Pagamento Online" sozinho não dizia se foi
-                                // crédito/débito/Pix nem quantas parcelas — usa o
-                                // detalhe real quando disponível (pedidos antigos,
-                                // de antes dessa informação ser gravada, caem no
-                                // rótulo genérico mesmo).
-                                ? '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega'
-                                : venda.metodoPagamento,
-                      ),
-                      // IDs técnicos do Mercado Pago — só quem pode estornar
-                      // (dono/gerente) precisa disso, e só serve pra buscar o
-                      // pagamento no painel deles em caso de dúvida/disputa.
-                      if (podeEstornar && venda.mercadoPagoPaymentId != null)
-                        _linhaInfo(Icons.tag, 'ID pagamento (Mercado Pago)', venda.mercadoPagoPaymentId!),
-                      if (podeEstornar && venda.mercadoPagoRefundId != null)
-                        _linhaInfo(Icons.tag, 'ID estorno (Mercado Pago)', venda.mercadoPagoRefundId!),
-                    ],
-                  ),
-                ),
-
-                _card(
-                  titulo: venda.retirada ? 'Retirada' : 'Entrega',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_temPrevisaoEntrega(venda))
-                        _linhaInfo(Icons.schedule, _labelPrevisaoEntrega(venda), _formatarPrevisaoEntrega(venda)),
-                      if (venda.cliente.celular.isNotEmpty)
-                        _linhaComAcao(
-                          icon: Icons.phone,
-                          label: 'Telefone',
-                          valor: venda.cliente.celular,
-                          iconAcao: venda.ehMarketplace ? Icons.call : Icons.chat,
-                          corAcao: venda.ehMarketplace ? Theme.of(context).colorScheme.primary : Colors.green,
-                          onTap: venda.ehMarketplace
-                              ? () => _ligarViaIfood(venda)
-                              : () => _abrirWhatsApp(venda.cliente.celular),
-                        ),
-                      if (venda.ehMarketplace && venda.cliente.celular.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 28, bottom: 4),
-                          child: Text(
-                            venda.telefoneLocalizador != null
-                                ? (venda.telefoneLocalizadorValido
-                                    ? 'Número mascarado pela iFood — o discador já vai enviar o código automaticamente após ligar.'
-                                    : 'Número mascarado pela iFood — o código de acesso já expirou, a ligação pode não completar.')
-                                : 'Número mascarado pela iFood — não funciona pra WhatsApp, só ligação.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: (venda.telefoneLocalizador != null && !venda.telefoneLocalizadorValido)
-                                  ? AppTheme.tomAdaptavel(Colors.orange, Theme.of(context).brightness)
-                                  : Theme.of(context).colorScheme.onSurfaceVariant,
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    child: Column(
+                      children: [
+                        if (cancelada) _bannerCancelada(),
+                        if (!cancelada && venda.pagoOnline) _bannerPagoOnline(),
+                        if (!cancelada && venda.aguardandoPagamento) ...[
+                          _bannerAguardandoPagamento(),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: _processando ? null : _verificarPagamentoAgora,
+                                icon: const Icon(Icons.refresh, size: 16),
+                                label: const Text('Verificar pagamento agora'),
+                              ),
                             ),
                           ),
-                        ),
-                      if (temEntrega && venda.cliente.enderecoCompleto.isNotEmpty)
-                        _linhaComAcao(
-                          icon: Icons.location_on,
-                          label: 'Endereço',
-                          valor: venda.cliente.enderecoCompleto,
-                          iconAcao: Icons.map,
-                          corAcao: Theme.of(context).colorScheme.primary,
-                          onTap: () => _abrirMapa(
-                            venda.cliente.enderecoCompleto,
-                            latitude: venda.cliente.latitude,
-                            longitude: venda.cliente.longitude,
+                        ],
+                        _card(
+                          titulo: 'Valores',
+                          child: Column(
+                            children: [
+                              _linhaValor('Subtotal', venda.subtotal, currencyFormat),
+                              if (venda.desconto > 0)
+                                _linhaValor(
+                                  venda.campanhaMarketplace != null
+                                      ? 'Desconto (${venda.campanhaMarketplace})'
+                                      : 'Desconto',
+                                  -venda.desconto,
+                                  currencyFormat,
+                                  cor: Colors.red,
+                                ),
+                              if (venda.saldoUsado > 0)
+                                _linhaValor('Saldo utilizado', -venda.saldoUsado, currencyFormat, cor: Colors.red),
+                              if (temEntrega)
+                                _linhaValor(
+                                  venda.entregaSelecionada.isNotEmpty
+                                      ? 'Entrega (${venda.entregaSelecionada})'
+                                      : 'Entrega',
+                                  venda.valorEntrega,
+                                  currencyFormat,
+                                  cor: Theme.of(context).colorScheme.primary,
+                                ),
+                              const Divider(height: 20),
+                              _linhaValor('Valor Total', venda.valorTotal, currencyFormat, destaque: true),
+                              _linhaValor('Valor Pago', venda.valorPago, currencyFormat),
+                              if (venda.troco > 0) _linhaValor('Troco', venda.troco, currencyFormat),
+                            ],
                           ),
-                          ultima: true,
                         ),
-                    ],
-                  ),
-                ),
-
-                if (venda.pagamentosDetalhados != null && venda.pagamentosDetalhados!.isNotEmpty)
-                  _card(
-                    titulo: 'Pagamentos Detalhados',
-                    child: Column(
-                      children: venda.pagamentosDetalhados!.entries
-                          .map((entry) => _linhaValor(entry.key, entry.value, currencyFormat))
-                          .toList(),
+                        if (venda.taxaServicoCliente != null && venda.taxaServicoCliente! > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4, bottom: 8),
+                            child: Text(
+                              'Taxa de serviço da iFood: ${currencyFormat.format(venda.taxaServicoCliente)} '
+                              '(receita da iFood, não da loja)',
+                              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-
-                _card(
-                  titulo: 'Valores',
-                  child: Column(
-                    children: [
-                      _linhaValor('Subtotal', venda.subtotal, currencyFormat),
-                      if (venda.desconto > 0)
-                        _linhaValor(
-                          venda.campanhaMarketplace != null
-                              ? 'Desconto (${venda.campanhaMarketplace})'
-                              : 'Desconto',
-                          -venda.desconto,
-                          currencyFormat,
-                          cor: Colors.red,
-                        ),
-                      if (venda.saldoUsado > 0)
-                        _linhaValor('Saldo utilizado', -venda.saldoUsado, currencyFormat, cor: Colors.red),
-                      if (temEntrega)
-                        _linhaValor(
-                          venda.entregaSelecionada.isNotEmpty ? 'Entrega (${venda.entregaSelecionada})' : 'Entrega',
-                          venda.valorEntrega,
-                          currencyFormat,
-                          cor: Theme.of(context).colorScheme.primary,
-                        ),
-                      const Divider(height: 20),
-                      _linhaValor('Valor Total', venda.valorTotal, currencyFormat, destaque: true),
-                      _linhaValor('Valor Pago', venda.valorPago, currencyFormat),
-                      if (venda.troco > 0) _linhaValor('Troco', venda.troco, currencyFormat),
-                    ],
+                  TabBar(
+                    tabs: abas,
+                    labelColor: Theme.of(context).colorScheme.primary,
+                    unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
+                  Expanded(child: TabBarView(children: conteudoAbas)),
+                ],
+              ),
+            ),
+            if (_processando)
+              Container(
+                color: Colors.black26,
+                child: const Center(child: CircularProgressIndicator()),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _abaItens(Venda venda, NumberFormat currencyFormat, bool podeVerFinancas) {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Text(
+            'Itens (${venda.itens.length})',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ),
+        if (venda.itens.isEmpty)
+          _card(child: const Text('Nenhum item encontrado.', style: TextStyle(color: Colors.grey)))
+        else
+          ...venda.itens.map((item) => _itemCard(item, currencyFormat, podeVerFinancas)),
+        if (venda.observacao.isNotEmpty)
+          _card(
+            titulo: 'Observações',
+            child: Text(venda.observacao, style: const TextStyle(fontStyle: FontStyle.italic)),
+          ),
+      ],
+    );
+  }
+
+  Widget _abaPagamentoEntrega(Venda venda, NumberFormat currencyFormat, bool podeEstornar, bool temEntrega) {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        _card(
+          titulo: 'Pedido',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _linhaInfo(iconeCanalVenda(venda.canalVenda), 'Canal', rotuloCanalVenda(venda.canalVenda)),
+              if (venda.numeroExibicaoMarketplace != null)
+                _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (iFood)',
+                    '#${venda.numeroExibicaoMarketplace}'),
+              _linhaInfo(Icons.calendar_today, 'Data', DateFormat('dd/MM/yyyy • HH:mm').format(venda.dataVenda)),
+              _linhaInfo(Icons.receipt_long, 'ID da Venda', venda.idVenda ?? '-'),
+            ],
+          ),
+        ),
+
+        _card(
+          titulo: 'Pagamento',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _linhaInfo(
+                Icons.payment,
+                'Forma de Pagamento',
+                venda.ehMarketplace
+                    ? '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}'
+                    : venda.pagoOnline
+                        // "Pagamento Online" sozinho não dizia se foi
+                        // crédito/débito/Pix nem quantas parcelas — usa o
+                        // detalhe real quando disponível (pedidos antigos,
+                        // de antes dessa informação ser gravada, caem no
+                        // rótulo genérico mesmo).
+                        ? '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega'
+                        : venda.metodoPagamento,
+              ),
+              // IDs técnicos do Mercado Pago — só quem pode estornar
+              // (dono/gerente) precisa disso, e só serve pra buscar o
+              // pagamento no painel deles em caso de dúvida/disputa.
+              if (podeEstornar && venda.mercadoPagoPaymentId != null)
+                _linhaInfo(Icons.tag, 'ID pagamento (Mercado Pago)', venda.mercadoPagoPaymentId!),
+              if (podeEstornar && venda.mercadoPagoRefundId != null)
+                _linhaInfo(Icons.tag, 'ID estorno (Mercado Pago)', venda.mercadoPagoRefundId!),
+            ],
+          ),
+        ),
+
+        _card(
+          titulo: venda.retirada ? 'Retirada' : 'Entrega',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_temPrevisaoEntrega(venda))
+                _linhaInfo(Icons.schedule, _labelPrevisaoEntrega(venda), _formatarPrevisaoEntrega(venda)),
+              if (venda.cliente.celular.isNotEmpty)
+                _linhaComAcao(
+                  icon: Icons.phone,
+                  label: 'Telefone',
+                  valor: venda.cliente.celular,
+                  iconAcao: venda.ehMarketplace ? Icons.call : Icons.chat,
+                  corAcao: venda.ehMarketplace ? Theme.of(context).colorScheme.primary : Colors.green,
+                  onTap: venda.ehMarketplace
+                      ? () => _ligarViaIfood(venda)
+                      : () => _abrirWhatsApp(venda.cliente.celular),
                 ),
-                if (venda.taxaServicoCliente != null && venda.taxaServicoCliente! > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4, bottom: 8),
-                    child: Text(
-                      'Taxa de serviço da iFood: ${currencyFormat.format(venda.taxaServicoCliente)} '
-                      '(receita da iFood, não da loja)',
-                      style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                  ),
-
-                if (venda.ehMarketplace && !venda.cancelada && !venda.finalizada) _cardMarketplaceAcompanhamento(venda),
-
-                if (podeVerFinancas) _cardInterno(venda, currencyFormat),
-
+              if (venda.ehMarketplace && venda.cliente.celular.isNotEmpty)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  padding: const EdgeInsets.only(left: 28, bottom: 4),
                   child: Text(
-                    'Itens (${venda.itens.length})',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    venda.telefoneLocalizador != null
+                        ? (venda.telefoneLocalizadorValido
+                            ? 'Número mascarado pela iFood — o discador já vai enviar o código automaticamente após ligar.'
+                            : 'Número mascarado pela iFood — o código de acesso já expirou, a ligação pode não completar.')
+                        : 'Número mascarado pela iFood — não funciona pra WhatsApp, só ligação.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: (venda.telefoneLocalizador != null && !venda.telefoneLocalizadorValido)
+                          ? AppTheme.tomAdaptavel(Colors.orange, Theme.of(context).brightness)
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
-                if (venda.itens.isEmpty)
-                  _card(child: const Text('Nenhum item encontrado.', style: TextStyle(color: Colors.grey)))
-                else
-                  ...venda.itens.map((item) => _itemCard(item, currencyFormat, podeVerFinancas)),
-
-                if (venda.observacao.isNotEmpty)
-                  _card(
-                    titulo: 'Observações',
-                    child: Text(venda.observacao, style: const TextStyle(fontStyle: FontStyle.italic)),
+              if (temEntrega && venda.cliente.enderecoCompleto.isNotEmpty)
+                _linhaComAcao(
+                  icon: Icons.location_on,
+                  label: 'Endereço',
+                  valor: venda.cliente.enderecoCompleto,
+                  iconAcao: Icons.map,
+                  corAcao: Theme.of(context).colorScheme.primary,
+                  onTap: () => _abrirMapa(
+                    venda.cliente.enderecoCompleto,
+                    latitude: venda.cliente.latitude,
+                    longitude: venda.cliente.longitude,
                   ),
+                  ultima: true,
+                ),
+            ],
+          ),
+        ),
 
-                const SizedBox(height: 12),
-              ],
+        if (venda.pagamentosDetalhados != null && venda.pagamentosDetalhados!.isNotEmpty)
+          _card(
+            titulo: 'Pagamentos Detalhados',
+            child: Column(
+              children: venda.pagamentosDetalhados!.entries
+                  .map((entry) => _linhaValor(entry.key, entry.value, currencyFormat))
+                  .toList(),
             ),
           ),
-          if (_processando)
-            Container(
-              color: Colors.black26,
-              child: const Center(child: CircularProgressIndicator()),
-            ),
-        ],
-      ),
+
+        if (venda.ehMarketplace && !venda.cancelada && !venda.finalizada) _cardMarketplaceAcompanhamento(venda),
+      ],
+    );
+  }
+
+  Widget _abaFinanceiro(Venda venda, NumberFormat currencyFormat) {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [_cardInterno(venda, currencyFormat)],
     );
   }
 
@@ -902,7 +946,12 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          initiallyExpanded: false,
+          // Antes ficava fechado por padrão (era 1 card a mais numa lista só
+          // com tudo) — agora é o conteúdo inteiro da aba "Financeiro", que
+          // já é escondida de quem não tem permissão; manter fechado só
+          // adicionaria um clique extra pra ver a única coisa que essa aba
+          // tem.
+          initiallyExpanded: true,
           leading: Icon(Icons.lock_outline, color: corLaranja),
           title: Text(
             'Informações internas (custo e lucro)',
