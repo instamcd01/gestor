@@ -337,7 +337,16 @@ class Venda {
   /// duplicada. Não usa `ehMarketplace` porque essa venda não veio do
   /// iFood; usa `statusPagamento` (mesmo campo que já alimenta
   /// `pagoPeloMarketplace`), que é preenchido igual pra qualquer canal.
-  bool get pagoOnline => !ehMarketplace && statusPagamento == 'pago';
+  ///
+  /// Exige `mercadoPagoPaymentId` também — só `statusPagamento == 'pago'`
+  /// não basta pra dizer "pago online": pedido `loja_fisica` com entrega
+  /// também vira 'pago' sozinho quando marcado como entregue (pagamento
+  /// presencial confirmado na hora, trigger
+  /// `confirmar_pagamento_entrega_loja_fisica`), sem nenhum gateway
+  /// envolvido — sem essa checagem, toda venda de entrega do app mostrava
+  /// "Já pago online — NÃO cobrar na entrega" e o botão de estornar pelo
+  /// Mercado Pago, ambos sem sentido pra um pagamento presencial.
+  bool get pagoOnline => !ehMarketplace && statusPagamento == 'pago' && mercadoPagoPaymentId != null;
 
   /// true = essa venda foi cancelada com estorno de verdade pelo Mercado
   /// Pago (ver `VendaRepository.estornarPagamentoOnline`), não só um
