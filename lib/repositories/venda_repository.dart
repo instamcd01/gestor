@@ -72,6 +72,17 @@ class VendaRepository {
     // de Pedidos até ser marcada como entregue de fato.
     final statusInicial = venda.temEntrega ? StatusPedido.pendente : StatusPedido.entregue;
 
+    // Preencher a forma de pagamento na tela não significa que o dinheiro
+    // já entrou — o app serve tanto de PDV (balcão/retirada, cobrado na
+    // hora) quanto pra montar pedido de entrega (pagamento normalmente só
+    // acontece quando o entregador chega). `venda.retirada` distingue os
+    // dois casos (ao contrário de `temEntrega`, que trata "Retirada na
+    // Loja" como entrega pra fins de fila de pedidos). Pra entrega de
+    // verdade, o pagamento é confirmado automaticamente pelo banco no
+    // momento em que o pedido é marcado como entregue (trigger
+    // `confirmar_pagamento_entrega_loja_fisica`), não aqui.
+    final statusPagamentoInicial = venda.retirada ? 'pago' : 'pendente';
+
     final itensPayload = venda.itens.map((item) {
       final margemItem = item.precoUnitario > 0
           ? ((item.precoUnitario - item.custoUnitario) / item.precoUnitario * 100)
@@ -102,7 +113,7 @@ class VendaRepository {
         'origem_tipo': 'proprio',
         'canal_venda': 'loja_fisica',
         'tipo_pagamento': venda.metodoPagamento,
-        'status_pagamento': 'pago',
+        'status_pagamento': statusPagamentoInicial,
         'valor_produtos': venda.subtotal,
         'valor_entrega': venda.valorEntrega,
         'desconto': venda.desconto,
