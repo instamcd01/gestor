@@ -91,6 +91,22 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
 
   bool _temPrevisaoEntrega(Venda venda) => _previsaoFim(venda) != null;
 
+  /// Usado tanto no resumo fixo (topo) quanto no card "Pagamento" da aba —
+  /// mesmo texto nos dois lugares, um método só pra não desalinhar depois.
+  String _resumoFormaPagamento(Venda venda) {
+    if (venda.ehMarketplace) {
+      return '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}';
+    }
+    if (venda.pagoOnline) {
+      // "Pagamento Online" sozinho não dizia se foi crédito/débito/Pix nem
+      // quantas parcelas — usa o detalhe real quando disponível (pedidos
+      // antigos, de antes dessa informação ser gravada, caem no rótulo
+      // genérico mesmo).
+      return '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega';
+    }
+    return venda.metodoPagamento;
+  }
+
   String _labelPrevisaoEntrega(Venda venda) {
     if (_ehAgendado(venda)) return venda.retirada ? 'Retirada agendada' : 'Entrega agendada';
     if (venda.modalidade == 'economica') return 'Entrega econômica';
@@ -515,7 +531,21 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(Icons.payment, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _resumoFormaPagamento(venda),
+                                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -527,7 +557,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 14),
                         const Divider(height: 1),
                       ],
                     ),
@@ -746,20 +776,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _linhaInfo(
-                Icons.payment,
-                'Forma de Pagamento',
-                venda.ehMarketplace
-                    ? '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}'
-                    : venda.pagoOnline
-                        // "Pagamento Online" sozinho não dizia se foi
-                        // crédito/débito/Pix nem quantas parcelas — usa o
-                        // detalhe real quando disponível (pedidos antigos,
-                        // de antes dessa informação ser gravada, caem no
-                        // rótulo genérico mesmo).
-                        ? '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega'
-                        : venda.metodoPagamento,
-              ),
+              _linhaInfo(Icons.payment, 'Forma de Pagamento', _resumoFormaPagamento(venda)),
               // IDs técnicos do Mercado Pago — só quem pode estornar
               // (dono/gerente) precisa disso, e só serve pra buscar o
               // pagamento no painel deles em caso de dúvida/disputa.
