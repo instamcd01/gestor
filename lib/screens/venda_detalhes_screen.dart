@@ -413,12 +413,18 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     // que com a área fixa fora da AppBar, entre ela e as abas.
     final abas = <Tab>[
       const Tab(text: 'Itens'),
-      const Tab(text: 'Pagamento e Entrega'),
+      const Tab(text: 'Cliente'),
+      const Tab(text: 'Pagamento'),
       if (podeVerFinancas) const Tab(text: 'Financeiro'),
     ];
     final conteudoAbas = <Widget>[
-      _abaItens(venda, currencyFormat, podeVerFinancas),
-      _abaPagamentoEntrega(venda, currencyFormat, podeEstornar, temEntrega),
+      // Custo/lucro por item saiu daqui — vendedor via mesmo sem poder ver
+      // finanças, e mistura preço de venda (o que interessa pra montar/
+      // conferir o pedido) com margem (informação sensível). Foi pra dentro
+      // da aba Financeiro junto do resto do que só quem tem permissão vê.
+      _abaItens(venda, currencyFormat),
+      _abaCliente(venda, temEntrega),
+      _abaPagamento(venda, currencyFormat, podeEstornar),
       if (podeVerFinancas) _abaFinanceiro(venda, currencyFormat),
     ];
 
@@ -541,7 +547,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
-  Widget _abaItens(Venda venda, NumberFormat currencyFormat, bool podeVerFinancas) {
+  Widget _abaItens(Venda venda, NumberFormat currencyFormat) {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
@@ -555,7 +561,10 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
         if (venda.itens.isEmpty)
           _card(child: const Text('Nenhum item encontrado.', style: TextStyle(color: Colors.grey)))
         else
-          ...venda.itens.map((item) => _itemCard(item, currencyFormat, podeVerFinancas)),
+          // Custo/lucro por item foi pra aba Financeiro (junto do resto que
+          // só quem tem permissão vê) — aqui é só o que qualquer um precisa
+          // pra montar/conferir o pedido.
+          ...venda.itens.map((item) => _itemCard(item, currencyFormat)),
         if (venda.observacao.isNotEmpty)
           _card(
             titulo: 'Observações',
@@ -565,55 +574,10 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
-  Widget _abaPagamentoEntrega(Venda venda, NumberFormat currencyFormat, bool podeEstornar, bool temEntrega) {
+  Widget _abaCliente(Venda venda, bool temEntrega) {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        _card(
-          titulo: 'Pedido',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _linhaInfo(iconeCanalVenda(venda.canalVenda), 'Canal', rotuloCanalVenda(venda.canalVenda)),
-              if (venda.numeroExibicaoMarketplace != null)
-                _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (iFood)',
-                    '#${venda.numeroExibicaoMarketplace}'),
-              _linhaInfo(Icons.calendar_today, 'Data', DateFormat('dd/MM/yyyy • HH:mm').format(venda.dataVenda)),
-              _linhaInfo(Icons.receipt_long, 'ID da Venda', venda.idVenda ?? '-'),
-            ],
-          ),
-        ),
-
-        _card(
-          titulo: 'Pagamento',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _linhaInfo(
-                Icons.payment,
-                'Forma de Pagamento',
-                venda.ehMarketplace
-                    ? '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}'
-                    : venda.pagoOnline
-                        // "Pagamento Online" sozinho não dizia se foi
-                        // crédito/débito/Pix nem quantas parcelas — usa o
-                        // detalhe real quando disponível (pedidos antigos,
-                        // de antes dessa informação ser gravada, caem no
-                        // rótulo genérico mesmo).
-                        ? '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega'
-                        : venda.metodoPagamento,
-              ),
-              // IDs técnicos do Mercado Pago — só quem pode estornar
-              // (dono/gerente) precisa disso, e só serve pra buscar o
-              // pagamento no painel deles em caso de dúvida/disputa.
-              if (podeEstornar && venda.mercadoPagoPaymentId != null)
-                _linhaInfo(Icons.tag, 'ID pagamento (Mercado Pago)', venda.mercadoPagoPaymentId!),
-              if (podeEstornar && venda.mercadoPagoRefundId != null)
-                _linhaInfo(Icons.tag, 'ID estorno (Mercado Pago)', venda.mercadoPagoRefundId!),
-            ],
-          ),
-        ),
-
         _card(
           titulo: venda.retirada ? 'Retirada' : 'Entrega',
           child: Column(
@@ -666,6 +630,58 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _abaPagamento(Venda venda, NumberFormat currencyFormat, bool podeEstornar) {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        _card(
+          titulo: 'Pedido',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _linhaInfo(iconeCanalVenda(venda.canalVenda), 'Canal', rotuloCanalVenda(venda.canalVenda)),
+              if (venda.numeroExibicaoMarketplace != null)
+                _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (iFood)',
+                    '#${venda.numeroExibicaoMarketplace}'),
+              _linhaInfo(Icons.calendar_today, 'Data', DateFormat('dd/MM/yyyy • HH:mm').format(venda.dataVenda)),
+              _linhaInfo(Icons.receipt_long, 'ID da Venda', venda.idVenda ?? '-'),
+            ],
+          ),
+        ),
+
+        _card(
+          titulo: 'Pagamento',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _linhaInfo(
+                Icons.payment,
+                'Forma de Pagamento',
+                venda.ehMarketplace
+                    ? '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}'
+                    : venda.pagoOnline
+                        // "Pagamento Online" sozinho não dizia se foi
+                        // crédito/débito/Pix nem quantas parcelas — usa o
+                        // detalhe real quando disponível (pedidos antigos,
+                        // de antes dessa informação ser gravada, caem no
+                        // rótulo genérico mesmo).
+                        ? '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega'
+                        : venda.metodoPagamento,
+              ),
+              // IDs técnicos do Mercado Pago — só quem pode estornar
+              // (dono/gerente) precisa disso, e só serve pra buscar o
+              // pagamento no painel deles em caso de dúvida/disputa.
+              if (podeEstornar && venda.mercadoPagoPaymentId != null)
+                _linhaInfo(Icons.tag, 'ID pagamento (Mercado Pago)', venda.mercadoPagoPaymentId!),
+              if (podeEstornar && venda.mercadoPagoRefundId != null)
+                _linhaInfo(Icons.tag, 'ID estorno (Mercado Pago)', venda.mercadoPagoRefundId!),
+            ],
+          ),
+        ),
 
         if (venda.pagamentosDetalhados != null && venda.pagamentosDetalhados!.isNotEmpty)
           _card(
@@ -685,7 +701,65 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
   Widget _abaFinanceiro(Venda venda, NumberFormat currencyFormat) {
     return ListView(
       padding: const EdgeInsets.all(12),
-      children: [_cardInterno(venda, currencyFormat)],
+      children: [
+        _cardInterno(venda, currencyFormat),
+        if (venda.itens.isNotEmpty) _cardLucroPorItem(venda, currencyFormat),
+      ],
+    );
+  }
+
+  /// Custo/lucro/margem por item — vivia dentro do card de cada item na aba
+  /// Itens (visível pra qualquer um que tivesse permissão), mudou pra cá a
+  /// pedido do usuário: aba Itens agora é só o que serve pra montar/conferir
+  /// o pedido, financeiro fica todo junto numa aba só.
+  Widget _cardLucroPorItem(Venda venda, NumberFormat currencyFormat) {
+    final brightness = Theme.of(context).brightness;
+    final corVerde = AppTheme.tomAdaptavel(Colors.green, brightness);
+    final corVermelho = AppTheme.tomAdaptavel(Colors.red, brightness);
+    return _card(
+      titulo: 'Lucro por Item',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final item in venda.itens) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${item.quantidade}x ${item.produto.nome}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'custo ${currencyFormat.format(item.custoUnitario * item.quantidade)}',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  '${item.lucroTotal >= 0 ? '+' : ''}${currencyFormat.format(item.lucroTotal)} '
+                  '(${item.margemPercentual.toStringAsFixed(0)}%)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: item.lucroTotal >= 0 ? corVerde : corVermelho,
+                  ),
+                ),
+              ),
+            ),
+            if (item != venda.itens.last) const Divider(height: 12),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1113,9 +1187,10 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
-  Widget _itemCard(ItemVenda item, NumberFormat currencyFormat, bool podeVerFinancas) {
-    final lucroPositivo = item.lucroTotal >= 0;
-
+  /// Custo/lucro por item mora só na aba Financeiro agora (`_cardLucroPorItem`)
+  /// — este card fica só com o que qualquer um precisa pra montar/conferir
+  /// o pedido (produto, quantidade, preço, observação do cliente).
+  Widget _itemCard(ItemVenda item, NumberFormat currencyFormat) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -1134,9 +1209,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 Text(item.produto.nome, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                 const SizedBox(height: 2),
                 Text(
-                  podeVerFinancas
-                      ? '${item.quantidade}x ${currencyFormat.format(item.precoUnitario)}  •  custo ${currencyFormat.format(item.custoUnitario)}'
-                      : '${item.quantidade}x ${currencyFormat.format(item.precoUnitario)}',
+                  '${item.quantidade}x ${currencyFormat.format(item.precoUnitario)}',
                   style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
                 if (item.observacaoCliente != null && item.observacaoCliente!.isNotEmpty) ...[
@@ -1154,23 +1227,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(currencyFormat.format(item.precoTotal), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              if (podeVerFinancas) ...[
-                const SizedBox(height: 2),
-                Text(
-                  '${lucroPositivo ? '+' : ''}${currencyFormat.format(item.lucroTotal)} (${item.margemPercentual.toStringAsFixed(0)}%)',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.tomAdaptavel(lucroPositivo ? Colors.green : Colors.red, Theme.of(context).brightness),
-                  ),
-                ),
-              ],
-            ],
-          ),
+          Text(currencyFormat.format(item.precoTotal), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         ],
       ),
     );
