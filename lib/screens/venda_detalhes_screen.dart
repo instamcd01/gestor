@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/venda.dart';
@@ -26,11 +27,15 @@ class VendaDetalhesScreen extends StatefulWidget {
 class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
   late Venda _venda;
   bool _processando = false;
+  late Future<List<EventoStatusPedido>> _historicoFuture;
 
   @override
   void initState() {
     super.initState();
     _venda = widget.venda;
+    _historicoFuture = _venda.idVenda != null
+        ? VendaRepository().historicoStatus(_venda.idVenda!)
+        : Future.value(const []);
   }
 
   Future<void> _abrirWhatsApp(String numero) async {
@@ -246,6 +251,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
           motivoCancelamentoCodigo: motivoCodigo,
           motivoCancelamentoDescricao: motivoDescricao,
         );
+        _historicoFuture = VendaRepository().historicoStatus(_venda.idVenda!);
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Venda cancelada. Estoque e saldo do cliente foram estornados.')),
@@ -292,6 +298,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       if (!mounted) return;
       setState(() {
         _venda = _venda.copyWith(status: 'cancelado');
+        _historicoFuture = VendaRepository().historicoStatus(_venda.idVenda!);
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pagamento estornado e venda cancelada.')),
@@ -415,6 +422,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       const Tab(text: 'Itens'),
       const Tab(text: 'Cliente'),
       const Tab(text: 'Pagamento'),
+      const Tab(text: 'Histórico'),
       if (podeVerFinancas) const Tab(text: 'Financeiro'),
     ];
     final conteudoAbas = <Widget>[
@@ -424,7 +432,11 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       // da aba Financeiro junto do resto do que só quem tem permissão vê.
       _abaItens(venda, currencyFormat),
       _abaCliente(venda, temEntrega),
-      _abaPagamento(venda, currencyFormat, podeEstornar),
+      // Pedido explícito do usuário: o resumo (canal/data) fica fixo acima
+      // das abas, mas o detalhamento completo de valores (subtotal/
+      // descontos/cupons/entrega) mora aqui, junto da forma de pagamento.
+      _abaPagamento(venda, currencyFormat, podeEstornar, temEntrega),
+      _abaHistorico(venda),
       if (podeVerFinancas) _abaFinanceiro(venda, currencyFormat),
     ];
 
@@ -464,7 +476,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                     child: Column(
                       children: [
                         if (cancelada) _bannerCancelada(),
@@ -483,52 +495,47 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                             ),
                           ),
                         ],
-                        _card(
-                          titulo: 'Valores',
-                          child: Column(
-                            children: [
-                              _linhaValor('Subtotal', venda.subtotal, currencyFormat),
-                              if (venda.desconto > 0)
-                                _linhaValor(
-                                  venda.campanhaMarketplace != null
-                                      ? 'Desconto (${venda.campanhaMarketplace})'
-                                      : 'Desconto',
-                                  -venda.desconto,
-                                  currencyFormat,
-                                  cor: Colors.red,
-                                ),
-                              if (venda.saldoUsado > 0)
-                                _linhaValor('Saldo utilizado', -venda.saldoUsado, currencyFormat, cor: Colors.red),
-                              if (temEntrega)
-                                _linhaValor(
-                                  venda.entregaSelecionada.isNotEmpty
-                                      ? 'Entrega (${venda.entregaSelecionada})'
-                                      : 'Entrega',
-                                  venda.valorEntrega,
-                                  currencyFormat,
-                                  cor: Theme.of(context).colorScheme.primary,
-                                ),
-                              const Divider(height: 20),
-                              _linhaValor('Valor Total', venda.valorTotal, currencyFormat, destaque: true),
-                              _linhaValor('Valor Pago', venda.valorPago, currencyFormat),
-                              if (venda.troco > 0) _linhaValor('Troco', venda.troco, currencyFormat),
-                            ],
-                          ),
-                        ),
-                        if (venda.taxaServicoCliente != null && venda.taxaServicoCliente! > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4, bottom: 8),
-                            child: Text(
-                              'Taxa de serviço da iFood: ${currencyFormat.format(venda.taxaServicoCliente)} '
-                              '(receita da iFood, não da loja)',
-                              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        // Resumo fixo: só o essencial pra identificar o
+                        // pedido de relance (canal + quando foi criado) e o
+                        // valor principal — o detalhamento completo
+                        // (subtotal/descontos/cupons/entrega) mora na aba
+                        // Pagamento agora, pedido explícito do usuário.
+                        Row(
+                          children: [
+                            Icon(iconeCanalVenda(venda.canalVenda),
+                                size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '${rotuloCanalVenda(venda.canalVenda)} • '
+                                '${DateFormat('dd/MM/yyyy HH:mm').format(venda.dataVenda)}',
+                                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Total',
+                                style: TextStyle(fontSize: 15, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                            Text(
+                              currencyFormat.format(venda.valorTotal),
+                              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Divider(height: 1),
                       ],
                     ),
                   ),
                   TabBar(
                     tabs: abas,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
                     labelColor: Theme.of(context).colorScheme.primary,
                     unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -544,7 +551,49 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
           ],
         ),
       ),
+      bottomNavigationBar: (!cancelada && venda.proximoStatus != null)
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _processando ? null : _avancarStatus,
+                    icon: const Icon(Icons.arrow_forward),
+                    label: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!)}'),
+                  ),
+                ),
+              ),
+            )
+          : null,
     );
+  }
+
+  /// Mesma ação/RPC de `fila_pedidos_screen._avancarStatus` — faltava dar
+  /// pra avançar o status direto daqui, sem precisar voltar pra Fila de
+  /// Pedidos pra fazer a mesma coisa que já se está olhando aqui.
+  Future<void> _avancarStatus() async {
+    final proximo = _venda.proximoStatus;
+    if (proximo == null || _venda.idVenda == null) return;
+
+    setState(() => _processando = true);
+    try {
+      await Provider.of<HistoricoVendasProvider>(context, listen: false)
+          .avancarStatusPedido(_venda.idVenda!, proximo);
+      if (!mounted) return;
+      setState(() {
+        _venda = _venda.copyWith(status: proximo);
+        _historicoFuture = VendaRepository().historicoStatus(_venda.idVenda!);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final mensagem = e is PostgrestException ? e.message : e.toString();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível atualizar o pedido: $mensagem')),
+      );
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
   }
 
   Widget _abaItens(Venda venda, NumberFormat currencyFormat) {
@@ -634,20 +683,59 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
-  Widget _abaPagamento(Venda venda, NumberFormat currencyFormat, bool podeEstornar) {
+  Widget _abaPagamento(Venda venda, NumberFormat currencyFormat, bool podeEstornar, bool temEntrega) {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        // Detalhamento completo (subtotal/descontos/cupons/entrega) — o
+        // resumo fixo acima das abas mostra só o total, pedido explícito do
+        // usuário pra não poluir o que fica sempre visível.
+        _card(
+          titulo: 'Valores',
+          child: Column(
+            children: [
+              _linhaValor('Subtotal', venda.subtotal, currencyFormat),
+              if (venda.desconto > 0)
+                _linhaValor(
+                  venda.campanhaMarketplace != null ? 'Desconto (${venda.campanhaMarketplace})' : 'Desconto',
+                  -venda.desconto,
+                  currencyFormat,
+                  cor: Colors.red,
+                ),
+              if (venda.saldoUsado > 0)
+                _linhaValor('Saldo utilizado', -venda.saldoUsado, currencyFormat, cor: Colors.red),
+              if (temEntrega)
+                _linhaValor(
+                  venda.entregaSelecionada.isNotEmpty ? 'Entrega (${venda.entregaSelecionada})' : 'Entrega',
+                  venda.valorEntrega,
+                  currencyFormat,
+                  cor: Theme.of(context).colorScheme.primary,
+                ),
+              const Divider(height: 20),
+              _linhaValor('Valor Total', venda.valorTotal, currencyFormat, destaque: true),
+              _linhaValor('Valor Pago', venda.valorPago, currencyFormat),
+              if (venda.troco > 0) _linhaValor('Troco', venda.troco, currencyFormat),
+            ],
+          ),
+        ),
+        if (venda.taxaServicoCliente != null && venda.taxaServicoCliente! > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 0, bottom: 8),
+            child: Text(
+              'Taxa de serviço da iFood: ${currencyFormat.format(venda.taxaServicoCliente)} '
+              '(receita da iFood, não da loja)',
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ),
+
         _card(
           titulo: 'Pedido',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _linhaInfo(iconeCanalVenda(venda.canalVenda), 'Canal', rotuloCanalVenda(venda.canalVenda)),
               if (venda.numeroExibicaoMarketplace != null)
                 _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (iFood)',
                     '#${venda.numeroExibicaoMarketplace}'),
-              _linhaInfo(Icons.calendar_today, 'Data', DateFormat('dd/MM/yyyy • HH:mm').format(venda.dataVenda)),
               _linhaInfo(Icons.receipt_long, 'ID da Venda', venda.idVenda ?? '-'),
             ],
           ),
@@ -695,6 +783,93 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
 
         if (venda.ehMarketplace && !venda.cancelada && !venda.finalizada) _cardMarketplaceAcompanhamento(venda),
       ],
+    );
+  }
+
+  /// Data/hora de cada etapa do pedido — não existia nenhum registro disso
+  /// antes de hoje (`pedido_status_historico`, populado por trigger a cada
+  /// mudança de `pedidos.status`). Pedidos de antes dessa tabela existir só
+  /// têm 1 entrada (o status atual, na data de criação) — limitação
+  /// conhecida, não dá pra reconstruir transições que já aconteceram.
+  Widget _abaHistorico(Venda venda) {
+    return FutureBuilder<List<EventoStatusPedido>>(
+      future: _historicoFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Não foi possível carregar o histórico: ${snapshot.error}'),
+            ),
+          );
+        }
+        final eventos = snapshot.data ?? const [];
+        if (eventos.isEmpty) {
+          return const Center(child: Text('Sem histórico disponível.', style: TextStyle(color: Colors.grey)));
+        }
+        final dateFormat = DateFormat('dd/MM/yyyy • HH:mm');
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: eventos.length,
+          itemBuilder: (context, index) {
+            final evento = eventos[index];
+            final ultimo = index == eventos.length - 1;
+            final cor = ultimo ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant;
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Column(
+                    children: [
+                      Container(
+                        width: 14,
+                        height: 14,
+                        margin: const EdgeInsets.only(top: 3),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: ultimo ? cor : Colors.transparent,
+                          border: Border.all(color: cor, width: 2),
+                        ),
+                      ),
+                      if (!ultimo)
+                        Expanded(
+                          child: Container(width: 2, color: Theme.of(context).colorScheme.outlineVariant),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            StatusPedido.rotulo(evento.status),
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: ultimo ? FontWeight.bold : FontWeight.w600,
+                              color: ultimo ? Theme.of(context).colorScheme.onSurface : null,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            dateFormat.format(evento.dataHora),
+                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

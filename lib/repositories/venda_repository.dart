@@ -8,6 +8,10 @@ import '../models/cliente.dart';
 import '../models/produto.dart';
 import '../models/venda.dart';
 
+/// Uma entrada da linha do tempo de status de um pedido (ver
+/// `VendaRepository.historicoStatus`).
+typedef EventoStatusPedido = ({String status, DateTime dataHora});
+
 /// Camada de acesso a dados de vendas. Cada "Venda" do app vira um registro
 /// em `pedidos` (+ `itens_pedido`) no Supabase — a mesma tabela usada pelos
 /// pedidos vindos de WhatsApp/iFood/site, só que com origem = 'loja_fisica'.
@@ -235,6 +239,24 @@ class VendaRepository {
         .eq('id', idVenda)
         .single();
     return _vendaFromRow(data);
+  }
+
+  /// Linha do tempo de status do pedido (`pedido_status_historico`, criada
+  /// por trigger a cada mudança de `pedidos.status`, populada desde
+  /// 02/09/2026). Ordenado do mais antigo pro mais recente — leitura de
+  /// timeline é natural nessa direção.
+  Future<List<EventoStatusPedido>> historicoStatus(String idVenda) async {
+    final data = await supabase
+        .from('pedido_status_historico')
+        .select('status, criado_em')
+        .eq('pedido_id', idVenda)
+        .order('criado_em');
+    return (data as List)
+        .map((row) => (
+              status: row['status'] as String,
+              dataHora: DateTime.parse(row['criado_em'] as String).toLocal(),
+            ))
+        .toList();
   }
 
   /// Abate o valor usado do saldo (crédito interno) do cliente, registrando
