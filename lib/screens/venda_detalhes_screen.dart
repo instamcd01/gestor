@@ -545,14 +545,16 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                         ),
                         const SizedBox(height: 6),
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Icon(Icons.payment, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            const SizedBox(width: 6),
-                            Expanded(
+                            Icon(Icons.payment, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            const SizedBox(width: 4),
+                            Flexible(
                               child: Text(
                                 _resumoFormaPagamento(venda),
                                 style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                 overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.right,
                               ),
                             ),
                           ],
