@@ -531,6 +531,18 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Total',
+                                style: TextStyle(fontSize: 15, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                            Text(
+                              currencyFormat.format(venda.valorTotal),
+                              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 6),
                         Row(
                           children: [
@@ -542,18 +554,6 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                                 style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                 overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Total',
-                                style: TextStyle(fontSize: 15, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                            Text(
-                              currencyFormat.format(venda.valorTotal),
-                              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -1193,38 +1193,23 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
+  /// Antes vinha com cadeado + fundo laranja + `ExpansionTile` (fazia
+  /// sentido quando era 1 card colapsado a mais numa lista só com tudo) —
+  /// hoje é o conteúdo inteiro da própria aba "Financeiro", que já não
+  /// aparece pra quem não tem permissão (vendedor não vê nem a aba). O
+  /// cadeado/"informações internas" ficava redundante com isso, dava a
+  /// entender que ainda precisava de outra camada de esconderijo. Card
+  /// normal agora, mesmo padrão visual do resto da tela.
   Widget _cardInterno(Venda venda, NumberFormat currencyFormat) {
     final brightness = Theme.of(context).brightness;
-    // Mistura com a superfície do tema ATUAL em vez do tom pastel fixo
-    // (Colors.orange[50]/[100]) — opaco e claro demais no tema escuro.
-    final fundo = Color.alphaBlend(Colors.orange.withValues(alpha: 0.15), Theme.of(context).colorScheme.surface);
-    final borda = Color.alphaBlend(Colors.orange.withValues(alpha: 0.4), Theme.of(context).colorScheme.surface);
     final corLaranja = AppTheme.tomAdaptavel(Colors.orange, brightness);
     final corVerde = AppTheme.tomAdaptavel(Colors.green, brightness);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: fundo,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: borda),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          // Antes ficava fechado por padrão (era 1 card a mais numa lista só
-          // com tudo) — agora é o conteúdo inteiro da aba "Financeiro", que
-          // já é escondida de quem não tem permissão; manter fechado só
-          // adicionaria um clique extra pra ver a única coisa que essa aba
-          // tem.
-          initiallyExpanded: true,
-          leading: Icon(Icons.lock_outline, color: corLaranja),
-          title: Text(
-            'Informações internas (custo e lucro)',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: corLaranja),
-          ),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          children: [
+    return _card(
+      titulo: 'Informações Financeiras',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             _linhaValor('Custo Total', venda.custoTotal, currencyFormat, cor: corLaranja),
             _linhaValor('Lucro Total (só produto)', venda.lucroTotal, currencyFormat, cor: corVerde),
             _linhaValor(
@@ -1275,8 +1260,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 cor: corVerde,
               ),
             ],
-          ],
-        ),
+        ],
       ),
     );
   }
