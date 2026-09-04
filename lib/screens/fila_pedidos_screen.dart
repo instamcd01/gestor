@@ -234,6 +234,17 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       chips.add(_chipInfo(context, Icons.money_outlined, 'Troco: R\$ ${venda.troco.toStringAsFixed(2)}'));
     }
 
+    // Cartão parcelado na entrega/retirada (não é Mercado Pago) — vendedor
+    // precisa saber quantas parcelas configurar na maquininha antes de
+    // passar o cartão do cliente.
+    if (venda.valorParcelaCartao != null) {
+      chips.add(_chipInfo(
+        context,
+        Icons.credit_card,
+        '${venda.parcelasCartao}x de R\$ ${venda.valorParcelaCartao!.toStringAsFixed(2)}',
+      ));
+    }
+
     return chips;
   }
 

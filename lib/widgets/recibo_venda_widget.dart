@@ -281,6 +281,11 @@ class ReciboVendaWidget extends StatelessWidget {
           if (venda.desconto > 0) _linhaValor('Desconto', '-${currencyFormat.format(venda.desconto)}'),
           if (venda.saldoUsado > 0) _linhaValor('Saldo utilizado', '-${currencyFormat.format(venda.saldoUsado)}'),
           if (temEntrega) _linhaValor('Entrega', '+${currencyFormat.format(venda.valorEntrega)}'),
+          if (venda.jurosParcelamento != null && venda.jurosParcelamento! > 0)
+            _linhaValor(
+              'Juros do parcelamento (${venda.parcelasCartao}x)',
+              '+${currencyFormat.format(venda.jurosParcelamento)}',
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: _DividerTracejado(cor: corPrimaria.withValues(alpha: 0.3)),
@@ -298,6 +303,11 @@ class ReciboVendaWidget extends StatelessWidget {
           const SizedBox(height: 4),
           _linhaValor('Valor Pago', currencyFormat.format(venda.valorPago)),
           if (venda.troco > 0) _linhaValor('Troco', currencyFormat.format(venda.troco)),
+          if (venda.valorParcelaCartao != null)
+            _linhaValor(
+              'Parcelamento',
+              '${venda.parcelasCartao}x de ${currencyFormat.format(venda.valorParcelaCartao)}',
+            ),
         ],
       ),
     );
