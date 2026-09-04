@@ -81,9 +81,23 @@ class _RotaMapaScreenState extends State<RotaMapaScreen> {
     for (var i = 0; i < widget.vendas.length; i++) {
       final venda = widget.vendas[i];
       final cliente = venda?.cliente;
-      if (cliente?.latitude == null || cliente?.longitude == null) continue;
+      if (cliente == null) continue;
 
-      final posicao = LatLng(cliente!.latitude!, cliente.longitude!);
+      // Mesmo fallback usado pra calcular a rota (ver
+      // rotas_entrega_screen.dart, _destinosDosPedidos): cliente sem
+      // lat/lng salvo ainda entra no mapa, só que geocodificando o
+      // endereço em texto na hora — sem isso, a parada simplesmente
+      // sumia do mapa sem nenhum aviso, mesmo tendo entrado no cálculo
+      // da rota normalmente.
+      LatLng? posicao;
+      if (cliente.latitude != null && cliente.longitude != null) {
+        posicao = LatLng(cliente.latitude!, cliente.longitude!);
+      } else if (cliente.enderecoCompleto.isNotEmpty) {
+        final geocodificado = await DistanciaService.geocodificarParaCoordenadas(cliente.enderecoCompleto);
+        if (geocodificado != null) posicao = LatLng(geocodificado.lat, geocodificado.lng);
+      }
+      if (posicao == null) continue;
+
       registrarPonto(posicao.latitude, posicao.longitude);
 
       final ultima = i == widget.vendas.length - 1;

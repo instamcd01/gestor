@@ -546,10 +546,19 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
                           }),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
+                          // Wrap em vez de Row: com "Ver no mapa" +
+                          // "Adicionar pedidos" + "Iniciar rota" ao mesmo
+                          // tempo (rota planejada já reordenada manualmente,
+                          // por exemplo), 3 botões numa linha só estourava a
+                          // largura da tela em celular — aqui o que não
+                          // couber quebra pra uma 2ª linha em vez de sumir
+                          // cortado.
+                          child: Wrap(
+                            alignment: WrapAlignment.end,
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
-                              if (rota.polylineEstimada != null) ...[
+                              if (rota.polylineEstimada != null)
                                 TextButton.icon(
                                   onPressed: () => Navigator.push(
                                     context,
@@ -563,14 +572,11 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
                                   icon: const Icon(Icons.map_outlined, size: 18),
                                   label: const Text('Ver no mapa'),
                                 ),
-                                const SizedBox(width: 8),
-                              ],
                               if (rota.planejada) ...[
                                 TextButton(
                                   onPressed: () => _adicionarPedidos(rota),
                                   child: const Text('Adicionar pedidos'),
                                 ),
-                                const SizedBox(width: 8),
                                 ElevatedButton(
                                   onPressed: () => _iniciarRota(rota),
                                   child: const Text('Iniciar rota'),
