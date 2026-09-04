@@ -353,6 +353,43 @@ class _FiltroTipoVariante extends StatelessWidget {
   }
 }
 
+/// Filtro genérico por um valor de texto (categoria, subcategoria,
+/// fabricante...) com a contagem de produtos de cada valor — mesmo padrão
+/// visual de _FiltroTipoVariante, mas sem a tradução de rótulo específica
+/// de variante, pra reusar nas abas que não tinham filtro nenhum (Revisar
+/// preço, Ciclo de recompra, Catálogo) e o usuário via ficando difícil achar
+/// os produtos certos numa lista longa sem poder restringir por categoria.
+class _FiltroPorValor extends StatelessWidget {
+  const _FiltroPorValor({
+    required this.label,
+    required this.valor,
+    required this.contagemPorValor,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String? valor;
+  final Map<String, int> contagemPorValor;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final valores = contagemPorValor.keys.toList()..sort();
+    return PopupMenuButton<String?>(
+      initialValue: valor,
+      onSelected: onChanged,
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: null, child: Text('Todas')),
+        for (final v in valores) PopupMenuItem(value: v, child: Text('$v (${contagemPorValor[v]})')),
+      ],
+      child: Chip(
+        label: Text(valor == null ? '$label: todas' : '$label: $valor'),
+        avatar: const Icon(Icons.filter_list, size: 16),
+      ),
+    );
+  }
+}
+
 /// ---------------------------------------------------------------------
 /// Aba 2: Sugestões de variante
 /// ---------------------------------------------------------------------
@@ -538,6 +575,8 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
   final Set<String> _selecionados = {};
   final _markupController = TextEditingController();
   bool _processando = false;
+  String _busca = '';
+  String? _filtroCategoria;
 
   @override
   void dispose() {
@@ -584,12 +623,40 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
   @override
   Widget build(BuildContext context) {
     final produtoProvider = context.watch<ProdutoProvider>();
-    final lista = produtoProvider.produtos.where((p) => p.revisarPreco).toList();
+    final pendentes = produtoProvider.produtos.where((p) => p.revisarPreco).toList();
+    final contagemPorCategoria = <String, int>{};
+    for (final p in pendentes) {
+      final cat = p.categoria.isNotEmpty ? p.categoria : 'Sem categoria';
+      contagemPorCategoria[cat] = (contagemPorCategoria[cat] ?? 0) + 1;
+    }
+    final lista = pendentes
+        .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) => _filtroCategoria == null ||
+            (p.categoria.isNotEmpty ? p.categoria : 'Sem categoria') == _filtroCategoria)
+        .toList();
     final idsValidos = lista.map((p) => p.id).whereType<String>().toSet();
     _selecionados.removeWhere((id) => !idsValidos.contains(id));
 
     return Column(
       children: [
+        if (pendentes.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: TextField(
+              decoration: const InputDecoration(hintText: 'Buscar por nome', prefixIcon: Icon(Icons.search)),
+              onChanged: (v) => setState(() => _busca = v),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: _FiltroPorValor(
+              label: 'Categoria',
+              valor: _filtroCategoria,
+              contagemPorValor: contagemPorCategoria,
+              onChanged: (v) => setState(() => _filtroCategoria = v),
+            ),
+          ),
+        ],
         if (lista.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -606,7 +673,10 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
           ),
         Expanded(
           child: lista.isEmpty
-              ? const Center(child: Text('Nenhum produto pendente de revisão de preço'))
+              ? Center(
+                  child: Text(pendentes.isEmpty
+                      ? 'Nenhum produto pendente de revisão de preço'
+                      : 'Nenhum produto encontrado com esse filtro'))
               : ListView.builder(
                   padding: const EdgeInsets.only(bottom: 160),
                   itemCount: lista.length,
@@ -692,6 +762,8 @@ class _AbaCicloRecompraState extends State<_AbaCicloRecompra> {
   final _diasController = TextEditingController();
   String _busca = '';
   bool _processando = false;
+  String? _filtroCategoria;
+  bool? _filtroComCiclo;
 
   @override
   void dispose() {
@@ -728,7 +800,17 @@ class _AbaCicloRecompraState extends State<_AbaCicloRecompra> {
   @override
   Widget build(BuildContext context) {
     final produtoProvider = context.watch<ProdutoProvider>();
-    final lista = produtoProvider.produtos.where((p) => contemTodasPalavras(p.nome, _busca)).toList();
+    final contagemPorCategoria = <String, int>{};
+    for (final p in produtoProvider.produtos) {
+      final cat = p.categoria.isNotEmpty ? p.categoria : 'Sem categoria';
+      contagemPorCategoria[cat] = (contagemPorCategoria[cat] ?? 0) + 1;
+    }
+    final lista = produtoProvider.produtos
+        .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) => _filtroCategoria == null ||
+            (p.categoria.isNotEmpty ? p.categoria : 'Sem categoria') == _filtroCategoria)
+        .where((p) => _filtroComCiclo == null || (p.cicloRecompraDias != null) == _filtroComCiclo)
+        .toList();
     final idsValidos = lista.map((p) => p.id).whereType<String>().toSet();
     _selecionados.removeWhere((id) => !idsValidos.contains(id));
 
@@ -739,6 +821,28 @@ class _AbaCicloRecompraState extends State<_AbaCicloRecompra> {
           child: TextField(
             decoration: const InputDecoration(hintText: 'Buscar por nome', prefixIcon: Icon(Icons.search)),
             onChanged: (v) => setState(() => _busca = v),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              _FiltroPorValor(
+                label: 'Categoria',
+                valor: _filtroCategoria,
+                contagemPorValor: contagemPorCategoria,
+                onChanged: (v) => setState(() => _filtroCategoria = v),
+              ),
+              _FiltroTriEstado(
+                label: 'Ciclo',
+                valor: _filtroComCiclo,
+                rotuloVerdadeiro: 'Com ciclo próprio',
+                rotuloFalso: 'Sem ciclo (usa padrão)',
+                onChanged: (v) => setState(() => _filtroComCiclo = v),
+              ),
+            ],
           ),
         ),
         Padding(
@@ -755,7 +859,9 @@ class _AbaCicloRecompraState extends State<_AbaCicloRecompra> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
+          child: lista.isEmpty
+              ? const Center(child: Text('Nenhum produto encontrado com esse filtro'))
+              : ListView.builder(
             padding: const EdgeInsets.only(bottom: 160),
             itemCount: lista.length,
             itemBuilder: (context, index) {
@@ -845,6 +951,10 @@ class _AbaCatalogoState extends State<_AbaCatalogo> {
   bool _processando = false;
   List<String>? _categorias;
   List<String>? _fabricantes;
+  String? _filtroCategoria;
+  String? _filtroSubcategoria;
+  bool? _filtroExibido;
+  bool? _filtroAtivo;
 
   @override
   void initState() {
@@ -990,7 +1100,38 @@ class _AbaCatalogoState extends State<_AbaCatalogo> {
   @override
   Widget build(BuildContext context) {
     final produtoProvider = context.watch<ProdutoProvider>();
-    final lista = produtoProvider.produtos.where((p) => contemTodasPalavras(p.nome, _busca)).toList();
+
+    final contagemPorCategoria = <String, int>{};
+    for (final p in produtoProvider.produtos) {
+      final cat = p.categoria.isNotEmpty ? p.categoria : 'Sem categoria';
+      contagemPorCategoria[cat] = (contagemPorCategoria[cat] ?? 0) + 1;
+    }
+
+    // Subcategorias só da categoria escolhida (ou de todo o catálogo, se
+    // nenhuma categoria estiver selecionada ainda) — evita listar "Adultos"
+    // de Ração junto com "Adultos" de Sachê como se fosse uma coisa só.
+    final baseParaSubcategoria = _filtroCategoria == null
+        ? produtoProvider.produtos
+        : produtoProvider.produtos
+            .where((p) => (p.categoria.isNotEmpty ? p.categoria : 'Sem categoria') == _filtroCategoria);
+    final contagemPorSubcategoria = <String, int>{};
+    for (final p in baseParaSubcategoria) {
+      final sub = p.subcategoria;
+      if (sub == null || sub.isEmpty) continue;
+      contagemPorSubcategoria[sub] = (contagemPorSubcategoria[sub] ?? 0) + 1;
+    }
+    if (_filtroSubcategoria != null && !contagemPorSubcategoria.containsKey(_filtroSubcategoria)) {
+      _filtroSubcategoria = null;
+    }
+
+    final lista = produtoProvider.produtos
+        .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) => _filtroCategoria == null ||
+            (p.categoria.isNotEmpty ? p.categoria : 'Sem categoria') == _filtroCategoria)
+        .where((p) => _filtroSubcategoria == null || p.subcategoria == _filtroSubcategoria)
+        .where((p) => _filtroExibido == null || p.exibirNoCatalogo == _filtroExibido)
+        .where((p) => _filtroAtivo == null || p.ativo == _filtroAtivo)
+        .toList();
     final idsValidos = lista.map((p) => p.id).whereType<String>().toSet();
     _selecionados.removeWhere((id) => !idsValidos.contains(id));
 
@@ -1001,6 +1142,44 @@ class _AbaCatalogoState extends State<_AbaCatalogo> {
           child: TextField(
             decoration: const InputDecoration(hintText: 'Buscar por nome', prefixIcon: Icon(Icons.search)),
             onChanged: (v) => setState(() => _busca = v),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              _FiltroPorValor(
+                label: 'Categoria',
+                valor: _filtroCategoria,
+                contagemPorValor: contagemPorCategoria,
+                onChanged: (v) => setState(() {
+                  _filtroCategoria = v;
+                  _filtroSubcategoria = null;
+                }),
+              ),
+              _FiltroPorValor(
+                label: 'Subcategoria',
+                valor: _filtroSubcategoria,
+                contagemPorValor: contagemPorSubcategoria,
+                onChanged: (v) => setState(() => _filtroSubcategoria = v),
+              ),
+              _FiltroTriEstado(
+                label: 'Site',
+                valor: _filtroExibido,
+                rotuloVerdadeiro: 'Exibidos',
+                rotuloFalso: 'Ocultos',
+                onChanged: (v) => setState(() => _filtroExibido = v),
+              ),
+              _FiltroTriEstado(
+                label: 'Status',
+                valor: _filtroAtivo,
+                rotuloVerdadeiro: 'Ativos',
+                rotuloFalso: 'Inativos',
+                onChanged: (v) => setState(() => _filtroAtivo = v),
+              ),
+            ],
           ),
         ),
         Padding(
@@ -1017,7 +1196,9 @@ class _AbaCatalogoState extends State<_AbaCatalogo> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
+          child: lista.isEmpty
+              ? const Center(child: Text('Nenhum produto encontrado com esse filtro'))
+              : ListView.builder(
             padding: const EdgeInsets.only(bottom: 8),
             itemCount: lista.length,
             itemBuilder: (context, index) {
@@ -1025,6 +1206,8 @@ class _AbaCatalogoState extends State<_AbaCatalogo> {
               final id = produto.id!;
               final detalhes = [
                 produto.categoria.isNotEmpty ? produto.categoria : 'Sem categoria',
+                if (produto.subcategoria != null && produto.subcategoria!.isNotEmpty)
+                  'sub: ${produto.subcategoria}',
                 if (produto.fabricante != null && produto.fabricante!.isNotEmpty) produto.fabricante!,
                 if (!produto.exibirNoCatalogo) 'oculto do catálogo',
                 if (!produto.ativo) 'inativo',

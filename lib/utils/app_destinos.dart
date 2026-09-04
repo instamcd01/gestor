@@ -5,6 +5,7 @@ import '../models/produto.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../providers/notificacao_provider.dart';
 import '../providers/produto_provider.dart';
+import '../providers/tarefa_provider.dart';
 import '../screens/clientes_hub_screen.dart';
 import '../screens/configuracoes_screen.dart';
 import '../screens/desempenho_hub_screen.dart';
@@ -14,6 +15,7 @@ import '../screens/historico_vendas_screen.dart';
 import '../screens/inicio_screen.dart';
 import '../screens/kits_screen.dart';
 import '../screens/notificacoes_screen.dart';
+import '../screens/planejamento_screen.dart';
 import '../screens/produtos_screen.dart';
 import '../screens/rotas_entrega_screen.dart';
 import '../screens/usuarios_screen.dart';
@@ -73,6 +75,12 @@ final List<AppDestino> appDestinos = [
     icone: Icons.pets,
     builder: (_) => const FilaPedidosScreen(),
     contador: (context) => context.watch<HistoricoVendasProvider>().pedidosAtivos.length,
+  ),
+  AppDestino(
+    titulo: 'Planejamento',
+    icone: Icons.event_note_outlined,
+    builder: (_) => const PlanejamentoScreen(),
+    contador: (context) => context.watch<TarefaProvider>().tarefasPendentesHoje.length,
   ),
   AppDestino(titulo: 'Rotas de Entrega', icone: Icons.alt_route, builder: (_) => const RotasEntregaScreen()),
   AppDestino(
