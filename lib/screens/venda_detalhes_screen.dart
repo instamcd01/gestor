@@ -743,6 +743,13 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   currencyFormat,
                   cor: Theme.of(context).colorScheme.primary,
                 ),
+              if (venda.jurosParcelamento != null && venda.jurosParcelamento! > 0)
+                _linhaValor(
+                  'Juros do parcelamento (${venda.parcelasCartao}x)',
+                  venda.jurosParcelamento!,
+                  currencyFormat,
+                  cor: Theme.of(context).colorScheme.primary,
+                ),
               const Divider(height: 20),
               _linhaValor('Valor Total', venda.valorTotal, currencyFormat, destaque: true),
               _linhaValor('Valor Pago', venda.valorPago, currencyFormat),
@@ -779,6 +786,12 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _linhaInfo(Icons.payment, 'Forma de Pagamento', _resumoFormaPagamento(venda)),
+              if (venda.valorParcelaCartao != null)
+                _linhaInfo(
+                  Icons.credit_card,
+                  'Parcelamento',
+                  '${venda.parcelasCartao}x de ${currencyFormat.format(venda.valorParcelaCartao)}',
+                ),
               // IDs técnicos do Mercado Pago — só quem pode estornar
               // (dono/gerente) precisa disso, e só serve pra buscar o
               // pagamento no painel deles em caso de dúvida/disputa.

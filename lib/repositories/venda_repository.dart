@@ -379,6 +379,8 @@ class VendaRepository {
       mercadoPagoRefundId: metadata['mercadoPagoRefundId']?.toString(),
       mercadoPagoEstornadoEm: DateTime.tryParse(metadata['estornadoEm']?.toString() ?? '')?.toLocal(),
       mercadoPagoTaxa: (metadata['mercadoPagoTaxa'] as num?)?.toDouble(),
+      parcelasCartao: (metadata['parcelas'] as num?)?.toInt(),
+      jurosParcelamento: (metadata['jurosParcelamento'] as num?)?.toDouble(),
       custoEmbalagem: (row['custo_embalagem_valor'] as num?)?.toDouble(),
       taxaMaquininha: (row['taxa_maquininha_valor'] as num?)?.toDouble(),
       custoEntregaReal: (row['custo_entrega_valor'] as num?)?.toDouble(),

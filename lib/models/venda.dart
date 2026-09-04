@@ -88,6 +88,8 @@ class Venda {
   final String? mercadoPagoRefundId; // id do estorno na API do Mercado Pago, só existe se `estornarPagamentoOnline` já rodou
   final DateTime? mercadoPagoEstornadoEm;
   final double? mercadoPagoTaxa; // quanto o PRÓPRIO Mercado Pago descontou da loja (split direto na conta dela, não é comissão do Gestor)
+  final int? parcelasCartao; // parcelas do cartão pago na entrega/retirada (site) — diferente de mercadoPagoInstallments (pagamento online)
+  final double? jurosParcelamento; // juros já cobrado e somado no valorTotal, calculado no servidor a partir de empresas.taxas_parcelamento
   final double? custoEmbalagem; // pedidos.custo_embalagem_valor — calculado por calcular_custos_operacionais_pedido() a partir de empresas.custo_embalagem_padrao
   final double? taxaMaquininha; // pedidos.taxa_maquininha_valor — só cartão cobrado na entrega/loja física (não cobre Mercado Pago online nem marketplace)
   final double? custoEntregaReal; // pedidos.custo_entrega_valor — custo real de entrega própria (modo fixo/km configurado em empresas), null se retirada/modo ainda não suportado
@@ -169,6 +171,8 @@ class Venda {
     this.mercadoPagoRefundId,
     this.mercadoPagoEstornadoEm,
     this.mercadoPagoTaxa,
+    this.parcelasCartao,
+    this.jurosParcelamento,
     this.custoEmbalagem,
     this.taxaMaquininha,
     this.custoEntregaReal,
@@ -244,6 +248,8 @@ class Venda {
     String? mercadoPagoRefundId,
     DateTime? mercadoPagoEstornadoEm,
     double? mercadoPagoTaxa,
+    int? parcelasCartao,
+    double? jurosParcelamento,
     double? custoEmbalagem,
     double? taxaMaquininha,
     double? custoEntregaReal,
@@ -310,6 +316,8 @@ class Venda {
       mercadoPagoRefundId: mercadoPagoRefundId ?? this.mercadoPagoRefundId,
       mercadoPagoEstornadoEm: mercadoPagoEstornadoEm ?? this.mercadoPagoEstornadoEm,
       mercadoPagoTaxa: mercadoPagoTaxa ?? this.mercadoPagoTaxa,
+      parcelasCartao: parcelasCartao ?? this.parcelasCartao,
+      jurosParcelamento: jurosParcelamento ?? this.jurosParcelamento,
       custoEmbalagem: custoEmbalagem ?? this.custoEmbalagem,
       taxaMaquininha: taxaMaquininha ?? this.taxaMaquininha,
       custoEntregaReal: custoEntregaReal ?? this.custoEntregaReal,
@@ -389,6 +397,12 @@ class Venda {
         return null;
     }
   }
+
+  /// Valor de cada parcela do cartão pago na entrega/retirada (site) — já
+  /// inclui o juros (somado direto em `valorTotal` no servidor). `null`
+  /// quando não é parcelado (à vista ou outro método de pagamento).
+  double? get valorParcelaCartao =>
+      (parcelasCartao != null && parcelasCartao! > 1) ? valorTotal / parcelasCartao! : null;
 
   bool get telefoneLocalizadorValido =>
       telefoneLocalizador != null &&
