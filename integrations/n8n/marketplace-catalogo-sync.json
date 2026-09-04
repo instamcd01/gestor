@@ -347,29 +347,6 @@
       }
     },
     {
-      "id": "caab686e-73ae-4b36-b9bc-cdb7df86b27d",
-      "name": "Buscar categoria mapeada",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        880,
-        -260
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "GEzDAcb9DFtH5ozo",
-          "name": "Postgres cloud"
-        }
-      },
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "select coalesce((select category_id_externo from categoria_marketplace_config where empresa_id = $1 and marketplace_id = $2 and categoria_normalizada = $3 limit 1), '6ffa1c75-3474-4d6c-9c15-efe00b7ac27c') as category_id_externo;",
-        "options": {
-          "queryReplacement": "={{ [$('Webhook').item.json.body.empresa_id, $('Webhook').item.json.body.marketplace_id, $('Webhook').item.json.body.categoria_normalizada] }}"
-        }
-      }
-    },
-    {
       "id": "56d2d33e-f154-4ead-8503-7b12e28694c8",
       "name": "Item ja existe no iFood?",
       "type": "n8n-nodes-base.if",
@@ -389,18 +366,8 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{$('Webhook').item.json.body.primeiro_envio}}",
-              "rightValue": false,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals",
-                "name": "filter.operator.equals"
-              }
-            },
-            {
-              "id": "c2",
-              "leftValue": "={{$('Webhook').item.json.body.motivo_sync}}",
-              "rightValue": "dados_produto",
+              "leftValue": "={{$('Webhook').item.json.body.item_externo_id}}",
+              "rightValue": "",
               "operator": {
                 "type": "string",
                 "operation": "notEquals",
@@ -425,7 +392,7 @@
       "onError": "continueErrorOutput",
       "parameters": {
         "method": "PATCH",
-        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/items/{{$('Webhook').item.json.body.item_externo_id}}",
+        "url": "=https://merchant-api.ifood.com.br/item/v1.0/ingestion/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -437,133 +404,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { status: $('Buscar dados atuais').item.json.status_atual, price: { value: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) || Number($('Buscar dados atuais').item.json.preco_atual), originalValue: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) ? Number($('Buscar dados atuais').item.json.preco_atual) : undefined } } }}",
-        "options": {}
-      }
-    },
-    {
-      "id": "59529c91-7f55-4091-9583-3626a22a7706",
-      "name": "Atualizar estoque (update)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [
-        2060,
-        -380
-      ],
-      "onError": "continueErrorOutput",
-      "parameters": {
-        "method": "POST",
-        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/inventory",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { productId: $('Webhook').item.json.body.item_externo_id, amount: Number($('Buscar dados atuais').item.json.estoque_atual) } }}",
-        "options": {}
-      }
-    },
-    {
-      "id": "fbc67be9-1ab9-4c42-a21e-3e6bc443efae",
-      "name": "Determinar item id",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        1340,
-        -140
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "GEzDAcb9DFtH5ozo",
-          "name": "Postgres cloud"
-        }
-      },
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "select coalesce($1::uuid, gen_random_uuid()) as novo_item_id;",
-        "options": {
-          "queryReplacement": "={{ [$('Webhook').item.json.body.item_externo_id] }}"
-        }
-      }
-    },
-    {
-      "id": "fe85edd5-6e22-496f-bb6f-b3abaccaebbf",
-      "name": "Baixar imagem base64",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1560,
-        -140
-      ],
-      "parameters": {
-        "jsCode": "const url = $('Webhook').item.json.body.imagem_url;\nlet imagemBase64 = null;\nif (url) {\n  try {\n    const resp = await this.helpers.httpRequest({ url, encoding: 'arraybuffer', returnFullResponse: true });\n    const contentType = (resp.headers['content-type'] || 'image/jpeg').split(';')[0];\n    const base64 = Buffer.from(resp.body).toString('base64');\n    imagemBase64 = `data:${contentType};base64,${base64}`;\n  } catch (e) {\n    imagemBase64 = null;\n  }\n}\nreturn [{ json: { ...$json, imagem_base64: imagemBase64 } }];"
-      }
-    },
-    {
-      "id": "30d1a328-b08d-46df-b6a1-097289e57a68",
-      "name": "Tem imagem?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        1780,
-        -140
-      ],
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{$json.imagem_base64}}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEquals",
-                "name": "filter.operator.notEquals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      }
-    },
-    {
-      "id": "4a1bb0a7-cf1a-406b-99c6-e31ec2d91762",
-      "name": "Upload imagem iFood",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [
-        2000,
-        -220
-      ],
-      "onError": "continueErrorOutput",
-      "parameters": {
-        "method": "POST",
-        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/image/upload",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { image: $json.imagem_base64 } }}",
+        "jsonBody": "={{ [{ barcode: $('Webhook').item.json.body.codigo_barras, name: $('Webhook').item.json.body.nome, active: $('Buscar dados atuais').item.json.status_atual === 'AVAILABLE', plu: $('Webhook').item.json.body.produto_id, inventory: { stock: Number($('Buscar dados atuais').item.json.estoque_atual) }, prices: { price: Number($('Buscar dados atuais').item.json.preco_atual), promotionPrice: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) }, details: { brand: $('Webhook').item.json.body.marca || undefined, categorization: { category: $('Webhook').item.json.body.categoria_normalizada || $('Webhook').item.json.body.categoria || undefined }, description: $('Webhook').item.json.body.descricao || $('Webhook').item.json.body.nome, imagePath: $('Webhook').item.json.body.imagem_url || undefined }, channels: ['ifood-app'] }] }}",
         "options": {}
       }
     },
@@ -578,8 +419,8 @@
       ],
       "onError": "continueErrorOutput",
       "parameters": {
-        "method": "PUT",
-        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/items",
+        "method": "POST",
+        "url": "=https://merchant-api.ifood.com.br/item/v1.0/ingestion/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}?reset=false",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -591,7 +432,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { item: { id: $('Determinar item id').item.json.novo_item_id, type: 'DEFAULT', categoryId: $('Buscar categoria mapeada').item.json.category_id_externo, status: $('Buscar dados atuais').item.json.status_atual, price: { value: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) || Number($('Buscar dados atuais').item.json.preco_atual), originalValue: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) ? Number($('Buscar dados atuais').item.json.preco_atual) : undefined }, externalCode: $('Webhook').item.json.body.produto_id, productId: ($('Buscar item existente').item.json.productId || $('Determinar item id').item.json.novo_item_id) }, products: [ { id: ($('Buscar item existente').item.json.productId || $('Determinar item id').item.json.novo_item_id), name: $('Webhook').item.json.body.nome, externalCode: $('Webhook').item.json.body.plu || undefined, description: $('Webhook').item.json.body.descricao || $('Webhook').item.json.body.nome, ean: $('Webhook').item.json.body.codigo_barras, imagePath: $json.imagePath || undefined, industrialized: true } ] } }}",
+        "jsonBody": "={{ [{ barcode: $('Webhook').item.json.body.codigo_barras, name: $('Webhook').item.json.body.nome, active: $('Buscar dados atuais').item.json.status_atual === 'AVAILABLE', plu: $('Webhook').item.json.body.produto_id, inventory: { stock: Number($('Buscar dados atuais').item.json.estoque_atual) }, prices: { price: Number($('Buscar dados atuais').item.json.preco_atual), promotionPrice: ($('Buscar dados atuais').item.json.preco_promocional_atual ? Number($('Buscar dados atuais').item.json.preco_promocional_atual) : null) }, details: { brand: $('Webhook').item.json.body.marca || undefined, categorization: { category: $('Webhook').item.json.body.categoria_normalizada || $('Webhook').item.json.body.categoria || undefined }, description: $('Webhook').item.json.body.descricao || $('Webhook').item.json.body.nome, imagePath: $('Webhook').item.json.body.imagem_url || undefined }, channels: ['ifood-app'] }] }}",
         "options": {}
       }
     },
@@ -614,36 +455,8 @@
         "operation": "executeQuery",
         "query": "update produto_canal set item_externo_id = $3 where produto_id = $1 and marketplace_id = $2;",
         "options": {
-          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, $('Determinar item id').item.json.novo_item_id] }}"
+          "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id, $('Webhook').item.json.body.codigo_barras] }}"
         }
-      }
-    },
-    {
-      "id": "14fe26e3-fc98-484f-9f02-55c336855031",
-      "name": "Atualizar estoque (criacao)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [
-        3200,
-        -260
-      ],
-      "onError": "continueErrorOutput",
-      "parameters": {
-        "method": "POST",
-        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/inventory",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ { productId: $('Determinar item id').item.json.novo_item_id, amount: Number($('Buscar dados atuais').item.json.estoque_atual) } }}",
-        "options": {}
       }
     },
     {
@@ -731,31 +544,6 @@
         "options": {
           "queryReplacement": "={{ [$('Webhook').item.json.body.produto_id, $('Webhook').item.json.body.marketplace_id] }}"
         }
-      }
-    },
-    {
-      "id": "61e1fda3-d311-4bc9-bc5a-3bd2a7c8ea98",
-      "name": "Buscar item existente",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [
-        1560,
-        -260
-      ],
-      "onError": "continueErrorOutput",
-      "parameters": {
-        "method": "GET",
-        "url": "=https://merchant-api.ifood.com.br/catalog/v2.0/merchants/{{$('Buscar credenciais empresa').item.json.id_loja_plataforma}}/items/{{$('Webhook').item.json.body.item_externo_id}}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$('Token pronto').item.json.access_token}}"
-            }
-          ]
-        },
-        "options": {}
       }
     },
     {
@@ -1402,7 +1190,7 @@
       "main": [
         [
           {
-            "node": "Buscar categoria mapeada",
+            "node": "Buscar dados atuais",
             "type": "main",
             "index": 0
           }
@@ -1438,17 +1226,6 @@
         ]
       ]
     },
-    "Buscar categoria mapeada": {
-      "main": [
-        [
-          {
-            "node": "Buscar dados atuais",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Item ja existe no iFood?": {
       "main": [
         [
@@ -1460,7 +1237,7 @@
         ],
         [
           {
-            "node": "Determinar item id",
+            "node": "Criar item iFood",
             "type": "main",
             "index": 0
           }
@@ -1471,7 +1248,7 @@
       "main": [
         [
           {
-            "node": "Atualizar estoque (update)",
+            "node": "Log sync catalogo",
             "type": "main",
             "index": 0
           }
@@ -1490,53 +1267,6 @@
         [
           {
             "node": "Limpar da fila (sucesso)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Baixar imagem base64": {
-      "main": [
-        [
-          {
-            "node": "Tem imagem?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tem imagem?": {
-      "main": [
-        [
-          {
-            "node": "Upload imagem iFood",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Criar item iFood",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Upload imagem iFood": {
-      "main": [
-        [
-          {
-            "node": "Criar item iFood",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Criar item iFood",
             "type": "main",
             "index": 0
           }
@@ -1565,7 +1295,7 @@
       "main": [
         [
           {
-            "node": "Atualizar estoque (criacao)",
+            "node": "Log sync catalogo",
             "type": "main",
             "index": 0
           }
@@ -1583,76 +1313,11 @@
         ]
       ]
     },
-    "Atualizar estoque (update)": {
-      "main": [
-        [
-          {
-            "node": "Log sync catalogo",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Log sync catalogo",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Atualizar estoque (criacao)": {
-      "main": [
-        [
-          {
-            "node": "Log sync catalogo",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Log sync catalogo",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Determinar item id": {
-      "main": [
-        [
-          {
-            "node": "Buscar item existente",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Buscar dados atuais": {
       "main": [
         [
           {
             "node": "Item ja existe no iFood?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Buscar item existente": {
-      "main": [
-        [
-          {
-            "node": "Baixar imagem base64",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Baixar imagem base64",
             "type": "main",
             "index": 0
           }
