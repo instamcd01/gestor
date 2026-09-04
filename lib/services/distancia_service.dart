@@ -13,6 +13,24 @@ class RotaCalculada {
   RotaCalculada({required this.distanciaKm, required this.duracaoMin});
 }
 
+/// Resultado de uma rota com múltiplas paradas otimizada pra menor
+/// distância total (Directions API, `optimize:true`) — usado pela Fase 2
+/// do custo real por venda quando o entregador leva vários pedidos de uma
+/// vez (ver rotas_entrega_screen.dart).
+class RotaOtimizadaCalculada {
+  /// Índices dos destinos originais, na ordem otimizada de visita (ex:
+  /// [2, 0, 1] = visitar o 3º endereço da lista original primeiro).
+  final List<int> ordemOtimizada;
+  final double distanciaTotalKm;
+  final int duracaoTotalMin;
+
+  RotaOtimizadaCalculada({
+    required this.ordemOtimizada,
+    required this.distanciaTotalKm,
+    required this.duracaoTotalMin,
+  });
+}
+
 class EnderecoEncontrado {
   final String? rua;
   final String? numero;
@@ -151,6 +169,66 @@ class DistanciaService {
       );
     } catch (e) {
       debugPrint('Erro ao calcular rota: $e');
+      return null;
+    }
+  }
+
+  /// Calcula a rota de ida-e-volta (sai da loja, visita cada destino, volta
+  /// pra loja) que minimiza a distância total, via Google Directions API
+  /// com `optimize:true` — resolve a ordem de visita ótima (problema do
+  /// caixeiro-viajante aproximado, até 25 paradas). Retorna null com menos
+  /// de 2 destinos (nada a otimizar) ou se a API falhar — quem chama decide
+  /// o fallback (pedir o km manualmente, como já era feito antes).
+  static Future<RotaOtimizadaCalculada?> calcularRotaOtimizada({
+    required String origem,
+    required List<String> destinos,
+  }) async {
+    if (origem.trim().isEmpty || destinos.length < 2) return null;
+
+    if (kIsWeb) {
+      return maps_web.calcularRotaOtimizadaViaJs(origem: origem, destinos: destinos);
+    }
+
+    try {
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
+        'origin': origem,
+        'destination': origem,
+        'waypoints': 'optimize:true|${destinos.join('|')}',
+        'mode': 'driving',
+        'units': 'metric',
+        'key': _apiKey,
+      });
+
+      final resposta = await http.get(uri).timeout(const Duration(seconds: 15));
+      final json = jsonDecode(resposta.body) as Map<String, dynamic>;
+
+      if (json['status'] != 'OK') {
+        debugPrint('Directions API status: ${json['status']}');
+        return null;
+      }
+
+      final rotas = json['routes'] as List;
+      if (rotas.isEmpty) return null;
+      final rota = rotas.first as Map<String, dynamic>;
+
+      final legs = rota['legs'] as List;
+      var distanciaTotalM = 0.0;
+      var duracaoTotalS = 0;
+      for (final legRaw in legs) {
+        final leg = legRaw as Map<String, dynamic>;
+        distanciaTotalM += (leg['distance']['value'] as num).toDouble();
+        duracaoTotalS += (leg['duration']['value'] as num).toInt();
+      }
+
+      final waypointOrder = (rota['waypoint_order'] as List).map((e) => (e as num).toInt()).toList();
+
+      return RotaOtimizadaCalculada(
+        ordemOtimizada: waypointOrder,
+        distanciaTotalKm: distanciaTotalM / 1000,
+        duracaoTotalMin: (duracaoTotalS / 60).round(),
+      );
+    } catch (e) {
+      debugPrint('Erro ao calcular rota otimizada: $e');
       return null;
     }
   }

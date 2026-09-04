@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../providers/entregador_provider.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../repositories/rota_entrega_repository.dart';
+import '../services/distancia_service.dart';
 
 /// Monta e finaliza rotas de entrega do dia (Fase 2 do custo real por
 /// venda, ver [[gestor_custo_real_venda]]) — agrupa pedidos pra um
@@ -198,6 +199,43 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
     await _carregar();
   }
 
+  /// Chamado antes de iniciar uma rota com 2+ pedidos: calcula a ordem de
+  /// visita que minimiza a distância total (Directions API, `optimize:
+  /// true`) e já reordena os pedidos + salva a distância estimada. Nunca
+  /// bloqueia o fluxo se falhar (endereço não localizável, API fora do ar
+  /// etc.) — a rota só segue sem otimização, igual já era antes.
+  Future<void> _otimizarRota(RotaEntrega rota, List<RotaPedidoItem> pedidos, HistoricoVendasProvider historico) async {
+    if (pedidos.length < 2) return;
+
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+
+    final origem = await DistanciaService.buscarEnderecoEmpresa(empresaId);
+    if (origem == null) return;
+
+    // lat,lng é mais preciso e rápido de geocodificar que o endereço em
+    // texto — só cai pro texto quando o cliente não tem coordenada salva
+    // ainda (ver opcao_entrega_screen.dart, mesma fonte que preenche isso).
+    final destinos = <String>[];
+    for (final item in pedidos) {
+      final venda = _buscarVenda(historico, item.pedidoId);
+      final cliente = venda?.cliente;
+      if (cliente == null) return; // pedido sem venda carregada — não arrisca otimizar pela metade
+      final destino = (cliente.latitude != null && cliente.longitude != null)
+          ? '${cliente.latitude},${cliente.longitude}'
+          : cliente.enderecoCompleto;
+      if (destino.isEmpty) return;
+      destinos.add(destino);
+    }
+
+    final resultado = await DistanciaService.calcularRotaOtimizada(origem: origem, destinos: destinos);
+    if (resultado == null) return;
+
+    final pedidosNaOrdemOtima = resultado.ordemOtimizada.map((indice) => pedidos[indice].pedidoId).toList();
+    await _repository.reordenar(rota.id, pedidosNaOrdemOtima);
+    await _repository.atualizarKmEstimado(rota.id, resultado.distanciaTotalKm);
+  }
+
   Future<void> _iniciarRota(RotaEntrega rota) async {
     final pedidos = _pedidosPorRota[rota.id] ?? [];
     if (pedidos.isEmpty) {
@@ -205,13 +243,33 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
       return;
     }
 
+    final mostrarLoading = pedidos.length >= 2;
+    if (mostrarLoading) {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Expanded(child: Text('Calculando a melhor rota entre os pedidos...')),
+            ],
+          ),
+        ),
+      );
+    }
+
     try {
+      final historico = context.read<HistoricoVendasProvider>();
+      await _otimizarRota(rota, pedidos, historico);
+      if (mostrarLoading && mounted) Navigator.of(context, rootNavigator: true).pop();
+
       await _repository.iniciar(rota.id);
       if (!mounted) return;
       // Avança o status de cada pedido pra "saiu para entrega" — reaproveita
       // o mesmo método já usado na Fila de Pedidos, não duplica a lógica de
       // estoque/notificação que vive na RPC por trás dele.
-      final historico = context.read<HistoricoVendasProvider>();
       for (final item in pedidos) {
         final venda = _buscarVenda(historico, item.pedidoId);
         if (venda != null && venda.status == StatusPedido.preparando) {
@@ -220,6 +278,7 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
       }
       await _carregar();
     } catch (e) {
+      if (mostrarLoading && mounted) Navigator.of(context, rootNavigator: true).pop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao iniciar rota: $e')));
       }
@@ -229,15 +288,35 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
   Future<void> _finalizarRota(RotaEntrega rota) async {
     double? kmTotal;
     if (rota.precisaDeKmTotal) {
-      final controller = TextEditingController();
+      // Pré-preenche com a distância calculada pela API ao iniciar a rota
+      // (rota otimizada, ida e volta) — o campo continua editável pra quem
+      // desviou do trajeto sugerido ou não teve a rota otimizada (só 1
+      // pedido, endereço não localizável etc.) ajustar pro valor real.
+      final controller = TextEditingController(
+        text: rota.kmEstimado?.toStringAsFixed(1).replaceAll('.', ','),
+      );
       final confirmou = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Km total da rota'),
-          content: TextField(
-            controller: controller,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Quantos km foram rodados no total?', suffixText: 'km'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (rota.kmEstimado != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Valor sugerido pela rota otimizada calculada ao iniciar — ajuste se o percurso real foi diferente.',
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ),
+              TextField(
+                controller: controller,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Quantos km foram rodados no total?', suffixText: 'km'),
+              ),
+            ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
@@ -348,14 +427,26 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text('${pedidosDaRota.length} pedido(s)'),
-                          if (rota.kmTotal != null) Text(' • ${rota.kmTotal!.toStringAsFixed(1)} km'),
+                          if (rota.kmTotal != null)
+                            Text(' • ${rota.kmTotal!.toStringAsFixed(1)} km')
+                          else if (rota.kmEstimado != null)
+                            Text(' • ~${rota.kmEstimado!.toStringAsFixed(1)} km (estimado)'),
                         ],
                       ),
                       children: [
-                        ...pedidosDaRota.map((item) {
+                        ...pedidosDaRota.asMap().entries.map((entry) {
+                          final posicao = entry.key + 1;
+                          final item = entry.value;
                           final venda = _buscarVenda(historico, item.pedidoId);
                           return ListTile(
                             dense: true,
+                            // Ordem de visita — reflete a rota otimizada
+                            // (menor distância total) assim que "Iniciar
+                            // rota" calcula ela; antes disso é só a ordem
+                            // que os pedidos foram adicionados.
+                            leading: pedidosDaRota.length > 1
+                                ? CircleAvatar(radius: 12, child: Text('$posicao', style: const TextStyle(fontSize: 12)))
+                                : null,
                             title: Text(venda != null
                                 ? '#${venda.numeroSequencial ?? '-'} — ${venda.cliente.nome}'
                                 : 'Pedido não encontrado'),

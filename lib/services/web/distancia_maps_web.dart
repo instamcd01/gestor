@@ -4,7 +4,7 @@ import 'package:google_maps/google_maps_core.dart';
 import 'package:google_maps/google_maps_geocoding.dart';
 import 'package:google_maps/google_maps_routes.dart';
 
-import '../distancia_service.dart' show EnderecoEncontrado, RotaCalculada;
+import '../distancia_service.dart' show EnderecoEncontrado, RotaCalculada, RotaOtimizadaCalculada;
 
 /// Implementação real, usada só quando compilando pra web — chama a Google
 /// Maps JavaScript API (já carregada em web/index.html) via interop, em vez
@@ -35,6 +35,43 @@ Future<RotaCalculada?> calcularRotaViaJs({
     return RotaCalculada(
       distanciaKm: elemento.distance.value / 1000,
       duracaoMin: (elemento.duration.value / 60).round(),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<RotaOtimizadaCalculada?> calcularRotaOtimizadaViaJs({
+  required String origem,
+  required List<String> destinos,
+}) async {
+  try {
+    final response = await DirectionsService().route(
+      DirectionsRequest(
+        origin: origem.toJS,
+        destination: origem.toJS,
+        travelMode: TravelMode.DRIVING,
+        optimizeWaypoints: true,
+        waypoints: destinos
+            .map((d) => DirectionsWaypoint(location: d.toJS, stopover: true))
+            .toList()
+            .toJS,
+      ),
+    );
+    if (response.routes.isEmpty) return null;
+    final rota = response.routes.first;
+
+    var distanciaTotalM = 0.0;
+    var duracaoTotalS = 0;
+    for (final leg in rota.legs) {
+      distanciaTotalM += leg.distance?.value.toDouble() ?? 0;
+      duracaoTotalS += leg.duration?.value.toInt() ?? 0;
+    }
+
+    return RotaOtimizadaCalculada(
+      ordemOtimizada: rota.waypointOrder.map((n) => n.toInt()).toList(),
+      distanciaTotalKm: distanciaTotalM / 1000,
+      duracaoTotalMin: (duracaoTotalS / 60).round(),
     );
   } catch (_) {
     return null;

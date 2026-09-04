@@ -1,4 +1,4 @@
-import '../distancia_service.dart' show EnderecoEncontrado, RotaCalculada;
+import '../distancia_service.dart' show EnderecoEncontrado, RotaCalculada, RotaOtimizadaCalculada;
 
 /// Stub pra plataformas nativas (Android/iOS) — nunca chamado de verdade,
 /// já que o DistanciaService só invoca essas funções quando kIsWeb é true.
@@ -8,6 +8,12 @@ import '../distancia_service.dart' show EnderecoEncontrado, RotaCalculada;
 Future<RotaCalculada?> calcularRotaViaJs({
   required String origem,
   required String destino,
+}) async =>
+    null;
+
+Future<RotaOtimizadaCalculada?> calcularRotaOtimizadaViaJs({
+  required String origem,
+  required List<String> destinos,
 }) async =>
     null;
 

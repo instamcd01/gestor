@@ -18,6 +18,7 @@ class RotaEntrega {
   final DateTime dataRota;
   final String status;
   final double? kmTotal;
+  final double? kmEstimado;
   final DateTime? finalizadaEm;
 
   RotaEntrega({
@@ -28,6 +29,7 @@ class RotaEntrega {
     required this.dataRota,
     required this.status,
     this.kmTotal,
+    this.kmEstimado,
     this.finalizadaEm,
   });
 
@@ -48,6 +50,7 @@ class RotaEntrega {
       dataRota: DateTime.parse(row['data_rota'].toString()),
       status: row['status']?.toString() ?? StatusRota.planejada,
       kmTotal: (row['km_total'] as num?)?.toDouble(),
+      kmEstimado: (row['km_estimado'] as num?)?.toDouble(),
       finalizadaEm: row['finalizada_em'] != null ? DateTime.tryParse(row['finalizada_em'].toString()) : null,
     );
   }
