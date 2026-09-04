@@ -27,6 +27,8 @@ class ConclusaoVendaScreen extends StatefulWidget {
   final Map<String, double>? pagamentosDetalhados;
   final ZonaEntrega? zonaEntrega;
   final JanelaHorarioAgendamento? agendamento;
+  final int? parcelasCartao;
+  final double? jurosParcelamento;
 
   ConclusaoVendaScreen({
     required this.valorTotal,
@@ -44,6 +46,8 @@ class ConclusaoVendaScreen extends StatefulWidget {
     this.pagamentosDetalhados,
     this.zonaEntrega,
     this.agendamento,
+    this.parcelasCartao,
+    this.jurosParcelamento,
   });
 
   @override
@@ -115,6 +119,8 @@ class _ConclusaoVendaScreenState extends State<ConclusaoVendaScreen> {
         previsaoEntregaInicio: previsaoInicio,
         previsaoEntregaFim: previsaoFim,
         agendadoManualmente: agendamento != null,
+        parcelasCartao: widget.parcelasCartao,
+        jurosParcelamento: widget.jurosParcelamento,
       );
 
       final historicoProvider = Provider.of<HistoricoVendasProvider>(context, listen: false);

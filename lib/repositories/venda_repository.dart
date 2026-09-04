@@ -141,6 +141,9 @@ class VendaRepository {
           'entregaSelecionada': venda.entregaSelecionada,
           'pagamentosDetalhados': venda.pagamentosDetalhados,
           if (venda.agendadoManualmente) 'agendado': true,
+          if (venda.parcelasCartao != null && venda.parcelasCartao! > 1) 'parcelas': venda.parcelasCartao,
+          if (venda.jurosParcelamento != null && venda.jurosParcelamento! > 0)
+            'jurosParcelamento': venda.jurosParcelamento,
         },
       },
       'p_itens': itensPayload,
