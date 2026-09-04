@@ -10,6 +10,7 @@ import '../providers/entregador_provider.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../repositories/rota_entrega_repository.dart';
 import '../services/distancia_service.dart';
+import 'rota_mapa_screen.dart';
 
 /// Monta e finaliza rotas de entrega do dia (Fase 2 do custo real por
 /// venda, ver [[gestor_custo_real_venda]]) — agrupa pedidos pra um
@@ -199,11 +200,33 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
     await _carregar();
   }
 
-  /// Chamado antes de iniciar uma rota com 2+ pedidos: calcula a ordem de
-  /// visita que minimiza a distância total (Directions API, `optimize:
-  /// true`) e já reordena os pedidos + salva a distância estimada. Nunca
-  /// bloqueia o fluxo se falhar (endereço não localizável, API fora do ar
-  /// etc.) — a rota só segue sem otimização, igual já era antes.
+  /// lat,lng é mais preciso e rápido de geocodificar que o endereço em
+  /// texto — só cai pro texto quando o cliente não tem coordenada salva
+  /// ainda (ver opcao_entrega_screen.dart, mesma fonte que preenche isso).
+  /// Retorna null se qualquer pedido não tiver como resolver destino —
+  /// quem chama decide o fallback (não otimiza nada, ou mantém o que já
+  /// tinha calculado antes).
+  List<String>? _destinosDosPedidos(List<RotaPedidoItem> pedidos, HistoricoVendasProvider historico) {
+    final destinos = <String>[];
+    for (final item in pedidos) {
+      final venda = _buscarVenda(historico, item.pedidoId);
+      final cliente = venda?.cliente;
+      if (cliente == null) return null;
+      final destino = (cliente.latitude != null && cliente.longitude != null)
+          ? '${cliente.latitude},${cliente.longitude}'
+          : cliente.enderecoCompleto;
+      if (destino.isEmpty) return null;
+      destinos.add(destino);
+    }
+    return destinos;
+  }
+
+  /// Chamado antes de iniciar uma rota com 2+ pedidos: busca a ordem de
+  /// visita que minimiza a distância TOTAL real (não tempo de viagem, ver
+  /// DistanciaService.calcularRotaOtimizada) e já reordena os pedidos +
+  /// salva a distância/trajeto calculados. Nunca bloqueia o fluxo se
+  /// falhar (endereço não localizável, API fora do ar etc.) — a rota só
+  /// segue sem otimização, igual já era antes.
   Future<void> _otimizarRota(RotaEntrega rota, List<RotaPedidoItem> pedidos, HistoricoVendasProvider historico) async {
     if (pedidos.length < 2) return;
 
@@ -213,27 +236,67 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
     final origem = await DistanciaService.buscarEnderecoEmpresa(empresaId);
     if (origem == null) return;
 
-    // lat,lng é mais preciso e rápido de geocodificar que o endereço em
-    // texto — só cai pro texto quando o cliente não tem coordenada salva
-    // ainda (ver opcao_entrega_screen.dart, mesma fonte que preenche isso).
-    final destinos = <String>[];
-    for (final item in pedidos) {
-      final venda = _buscarVenda(historico, item.pedidoId);
-      final cliente = venda?.cliente;
-      if (cliente == null) return; // pedido sem venda carregada — não arrisca otimizar pela metade
-      final destino = (cliente.latitude != null && cliente.longitude != null)
-          ? '${cliente.latitude},${cliente.longitude}'
-          : cliente.enderecoCompleto;
-      if (destino.isEmpty) return;
-      destinos.add(destino);
-    }
+    final destinos = _destinosDosPedidos(pedidos, historico);
+    if (destinos == null) return;
 
     final resultado = await DistanciaService.calcularRotaOtimizada(origem: origem, destinos: destinos);
+    if (resultado == null || resultado.ordemOtimizada == null) return;
+
+    final pedidosNaOrdemOtima = resultado.ordemOtimizada!.map((indice) => pedidos[indice].pedidoId).toList();
+    await _repository.reordenar(rota.id, pedidosNaOrdemOtima);
+    await _repository.atualizarKmEstimado(
+      rota.id,
+      kmEstimado: resultado.distanciaCobravelKm,
+      kmVoltaEstimado: resultado.distanciaVoltaKm,
+      polylineEstimada: resultado.polylineCodificada,
+    );
+  }
+
+  /// Recalcula distância/trajeto pra ordem ATUAL dos pedidos (já reordenada
+  /// manualmente pelo usuário) — reaproveita a mesma rota física, só que
+  /// pra ordem que ele escolheu em vez de buscar a menor distância. Chamado
+  /// depois de qualquer drag-and-drop na lista.
+  Future<void> _recalcularParaOrdemAtual(RotaEntrega rota, List<RotaPedidoItem> pedidosNaOrdem) async {
+    final historico = context.read<HistoricoVendasProvider>();
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+
+    final origem = await DistanciaService.buscarEnderecoEmpresa(empresaId);
+    if (origem == null) return;
+
+    final destinos = _destinosDosPedidos(pedidosNaOrdem, historico);
+    if (destinos == null) return;
+
+    final resultado = await DistanciaService.calcularRotaOrdemFixa(origem: origem, destinosNaOrdem: destinos);
     if (resultado == null) return;
 
-    final pedidosNaOrdemOtima = resultado.ordemOtimizada.map((indice) => pedidos[indice].pedidoId).toList();
-    await _repository.reordenar(rota.id, pedidosNaOrdemOtima);
-    await _repository.atualizarKmEstimado(rota.id, resultado.distanciaTotalKm);
+    await _repository.atualizarKmEstimado(
+      rota.id,
+      kmEstimado: resultado.distanciaCobravelKm,
+      kmVoltaEstimado: resultado.distanciaVoltaKm,
+      polylineEstimada: resultado.polylineCodificada,
+    );
+  }
+
+  /// Drag-and-drop na lista de pedidos — às vezes um pedido tem prioridade
+  /// (cliente esperando, combinou horário) ou o entregador conhece um
+  /// atalho que a API não capturou; a ordem calculada automaticamente é só
+  /// um ponto de partida, não uma trava. Reordena localmente pra resposta
+  /// instantânea, salva no banco, e recalcula a distância em segundo plano
+  /// (sem travar a tela) pra km_estimado continuar refletindo a rota real.
+  Future<void> _reordenarManualmente(RotaEntrega rota, int oldIndex, int newIndex) async {
+    final pedidos = List<RotaPedidoItem>.of(_pedidosPorRota[rota.id] ?? []);
+    if (newIndex > oldIndex) newIndex -= 1;
+    final item = pedidos.removeAt(oldIndex);
+    pedidos.insert(newIndex, item);
+
+    setState(() => _pedidosPorRota[rota.id] = pedidos);
+
+    await _repository.reordenar(rota.id, pedidos.map((p) => p.pedidoId).toList());
+    if (pedidos.length >= 2) {
+      await _recalcularParaOrdemAtual(rota, pedidos);
+      if (mounted) await _carregar();
+    }
   }
 
   Future<void> _iniciarRota(RotaEntrega rota) async {
@@ -430,46 +493,78 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
                           if (rota.kmTotal != null)
                             Text(' • ${rota.kmTotal!.toStringAsFixed(1)} km')
                           else if (rota.kmEstimado != null)
-                            Text(' • ~${rota.kmEstimado!.toStringAsFixed(1)} km (estimado)'),
+                            Text(
+                              rota.kmVoltaEstimado != null
+                                  ? ' • ~${rota.kmEstimado!.toStringAsFixed(1)} km cobrável'
+                                        ' (${(rota.kmEstimado! + rota.kmVoltaEstimado!).toStringAsFixed(1)} km rodado)'
+                                  : ' • ~${rota.kmEstimado!.toStringAsFixed(1)} km (estimado)',
+                            ),
                         ],
                       ),
                       children: [
-                        ...pedidosDaRota.asMap().entries.map((entry) {
-                          final posicao = entry.key + 1;
-                          final item = entry.value;
-                          final venda = _buscarVenda(historico, item.pedidoId);
-                          return ListTile(
-                            dense: true,
-                            // Ordem de visita — reflete a rota otimizada
-                            // (menor distância total) assim que "Iniciar
-                            // rota" calcula ela; antes disso é só a ordem
-                            // que os pedidos foram adicionados.
-                            leading: pedidosDaRota.length > 1
-                                ? CircleAvatar(radius: 12, child: Text('$posicao', style: const TextStyle(fontSize: 12)))
-                                : null,
-                            title: Text(venda != null
-                                ? '#${venda.numeroSequencial ?? '-'} — ${venda.cliente.nome}'
-                                : 'Pedido não encontrado'),
-                            subtitle: Text(
-                              [
-                                if (venda != null) StatusPedido.rotulo(venda.status),
-                                if (podeVerFinancas && item.custoAlocado != null)
-                                  'Custo entrega: ${currencyFormat.format(item.custoAlocado)}',
-                              ].join(' • '),
-                            ),
-                            trailing: rota.planejada
-                                ? IconButton(
-                                    icon: const Icon(Icons.close, size: 18),
-                                    onPressed: () => _removerPedido(rota, item.pedidoId),
-                                  )
-                                : null,
-                          );
-                        }),
+                        if (pedidosDaRota.length > 1 && !rota.concluida)
+                          // Drag-and-drop: a ordem calculada automaticamente
+                          // é só um ponto de partida — o entregador pode
+                          // conhecer um atalho, ou um pedido pode ter
+                          // prioridade (cliente esperando, horário
+                          // combinado). Reordenar aqui recalcula a
+                          // distância pra ordem nova em segundo plano.
+                          ReorderableListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: pedidosDaRota.length,
+                            onReorder: (oldIndex, newIndex) => _reordenarManualmente(rota, oldIndex, newIndex),
+                            itemBuilder: (context, i) {
+                              final item = pedidosDaRota[i];
+                              final venda = _buscarVenda(historico, item.pedidoId);
+                              return _ItemPedidoRota(
+                                key: ValueKey(item.pedidoId),
+                                posicao: i + 1,
+                                venda: venda,
+                                custoAlocado: item.custoAlocado,
+                                podeVerFinancas: podeVerFinancas,
+                                currencyFormat: currencyFormat,
+                                onRemover: rota.planejada ? () => _removerPedido(rota, item.pedidoId) : null,
+                                arrastavel: true,
+                              );
+                            },
+                          )
+                        else
+                          ...pedidosDaRota.asMap().entries.map((entry) {
+                            final item = entry.value;
+                            final venda = _buscarVenda(historico, item.pedidoId);
+                            return _ItemPedidoRota(
+                              posicao: entry.key + 1,
+                              venda: venda,
+                              custoAlocado: item.custoAlocado,
+                              podeVerFinancas: podeVerFinancas,
+                              currencyFormat: currencyFormat,
+                              onRemover: rota.planejada ? () => _removerPedido(rota, item.pedidoId) : null,
+                              arrastavel: false,
+                              mostrarPosicao: pedidosDaRota.length > 1,
+                            );
+                          }),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
+                              if (rota.polylineEstimada != null) ...[
+                                TextButton.icon(
+                                  onPressed: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => RotaMapaScreen(
+                                        rota: rota,
+                                        vendas: pedidosDaRota.map((item) => _buscarVenda(historico, item.pedidoId)).toList(),
+                                      ),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.map_outlined, size: 18),
+                                  label: const Text('Ver no mapa'),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
                               if (rota.planejada) ...[
                                 TextButton(
                                   onPressed: () => _adicionarPedidos(rota),
@@ -494,6 +589,62 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
                 },
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Uma linha de pedido dentro da rota — usado tanto no modo estático
+/// (rota concluída, ou só 1 pedido) quanto dentro do ReorderableListView
+/// (drag-and-drop pra reordenar manualmente).
+class _ItemPedidoRota extends StatelessWidget {
+  final int posicao;
+  final Venda? venda;
+  final double? custoAlocado;
+  final bool podeVerFinancas;
+  final NumberFormat currencyFormat;
+  final VoidCallback? onRemover;
+  final bool arrastavel;
+  final bool mostrarPosicao;
+
+  const _ItemPedidoRota({
+    super.key,
+    required this.posicao,
+    required this.venda,
+    required this.custoAlocado,
+    required this.podeVerFinancas,
+    required this.currencyFormat,
+    required this.onRemover,
+    required this.arrastavel,
+    this.mostrarPosicao = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      // Ordem de visita — reflete a rota otimizada (menor distância real)
+      // assim que "Iniciar rota" calcula ela, ou o reordenamento manual
+      // mais recente; antes disso é só a ordem que os pedidos foram
+      // adicionados.
+      leading: mostrarPosicao
+          ? CircleAvatar(radius: 12, child: Text('$posicao', style: const TextStyle(fontSize: 12)))
+          : null,
+      title: Text(
+        venda != null ? '#${venda!.numeroSequencial ?? '-'} — ${venda!.cliente.nome}' : 'Pedido não encontrado',
+      ),
+      subtitle: Text(
+        [
+          if (venda != null) StatusPedido.rotulo(venda!.status),
+          if (podeVerFinancas && custoAlocado != null) 'Custo entrega: ${currencyFormat.format(custoAlocado)}',
+        ].join(' • '),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onRemover != null) IconButton(icon: const Icon(Icons.close, size: 18), onPressed: onRemover),
+          if (arrastavel) const Icon(Icons.drag_handle, size: 20),
         ],
       ),
     );

@@ -11,11 +11,15 @@ Future<RotaCalculada?> calcularRotaViaJs({
 }) async =>
     null;
 
-Future<RotaOtimizadaCalculada?> calcularRotaOtimizadaViaJs({
+Future<RotaOtimizadaCalculada?> calcularRotaOrdemFixaViaJs({
   required String origem,
-  required List<String> destinos,
+  required List<String> destinosNaOrdem,
 }) async =>
     null;
+
+Future<List<List<double>>?> buscarMatrizDistanciasViaJs(List<String> pontos) async => null;
+
+Future<({double lat, double lng})?> geocodificarParaCoordenadasViaJs(String endereco) async => null;
 
 Future<EnderecoEncontrado?> buscarEnderecoPorEnderecoViaJs(
   String endereco, {

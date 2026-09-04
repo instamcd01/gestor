@@ -41,9 +41,13 @@ Future<RotaCalculada?> calcularRotaViaJs({
   }
 }
 
-Future<RotaOtimizadaCalculada?> calcularRotaOtimizadaViaJs({
+/// Ordem de visita já decidida (busca automática por distância feita em
+/// Dart puro, ver DistanciaService._melhorOrdemPorDistancia) — só busca o
+/// trajeto real (legs/polyline) pra essa ordem fixa, sem optimizeWaypoints
+/// (esse otimiza por TEMPO, não por distância, então nunca serve aqui).
+Future<RotaOtimizadaCalculada?> calcularRotaOrdemFixaViaJs({
   required String origem,
-  required List<String> destinos,
+  required List<String> destinosNaOrdem,
 }) async {
   try {
     final response = await DirectionsService().route(
@@ -51,8 +55,7 @@ Future<RotaOtimizadaCalculada?> calcularRotaOtimizadaViaJs({
         origin: origem.toJS,
         destination: origem.toJS,
         travelMode: TravelMode.DRIVING,
-        optimizeWaypoints: true,
-        waypoints: destinos
+        waypoints: destinosNaOrdem
             .map((d) => DirectionsWaypoint(location: d.toJS, stopover: true))
             .toList()
             .toJS,
@@ -60,19 +63,68 @@ Future<RotaOtimizadaCalculada?> calcularRotaOtimizadaViaJs({
     );
     if (response.routes.isEmpty) return null;
     final rota = response.routes.first;
+    final legs = rota.legs;
+    if (legs.isEmpty) return null;
 
-    var distanciaTotalM = 0.0;
+    var distanciaCobravelM = 0.0;
     var duracaoTotalS = 0;
-    for (final leg in rota.legs) {
-      distanciaTotalM += leg.distance?.value.toDouble() ?? 0;
-      duracaoTotalS += leg.duration?.value.toInt() ?? 0;
+    for (var i = 0; i < legs.length - 1; i++) {
+      distanciaCobravelM += legs[i].distance?.value.toDouble() ?? 0;
+      duracaoTotalS += legs[i].duration?.value.toInt() ?? 0;
     }
+    final ultimaLeg = legs.last;
+    final distanciaVoltaM = ultimaLeg.distance?.value.toDouble() ?? 0;
+    duracaoTotalS += ultimaLeg.duration?.value.toInt() ?? 0;
 
     return RotaOtimizadaCalculada(
-      ordemOtimizada: rota.waypointOrder.map((n) => n.toInt()).toList(),
-      distanciaTotalKm: distanciaTotalM / 1000,
+      distanciaCobravelKm: distanciaCobravelM / 1000,
+      distanciaVoltaKm: distanciaVoltaM / 1000,
       duracaoTotalMin: (duracaoTotalS / 60).round(),
+      polylineCodificada: rota.overviewPolyline,
     );
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Matriz NxN de distância real (km) entre todos os `pontos` — usa a mesma
+/// DistanceMatrixService de calcularRotaViaJs, só que com todos os pontos
+/// como origins E destinations de uma vez.
+Future<List<List<double>>?> buscarMatrizDistanciasViaJs(List<String> pontos) async {
+  try {
+    final pontosJs = pontos.map((p) => p.toJS as JSAny).toList().toJS;
+    final response = await DistanceMatrixService().getDistanceMatrix(
+      DistanceMatrixRequest(
+        origins: pontosJs,
+        destinations: pontosJs,
+        travelMode: TravelMode.DRIVING,
+        unitSystem: UnitSystem.METRIC,
+      ),
+    );
+    if (response.rows.length != pontos.length) return null;
+
+    final matriz = <List<double>>[];
+    for (final row in response.rows) {
+      if (row.elements.length != pontos.length) return null;
+      final linha = <double>[];
+      for (final el in row.elements) {
+        if (el.status != DistanceMatrixElementStatus.OK) return null;
+        linha.add(el.distance.value / 1000);
+      }
+      matriz.add(linha);
+    }
+    return matriz;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<({double lat, double lng})?> geocodificarParaCoordenadasViaJs(String endereco) async {
+  try {
+    final response = await Geocoder().geocode(GeocoderRequest(address: endereco, region: 'br'));
+    if (response.results.isEmpty) return null;
+    final localizacao = response.results.first.geometry.location;
+    return (lat: localizacao.lat.toDouble(), lng: localizacao.lng.toDouble());
   } catch (_) {
     return null;
   }

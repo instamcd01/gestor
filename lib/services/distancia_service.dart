@@ -13,22 +13,38 @@ class RotaCalculada {
   RotaCalculada({required this.distanciaKm, required this.duracaoMin});
 }
 
-/// Resultado de uma rota com múltiplas paradas otimizada pra menor
-/// distância total (Directions API, `optimize:true`) — usado pela Fase 2
-/// do custo real por venda quando o entregador leva vários pedidos de uma
-/// vez (ver rotas_entrega_screen.dart).
+/// Resultado de uma rota com múltiplas paradas — usado pela Fase 2 do
+/// custo real por venda quando o entregador leva vários pedidos de uma vez
+/// (ver rotas_entrega_screen.dart).
 class RotaOtimizadaCalculada {
-  /// Índices dos destinos originais, na ordem otimizada de visita (ex:
-  /// [2, 0, 1] = visitar o 3º endereço da lista original primeiro).
-  final List<int> ordemOtimizada;
-  final double distanciaTotalKm;
+  /// Índices dos destinos originais, na ordem de visita (ex: [2, 0, 1] =
+  /// visitar o 3º endereço da lista original primeiro). Só preenchido pela
+  /// busca automática (calcularRotaOtimizada) — depois de um reordenamento
+  /// manual, quem chama calcularRotaOrdemFixa já sabe a ordem, não precisa
+  /// dela de volta.
+  final List<int>? ordemOtimizada;
+  /// Distância "cobrável": loja → parada 1 → ... → última parada, SEM a
+  /// perna de volta pra loja — é o que entra na conta de custo por km
+  /// (empresa cobra a entrega, não o trajeto de volta do entregador).
+  final double distanciaCobravelKm;
+  /// Só a perna final (última parada → loja) — separada pra quem quiser
+  /// ver o total rodado de verdade (cobrável + volta), sem misturar isso
+  /// na cobrança.
+  final double distanciaVoltaKm;
   final int duracaoTotalMin;
+  /// Polyline codificada (formato padrão do Google) do trajeto real,
+  /// pronta pra desenhar no mapa — ver rota_mapa_screen.dart.
+  final String? polylineCodificada;
 
   RotaOtimizadaCalculada({
-    required this.ordemOtimizada,
-    required this.distanciaTotalKm,
+    this.ordemOtimizada,
+    required this.distanciaCobravelKm,
+    required this.distanciaVoltaKm,
     required this.duracaoTotalMin,
+    this.polylineCodificada,
   });
+
+  double get distanciaTotalComVoltaKm => distanciaCobravelKm + distanciaVoltaKm;
 }
 
 class EnderecoEncontrado {
@@ -173,27 +189,63 @@ class DistanciaService {
     }
   }
 
-  /// Calcula a rota de ida-e-volta (sai da loja, visita cada destino, volta
-  /// pra loja) que minimiza a distância total, via Google Directions API
-  /// com `optimize:true` — resolve a ordem de visita ótima (problema do
-  /// caixeiro-viajante aproximado, até 25 paradas). Retorna null com menos
-  /// de 2 destinos (nada a otimizar) ou se a API falhar — quem chama decide
-  /// o fallback (pedir o km manualmente, como já era feito antes).
+  /// Acha a ordem de visita que minimiza a distância TOTAL de ida-e-volta
+  /// (sai da loja, visita cada destino, volta pra loja) — usa a Distance
+  /// Matrix API pra montar a matriz de distância real entre todos os
+  /// pontos, e busca exaustiva sobre as permutações dos destinos (até 8
+  /// pontos — o suficiente pra qualquer rota real de entrega; instantâneo
+  /// mesmo no pior caso, 8! = 40320 combinações). **Importante**: isso é
+  /// diferente de pedir `optimize:true` na Directions API — aquele
+  /// endpoint otimiza por TEMPO de viagem, não por distância (confirmado
+  /// na documentação oficial do Google), o que não bate com uma cobrança
+  /// baseada em km rodado. Retorna null com menos de 2 destinos (nada a
+  /// otimizar), mais de 8 (foge do escopo de busca exaustiva — quem chama
+  /// cai pro fluxo manual) ou se a API falhar.
   static Future<RotaOtimizadaCalculada?> calcularRotaOtimizada({
     required String origem,
     required List<String> destinos,
   }) async {
-    if (origem.trim().isEmpty || destinos.length < 2) return null;
+    if (origem.trim().isEmpty || destinos.length < 2 || destinos.length > 8) return null;
+
+    final matriz = await _buscarMatrizDistancias([origem, ...destinos]);
+    if (matriz == null) return null;
+
+    final ordem = _melhorOrdemPorDistancia(matriz, destinos.length);
+    if (ordem == null) return null;
+
+    final destinosNaOrdem = ordem.map((i) => destinos[i]).toList();
+    final rotaFixa = await calcularRotaOrdemFixa(origem: origem, destinosNaOrdem: destinosNaOrdem);
+    if (rotaFixa == null) return null;
+
+    return RotaOtimizadaCalculada(
+      ordemOtimizada: ordem,
+      distanciaCobravelKm: rotaFixa.distanciaCobravelKm,
+      distanciaVoltaKm: rotaFixa.distanciaVoltaKm,
+      duracaoTotalMin: rotaFixa.duracaoTotalMin,
+      polylineCodificada: rotaFixa.polylineCodificada,
+    );
+  }
+
+  /// Calcula distância/duração/trajeto real pra uma ordem de visita JÁ
+  /// DECIDIDA (seja pelo cálculo automático acima, seja por reordenamento
+  /// manual do usuário na tela) — via Directions API, sem `optimize:true`
+  /// (a ordem já vem pronta, não pede pro Google escolher). Também traz a
+  /// polyline do trajeto real, pra desenhar no mapa.
+  static Future<RotaOtimizadaCalculada?> calcularRotaOrdemFixa({
+    required String origem,
+    required List<String> destinosNaOrdem,
+  }) async {
+    if (origem.trim().isEmpty || destinosNaOrdem.isEmpty) return null;
 
     if (kIsWeb) {
-      return maps_web.calcularRotaOtimizadaViaJs(origem: origem, destinos: destinos);
+      return maps_web.calcularRotaOrdemFixaViaJs(origem: origem, destinosNaOrdem: destinosNaOrdem);
     }
 
     try {
       final uri = Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
         'origin': origem,
         'destination': origem,
-        'waypoints': 'optimize:true|${destinos.join('|')}',
+        if (destinosNaOrdem.length > 1) 'waypoints': destinosNaOrdem.join('|'),
         'mode': 'driving',
         'units': 'metric',
         'key': _apiKey,
@@ -212,25 +264,181 @@ class DistanciaService {
       final rota = rotas.first as Map<String, dynamic>;
 
       final legs = rota['legs'] as List;
-      var distanciaTotalM = 0.0;
+      if (legs.isEmpty) return null;
+
       var duracaoTotalS = 0;
-      for (final legRaw in legs) {
-        final leg = legRaw as Map<String, dynamic>;
-        distanciaTotalM += (leg['distance']['value'] as num).toDouble();
+      var distanciaCobravelM = 0.0;
+      for (var i = 0; i < legs.length - 1; i++) {
+        final leg = legs[i] as Map<String, dynamic>;
+        distanciaCobravelM += (leg['distance']['value'] as num).toDouble();
         duracaoTotalS += (leg['duration']['value'] as num).toInt();
       }
+      final ultimaLeg = legs.last as Map<String, dynamic>;
+      final distanciaVoltaM = (ultimaLeg['distance']['value'] as num).toDouble();
+      duracaoTotalS += (ultimaLeg['duration']['value'] as num).toInt();
 
-      final waypointOrder = (rota['waypoint_order'] as List).map((e) => (e as num).toInt()).toList();
+      final polyline = (rota['overview_polyline'] as Map<String, dynamic>?)?['points'] as String?;
 
       return RotaOtimizadaCalculada(
-        ordemOtimizada: waypointOrder,
-        distanciaTotalKm: distanciaTotalM / 1000,
+        distanciaCobravelKm: distanciaCobravelM / 1000,
+        distanciaVoltaKm: distanciaVoltaM / 1000,
         duracaoTotalMin: (duracaoTotalS / 60).round(),
+        polylineCodificada: polyline,
       );
     } catch (e) {
-      debugPrint('Erro ao calcular rota otimizada: $e');
+      debugPrint('Erro ao calcular rota de ordem fixa: $e');
       return null;
     }
+  }
+
+  /// Matriz NxN de distância real (km) entre todos os pontos, via Distance
+  /// Matrix API — 1 chamada só, `pontos` usado como origins E destinations.
+  /// `matriz[i][j]` = distância de pontos[i] pra pontos[j].
+  static Future<List<List<double>>?> _buscarMatrizDistancias(List<String> pontos) async {
+    if (kIsWeb) {
+      return maps_web.buscarMatrizDistanciasViaJs(pontos);
+    }
+
+    try {
+      final pontosStr = pontos.join('|');
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/distancematrix/json', {
+        'origins': pontosStr,
+        'destinations': pontosStr,
+        'mode': 'driving',
+        'units': 'metric',
+        'key': _apiKey,
+      });
+
+      final resposta = await http.get(uri).timeout(const Duration(seconds: 15));
+      final json = jsonDecode(resposta.body) as Map<String, dynamic>;
+
+      if (json['status'] != 'OK') {
+        debugPrint('Distance Matrix API status: ${json['status']}');
+        return null;
+      }
+
+      final linhas = json['rows'] as List;
+      final matriz = <List<double>>[];
+      for (final linhaRaw in linhas) {
+        final elementos = (linhaRaw as Map<String, dynamic>)['elements'] as List;
+        final linha = <double>[];
+        for (final elRaw in elementos) {
+          final el = elRaw as Map<String, dynamic>;
+          if (el['status'] != 'OK') return null;
+          linha.add((el['distance']['value'] as num).toDouble() / 1000);
+        }
+        matriz.add(linha);
+      }
+      return matriz;
+    } catch (e) {
+      debugPrint('Erro ao buscar matriz de distâncias: $e');
+      return null;
+    }
+  }
+
+  /// Busca exaustiva: testa todas as permutações dos `n` destinos (índices
+  /// 0..n-1) e devolve a que minimiza a distância total de ida-e-volta
+  /// (matriz[0] = origem, matriz[1..n] = destinos, nessa ordem). `n` até 8
+  /// já é garantido pelo chamador (calcularRotaOtimizada).
+  static List<int>? _melhorOrdemPorDistancia(List<List<double>> matriz, int n) {
+    List<int>? melhorOrdem;
+    var melhorDistancia = double.infinity;
+
+    void tentar(List<int> ordem) {
+      var distancia = matriz[0][ordem.first + 1];
+      for (var i = 0; i < ordem.length - 1; i++) {
+        distancia += matriz[ordem[i] + 1][ordem[i + 1] + 1];
+      }
+      distancia += matriz[ordem.last + 1][0];
+      if (distancia < melhorDistancia) {
+        melhorDistancia = distancia;
+        melhorOrdem = List.of(ordem);
+      }
+    }
+
+    void permutar(List<int> restantes, List<int> atual) {
+      if (restantes.isEmpty) {
+        tentar(atual);
+        return;
+      }
+      for (var i = 0; i < restantes.length; i++) {
+        final proximo = restantes[i];
+        final novoRestante = [...restantes.sublist(0, i), ...restantes.sublist(i + 1)];
+        permutar(novoRestante, [...atual, proximo]);
+      }
+    }
+
+    permutar(List.generate(n, (i) => i), []);
+    return melhorOrdem;
+  }
+
+  /// Geocodifica um endereço em texto pra coordenadas — usado pra colocar
+  /// o marcador da loja no mapa da rota (ver rota_mapa_screen.dart), já
+  /// que `empresas.latitude/longitude` nem sempre está preenchido.
+  static Future<({double lat, double lng})?> geocodificarParaCoordenadas(String endereco) async {
+    if (endereco.trim().isEmpty) return null;
+
+    if (kIsWeb) {
+      return maps_web.geocodificarParaCoordenadasViaJs(endereco);
+    }
+
+    try {
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
+        'address': endereco,
+        'region': 'br',
+        'key': _apiKey,
+      });
+
+      final resposta = await http.get(uri).timeout(const Duration(seconds: 10));
+      final json = jsonDecode(resposta.body) as Map<String, dynamic>;
+
+      if (json['status'] != 'OK') return null;
+      final resultados = json['results'] as List;
+      if (resultados.isEmpty) return null;
+
+      final localizacao = (resultados.first
+          as Map<String, dynamic>)['geometry']['location'] as Map<String, dynamic>;
+      return (lat: (localizacao['lat'] as num).toDouble(), lng: (localizacao['lng'] as num).toDouble());
+    } catch (e) {
+      debugPrint('Erro ao geocodificar endereço: $e');
+      return null;
+    }
+  }
+
+  /// Decodifica uma polyline no formato padrão do Google (algoritmo
+  /// público, ver developers.google.com/maps/documentation/utilities/polylinealgorithm)
+  /// pra uma lista de pontos lat/lng — sem depender de pacote externo só
+  /// pra isso.
+  static List<({double lat, double lng})> decodificarPolyline(String codificada) {
+    final pontos = <({double lat, double lng})>[];
+    var index = 0;
+    var lat = 0;
+    var lng = 0;
+
+    while (index < codificada.length) {
+      int b;
+      var shift = 0, result = 0;
+      do {
+        b = codificada.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      final dlat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = codificada.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      final dlng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+      lng += dlng;
+
+      pontos.add((lat: lat / 1e5, lng: lng / 1e5));
+    }
+    return pontos;
   }
 
   /// Preenche bairro/cidade/estado/CEP automaticamente a partir da

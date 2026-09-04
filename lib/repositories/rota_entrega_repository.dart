@@ -70,12 +70,23 @@ class RotaEntregaRepository {
     await supabase.from('rotas_entrega').update({'status': StatusRota.emAndamento}).eq('id', rotaId);
   }
 
-  /// Grava a distância calculada pela API de rota otimizada (ver
-  /// DistanciaService.calcularRotaOtimizada) — só uma prévia informativa,
-  /// pré-preenche o campo pedido na finalização (modo "rota"), continua
-  /// editável se o percurso real divergir.
-  Future<void> atualizarKmEstimado(String rotaId, double kmEstimado) async {
-    await supabase.from('rotas_entrega').update({'km_estimado': kmEstimado}).eq('id', rotaId);
+  /// Grava a distância calculada pela rota otimizada (ver
+  /// DistanciaService.calcularRotaOtimizada/calcularRotaOrdemFixa) — só
+  /// uma prévia informativa, pré-preenche o campo pedido na finalização
+  /// (modo "rota"), continua editável se o percurso real divergir.
+  /// Chamado tanto ao iniciar a rota (cálculo automático) quanto depois de
+  /// qualquer reordenamento manual (recalcula pra ordem nova).
+  Future<void> atualizarKmEstimado(
+    String rotaId, {
+    required double kmEstimado,
+    double? kmVoltaEstimado,
+    String? polylineEstimada,
+  }) async {
+    await supabase.from('rotas_entrega').update({
+      'km_estimado': kmEstimado,
+      'km_volta_estimado': kmVoltaEstimado,
+      'polyline_estimada': polylineEstimada,
+    }).eq('id', rotaId);
   }
 
   Future<void> finalizar(String rotaId, {double? kmTotal}) async {

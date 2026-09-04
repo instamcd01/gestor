@@ -19,6 +19,8 @@ class RotaEntrega {
   final String status;
   final double? kmTotal;
   final double? kmEstimado;
+  final double? kmVoltaEstimado;
+  final String? polylineEstimada;
   final DateTime? finalizadaEm;
 
   RotaEntrega({
@@ -30,6 +32,8 @@ class RotaEntrega {
     required this.status,
     this.kmTotal,
     this.kmEstimado,
+    this.kmVoltaEstimado,
+    this.polylineEstimada,
     this.finalizadaEm,
   });
 
@@ -51,6 +55,8 @@ class RotaEntrega {
       status: row['status']?.toString() ?? StatusRota.planejada,
       kmTotal: (row['km_total'] as num?)?.toDouble(),
       kmEstimado: (row['km_estimado'] as num?)?.toDouble(),
+      kmVoltaEstimado: (row['km_volta_estimado'] as num?)?.toDouble(),
+      polylineEstimada: row['polyline_estimada']?.toString(),
       finalizadaEm: row['finalizada_em'] != null ? DateTime.tryParse(row['finalizada_em'].toString()) : null,
     );
   }
