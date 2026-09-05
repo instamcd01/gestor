@@ -36,6 +36,25 @@ class ConviteEntregadorRepository {
     throw StateError('Não foi possível gerar um código de convite único.');
   }
 
+  /// Convites ainda não usados (vencidos ou não) — a UI decide o que mostrar
+  /// sobre expiração, igual `UsuarioRepository.listarConvites` faz pros
+  /// convites de equipe.
+  Future<List<ConviteEntregador>> listarPendentes() async {
+    final rows = await supabase
+        .from('convites_entregador')
+        .select('*, entregador:entregadores(nome)')
+        .isFilter('usado_em', null)
+        .order('created_at', ascending: false);
+    return (rows as List).map((r) => ConviteEntregador.fromSupabase(r as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> revogar(String conviteId) async {
+    await supabase
+        .from('convites_entregador')
+        .update({'expira_em': DateTime.now().toIso8601String()})
+        .eq('id', conviteId);
+  }
+
   String _gerarCodigo() {
     final random = Random.secure();
     return List.generate(8, (_) => _caracteresCodigo[random.nextInt(_caracteresCodigo.length)]).join();

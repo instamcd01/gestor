@@ -25,6 +25,7 @@ class Entregador {
   final double? custoPorParadaRota; // só modo rota
   final double? custoSalarioMensal;
   final double? custoSalarioDiaria;
+  final String? authUserId; // preenchido quando já vinculou conta no app Entregador (Fase 1)
 
   Entregador({
     this.id,
@@ -41,6 +42,7 @@ class Entregador {
     this.custoPorParadaRota,
     this.custoSalarioMensal,
     this.custoSalarioDiaria,
+    this.authUserId,
   });
 
   factory Entregador.fromSupabase(Map<String, dynamic> row) {
@@ -59,6 +61,7 @@ class Entregador {
       custoPorParadaRota: (row['custo_por_parada_rota'] as num?)?.toDouble(),
       custoSalarioMensal: (row['custo_salario_mensal'] as num?)?.toDouble(),
       custoSalarioDiaria: (row['custo_salario_diaria'] as num?)?.toDouble(),
+      authUserId: row['auth_user_id'] as String?,
     );
   }
 

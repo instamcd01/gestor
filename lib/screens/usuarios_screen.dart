@@ -4,9 +4,13 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/convite_empresa.dart';
+import '../models/convite_entregador.dart';
+import '../models/entregador.dart';
 import '../models/usuario.dart';
 import '../providers/auth_provider.dart';
+import '../providers/entregador_provider.dart';
 import '../providers/usuario_provider.dart';
+import '../repositories/convite_entregador_repository.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/estado_erro_lista.dart';
 
@@ -23,10 +27,130 @@ class UsuariosScreen extends StatefulWidget {
 }
 
 class _UsuariosScreenState extends State<UsuariosScreen> {
+  final _conviteEntregadorRepository = ConviteEntregadorRepository();
+  List<ConviteEntregador> _convitesEntregadorPendentes = [];
+  bool _carregandoConvitesEntregador = true;
+
   @override
   void initState() {
     super.initState();
     Provider.of<UsuarioProvider>(context, listen: false).carregar();
+    Provider.of<EntregadorProvider>(context, listen: false).carregar();
+    _carregarConvitesEntregador();
+  }
+
+  Future<void> _carregarConvitesEntregador() async {
+    setState(() => _carregandoConvitesEntregador = true);
+    try {
+      final convites = await _conviteEntregadorRepository.listarPendentes();
+      if (mounted) setState(() => _convitesEntregadorPendentes = convites);
+    } catch (e) {
+      debugPrint('Erro ao carregar convites de entregador: $e');
+    } finally {
+      if (mounted) setState(() => _carregandoConvitesEntregador = false);
+    }
+  }
+
+  Future<void> _gerarConviteEntregador(Entregador entregador) async {
+    if (entregador.id == null) return;
+    final auth = context.read<AuthProvider>();
+    final empresaId = auth.empresaId;
+    final meuId = auth.usuarioAtual?.id;
+    if (empresaId == null || meuId == null) return;
+
+    try {
+      final convite = await _conviteEntregadorRepository.gerar(
+        empresaId: empresaId,
+        entregadorId: entregador.id!,
+        criadoPor: meuId,
+      );
+      if (!mounted) return;
+      await _mostrarCodigoGeradoEntregador(convite, entregador.nome);
+      await _carregarConvitesEntregador();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível gerar o convite: $e')),
+      );
+    }
+  }
+
+  Future<void> _mostrarCodigoGeradoEntregador(ConviteEntregador convite, String entregadorNome) async {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Convite gerado'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Passe esse código pra $entregadorNome digitar no app Entregador.'),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                convite.codigo,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Válido até ${dateFormat.format(convite.expiraEm)}',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.onSurfaceVariant, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: convite.codigo));
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Código copiado.')),
+                );
+              }
+            },
+            child: const Text('Copiar código'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _revogarConviteEntregador(ConviteEntregador convite) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Revogar convite'),
+        content: Text('O código ${convite.codigo} deixará de funcionar. Confirmar?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Revogar')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    try {
+      await _conviteEntregadorRepository.revogar(convite.id);
+      await _carregarConvitesEntregador();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível revogar: $e')),
+      );
+    }
   }
 
   Future<void> _gerarConvite(bool souDono) async {
@@ -296,7 +420,9 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final provider = context.watch<UsuarioProvider>();
+    final entregadorProvider = context.watch<EntregadorProvider>();
     final souDono = auth.papel == 'dono';
+    final podeConvidarEntregador = souDono || auth.papel == 'gerente';
     final meuId = auth.usuarioAtual?.id;
 
     return Scaffold(
@@ -395,6 +521,79 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                             icon: const Icon(Icons.close, color: Colors.red),
                             tooltip: 'Revogar',
                             onPressed: () => _revogarConvite(convite),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                  // Entregadores não têm linha em `usuarios` (não fazem parte
+                  // da "equipe" com login/permissões de staff) — ver
+                  // docs/superpowers/specs/2026-09-04-app-entregador-fase1-design.md
+                  // linha 26-32. Convite pra vincular conta no app Entregador
+                  // fica aqui por conveniência (mesma tela de gestão de
+                  // convites), não porque virou um "usuário" de verdade.
+                  if (podeConvidarEntregador && entregadorProvider.ativos.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      child: Text(
+                        'Entregadores',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary),
+                      ),
+                    ),
+                    ...entregadorProvider.ativos.map((entregador) {
+                      final vinculado = entregador.authUserId != null;
+                      return Card(
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: vinculado
+                                ? Colors.green.withValues(alpha: 0.15)
+                                : Theme.of(context).colorScheme.surfaceContainerHighest,
+                            child: Icon(
+                              Icons.moped_outlined,
+                              color: vinculado ? Colors.green : Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          title: Text(entregador.nome),
+                          subtitle: Text(vinculado ? 'Já vinculado ao app Entregador' : 'Ainda não vinculou o app'),
+                          trailing: vinculado
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.person_add_alt),
+                                  tooltip: 'Gerar convite',
+                                  onPressed: () => _gerarConviteEntregador(entregador),
+                                ),
+                        ),
+                      );
+                    }),
+                  ],
+                  if (podeConvidarEntregador &&
+                      !_carregandoConvitesEntregador &&
+                      _convitesEntregadorPendentes.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                      child: Text(
+                        'Convites de entregador pendentes',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary),
+                      ),
+                    ),
+                    ..._convitesEntregadorPendentes.map((convite) {
+                      final dateFormat = DateFormat('dd/MM/yyyy');
+                      return Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.mail_outline, color: Colors.orange),
+                          title: Text(convite.codigo, style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          subtitle: Text(
+                              '${convite.entregadorNome ?? '?'} • válido até ${dateFormat.format(convite.expiraEm)}'),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.close, color: Colors.red),
+                            tooltip: 'Revogar',
+                            onPressed: () => _revogarConviteEntregador(convite),
                           ),
                         ),
                       );
