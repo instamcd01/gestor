@@ -224,9 +224,17 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
   /// Chamado antes de iniciar uma rota com 2+ pedidos: busca a ordem de
   /// visita que minimiza a distância TOTAL real (não tempo de viagem, ver
   /// DistanciaService.calcularRotaOtimizada) e já reordena os pedidos +
-  /// salva a distância/trajeto calculados. Nunca bloqueia o fluxo se
-  /// falhar (endereço não localizável, API fora do ar etc.) — a rota só
-  /// segue sem otimização, igual já era antes.
+  /// salva a distância/trajeto calculados.
+  ///
+  /// A otimização em si (Distance Matrix, N×N) pode falhar mesmo quando o
+  /// trajeto real (Directions, N-1 trechos) funcionaria — basta 1 par entre
+  /// TODOS os pontos não ser geocodificável pra `calcularRotaOtimizada`
+  /// desistir inteira. Sem esse fallback, a rota iniciava sem km/polyline
+  /// nenhum salvo (silenciosamente — "Ver no mapa" nem aparecia até o
+  /// usuário reordenar manualmente na mão, que já usava só Directions).
+  /// Aqui, se a otimização falhar, ainda tenta salvar o trajeto na ordem
+  /// ATUAL (sem reordenar) — pior que a ordem ótima, mas nunca deixa a rota
+  /// sem km/mapa por causa de uma falha só na etapa de otimização.
   Future<void> _otimizarRota(RotaEntrega rota, List<RotaPedidoItem> pedidos, HistoricoVendasProvider historico) async {
     if (pedidos.length < 2) return;
 
@@ -240,15 +248,34 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
     if (destinos == null) return;
 
     final resultado = await DistanciaService.calcularRotaOtimizada(origem: origem, destinos: destinos);
-    if (resultado == null || resultado.ordemOtimizada == null) return;
+    if (resultado != null && resultado.ordemOtimizada != null) {
+      final pedidosNaOrdemOtima = resultado.ordemOtimizada!.map((indice) => pedidos[indice].pedidoId).toList();
+      await _repository.reordenar(rota.id, pedidosNaOrdemOtima);
+      await _repository.atualizarKmEstimado(
+        rota.id,
+        kmEstimado: resultado.distanciaCobravelKm,
+        kmVoltaEstimado: resultado.distanciaVoltaKm,
+        polylineEstimada: resultado.polylineCodificada,
+      );
+      return;
+    }
 
-    final pedidosNaOrdemOtima = resultado.ordemOtimizada!.map((indice) => pedidos[indice].pedidoId).toList();
-    await _repository.reordenar(rota.id, pedidosNaOrdemOtima);
+    // Fallback: otimização falhou, mas o trajeto na ordem atual pode não —
+    // salva mesmo sem reordenar, pra sempre sair com km/mapa preenchidos.
+    final fixo = await DistanciaService.calcularRotaOrdemFixa(origem: origem, destinosNaOrdem: destinos);
+    if (fixo == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível calcular a rota no mapa — endereço pode estar sem localização.')),
+        );
+      }
+      return;
+    }
     await _repository.atualizarKmEstimado(
       rota.id,
-      kmEstimado: resultado.distanciaCobravelKm,
-      kmVoltaEstimado: resultado.distanciaVoltaKm,
-      polylineEstimada: resultado.polylineCodificada,
+      kmEstimado: fixo.distanciaCobravelKm,
+      kmVoltaEstimado: fixo.distanciaVoltaKm,
+      polylineEstimada: fixo.polylineCodificada,
     );
   }
 
@@ -268,7 +295,19 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
     if (destinos == null) return;
 
     final resultado = await DistanciaService.calcularRotaOrdemFixa(origem: origem, destinosNaOrdem: destinos);
-    if (resultado == null) return;
+    if (resultado == null) {
+      // Sem isso, o mapa continuava mostrando o trajeto da ordem ANTERIOR
+      // (stale) sem nenhum aviso — as posições dos marcadores já refletem a
+      // ordem nova, mas a linha desenhada seria de uma ordem que não existe
+      // mais, o que pode parecer "a linha não chega na última parada" quando
+      // na verdade ela é de outra ordem inteiramente.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Não foi possível recalcular o trajeto — o mapa pode ficar desatualizado até um novo reordenamento funcionar.')),
+        );
+      }
+      return;
+    }
 
     await _repository.atualizarKmEstimado(
       rota.id,
@@ -477,7 +516,16 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
                     margin: const EdgeInsets.only(bottom: 10),
                     child: ExpansionTile(
                       title: Text(rota.entregadorNome, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Row(
+                      // Wrap em vez de Row: com nome de entregador comprido +
+                      // status + km calculado (texto que pode ficar longo,
+                      // ex: "~12.3 km cobrável (15.1 km rodado)"), uma Row
+                      // sem quebra estourava a largura do card (RenderFlex
+                      // overflow) — aqui o que não couber quebra pra uma 2ª
+                      // linha em vez de cortar.
+                      subtitle: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -488,16 +536,17 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
                             child: Text(_rotuloStatus(rota.status),
                                 style: TextStyle(color: _corStatus(rota.status), fontSize: 11, fontWeight: FontWeight.bold)),
                           ),
-                          const SizedBox(width: 8),
+                          const Text('•'),
                           Text('${pedidosDaRota.length} pedido(s)'),
+                          if (rota.kmTotal != null || rota.kmEstimado != null) const Text('•'),
                           if (rota.kmTotal != null)
-                            Text(' • ${rota.kmTotal!.toStringAsFixed(1)} km')
+                            Text('${rota.kmTotal!.toStringAsFixed(1)} km')
                           else if (rota.kmEstimado != null)
                             Text(
                               rota.kmVoltaEstimado != null
-                                  ? ' • ~${rota.kmEstimado!.toStringAsFixed(1)} km cobrável'
+                                  ? '~${rota.kmEstimado!.toStringAsFixed(1)} km cobrável'
                                         ' (${(rota.kmEstimado! + rota.kmVoltaEstimado!).toStringAsFixed(1)} km rodado)'
-                                  : ' • ~${rota.kmEstimado!.toStringAsFixed(1)} km (estimado)',
+                                  : '~${rota.kmEstimado!.toStringAsFixed(1)} km (estimado)',
                             ),
                         ],
                       ),
