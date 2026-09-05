@@ -83,6 +83,10 @@ Sem arquivo pra commitar (mudança só no banco) — anotar no changelog/PR a mi
 
 **Contexto:** essas 5 tabelas hoje só têm policy pra staff (via `get_empresa_id()`) ou pro cliente final (via `clientes.auth_user_id`). Sem policy nova, um entregador autenticado não enxerga nada — RLS nega tudo por padrão.
 
+> **⚠️ Correção pós-execução (05/09, achada testando ao vivo):** o SQL abaixo, como escrito originalmente, causa recursão infinita (`42P17`) em duas tabelas — `clientes_entregador_select` faz `EXISTS` contra `pedidos`, que já tem `pedidos_cliente_le_proprio` referenciando `clientes` de volta; e `pedidos_entregador_select`/`update` fazem `EXISTS` contra `rota_pedidos`, que já tem `rota_pedidos_isolamento` referenciando `pedidos` de volta. Isso quebrou `clientes` E `pedidos` INTEIRAS pra todo mundo (não só pro entregador) até serem corrigidas pelas migrations `fix_recursao_rls_clientes_entregador` e `fix_recursao_rls_pedidos_entregador` (funções `entregador_pode_ver_cliente`/`entregador_pode_ver_pedido`, SECURITY DEFINER). **Se for reaplicar este SQL do zero em outro ambiente, já aplique a versão corrigida** (ver essas duas migrations, ou [[gestor_app_entregador_fase1]]), não o texto abaixo como está.
+
+**Também faltou** uma policy de self-select em `entregadores` (`entregador_self_select`, ver migration `add_entregadores_self_select`) — sem ela, nem o próprio entregador conseguia reler o vínculo depois de `vincular_entregador_conta`, e as outras policies desta task (que fazem subquery em `entregadores`) ficavam silenciosamente sem efeito.
+
 - [ ] **Step 1: Aplicar a migration**
 
 ```sql
