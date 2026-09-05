@@ -577,14 +577,19 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
                                   onPressed: () => _adicionarPedidos(rota),
                                   child: const Text('Adicionar pedidos'),
                                 ),
-                                ElevatedButton(
+                                // Fluxo principal agora é o app Entregador
+                                // (ver docs/superpowers/specs/2026-09-04-app-entregador-fase1-design.md)
+                                // — isso aqui só existe pra destravar uma
+                                // emergência (ex: celular do entregador sem
+                                // bateria), por isso o rótulo avisa.
+                                OutlinedButton(
                                   onPressed: () => _iniciarRota(rota),
-                                  child: const Text('Iniciar rota'),
+                                  child: const Text('Iniciar rota (emergência)'),
                                 ),
                               ] else if (rota.emAndamento)
-                                ElevatedButton(
+                                OutlinedButton(
                                   onPressed: () => _finalizarRota(rota),
-                                  child: const Text('Finalizar rota'),
+                                  child: const Text('Finalizar rota (emergência)'),
                                 ),
                             ],
                           ),
