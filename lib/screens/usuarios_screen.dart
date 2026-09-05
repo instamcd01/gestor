@@ -13,6 +13,7 @@ import '../providers/usuario_provider.dart';
 import '../repositories/convite_entregador_repository.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/estado_erro_lista.dart';
+import '../widgets/formulario_entregador.dart';
 
 /// Gestão de equipe: quem tem acesso à empresa, com qual papel, e convites
 /// pendentes pra novas pessoas entrarem. Substitui a versão antiga que
@@ -150,6 +151,60 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Não foi possível revogar: $e')),
       );
+    }
+  }
+
+  Future<void> _abrirFormularioEntregador({Entregador? existente}) async {
+    final salvo = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => FormularioEntregador(existente: existente),
+    );
+    if (salvo == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(existente != null ? 'Entregador atualizado!' : 'Entregador cadastrado!')),
+      );
+    }
+  }
+
+  Future<void> _excluirEntregador(Entregador entregador) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remover entregador'),
+        content: Text('Remover "${entregador.nome}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remover')),
+        ],
+      ),
+    );
+    if (confirmar != true || entregador.id == null || !mounted) return;
+
+    try {
+      await context.read<EntregadorProvider>().excluir(entregador.id!);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao remover: $e')));
+      }
+    }
+  }
+
+  String _resumoCustoEntregador(Entregador e) {
+    switch (e.custoModo) {
+      case ModoCustoEntregador.fixo:
+        return 'R\$ ${e.custoPorEntrega?.toStringAsFixed(2) ?? '-'} por entrega';
+      case ModoCustoEntregador.km:
+        return 'R\$ ${e.custoPorKm?.toStringAsFixed(2) ?? '-'} por km';
+      case ModoCustoEntregador.rota:
+        return 'R\$ ${e.custoPorKm?.toStringAsFixed(2) ?? '-'}/km + '
+            'R\$ ${e.custoPorParadaRota?.toStringAsFixed(2) ?? '-'} por parada';
+      case ModoCustoEntregador.salarioMensal:
+        return 'Salário R\$ ${e.custoSalarioMensal?.toStringAsFixed(2) ?? '-'}/mês';
+      case ModoCustoEntregador.salarioDiaria:
+        return 'Diária R\$ ${e.custoSalarioDiaria?.toStringAsFixed(2) ?? '-'}';
+      default:
+        return 'Custo de entrega não configurado';
     }
   }
 
@@ -316,6 +371,19 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (usuario.email?.isNotEmpty == true) ...[
+              // Só exibição — trocar e-mail exige reautenticação no Supabase
+              // Auth, fora de escopo aqui (é só pra saber qual e-mail é essa
+              // conta, ex: pra não confundir com um e-mail já usado como
+              // login do app Entregador).
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.email_outlined),
+                title: Text(usuario.email!),
+                subtitle: const Text('E-mail de login (não editável aqui)'),
+              ),
+              const SizedBox(height: 4),
+            ],
             TextField(
               controller: nomeController,
               textCapitalization: TextCapitalization.words,
@@ -477,6 +545,7 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                           '${usuario.rotuloPapel}'
                           '${ehEuMesmo ? ' • você' : ''}'
                           '${usuario.ativo ? '' : ' • inativo'}'
+                          '${usuario.email?.isNotEmpty == true ? ' • ${usuario.email}' : ''}'
                           '${usuario.telefone?.isNotEmpty == true ? ' • ${usuario.telefone}' : ''}',
                         ),
                         trailing: souDono && !ehEuMesmo
@@ -529,21 +598,36 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                   // Entregadores não têm linha em `usuarios` (não fazem parte
                   // da "equipe" com login/permissões de staff) — ver
                   // docs/superpowers/specs/2026-09-04-app-entregador-fase1-design.md
-                  // linha 26-32. Convite pra vincular conta no app Entregador
-                  // fica aqui por conveniência (mesma tela de gestão de
-                  // convites), não porque virou um "usuário" de verdade.
-                  if (podeConvidarEntregador && entregadorProvider.ativos.isNotEmpty) ...[
+                  // linha 26-32. Cadastro + convite pra vincular conta no app
+                  // Entregador ficam aqui por conveniência (gestão de pessoas
+                  // centralizada numa tela só), não porque virou um "usuário"
+                  // de verdade.
+                  if (podeConvidarEntregador) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                      child: Text(
-                        'Entregadores',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Entregadores',
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            tooltip: 'Novo entregador',
+                            onPressed: () => _abrirFormularioEntregador(),
+                          ),
+                        ],
                       ),
                     ),
-                    ...entregadorProvider.ativos.map((entregador) {
+                    if (entregadorProvider.entregadores.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                        child: Text('Nenhum entregador cadastrado ainda.'),
+                      ),
+                    ...entregadorProvider.entregadores.map((entregador) {
                       final vinculado = entregador.authUserId != null;
                       return Card(
                         child: ListTile(
@@ -556,15 +640,33 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                               color: vinculado ? Colors.green : Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
-                          title: Text(entregador.nome),
-                          subtitle: Text(vinculado ? 'Já vinculado ao app Entregador' : 'Ainda não vinculou o app'),
-                          trailing: vinculado
-                              ? null
-                              : IconButton(
-                                  icon: const Icon(Icons.person_add_alt),
-                                  tooltip: 'Gerar convite',
-                                  onPressed: () => _gerarConviteEntregador(entregador),
-                                ),
+                          title: Text(
+                            entregador.nome,
+                            style: TextStyle(decoration: entregador.ativo ? null : TextDecoration.lineThrough),
+                          ),
+                          subtitle: Text(
+                            '${_resumoCustoEntregador(entregador)}'
+                            '${vinculado ? ' • vinculado ao app' : ' • não vinculou o app ainda'}'
+                            '${entregador.ativo ? '' : ' • inativo'}',
+                          ),
+                          trailing: PopupMenuButton<String>(
+                            onSelected: (acao) {
+                              switch (acao) {
+                                case 'convite':
+                                  _gerarConviteEntregador(entregador);
+                                case 'editar':
+                                  _abrirFormularioEntregador(existente: entregador);
+                                case 'excluir':
+                                  _excluirEntregador(entregador);
+                              }
+                            },
+                            itemBuilder: (ctx) => [
+                              if (!vinculado)
+                                const PopupMenuItem(value: 'convite', child: Text('Gerar convite')),
+                              const PopupMenuItem(value: 'editar', child: Text('Editar')),
+                              const PopupMenuItem(value: 'excluir', child: Text('Remover')),
+                            ],
+                          ),
                         ),
                       );
                     }),

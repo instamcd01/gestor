@@ -79,7 +79,7 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
     final ativos = context.read<EntregadorProvider>().ativos;
     if (ativos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cadastre um entregador ativo primeiro (Configurações > Entregadores).')),
+        const SnackBar(content: Text('Cadastre um entregador ativo primeiro (tela Usuários).')),
       );
       return;
     }

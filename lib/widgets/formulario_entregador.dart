@@ -4,9 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/entregador.dart';
 import '../providers/entregador_provider.dart';
 import '../utils/cliente_validators.dart';
-import '../widgets/estado_erro_lista.dart';
 
-const _rotulosModo = {
+const _rotulosModoCustoEntregador = {
   ModoCustoEntregador.fixo: 'Valor fixo por entrega',
   ModoCustoEntregador.km: 'Valor por km rodado',
   ModoCustoEntregador.salarioMensal: 'Salário mensal',
@@ -14,149 +13,19 @@ const _rotulosModo = {
   ModoCustoEntregador.rota: 'Por rota (múltiplas entregas)',
 };
 
-/// Cadastro de entregadores (Configurações > Vendas, dono/gerente) — cada
-/// um com seu próprio jeito de custar a entrega (Fase 2 do custo real por
-/// venda, ver [[gestor_custo_real_venda]]). Usado por "Rotas de Entrega"
-/// (`rotas_entrega_screen.dart`) pra montar as rotas do dia.
-class EntregadoresScreen extends StatefulWidget {
-  const EntregadoresScreen({super.key});
-
-  @override
-  State<EntregadoresScreen> createState() => _EntregadoresScreenState();
-}
-
-class _EntregadoresScreenState extends State<EntregadoresScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<EntregadorProvider>().carregar();
-    });
-  }
-
-  Future<void> _abrirFormulario({Entregador? existente}) async {
-    final salvo = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _FormularioEntregador(existente: existente),
-    );
-    if (salvo == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(existente != null ? 'Entregador atualizado!' : 'Entregador cadastrado!')),
-      );
-    }
-  }
-
-  Future<void> _excluir(Entregador entregador) async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remover entregador'),
-        content: Text('Remover "${entregador.nome}"?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remover')),
-        ],
-      ),
-    );
-    if (confirmar != true || entregador.id == null || !mounted) return;
-
-    try {
-      await context.read<EntregadorProvider>().excluir(entregador.id!);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao remover: $e')));
-      }
-    }
-  }
-
-  String _resumoCusto(Entregador e) {
-    switch (e.custoModo) {
-      case ModoCustoEntregador.fixo:
-        return 'R\$ ${e.custoPorEntrega?.toStringAsFixed(2) ?? '-'} por entrega';
-      case ModoCustoEntregador.km:
-        return 'R\$ ${e.custoPorKm?.toStringAsFixed(2) ?? '-'} por km';
-      case ModoCustoEntregador.rota:
-        return 'R\$ ${e.custoPorKm?.toStringAsFixed(2) ?? '-'}/km + '
-            'R\$ ${e.custoPorParadaRota?.toStringAsFixed(2) ?? '-'} por parada';
-      case ModoCustoEntregador.salarioMensal:
-        return 'Salário R\$ ${e.custoSalarioMensal?.toStringAsFixed(2) ?? '-'}/mês (rateado por entrega)';
-      case ModoCustoEntregador.salarioDiaria:
-        return 'Diária R\$ ${e.custoSalarioDiaria?.toStringAsFixed(2) ?? '-'} (rateada por entrega)';
-      default:
-        return 'Custo de entrega não configurado';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final provider = context.watch<EntregadorProvider>();
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Entregadores')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _abrirFormulario(),
-        icon: const Icon(Icons.add),
-        label: const Text('Novo'),
-      ),
-      body: provider.carregando
-          ? const Center(child: CircularProgressIndicator())
-          : provider.erro != null
-              ? EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.carregar)
-              : provider.entregadores.isEmpty
-                  ? const Center(child: Text('Nenhum entregador cadastrado ainda.'))
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: provider.entregadores.length,
-                      itemBuilder: (context, index) {
-                        final entregador = provider.entregadores[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            title: Text(entregador.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_resumoCusto(entregador)),
-                                Text(
-                                  entregador.veiculoDaLoja ? 'Veículo da loja' : 'Veículo do próprio entregador',
-                                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                ),
-                                if (!entregador.ativo)
-                                  const Text('Inativo', style: TextStyle(color: Colors.red, fontSize: 12)),
-                              ],
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.edit),
-                                  onPressed: () => _abrirFormulario(existente: entregador),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => _excluir(entregador),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-    );
-  }
-}
-
-class _FormularioEntregador extends StatefulWidget {
+/// Formulário de cadastro/edição de entregador — bottom sheet aberto a
+/// partir da tela de Usuários (gestão de pessoas centralizada ali: equipe +
+/// entregadores + convites dos dois).
+class FormularioEntregador extends StatefulWidget {
   final Entregador? existente;
 
-  const _FormularioEntregador({this.existente});
+  const FormularioEntregador({super.key, this.existente});
 
   @override
-  State<_FormularioEntregador> createState() => _FormularioEntregadorState();
+  State<FormularioEntregador> createState() => _FormularioEntregadorState();
 }
 
-class _FormularioEntregadorState extends State<_FormularioEntregador> {
+class _FormularioEntregadorState extends State<FormularioEntregador> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nomeController;
   late final TextEditingController _telefoneController;
@@ -243,7 +112,7 @@ class _FormularioEntregadorState extends State<_FormularioEntregador> {
 
   Widget _chipModo(String modo) {
     return ChoiceChip(
-      label: Text(_rotulosModo[modo]!),
+      label: Text(_rotulosModoCustoEntregador[modo]!),
       selected: _custoModo == modo,
       onSelected: (_) => setState(() => _custoModo = modo),
     );
