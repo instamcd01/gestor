@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/entregador.dart';
+import '../providers/auth_provider.dart';
 import '../providers/entregador_provider.dart';
+import '../repositories/convite_entregador_repository.dart';
 import '../utils/cliente_validators.dart';
 import '../widgets/estado_erro_lista.dart';
 
@@ -70,6 +72,52 @@ class _EntregadoresScreenState extends State<EntregadoresScreen> {
     }
   }
 
+  Future<void> _gerarConvite(Entregador entregador) async {
+    if (entregador.id == null) return;
+    final auth = context.read<AuthProvider>();
+    final empresaId = auth.empresaId;
+    final usuarioId = auth.usuarioAtual?.id;
+    if (empresaId == null || usuarioId == null) return;
+
+    try {
+      final convite = await ConviteEntregadorRepository().gerar(
+        empresaId: empresaId,
+        entregadorId: entregador.id!,
+        criadoPor: usuarioId,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Código de convite'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Passe esse código pra ${entregador.nome} digitar no app Entregador '
+                '(válido até ${convite.expiraEm.day.toString().padLeft(2, '0')}/'
+                '${convite.expiraEm.month.toString().padLeft(2, '0')}):',
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                convite.codigo,
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 2),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao gerar convite: $e')));
+      }
+    }
+  }
+
   String _resumoCusto(Entregador e) {
     switch (e.custoModo) {
       case ModoCustoEntregador.fixo:
@@ -129,6 +177,11 @@ class _EntregadoresScreenState extends State<EntregadoresScreen> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                IconButton(
+                                  icon: const Icon(Icons.qr_code_2_outlined),
+                                  tooltip: 'Gerar convite pro app Entregador',
+                                  onPressed: () => _gerarConvite(entregador),
+                                ),
                                 IconButton(
                                   icon: const Icon(Icons.edit),
                                   onPressed: () => _abrirFormulario(existente: entregador),
