@@ -131,8 +131,14 @@ class VendaRepository {
         'custo_total': venda.custoTotal,
         'lucro_bruto': lucroTotal,
         'margem_percentual': margemPercentual,
-        'previsao_entrega_inicio': venda.previsaoEntregaInicio?.toIso8601String(),
-        'previsao_entrega_fim': venda.previsaoEntregaFim?.toIso8601String(),
+        // .toUtc() explícito: previsaoEntregaInicio/Fim vêm de DateTime.now()
+        // (hora local do celular) + Duration — sem converter pra UTC antes de
+        // serializar, o Postgres (coluna timestamptz) trata os dígitos locais
+        // como se já fossem UTC, adiantando a previsão pelo fuso do
+        // dispositivo inteiro (ex: 3h em SP) e fazendo o pedido nascer já
+        // "atrasado" na Fila de Pedidos.
+        'previsao_entrega_inicio': venda.previsaoEntregaInicio?.toUtc().toIso8601String(),
+        'previsao_entrega_fim': venda.previsaoEntregaFim?.toUtc().toIso8601String(),
         'observacoes': venda.observacao,
         'metadata': {
           'valorPago': venda.valorPago,
