@@ -151,6 +151,7 @@ class _PagamentoCartaoCreditoScreenState extends State<PagamentoCartaoCreditoScr
               valorEntrega: widget.valorEntrega,
               saldoUsado: widget.saldoUsado,
               valorTotal: _valorFinalComJuros,
+              juros: _parcelaEscolhida > 1 ? _jurosCalculado : 0,
             ),
             const SizedBox(height: 16),
             if (_carregandoConfig)

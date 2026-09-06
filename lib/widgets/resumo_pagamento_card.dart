@@ -10,6 +10,7 @@ class ResumoPagamentoCard extends StatelessWidget {
   final double valorEntrega;
   final double saldoUsado;
   final double valorTotal;
+  final double juros;
 
   const ResumoPagamentoCard({
     super.key,
@@ -18,6 +19,7 @@ class ResumoPagamentoCard extends StatelessWidget {
     required this.valorEntrega,
     required this.saldoUsado,
     required this.valorTotal,
+    this.juros = 0,
   });
 
   static double calcularSubtotal(List<Map<String, dynamic>> carrinho) {
@@ -37,6 +39,7 @@ class ResumoPagamentoCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _linha('Subtotal', subtotal),
+            if (juros > 0) _linha('Juros do parcelamento', juros),
             _linha(
               'Entrega',
               valorEntrega,
