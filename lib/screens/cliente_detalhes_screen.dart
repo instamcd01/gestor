@@ -169,6 +169,10 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
             _buildClienteInfo('Aniversário',
                 cliente.aniversario != null ? dateFormat.format(cliente.aniversario!) : 'Não informado'),
             _buildClienteInfo('Aceita Marketing?', cliente.aceitaMarketing == true ? 'Sim' : 'Não'),
+            _buildClienteInfo(
+              'Aceita lembrete de recompra (WhatsApp)?',
+              cliente.aceitaLembreteWhatsapp ? 'Sim' : 'Não',
+            ),
           ],
         ),
         const SizedBox(height: 16),
