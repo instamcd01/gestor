@@ -356,6 +356,19 @@ class Venda {
   /// Mercado Pago, ambos sem sentido pra um pagamento presencial.
   bool get pagoOnline => !ehMarketplace && statusPagamento == 'pago' && mercadoPagoPaymentId != null;
 
+  /// true = ainda dá pra trocar a forma de pagamento por
+  /// `AlterarFormaPagamentoScreen` — vale pra qualquer canal cujo
+  /// pagamento é cobrado na entrega/retirada (loja física, WhatsApp, site
+  /// "pagar na entrega", iFood/99Food ainda não coletado pelo marketplace),
+  /// não só `loja_fisica`. Só fica false quando o dinheiro já passou de
+  /// verdade por um gateway (`pagoOnline`, Mercado Pago) ou já foi
+  /// confirmado pago pelo próprio marketplace (`ehMarketplace` só cobre
+  /// iFood — 99food entra à parte aqui) — nesses casos mudar a forma de
+  /// pagamento não corresponde a nenhuma cobrança real, é a mesma regra
+  /// aplicada em `alterar_forma_pagamento_pedido` no banco.
+  bool get formaPagamentoEditavel =>
+      !pagoOnline && !((ehMarketplace || canalVenda == '99food') && pagoPeloMarketplace);
+
   /// true = essa venda foi cancelada com estorno de verdade pelo Mercado
   /// Pago (ver `VendaRepository.estornarPagamentoOnline`), não só um
   /// cancelamento comum (que nunca chegou a cobrar, nada a devolver).

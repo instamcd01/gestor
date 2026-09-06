@@ -620,11 +620,13 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                 // Só aparece a partir de "saiu para entrega" — é o
                                 // momento real em que o cliente pode mudar de ideia
                                 // na porta (combinou débito, quer pagar Pix; ou quer
-                                // parcelar um crédito que tinha sido à vista).
-                                // Restrito a loja física: iFood/site/WhatsApp têm
-                                // pagamento próprio, não cabe alterar por aqui.
+                                // parcelar um crédito que tinha sido à vista). Vale
+                                // pra qualquer canal cobrado na entrega (loja física,
+                                // WhatsApp, site, iFood/99Food ainda não coletado) —
+                                // só some quando já foi pago de verdade por gateway
+                                // ou pelo marketplace (`formaPagamentoEditavel`).
                                 if (venda.status == StatusPedido.saiuParaEntrega &&
-                                    venda.canalVenda == 'loja_fisica') ...[
+                                    venda.formaPagamentoEditavel) ...[
                                   const SizedBox(height: 8),
                                   Align(
                                     alignment: Alignment.centerRight,

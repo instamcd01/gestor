@@ -829,8 +829,12 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               // oferecer um botão que vai dar erro pra quem não pode usar).
               // Vendas em andamento (não concluídas) já têm essa troca no
               // botão "Forma de pagamento" da Fila de Pedidos — aqui é só a
-              // correção pós-entrega.
-              if (isDono && venda.canalVenda == 'loja_fisica' && venda.status == StatusPedido.entregue) ...[
+              // correção pós-entrega. Qualquer canal cobrado na entrega
+              // (mesmo critério do botão da Fila), não só loja física.
+              if (isDono &&
+                  venda.temEntrega &&
+                  venda.status == StatusPedido.entregue &&
+                  venda.formaPagamentoEditavel) ...[
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: () => _alterarFormaPagamento(venda),
