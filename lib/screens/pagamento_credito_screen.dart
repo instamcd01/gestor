@@ -194,9 +194,19 @@ class _PagamentoCartaoCreditoScreenState extends State<PagamentoCartaoCreditoScr
                               Text('${opcao.parcelas}x de R\$ ${opcao.valorParcela.toStringAsFixed(2)}'),
                             ],
                           ),
-                          Text(
-                            opcao.taxa > 0 ? 'com juros' : 'sem juros',
-                            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                opcao.taxa > 0 ? 'com juros' : 'sem juros',
+                                style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                              ),
+                              Text(
+                                'Total R\$ ${(opcao.valorParcela * opcao.parcelas).toStringAsFixed(2)}',
+                                style: TextStyle(fontSize: 10, color: colorScheme.onSurfaceVariant),
+                              ),
+                            ],
                           ),
                         ],
                       ),
