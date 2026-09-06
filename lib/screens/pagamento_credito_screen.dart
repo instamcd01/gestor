@@ -202,10 +202,11 @@ class _PagamentoCartaoCreditoScreenState extends State<PagamentoCartaoCreditoScr
                                 opcao.taxa > 0 ? 'com juros' : 'sem juros',
                                 style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                               ),
-                              Text(
-                                'Total R\$ ${(opcao.valorParcela * opcao.parcelas).toStringAsFixed(2)}',
-                                style: TextStyle(fontSize: 10, color: colorScheme.onSurfaceVariant),
-                              ),
+                              if (opcao.taxa > 0)
+                                Text(
+                                  'Total R\$ ${(opcao.valorParcela * opcao.parcelas).toStringAsFixed(2)}',
+                                  style: TextStyle(fontSize: 10, color: colorScheme.onSurfaceVariant),
+                                ),
                             ],
                           ),
                         ],
