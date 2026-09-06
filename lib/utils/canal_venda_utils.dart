@@ -19,6 +19,8 @@ String rotuloCanalVenda(String canal) {
     case 'site':
     case 'site_proprio':
       return 'Site';
+    case 'kyte_historico':
+      return 'Kyte (histórico)';
     default:
       return 'Loja Física';
   }
@@ -35,6 +37,8 @@ IconData iconeCanalVenda(String canal) {
     case 'site':
     case 'site_proprio':
       return Icons.language;
+    case 'kyte_historico':
+      return Icons.history;
     default:
       return Icons.storefront;
   }

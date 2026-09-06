@@ -2,6 +2,7 @@ import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/campanha_ativacao.dart';
 import '../providers/auth_provider.dart';
@@ -46,20 +47,96 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   late Future<MetricasCampanha> _futuroMetricas;
   late Future<List<ContatoCampanha>> _futuroContatos;
 
+  // Mensagem única, editada uma vez só — ao selecionar um contato na lista
+  // ela é reescrita com o nome+perfil dele (opcional: o usuário pode apagar
+  // o nome se estiver salvo errado). Pedido do usuário: mais fácil ajustar
+  // o texto de uma vez do que editar campo por campo em 269 contatos.
+  final _mensagemController = TextEditingController();
+  String? _contatoSelecionadoId;
+  bool _primeiraSelecaoFeita = false;
+  bool _esconderEnviados = false;
+
+  // Cópia mutável da lista resolvida pelo FutureBuilder — necessária pra que
+  // marcar "já enviei" num contato atualize o contador/filtro na hora, sem
+  // esperar um pull-to-refresh (o Future em si só resolve uma vez).
+  List<ContatoCampanha>? _contatosCache;
+
   @override
   void initState() {
     super.initState();
     _carregar();
   }
 
+  @override
+  void dispose() {
+    _mensagemController.dispose();
+    super.dispose();
+  }
+
   void _carregar() {
     _futuroMetricas = CampanhaAtivacaoRepository().obterMetricas(widget.campanha.id);
     _futuroContatos = CampanhaAtivacaoRepository().listarContatos(widget.campanha.id);
+    _contatosCache = null;
+    _primeiraSelecaoFeita = false;
+  }
+
+  Future<void> _marcarEnviado(ContatoCampanha c, bool enviado) async {
+    await CampanhaAtivacaoRepository().marcarEnviado(c.contatoId, enviado);
+    if (!mounted || _contatosCache == null) return;
+    setState(() {
+      final idx = _contatosCache!.indexWhere((x) => x.contatoId == c.contatoId);
+      if (idx != -1) {
+        _contatosCache![idx] = c.copyWith(enviadoEm: enviado ? DateTime.now() : null, limparEnviadoEm: !enviado);
+      }
+    });
   }
 
   Future<void> _recarregar() async {
     setState(_carregar);
     await Future.wait([_futuroMetricas, _futuroContatos]);
+  }
+
+  /// Troca de contato: se ainda não tem nada digitado, usa a sugestão
+  /// completa (com o tom certo pro perfil). Se já tem um texto (editado ou
+  /// não), só troca o nome na saudação inicial e preserva o resto — pedido
+  /// do usuário: editar o corpo da mensagem uma vez e não perder o ajuste
+  /// ao navegar entre contatos, só o nome deve mudar sozinho.
+  void _selecionarContato(ContatoCampanha c) {
+    setState(() {
+      _contatoSelecionadoId = c.contatoId;
+      final nome = c.nomeCliente ?? c.nomeWhatsapp;
+      final textoAtual = _mensagemController.text;
+      if (textoAtual.trim().isEmpty) {
+        _mensagemController.text = _mensagemPadrao(nome: nome, perfil: c.perfil);
+        return;
+      }
+      final novaSaudacao = _saudacao(nome);
+      if (_regexSaudacao.hasMatch(textoAtual)) {
+        _mensagemController.text = textoAtual.replaceFirst(_regexSaudacao, novaSaudacao);
+      }
+      // Se não achar a saudação no início (usuário apagou/reescreveu), não
+      // mexe em nada — respeita a edição de quem tirou a saudação de propósito.
+    });
+  }
+
+  /// Descarta o texto atual e volta pra sugestão padrão do perfil do contato
+  /// selecionado — pra quando o usuário quer "recomeçar" com o tom sugerido
+  /// em vez de manter o texto customizado anterior.
+  void _restaurarSugestaoPadrao(ContatoCampanha c) {
+    setState(() {
+      _mensagemController.text = _mensagemPadrao(nome: c.nomeCliente ?? c.nomeWhatsapp, perfil: c.perfil);
+    });
+  }
+
+  Future<void> _abrirWhatsApp(String telefone) async {
+    final uri = Uri.parse('https://wa.me/$telefone?text=${Uri.encodeComponent(_mensagemController.text)}');
+    if (await canLaunchUrl(uri)) {
+      // Sem isso, em alguns aparelhos o link abre numa webview dentro do
+      // próprio Gestor em vez de abrir o WhatsApp de verdade.
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível abrir o WhatsApp.')));
+    }
   }
 
   Future<void> _importarContatos() async {
@@ -282,15 +359,80 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
                       child: Center(child: CircularProgressIndicator()),
                     );
                   }
-                  final contatos = snapshot.data!;
+                  // _contatosCache é a cópia mutável de verdade — só é
+                  // (re)inicializada a partir do Future na primeira resolução
+                  // (ou depois de um _recarregar, que zera o cache).
+                  _contatosCache ??= List.of(snapshot.data!);
+                  final contatos = _contatosCache!;
                   if (contatos.isEmpty) {
                     return const Padding(
                       padding: EdgeInsets.all(24),
                       child: Text('Nenhum contato importado ainda — use o botão "Importar contatos".'),
                     );
                   }
+                  // Seleciona automaticamente o 1º contato ainda pendente (não
+                  // o primeiro da lista, que pode já ter sido marcado como
+                  // enviado numa sessão anterior) — só na primeira carga, sem
+                  // sobrescrever se o usuário já escolheu outro contato.
+                  if (!_primeiraSelecaoFeita) {
+                    _primeiraSelecaoFeita = true;
+                    final pendentes = contatos.where((c) => !c.enviado);
+                    final primeiro = pendentes.isNotEmpty ? pendentes.first : contatos.first;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _selecionarContato(primeiro);
+                    });
+                  }
+                  ContatoCampanha? selecionado;
+                  for (final c in contatos) {
+                    if (c.contatoId == _contatoSelecionadoId) {
+                      selecionado = c;
+                      break;
+                    }
+                  }
+                  final enviados = contatos.where((c) => c.enviado).length;
+                  final contatosExibidos =
+                      _esconderEnviados ? contatos.where((c) => !c.enviado).toList() : contatos;
                   return Column(
-                    children: contatos.map((c) => _CartaoContato(c: c)).toList(),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _PainelMensagem(
+                        contato: selecionado,
+                        controller: _mensagemController,
+                        onEnviar: selecionado == null ? null : () => _abrirWhatsApp(selecionado!.telefone),
+                        onRestaurarPadrao:
+                            selecionado == null ? null : () => _restaurarSugestaoPadrao(selecionado!),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('$enviados de ${contatos.length} enviados', style: Theme.of(context).textTheme.bodyMedium),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Esconder enviados', style: TextStyle(fontSize: 13)),
+                              Switch(
+                                value: _esconderEnviados,
+                                onChanged: (v) => setState(() => _esconderEnviados = v),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      if (contatosExibidos.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Center(child: Text('Todos os contatos já foram marcados como enviados 🎉')),
+                        )
+                      else
+                        ...contatosExibidos.map((c) => _CartaoContato(
+                              key: ValueKey(c.contatoId),
+                              c: c,
+                              selecionado: c.contatoId == _contatoSelecionadoId,
+                              onSelecionar: () => _selecionarContato(c),
+                              onMarcarEnviado: (enviado) => _marcarEnviado(c, enviado),
+                            )),
+                    ],
                   );
                 },
               ),
@@ -355,29 +497,253 @@ class _Metrica extends StatelessWidget {
   }
 }
 
-class _CartaoContato extends StatelessWidget {
-  final ContatoCampanha c;
-  const _CartaoContato({required this.c});
+/// Tags de perfil (vip/regular/inativo) — mesmo vocabulário de
+/// `clientes.segmento`/`calcular_segmento_cliente()` no banco, reaproveitado
+/// aqui pra contatos ainda sem cadastro real. Cor e rótulo só têm efeito
+/// visual, não afetam nenhuma lógica de negócio.
+(String, Color) _rotuloECorPerfil(String? perfil) {
+  switch (perfil) {
+    case 'vip':
+      return ('VIP', Colors.amber.shade800);
+    case 'inativo':
+      return ('Inativo', Colors.grey.shade600);
+    case 'regular':
+      return ('Regular', Colors.blue.shade700);
+    default:
+      return ('', Colors.transparent);
+  }
+}
+
+/// Saudação inicial ("Oi, Fulano!"/"Oi!") — extraída à parte porque também
+/// é usada isoladamente pra trocar só o nome ao navegar entre contatos sem
+/// perder o resto do texto que o usuário já editou (ver _selecionarContato).
+String _saudacao(String? nome) {
+  final partesNome = (nome ?? '').trim().split(RegExp(r'\s+'));
+  final primeiroNome = partesNome.isEmpty || partesNome.first.isEmpty ? '' : partesNome.first;
+  return primeiroNome.isEmpty ? 'Oi!' : 'Oi, $primeiroNome!';
+}
+
+/// Casa exatamente o formato gerado por [_saudacao], sempre no início do
+/// texto — "Oi!" ou "Oi, Nome!" (nome sem vírgula/exclamação/quebra de linha).
+final _regexSaudacao = RegExp(r'^(Oi!|Oi, [^\n!]+!)');
+
+/// Mensagem inicial sugerida quando o contato ainda não tem um rascunho
+/// salvo — varia por perfil porque quem já comprou bastante recentemente
+/// (vip/regular) e quem sumiu há mais de 90 dias (inativo) merecem tom
+/// diferente (ver discussão da migração Kyte: "sentimos sua falta" só faz
+/// sentido pra quem realmente sumiu).
+String _mensagemPadrao({required String? nome, required String? perfil}) {
+  final saudacao = _saudacao(nome);
+  switch (perfil) {
+    case 'vip':
+      return '$saudacao Aqui é da Delivery Pet 🐾 Você é um dos nossos clientes mais fiéis, por isso quero te contar '
+          'em primeira mão: agora dá pra pedir pelo nosso site novo, com Pix e acompanhamento em tempo real: '
+          'deliverypetexpress.com.br';
+    case 'inativo':
+      return '$saudacao Aqui é da Delivery Pet 🐾 Faz um tempinho que a gente não se fala! Ficamos com site novo, '
+          'bem mais prático — catálogo completo, Pix e acompanhamento do pedido: deliverypetexpress.com.br '
+          'Dá uma olhada quando puder 🐶🐱';
+    default:
+      return '$saudacao Aqui é da Delivery Pet 🐾 Agora você pode fazer seu pedido pelo nosso site novo, com Pix e '
+          'acompanhamento em tempo real: deliverypetexpress.com.br';
+  }
+}
+
+/// Painel fixo com a mensagem única (pedido do usuário: mais fácil ajustar
+/// o texto de uma vez do que campo por campo em cada um dos 269 contatos).
+/// Ao selecionar um contato na lista abaixo, o texto é reescrito com o
+/// nome+perfil dele — o nome é só um ponto de partida editável, não uma
+/// trava (existe contato com nome salvo errado no cadastro original).
+class _PainelMensagem extends StatelessWidget {
+  final ContatoCampanha? contato;
+  final TextEditingController controller;
+  final VoidCallback? onEnviar;
+  final VoidCallback? onRestaurarPadrao;
+  const _PainelMensagem({
+    required this.contato,
+    required this.controller,
+    required this.onEnviar,
+    required this.onRestaurarPadrao,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final c = contato;
+    return Card(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    c == null
+                        ? 'Selecione um contato na lista abaixo'
+                        : 'Enviando para ${c.nomeCliente ?? c.nomeWhatsapp ?? c.telefone}',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                if (onRestaurarPadrao != null)
+                  TextButton.icon(
+                    onPressed: onRestaurarPadrao,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Usar sugestão padrão', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: controller,
+              maxLines: 4,
+              minLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Mensagem pra enviar',
+                border: OutlineInputBorder(),
+                isDense: true,
+                fillColor: Colors.white,
+                filled: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: onEnviar,
+                icon: const Icon(Icons.chat, size: 18),
+                label: const Text('Enviar no WhatsApp'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CartaoContato extends StatefulWidget {
+  final ContatoCampanha c;
+  final bool selecionado;
+  final VoidCallback onSelecionar;
+  final Future<void> Function(bool enviado) onMarcarEnviado;
+  const _CartaoContato({
+    super.key,
+    required this.c,
+    required this.selecionado,
+    required this.onSelecionar,
+    required this.onMarcarEnviado,
+  });
+
+  @override
+  State<_CartaoContato> createState() => _CartaoContatoState();
+}
+
+class _CartaoContatoState extends State<_CartaoContato> {
+  bool _atualizandoEnviado = false;
+
+  Future<void> _alternarEnviado(bool? valor) async {
+    final novoValor = valor ?? false;
+    setState(() => _atualizandoEnviado = true);
+    try {
+      await widget.onMarcarEnviado(novoValor);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível atualizar: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _atualizandoEnviado = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.c;
+    final enviado = c.enviado;
     final status = !c.ativou
         ? ('Não ativou', Colors.grey)
         : c.qtdPedidos == 0
             ? ('Ativou, sem pedido', Colors.orange)
             : ('Ativou — ${c.qtdPedidos} pedido${c.qtdPedidos == 1 ? '' : 's'}', Colors.green);
+    final (rotuloPerfil, corPerfil) = _rotuloECorPerfil(c.perfil);
 
     return Card(
-      child: ListTile(
-        title: Text(c.nomeCliente ?? c.nomeWhatsapp ?? c.telefone),
-        subtitle: Text('${_formatarTelefoneExibicao(c.telefone)}${c.origem != null ? ' — ${c.origem}' : ''}'),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(status.$1, style: TextStyle(color: status.$2, fontSize: 12, fontWeight: FontWeight.bold)),
-            if (c.qtdPedidos > 0) Text(_formatarReais(c.valorGasto), style: const TextStyle(fontSize: 12)),
-          ],
+      shape: widget.selecionado
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+              side: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
+            )
+          : null,
+      child: InkWell(
+        onTap: widget.onSelecionar,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      children: [
+                        Text(
+                          c.nomeCliente ?? c.nomeWhatsapp ?? c.telefone,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            decoration: enviado ? TextDecoration.lineThrough : null,
+                            color: enviado ? Theme.of(context).colorScheme.onSurfaceVariant : null,
+                          ),
+                        ),
+                        if (rotuloPerfil.isNotEmpty)
+                          Chip(
+                            label: Text(rotuloPerfil, style: const TextStyle(fontSize: 11, color: Colors.white)),
+                            backgroundColor: corPerfil,
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_formatarTelefoneExibicao(c.telefone)}${c.origem != null ? ' — ${c.origem}' : ''}',
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                    if (c.valorReferencia != null && c.valorReferencia! > 0)
+                      Text(
+                        'Gastou ${_formatarReais(c.valorReferencia!)} no histórico',
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                  ],
+                ),
+              ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(status.$1, style: TextStyle(color: status.$2, fontSize: 12, fontWeight: FontWeight.bold)),
+                  if (c.qtdPedidos > 0) Text(_formatarReais(c.valorGasto), style: const TextStyle(fontSize: 12)),
+                  const SizedBox(height: 4),
+                  if (_atualizandoEnviado)
+                    const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  else
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Enviei', style: TextStyle(fontSize: 12)),
+                        Checkbox(value: enviado, onChanged: _alternarEnviado, visualDensity: VisualDensity.compact),
+                      ],
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

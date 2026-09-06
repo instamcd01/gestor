@@ -91,4 +91,12 @@ class CampanhaAtivacaoRepository {
     await supabase.from('campanha_contatos').update({'enviado_em': DateTime.now().toIso8601String()}).inFilter(
         'id', contatoIds);
   }
+
+  /// Alterna o marcador de "já enviei" de um único contato — usado pelo
+  /// checkbox na tela de detalhe (fluxo manual, um contato por vez).
+  Future<void> marcarEnviado(String contatoId, bool enviado) async {
+    await supabase
+        .from('campanha_contatos')
+        .update({'enviado_em': enviado ? DateTime.now().toIso8601String() : null}).eq('id', contatoId);
+  }
 }

@@ -73,11 +73,16 @@ class ContatoCampanha {
   final String? nomeWhatsapp;
   final String? origem;
   final DateTime? enviadoEm;
+  final double? valorReferencia;
+  final String? perfil;
+  final String? mensagemPersonalizada;
   final String? clienteId;
   final String? nomeCliente;
   final bool ativou;
   final int qtdPedidos;
   final double valorGasto;
+
+  bool get enviado => enviadoEm != null;
 
   ContatoCampanha({
     required this.contatoId,
@@ -85,12 +90,33 @@ class ContatoCampanha {
     this.nomeWhatsapp,
     this.origem,
     this.enviadoEm,
+    this.valorReferencia,
+    this.perfil,
+    this.mensagemPersonalizada,
     this.clienteId,
     this.nomeCliente,
     required this.ativou,
     required this.qtdPedidos,
     required this.valorGasto,
   });
+
+  ContatoCampanha copyWith({DateTime? enviadoEm, bool limparEnviadoEm = false}) {
+    return ContatoCampanha(
+      contatoId: contatoId,
+      telefone: telefone,
+      nomeWhatsapp: nomeWhatsapp,
+      origem: origem,
+      enviadoEm: limparEnviadoEm ? null : (enviadoEm ?? this.enviadoEm),
+      valorReferencia: valorReferencia,
+      perfil: perfil,
+      mensagemPersonalizada: mensagemPersonalizada,
+      clienteId: clienteId,
+      nomeCliente: nomeCliente,
+      ativou: ativou,
+      qtdPedidos: qtdPedidos,
+      valorGasto: valorGasto,
+    );
+  }
 
   factory ContatoCampanha.fromSupabase(Map<String, dynamic> row) {
     return ContatoCampanha(
@@ -99,6 +125,9 @@ class ContatoCampanha {
       nomeWhatsapp: row['nome_whatsapp'] as String?,
       origem: row['origem'] as String?,
       enviadoEm: row['enviado_em'] != null ? DateTime.parse(row['enviado_em'] as String) : null,
+      valorReferencia: (row['valor_referencia'] as num?)?.toDouble(),
+      perfil: row['perfil'] as String?,
+      mensagemPersonalizada: row['mensagem_personalizada'] as String?,
       clienteId: row['cliente_id'] as String?,
       nomeCliente: row['nome_cliente'] as String?,
       ativou: row['ativou'] as bool? ?? false,
