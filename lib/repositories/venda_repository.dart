@@ -157,32 +157,19 @@ class VendaRepository {
 
     final pedidoId = pedidoInserido['id'] as String;
 
-    return Venda(
+    // copyWith (não `Venda(...)` na mão) — um construtor manual esquece
+    // silenciosamente qualquer campo que não seja resposta do servidor (já
+    // aconteceu: parcelasCartao/jurosParcelamento ficavam null no recibo
+    // aberto na hora, mesmo salvos certo no banco, porque não estavam
+    // listados aqui).
+    return venda.copyWith(
       idVenda: pedidoId,
       numeroSequencial: (pedidoInserido['numero_sequencial'] as num?)?.toInt(),
-      cliente: venda.cliente,
       dataVenda: DateTime.tryParse(pedidoInserido['created_at'].toString())?.toLocal() ?? DateTime.now(),
-      subtotal: venda.subtotal,
-      desconto: venda.desconto,
-      saldoUsado: venda.saldoUsado,
-      valorEntrega: venda.valorEntrega,
-      entregaSelecionada: venda.entregaSelecionada,
-      valorTotal: venda.valorTotal,
-      valorPago: venda.valorPago,
-      troco: venda.troco,
-      metodoPagamento: venda.metodoPagamento,
-      totalItens: venda.totalItens,
-      itens: venda.itens,
-      custoTotal: venda.custoTotal,
       lucroTotal: lucroTotal,
-      observacao: venda.observacao,
-      pagamentosDetalhados: venda.pagamentosDetalhados,
       status: pedidoInserido['status']?.toString() ?? StatusPedido.entregue,
       canalVenda: pedidoInserido['canal_venda']?.toString() ?? 'loja_fisica',
       vendedorId: pedidoInserido['vendedor_id'] as String?,
-      previsaoEntregaInicio: venda.previsaoEntregaInicio,
-      previsaoEntregaFim: venda.previsaoEntregaFim,
-      agendadoManualmente: venda.agendadoManualmente,
     );
   }
 
@@ -284,10 +271,15 @@ class VendaRepository {
 
   Venda _vendaFromRow(Map<String, dynamic> row) {
     final clienteRow = row['cliente'] as Map<String, dynamic>?;
+    final metadata = (row['metadata'] as Map<String, dynamic>?) ?? {};
+    // Pedidos importados do Kyte (canal_venda='kyte_historico') não têm
+    // cliente_id de propósito — o nome fica só em texto livre no metadata,
+    // nunca vinculado a um cadastro real.
+    final nomeKyte = metadata['nome_cliente_kyte'] as String?;
     final cliente = clienteRow != null
         ? Cliente.fromSupabase(clienteRow)
         : Cliente(
-            nome: 'Cliente não informado',
+            nome: nomeKyte?.trim().isNotEmpty == true ? nomeKyte! : 'Cliente não informado',
             celular: '',
             email: '',
             endereco: '',
@@ -297,8 +289,6 @@ class VendaRepository {
             saldo: 0,
             pets: [],
           );
-
-    final metadata = (row['metadata'] as Map<String, dynamic>?) ?? {};
     final itensRows = (row['itens_pedido'] as List?) ?? [];
 
     final itens = itensRows.map((itemRow) {
