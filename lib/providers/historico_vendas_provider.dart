@@ -102,4 +102,17 @@ class HistoricoVendasProvider with ChangeNotifier {
     await _repository.avancarStatus(idVenda, novoStatus);
     await carregarVendas();
   }
+
+  /// Troca forma de pagamento (e parcelas) de uma venda já registrada —
+  /// ver `VendaRepository.alterarFormaPagamento`.
+  Future<void> alterarFormaPagamento(
+    String idVenda,
+    String tipoPagamento, {
+    int? parcelas,
+    double? valorPago,
+    double? troco,
+  }) async {
+    await _repository.alterarFormaPagamento(idVenda, tipoPagamento, parcelas: parcelas, valorPago: valorPago, troco: troco);
+    await carregarVendas();
+  }
 }

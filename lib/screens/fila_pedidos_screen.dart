@@ -10,6 +10,7 @@ import '../providers/historico_vendas_provider.dart';
 import '../utils/canal_venda_utils.dart';
 import '../widgets/categoria_cliente_badge.dart';
 import '../widgets/estado_erro_lista.dart';
+import 'alterar_forma_pagamento_screen.dart';
 import 'venda_detalhes_screen.dart';
 
 /// Urgência do pedido em relação à previsão de entrega calculada pela
@@ -614,6 +615,29 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                       if (urgencia == _Urgencia.atencao) _selo('Atenção', Colors.orange),
                                       if (ifoodEstourado) _selo('Prazo iFood estourado', Colors.red.shade900),
                                     ],
+                                  ),
+                                ],
+                                // Só aparece a partir de "saiu para entrega" — é o
+                                // momento real em que o cliente pode mudar de ideia
+                                // na porta (combinou débito, quer pagar Pix; ou quer
+                                // parcelar um crédito que tinha sido à vista).
+                                // Restrito a loja física: iFood/site/WhatsApp têm
+                                // pagamento próprio, não cabe alterar por aqui.
+                                if (venda.status == StatusPedido.saiuParaEntrega &&
+                                    venda.canalVenda == 'loja_fisica') ...[
+                                  const SizedBox(height: 8),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => AlterarFormaPagamentoScreen(venda: venda),
+                                        ),
+                                      ),
+                                      icon: const Icon(Icons.payments_outlined, size: 18),
+                                      label: const Text('Forma de pagamento'),
+                                    ),
                                   ),
                                 ],
                                 if (venda.proximoStatus != null) ...[

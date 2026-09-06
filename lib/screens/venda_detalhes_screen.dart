@@ -12,6 +12,7 @@ import '../providers/historico_vendas_provider.dart';
 import '../repositories/venda_repository.dart';
 import '../utils/canal_venda_utils.dart';
 import '../utils/telefone_utils.dart';
+import 'alterar_forma_pagamento_screen.dart';
 import 'recibo_screen.dart';
 import 'separacao_pedido_screen.dart';
 
@@ -407,6 +408,21 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     }
   }
 
+  /// Abre a tela de troca de forma de pagamento e recarrega a venda se algo
+  /// mudou de fato (`AlterarFormaPagamentoScreen` só retorna `true` quando
+  /// salvou com sucesso).
+  Future<void> _alterarFormaPagamento(Venda venda) async {
+    if (venda.idVenda == null) return;
+    final alterou = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => AlterarFormaPagamentoScreen(venda: venda)),
+    );
+    if (alterou != true || !mounted) return;
+    final atualizada = await VendaRepository().buscarPorId(venda.idVenda!);
+    if (!mounted) return;
+    setState(() => _venda = atualizada);
+  }
+
   Future<void> _abrirRastreioNoMapa() async {
     final lat = _venda.rastreioLatitude;
     final lng = _venda.rastreioLongitude;
@@ -451,7 +467,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       // Pedido explícito do usuário: o resumo (canal/data) fica fixo acima
       // das abas, mas o detalhamento completo de valores (subtotal/
       // descontos/cupons/entrega) mora aqui, junto da forma de pagamento.
-      _abaPagamento(venda, currencyFormat, podeEstornar, temEntrega),
+      _abaPagamento(venda, currencyFormat, podeEstornar, temEntrega, authProvider.isDono),
       _abaHistorico(venda),
       if (podeVerFinancas) _abaFinanceiro(venda, currencyFormat),
     ];
@@ -718,7 +734,13 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
-  Widget _abaPagamento(Venda venda, NumberFormat currencyFormat, bool podeEstornar, bool temEntrega) {
+  Widget _abaPagamento(
+    Venda venda,
+    NumberFormat currencyFormat,
+    bool podeEstornar,
+    bool temEntrega,
+    bool isDono,
+  ) {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
@@ -802,6 +824,20 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 _linhaInfo(Icons.tag, 'ID pagamento (Mercado Pago)', venda.mercadoPagoPaymentId!),
               if (podeEstornar && venda.mercadoPagoRefundId != null)
                 _linhaInfo(Icons.tag, 'ID estorno (Mercado Pago)', venda.mercadoPagoRefundId!),
+              // Pedido já concluído: só corrige quem é dono da empresa (a
+              // função no banco também rejeita, esse gate é só pra não
+              // oferecer um botão que vai dar erro pra quem não pode usar).
+              // Vendas em andamento (não concluídas) já têm essa troca no
+              // botão "Forma de pagamento" da Fila de Pedidos — aqui é só a
+              // correção pós-entrega.
+              if (isDono && venda.canalVenda == 'loja_fisica' && venda.status == StatusPedido.entregue) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _alterarFormaPagamento(venda),
+                  icon: const Icon(Icons.payments_outlined, size: 18),
+                  label: const Text('Corrigir forma de pagamento'),
+                ),
+              ],
             ],
           ),
         ),

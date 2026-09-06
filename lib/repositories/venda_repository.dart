@@ -179,6 +179,36 @@ class VendaRepository {
     await supabase.from('pedidos').update({'status': novoStatus}).eq('id', idVenda);
   }
 
+  /// Troca a forma de pagamento (e parcelas, se for cartão de crédito) de
+  /// uma venda de balcão já registrada — caso real: cliente falou "débito"
+  /// na hora de montar o pedido mas na entrega paga com Pix, ou pede pra
+  /// parcelar um crédito que tinha sido combinado à vista. Tudo recalculado
+  /// no banco (`alterar_forma_pagamento_pedido`, juros incluso), nunca
+  /// confia em valor vindo do app. Pedido já 'entregue'/'concluido' só
+  /// aceita se quem chama for o dono da empresa — a função rejeita sozinha
+  /// nesse caso.
+  Future<Venda> alterarFormaPagamento(
+    String idVenda,
+    String tipoPagamento, {
+    int? parcelas,
+    double? valorPago,
+    double? troco,
+  }) async {
+    final row = await supabase.rpc('alterar_forma_pagamento_pedido', params: {
+      'p_pedido_id': idVenda,
+      'p_tipo_pagamento': tipoPagamento,
+      'p_parcelas': parcelas,
+      'p_valor_pago': valorPago,
+      'p_troco': troco,
+    }) as Map<String, dynamic>;
+
+    return _vendaFromRow(await _buscarComItensECliente(row['id'] as String));
+  }
+
+  Future<Map<String, dynamic>> _buscarComItensECliente(String idVenda) async {
+    return await supabase.from('pedidos').select(_selectComItensECliente).eq('id', idVenda).single();
+  }
+
   /// Cancela uma venda já registrada: devolve estoque, devolve saldo do
   /// cliente usado como pagamento e recalcula as métricas do cliente —
   /// tudo dentro da função `cancelar_pedido` no banco (atômico). Pedidos
