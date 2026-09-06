@@ -271,7 +271,7 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
                     return ListTile(
                       title: Text(cliente.nome),
                       subtitle: Text(cliente.enderecoCompleto.isNotEmpty
-                          ? cliente.enderecoCompleto
+                          ? cliente.enderecoExibicao
                           : cliente.celular),
                       trailing: const Icon(Icons.person),
                       selected: _clienteSelecionado?.idCliente == cliente.idCliente,

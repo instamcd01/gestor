@@ -182,14 +182,26 @@ class Cliente {
     );
   }
 
-  /// Endereço completo pra exibição — rua+número, bairro, cidade-UF e
-  /// CEP, pulando as partes vazias. Único lugar que monta esse texto, pra
-  /// não ter tela mostrando só a rua enquanto outra mostra tudo.
-  String get enderecoCompleto {
+  /// Endereço estruturado — rua+número, bairro, cidade-UF e CEP, pulando
+  /// as partes vazias. NÃO inclui complemento de propósito: é o texto que
+  /// alimenta geocodificação/rota (`DistanciaService`, `rota_mapa_screen`,
+  /// `rotas_entrega_screen`) e texto livre tipo "apto 302, fundos" pode
+  /// confundir essas APIs. Pra mostrar em tela pro usuário, usar
+  /// [enderecoExibicao] (mesmo texto + complemento).
+  String get enderecoCompleto => _montarEndereco(incluirComplemento: false);
+
+  /// Igual [enderecoCompleto], com o complemento logo depois do número —
+  /// único lugar que monta esse texto, pra não ter tela mostrando só a rua
+  /// enquanto outra mostra tudo. Só pra exibição (cards, listas, "Enviar
+  /// pro mapa"); nunca usar em geocodificação/cálculo de rota.
+  String get enderecoExibicao => _montarEndereco(incluirComplemento: true);
+
+  String _montarEndereco({required bool incluirComplemento}) {
     final partes = <String>[];
     if (endereco.isNotEmpty) {
       partes.add(numero.isNotEmpty ? '$endereco, $numero' : endereco);
     }
+    if (incluirComplemento && complemento.isNotEmpty) partes.add(complemento);
     if (bairro.isNotEmpty) partes.add(bairro);
 
     final cidadeUf = [cidade, estado].where((s) => s.isNotEmpty).join(' - ');

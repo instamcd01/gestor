@@ -166,7 +166,7 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                       leading: const Icon(Icons.person_outline),
                       title: Text(carrinhoProvider.clienteSelecionado!.nome),
                       subtitle: Text(
-                        carrinhoProvider.clienteSelecionado!.enderecoCompleto,
+                        carrinhoProvider.clienteSelecionado!.enderecoExibicao,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

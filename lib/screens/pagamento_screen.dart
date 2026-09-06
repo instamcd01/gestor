@@ -405,7 +405,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
                 leading: CircleAvatar(child: Text(cliente.nome.isNotEmpty ? cliente.nome[0].toUpperCase() : '?')),
                 title: Text(cliente.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text(
-                  cliente.enderecoCompleto.isNotEmpty ? cliente.enderecoCompleto : cliente.celular,
+                  cliente.enderecoCompleto.isNotEmpty ? cliente.enderecoExibicao : cliente.celular,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

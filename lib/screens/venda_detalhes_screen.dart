@@ -698,10 +698,13 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 _linhaComAcao(
                   icon: Icons.location_on,
                   label: 'Endereço',
-                  valor: venda.cliente.enderecoCompleto,
+                  valor: venda.cliente.enderecoExibicao,
                   iconAcao: Icons.map,
                   corAcao: Theme.of(context).colorScheme.primary,
                   onTap: () => _abrirMapa(
+                    // enderecoCompleto (sem complemento) de propósito — só
+                    // usado quando não tem lat/long cacheada, e texto livre
+                    // tipo "apto 302" pode confundir a busca do Maps.
                     venda.cliente.enderecoCompleto,
                     latitude: venda.cliente.latitude,
                     longitude: venda.cliente.longitude,
