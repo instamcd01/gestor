@@ -27,6 +27,16 @@ class NotificacaoProvider with ChangeNotifier {
   /// erro ao carregar) contam como habilitadas — nunca silencia por engano.
   bool habilitado(String chave) => _preferencias[chave] ?? true;
 
+  /// Som/vibração são por categoria e, ao contrário de [habilitado], vêm
+  /// desligados por padrão pra toda categoria — exceto "novo pedido", a
+  /// única com urgência real de interromper quem tá com o app aberto.
+  /// Sem esse default diferente, todo evento (estoque, despesa, avaliação...)
+  /// tocaria som sozinho na primeira vez que o app rodasse essa versão.
+  bool alertaHabilitado(String categoria, String tipoAlerta) {
+    final chave = PreferenciaAlerta.chave(categoria, tipoAlerta);
+    return _preferencias[chave] ?? (categoria == TipoNotificacao.novoPedido);
+  }
+
   int naoLidasPorEntidade(String entidadeTipo) =>
       _notificacoes.where((n) => !n.lida && n.entidadeTipo == entidadeTipo).length;
 

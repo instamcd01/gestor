@@ -84,10 +84,10 @@ class _AuthGateState extends State<AuthGate> {
         context.read<ZonaEntrega99FoodProvider>()
           ..definirEmpresa(empresaId)
           ..carregarZonas();
-        context.read<NotificacaoProvider>()
+        final notificacaoProvider = context.read<NotificacaoProvider>()
           ..definirEmpresa(empresaId)
           ..carregar();
-        PushNotificationService.inicializar();
+        PushNotificationService.inicializar(notificacaoProvider);
       });
     }
 

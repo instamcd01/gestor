@@ -31,7 +31,8 @@ class ConfiguracaoNotificacoesScreen extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            'Escolha quais eventos devem gerar notificação (na sininho do app e no celular).',
+            'Escolha quais eventos devem gerar notificação (na sininho do app e no celular) — toque num '
+            'evento pra escolher também se ele toca som e/ou vibra quando chega com o app aberto na tela.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -43,14 +44,10 @@ class ConfiguracaoNotificacoesScreen extends StatelessWidget {
               children: [
                 for (var i = 0; i < categoriasNotificacaoDisponiveis.length; i++) ...[
                   if (i > 0) const Divider(height: 1),
-                  SwitchListTile(
-                    title: Text(categoriasNotificacaoDisponiveis[i].titulo),
-                    subtitle: Text(categoriasNotificacaoDisponiveis[i].descricao),
-                    value: provider.habilitado(categoriasNotificacaoDisponiveis[i].chave),
-                    onChanged: (valor) => _salvarComFeedback(
-                      context,
-                      () => provider.definirPreferencia(categoriasNotificacaoDisponiveis[i].chave, valor),
-                    ),
+                  _CategoriaExpansionTile(
+                    categoria: categoriasNotificacaoDisponiveis[i],
+                    provider: provider,
+                    onSalvar: (acao) => _salvarComFeedback(context, acao),
                   ),
                 ],
               ],
@@ -78,6 +75,64 @@ class ConfiguracaoNotificacoesScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Uma categoria da lista — expande pra mostrar Som/Vibração dela. Ficam
+/// desabilitados (cinza) quando a categoria em si tá desligada, porque
+/// nesse caso nenhuma notificação é gerada pra ter som/vibração de nada.
+class _CategoriaExpansionTile extends StatelessWidget {
+  final CategoriaNotificacao categoria;
+  final NotificacaoProvider provider;
+  final void Function(Future<void> Function()) onSalvar;
+
+  const _CategoriaExpansionTile({
+    required this.categoria,
+    required this.provider,
+    required this.onSalvar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final categoriaHabilitada = provider.habilitado(categoria.chave);
+
+    return ExpansionTile(
+      title: Text(categoria.titulo),
+      subtitle: Text(categoria.descricao),
+      trailing: Switch(
+        value: categoriaHabilitada,
+        onChanged: (valor) => onSalvar(() => provider.definirPreferencia(categoria.chave, valor)),
+      ),
+      childrenPadding: const EdgeInsets.only(bottom: 4),
+      children: [
+        SwitchListTile(
+          dense: true,
+          title: const Text('Som'),
+          value: categoriaHabilitada && provider.alertaHabilitado(categoria.chave, PreferenciaAlerta.som),
+          onChanged: !categoriaHabilitada
+              ? null
+              : (valor) => onSalvar(
+                    () => provider.definirPreferencia(
+                      PreferenciaAlerta.chave(categoria.chave, PreferenciaAlerta.som),
+                      valor,
+                    ),
+                  ),
+        ),
+        SwitchListTile(
+          dense: true,
+          title: const Text('Vibração'),
+          value: categoriaHabilitada && provider.alertaHabilitado(categoria.chave, PreferenciaAlerta.vibracao),
+          onChanged: !categoriaHabilitada
+              ? null
+              : (valor) => onSalvar(
+                    () => provider.definirPreferencia(
+                      PreferenciaAlerta.chave(categoria.chave, PreferenciaAlerta.vibracao),
+                      valor,
+                    ),
+                  ),
+        ),
+      ],
     );
   }
 }

@@ -18,6 +18,18 @@ class TipoNotificacao {
   static const pedidoHoraSaidaEntrega = 'pedido_hora_saida_entrega';
 }
 
+/// Chaves de preferência de alerta (som/vibração) por categoria — não ligam/
+/// desligam a notificação em si (isso é `NotificacaoProvider.habilitado`),
+/// só como o app avisa quando ela chega com o app aberto (ver
+/// `PushNotificationService`). Guardadas no mesmo jsonb, com a chave
+/// `'<categoria>_som'`/`'<categoria>_vibracao'`.
+class PreferenciaAlerta {
+  static const som = 'som';
+  static const vibracao = 'vibracao';
+
+  static String chave(String categoria, String tipoAlerta) => '${categoria}_$tipoAlerta';
+}
+
 /// Uma categoria configurável no painel de preferências de notificação —
 /// cobre 1 ou 2 `TipoNotificacao` (estoque baixo/zerado e despesa
 /// vencendo/vencida compartilham a mesma chave, pois é o mesmo evento
