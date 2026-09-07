@@ -11,6 +11,7 @@ class StatusPedido {
   static const saiuParaEntrega = 'saiu_para_entrega';
   static const entregue = 'entregue';
   static const cancelado = 'cancelado';
+  static const aguardandoConciliacao = 'aguardando_conciliacao';
 
   static const emAndamento = [pendente, preparando, saiuParaEntrega];
 
@@ -28,6 +29,8 @@ class StatusPedido {
         return 'Entregue';
       case cancelado:
         return 'Cancelada';
+      case aguardandoConciliacao:
+        return 'Aguardando conciliação financeira';
       default:
         return status;
     }

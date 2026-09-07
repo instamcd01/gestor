@@ -203,7 +203,7 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
     final config = _configs[ifood.id];
     if (config == null || !config.ativo) return const SizedBox.shrink();
 
-    final checkpoint = config.ultimaReconciliacaoRelatorioEm;
+    final checkpoint = config.ultimaReconciliacaoEstoqueEm;
     final hoje = DateTime.now();
     final hojeSemHora = DateTime(hoje.year, hoje.month, hoje.day);
     final diasSemReconciliar =
@@ -235,6 +235,18 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
       subtitulo = 'Última reconciliação: ${DateFormat('dd/MM').format(checkpoint!)}';
     }
 
+    // Financeiro sempre fica de 2 a 3 dias atrás do estoque de propósito —
+    // o relatório "Vendas e Pedidos" do iFood só fecha os valores em D+2, ver
+    // memória do projeto. Só chama atenção se passar bem além disso.
+    final checkpointFinanceiro = config.ultimaReconciliacaoFinanceiraEm;
+    final diasSemFinanceiro = checkpointFinanceiro == null
+        ? null
+        : hojeSemHora.difference(DateTime(checkpointFinanceiro.year, checkpointFinanceiro.month, checkpointFinanceiro.day)).inDays;
+    final financeiroAtrasado = diasSemFinanceiro != null && diasSemFinanceiro > 4;
+    final subtituloFinanceiro = checkpointFinanceiro == null
+        ? 'Financeiro: aguardando primeira conciliação'
+        : 'Financeiro conciliado até ${DateFormat('dd/MM').format(checkpointFinanceiro)}';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -250,6 +262,14 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
                   Text(titulo, style: const TextStyle(fontWeight: FontWeight.w600)),
                   if (subtitulo != null)
                     Text(subtitulo, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  Text(
+                    subtituloFinanceiro,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: financeiroAtrasado ? Colors.red : Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: financeiroAtrasado ? FontWeight.w600 : null,
+                    ),
+                  ),
                 ],
               ),
             ),
