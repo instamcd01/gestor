@@ -10,6 +10,7 @@ import '../models/despesa.dart';
 import '../models/venda.dart';
 import '../providers/despesa_provider.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../providers/produto_provider.dart';
 import '../utils/canal_venda_utils.dart';
 
 /// Configurações > Exportar Relatórios: exporta vendas ou despesas de um
@@ -196,6 +197,78 @@ class _ExportarRelatoriosScreenState extends State<ExportarRelatoriosScreen> {
     }
   }
 
+  /// Gera a planilha no formato exato que o Portal do Parceiro iFood pede em
+  /// Catálogo > Integração via planilha (colunas/ordem conferidas baixando o
+  /// arquivo modelo real do portal em 06/09/2026 — não são inventadas).
+  /// Preço/estoque/ativo já vêm do estado atual do Gestor, incluindo a baixa
+  /// automática feita pela reconciliação de pedidos do iFood — o usuário só
+  /// precisa fazer o upload manual dessa planilha no portal depois.
+  Future<void> _exportarCatalogoIfood() async {
+    setState(() => _exportando = true);
+    try {
+      final provider = context.read<ProdutoProvider>();
+      await provider.carregarProdutos();
+      if (!mounted) return;
+
+      final produtos = provider.produtos.where((p) => p.codigoBarras.trim().isNotEmpty).toList()
+        ..sort((a, b) => a.nome.compareTo(b.nome));
+
+      final workbook = Excel.createExcel();
+      final sheet = workbook['Catálogo iFood'];
+      workbook.delete('Sheet1');
+
+      sheet.appendRow([
+        TextCellValue('Código de Barras'),
+        TextCellValue('Nome'),
+        TextCellValue('Preço'),
+        TextCellValue('Qtd. Atual Estoque'),
+        TextCellValue('Ativo'),
+        TextCellValue('Preço em Promoção'),
+        TextCellValue('Múltiplo Ean Original'),
+        TextCellValue('Código Plu'),
+        TextCellValue('Quantidade Múltiplo'),
+        TextCellValue('Canal'),
+      ]);
+
+      var semPrecoValido = 0;
+      for (final produto in produtos) {
+        // Portal ignora linha com preço vazio/zerado, então nem vale incluir.
+        final preco = produto.precoIfood ?? produto.preco;
+        if (preco <= 0) {
+          semPrecoValido++;
+          continue;
+        }
+        final ativoNoIfood = produto.ativo && produto.exibirNoCatalogo && produto.estoqueAtual > 0;
+        sheet.appendRow([
+          TextCellValue(produto.codigoBarras.trim()),
+          TextCellValue(produto.nome),
+          DoubleCellValue(preco),
+          IntCellValue(produto.estoqueAtual),
+          IntCellValue(ativoNoIfood ? 1 : 0),
+          produto.precoPromocional != null ? DoubleCellValue(produto.precoPromocional!) : TextCellValue(''),
+          TextCellValue(''),
+          TextCellValue(''),
+          TextCellValue(''),
+          TextCellValue('iFood App'),
+        ]);
+      }
+
+      final incluidos = produtos.length - semPrecoValido;
+      await _exportarESalvar(
+        workbook,
+        'catalogo_ifood_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx',
+        'Catálogo iFood ($incluidos produtos prontos pra importar'
+            '${semPrecoValido > 0 ? ', $semPrecoValido sem preço válido ignorado(s)' : ''})',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao exportar catálogo: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _exportando = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd/MM/yyyy');
@@ -252,6 +325,21 @@ class _ExportarRelatoriosScreenState extends State<ExportarRelatoriosScreen> {
                   subtitle: const Text('Todas as despesas com vencimento no período'),
                   trailing: const Icon(Icons.download),
                   onTap: _exportarDespesas,
+                ),
+              ),
+              const Divider(height: 32),
+              Text(
+                'Catálogo de plataformas',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.storefront, color: Colors.deepOrange),
+                  title: const Text('Exportar Catálogo iFood'),
+                  subtitle: const Text('Preço, estoque e status atuais, já no formato pra importar no Portal do Parceiro'),
+                  trailing: const Icon(Icons.download),
+                  onTap: _exportarCatalogoIfood,
                 ),
               ),
             ],
