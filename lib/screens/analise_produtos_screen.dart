@@ -9,6 +9,7 @@ import '../utils/produto_validators.dart';
 import '../utils/variante_label_utils.dart';
 import '../widgets/dialogo_revisao_variante.dart';
 import 'adicionar_imagens_lote_screen.dart';
+import 'editar_produto_screen.dart';
 import 'sugestoes_variante_rejeitadas_screen.dart';
 
 /// Tela única de análise/ajuste de produtos em massa — reúne os filtros que
@@ -30,7 +31,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -45,6 +46,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
     final semImagem = produtoProvider.produtos.where((p) => p.imagemUrl.isEmpty).length;
     final comSugestao = produtoProvider.totalProdutosComSugestaoVariante;
     final revisarPreco = produtoProvider.produtos.where((p) => p.revisarPreco).length;
+    final eanDuplicado = _gruposEanDuplicado(produtoProvider.produtos).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -71,6 +73,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
             Tab(text: 'Revisar preço ($revisarPreco)'),
             const Tab(text: 'Ciclo de recompra'),
             const Tab(text: 'Catálogo'),
+            Tab(text: 'EAN duplicado ($eanDuplicado)'),
           ],
         ),
       ),
@@ -82,10 +85,30 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
           _AbaRevisarPreco(),
           _AbaCicloRecompra(),
           _AbaCatalogo(),
+          _AbaEanDuplicado(),
         ],
       ),
     );
   }
+}
+
+/// Agrupa produtos pelo mesmo código de barras — ignora vazio e "0" (usado
+/// como placeholder de "sem EAN real", ex. taxas de entrega cadastradas
+/// como produto; achado real em 07/09 comparando a exportação do catálogo
+/// iFood com o histórico de uploads: várias dezenas de produtos sem EAN
+/// verdadeiro colidiam ali, mas isso é um problema à parte de duplicata de
+/// cadastro de verdade, que é o que esta aba mostra). Só grupos com 2+
+/// produtos voltam — o mesmo EAN em produtos diferentes nunca deveria
+/// acontecer (o iFood, por exemplo, só consegue representar um deles).
+List<List<Produto>> _gruposEanDuplicado(List<Produto> produtos) {
+  final porEan = <String, List<Produto>>{};
+  for (final produto in produtos) {
+    final ean = produto.codigoBarras.trim();
+    if (ean.isEmpty || ean == '0') continue;
+    (porEan[ean] ??= []).add(produto);
+  }
+  return porEan.values.where((grupo) => grupo.length > 1).toList()
+    ..sort((a, b) => a.first.nome.compareTo(b.first.nome));
 }
 
 /// Barra fixa no rodapé com o resumo da seleção + botões de ação — mesmo
@@ -1307,6 +1330,93 @@ class _AbaCatalogoState extends State<_AbaCatalogo> {
               ),
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// ---------------------------------------------------------------------
+/// Aba 6: EAN duplicado — produtos diferentes com o mesmo código de barras.
+/// Achado real comparando a exportação do catálogo iFood com o histórico
+/// de uploads (07/09): nunca deveria acontecer, plataformas indexadas por
+/// EAN (iFood, 99Food...) só conseguem representar um dos produtos, o
+/// outro fica invisível sem erro nenhum. Sem ação em massa — cada caso
+/// precisa julgamento (mesclar cadastro, corrigir o EAN errado...), só
+/// busca + atalho pra abrir cada produto e editar.
+/// ---------------------------------------------------------------------
+class _AbaEanDuplicado extends StatefulWidget {
+  const _AbaEanDuplicado();
+
+  @override
+  State<_AbaEanDuplicado> createState() => _AbaEanDuplicadoState();
+}
+
+class _AbaEanDuplicadoState extends State<_AbaEanDuplicado> {
+  String _busca = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final produtoProvider = context.watch<ProdutoProvider>();
+    final grupos = _gruposEanDuplicado(produtoProvider.produtos)
+        .where((grupo) => _busca.isEmpty || grupo.any((p) => contemTodasPalavras(p.nome, _busca)))
+        .toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: TextField(
+            decoration: const InputDecoration(hintText: 'Buscar por nome', prefixIcon: Icon(Icons.search)),
+            onChanged: (v) => setState(() => _busca = v),
+          ),
+        ),
+        Expanded(
+          child: grupos.isEmpty
+              ? const Center(child: Text('Nenhum código de barras duplicado 🎉'))
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: grupos.length,
+                  itemBuilder: (context, index) {
+                    final grupo = grupos[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'EAN ${grupo.first.codigoBarras} — ${grupo.length} produtos',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(),
+                            for (final produto in grupo)
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
+                                subtitle: Text(
+                                  'Preço: R\$ ${produto.preco.toStringAsFixed(2)} • Estoque: ${produto.estoqueAtual}',
+                                ),
+                                trailing: const Icon(Icons.edit_outlined),
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: produto)),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
       ],
     );
   }
