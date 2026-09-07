@@ -141,16 +141,20 @@ class ProdutoValidators {
     return null;
   }
 
-  /// Código de barras: opcional, mas se preenchido só dígitos e no
-  /// tamanho de um EAN-8/UPC-A/EAN-13/ITF-14 real (8 a 14 dígitos).
+  /// Código de barras: opcional, mas se preenchido só dígitos. Aceita tanto
+  /// EAN-8/UPC-A/EAN-13/ITF-14 real (8-14 dígitos) quanto código interno
+  /// mais curto pra produto sem EAN de fábrica (ex: os fracionados de um
+  /// pacote maior, cadastrados como "10101", "10102"...) — não dá pra
+  /// distinguir os dois só pelo tamanho, então só valida "é numérico e
+  /// cabe num código de barras real ou menor".
   static String? codigoBarras(String? value) {
     if (value == null || value.trim().isEmpty) return null;
     final limpo = value.trim();
     if (!RegExp(r'^\d+$').hasMatch(limpo)) {
       return 'Código de barras deve conter só números';
     }
-    if (limpo.length < 8 || limpo.length > 14) {
-      return 'Código de barras deve ter entre 8 e 14 dígitos';
+    if (limpo.length > 14) {
+      return 'Código de barras deve ter no máximo 14 dígitos';
     }
     return null;
   }

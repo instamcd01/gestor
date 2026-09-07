@@ -18,6 +18,7 @@ import '../widgets/campos_estruturados_variante.dart';
 import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
 import '../widgets/familia_variantes_section.dart';
+import '../widgets/fracionamento_section.dart';
 import '../widgets/fornecedores_produto_section.dart';
 import '../widgets/vincular_variante_dialog.dart';
 import 'gerenciar_midias_produto_screen.dart';
@@ -919,6 +920,14 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                 ),
                 const SizedBox(height: 16.0),
               ],
+
+              FracionamentoSection(
+                produtoAtual: produtoAtual,
+                onAbrirProduto: (outro) => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: outro)),
+                ),
+              ),
+              const SizedBox(height: 16.0),
 
               FormSection(
                 titulo: 'Preço e custo',

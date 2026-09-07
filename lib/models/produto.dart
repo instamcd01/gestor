@@ -40,6 +40,18 @@ class Produto {
   final String? unidadeMedida;
   final bool permiteFracionamento;
 
+  /// Produto "pai" (pacote maior) do qual este produto é fracionado — ex:
+  /// este é "1kg" e `fracionadoDeId` aponta pro "10kg". Diferente de
+  /// `produtoPaiId` (família de variantes, só agrupamento pra exibição):
+  /// aqui existe vínculo real de estoque compartilhado, sincronizado por
+  /// trigger no banco (`sincronizar_estoque_pai_fracionado`). `null` = este
+  /// produto não é fracionado de nenhum outro.
+  final String? fracionadoDeId;
+
+  /// Quantas unidades deste produto equivalem a 1 unidade do produto-pai
+  /// referenciado em [fracionadoDeId]. Só tem sentido junto com ele.
+  final int? fatorFracionamento;
+
   /// Custo mudou (ex: importação de NF-e) e o preço de venda ainda não foi
   /// revisado — gerenciado pelas triggers do banco (`sinalizar_revisar_preco`),
   /// nunca enviado em `toSupabaseMap` pra não sobrescrever por engano com um
@@ -134,6 +146,8 @@ class Produto {
     this.estoqueId,
     this.unidadeMedida = 'un',
     this.permiteFracionamento = false,
+    this.fracionadoDeId,
+    this.fatorFracionamento,
     this.revisarPreco = false,
     this.nomeComercial,
     this.tipoProduto,
@@ -194,6 +208,8 @@ class Produto {
       estoqueId: estoqueId,
       unidadeMedida: row['unidade_medida']?.toString() ?? 'un',
       permiteFracionamento: row['permite_fracionamento'] as bool? ?? false,
+      fracionadoDeId: row['fracionado_de_id'] as String?,
+      fatorFracionamento: (row['fator_fracionamento'] as num?)?.toInt(),
       precoPromocional: (row['preco_promocional'] as num?)?.toDouble(),
       precoIfood: (row['preco_ifood'] as num?)?.toDouble(),
       precoConcorrencia: (row['preco_concorrencia'] as num?)?.toDouble(),
@@ -245,6 +261,8 @@ class Produto {
       'codigo_barras': codigoBarras,
       'unidade_medida': unidadeMedida,
       'permite_fracionamento': permiteFracionamento,
+      'fracionado_de_id': fracionadoDeId,
+      'fator_fracionamento': fatorFracionamento,
       'preco_promocional': precoPromocional,
       'preco_ifood': precoIfood,
       'preco_concorrencia': precoConcorrencia,
