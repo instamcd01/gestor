@@ -13,6 +13,7 @@ class MarketplaceConfig {
   final String apiSecret;
   final String observacoes;
   final String? modoEntrega;
+  final DateTime? ultimaReconciliacaoRelatorioEm;
 
   MarketplaceConfig({
     this.id,
@@ -23,6 +24,7 @@ class MarketplaceConfig {
     this.apiSecret = '',
     this.observacoes = '',
     this.modoEntrega,
+    this.ultimaReconciliacaoRelatorioEm,
   });
 
   factory MarketplaceConfig.fromSupabase(Map<String, dynamic> row) {
@@ -35,6 +37,9 @@ class MarketplaceConfig {
       apiSecret: row['api_secret']?.toString() ?? '',
       observacoes: row['observacoes']?.toString() ?? '',
       modoEntrega: row['modo_entrega'] as String?,
+      ultimaReconciliacaoRelatorioEm: row['ultima_reconciliacao_relatorio_em'] != null
+          ? DateTime.parse(row['ultima_reconciliacao_relatorio_em'] as String)
+          : null,
     );
   }
 

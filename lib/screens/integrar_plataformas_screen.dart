@@ -197,6 +197,68 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
     );
   }
 
+  Widget _cardReconciliacaoIfood() {
+    final ifood = _ifood;
+    if (ifood == null) return const SizedBox.shrink();
+    final config = _configs[ifood.id];
+    if (config == null || !config.ativo) return const SizedBox.shrink();
+
+    final checkpoint = config.ultimaReconciliacaoRelatorioEm;
+    final hoje = DateTime.now();
+    final hojeSemHora = DateTime(hoje.year, hoje.month, hoje.day);
+    final diasSemReconciliar =
+        checkpoint == null ? null : hojeSemHora.difference(DateTime(checkpoint.year, checkpoint.month, checkpoint.day)).inDays;
+
+    late final IconData icone;
+    late final Color cor;
+    late final String titulo;
+    String? subtitulo;
+
+    if (diasSemReconciliar == null) {
+      icone = Icons.help_outline;
+      cor = Colors.orange;
+      titulo = 'Estoque do iFood nunca foi reconciliado';
+      subtitulo = 'Peça pro Claude Code rodar a reconciliação de relatórios.';
+    } else if (diasSemReconciliar <= 0) {
+      icone = Icons.check_circle_outline;
+      cor = Colors.green;
+      titulo = 'Estoque do iFood reconciliado hoje';
+    } else if (diasSemReconciliar == 1) {
+      icone = Icons.schedule;
+      cor = Colors.blueGrey;
+      titulo = 'Aguardando reconciliação de hoje';
+      subtitulo = 'Última reconciliação: ${DateFormat('dd/MM').format(checkpoint!)}';
+    } else {
+      icone = Icons.warning_amber_rounded;
+      cor = Colors.red;
+      titulo = '$diasSemReconciliar dias sem reconciliar o estoque do iFood';
+      subtitulo = 'Última reconciliação: ${DateFormat('dd/MM').format(checkpoint!)}';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Icon(icone, color: cor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titulo, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  if (subtitulo != null)
+                    Text(subtitulo, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _salvarConfig(MarketplaceConfig config) async {
     final empresaId = context.read<AuthProvider>().empresaId;
     if (empresaId == null) return;
@@ -239,6 +301,7 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
                   padding: const EdgeInsets.all(12),
                   children: [
                     _cardPausaLoja(),
+                    _cardReconciliacaoIfood(),
                     const Padding(
                       padding: EdgeInsets.only(bottom: 12),
                       child: AvisoBanner(
