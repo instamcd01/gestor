@@ -210,7 +210,13 @@ class _ExportarRelatoriosScreenState extends State<ExportarRelatoriosScreen> {
       await provider.carregarProdutos();
       if (!mounted) return;
 
-      final produtos = provider.produtos.where((p) => p.codigoBarras.trim().isNotEmpty).toList()
+      // codigo_barras "0" é usado como placeholder pra produto sem EAN real
+      // (ex: taxas de entrega cadastradas como produto) — nunca representa
+      // certo no iFood (é indexado por EAN, então todos colidiriam no "0").
+      final produtos = provider.produtos.where((p) {
+        final ean = p.codigoBarras.trim();
+        return ean.isNotEmpty && ean != '0';
+      }).toList()
         ..sort((a, b) => a.nome.compareTo(b.nome));
 
       final workbook = Excel.createExcel();
