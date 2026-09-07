@@ -239,13 +239,17 @@ class _ExportarRelatoriosScreenState extends State<ExportarRelatoriosScreen> {
           continue;
         }
         final ativoNoIfood = produto.ativo && produto.exibirNoCatalogo && produto.estoqueAtual > 0;
+        // iFood rejeita a linha inteira se o preço promocional for maior ou
+        // igual ao preço normal — ignorar em vez de deixar a linha falhar.
+        final precoPromocionalValido =
+            produto.precoPromocional != null && produto.precoPromocional! < preco ? produto.precoPromocional : null;
         sheet.appendRow([
           TextCellValue(produto.codigoBarras.trim()),
           TextCellValue(produto.nome),
           DoubleCellValue(preco),
           IntCellValue(produto.estoqueAtual),
           IntCellValue(ativoNoIfood ? 1 : 0),
-          produto.precoPromocional != null ? DoubleCellValue(produto.precoPromocional!) : TextCellValue(''),
+          precoPromocionalValido != null ? DoubleCellValue(precoPromocionalValido) : TextCellValue(''),
           TextCellValue(''),
           TextCellValue(''),
           TextCellValue(''),
