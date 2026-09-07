@@ -1,24 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../models/interrupcao_marketplace.dart';
 import '../models/marketplace.dart';
 import '../models/marketplace_config.dart';
 import '../providers/auth_provider.dart';
-import '../repositories/interrupcao_marketplace_repository.dart';
 import '../repositories/marketplace_config_repository.dart';
 import '../repositories/marketplace_repository.dart';
 import '../widgets/aviso_banner.dart';
-import 'configuracao_entrega_99food_screen.dart';
+import 'integracao_ifood_screen.dart';
+import 'plataforma_detalhe_screen.dart';
 
-/// Configurações > Integrar com Plataformas: onde ficam guardadas as
-/// credenciais de cada marketplace (iFood, 99Food, Rappi...), restrito ao
-/// dono da empresa (credenciais são dado sensível). Nenhuma chamada de API
-/// acontece a partir do app — quem autentica de verdade com a API de cada
-/// plataforma é o n8n, que lê essa mesma tabela (`empresa_marketplace_config`).
-/// Pra iFood essa integração já está ativa; pra marketplaces sem workflow
-/// de n8n construído ainda, as credenciais ficam só guardadas até lá.
+/// Configurações > Integrar com Plataformas: diretório das plataformas
+/// (iFood, 99Food, Rappi...), restrito ao dono da empresa (credenciais são
+/// dado sensível). Cada card abre a tela dedicada daquela plataforma — pra
+/// iFood, uma tela rica (pausa/retomar loja, reconciliação, catálogo,
+/// histórico); pras demais, só a config de credenciais até a integração
+/// ganhar recursos próprios. Nenhuma chamada de API acontece a partir do
+/// app — quem autentica de verdade com a API de cada plataforma é o n8n,
+/// que lê a mesma tabela (`empresa_marketplace_config`).
 class IntegrarPlataformasScreen extends StatefulWidget {
   const IntegrarPlataformasScreen({super.key});
 
@@ -29,11 +28,9 @@ class IntegrarPlataformasScreen extends StatefulWidget {
 class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
   final _marketplaceRepository = MarketplaceRepository();
   final _configRepository = MarketplaceConfigRepository();
-  final _interrupcaoRepository = InterrupcaoMarketplaceRepository();
 
   List<Marketplace> _marketplaces = [];
   Map<String, MarketplaceConfig> _configs = {};
-  InterrupcaoMarketplace? _interrupcaoAtiva;
   bool _carregando = true;
 
   @override
@@ -46,256 +43,43 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
     try {
       final marketplaces = await _marketplaceRepository.listarAtivos();
       final configs = await _configRepository.listar();
-      final interrupcao = await _interrupcaoRepository.buscarAtiva();
-      setState(() {
-        _marketplaces = marketplaces;
-        _configs = {for (final c in configs) c.marketplaceId: c};
-        _interrupcaoAtiva = interrupcao;
-        _carregando = false;
-      });
+      if (mounted) {
+        setState(() {
+          _marketplaces = marketplaces;
+          _configs = {for (final c in configs) c.marketplaceId: c};
+          _carregando = false;
+        });
+      }
     } catch (e) {
       debugPrint('Erro ao carregar integrações: $e');
       if (mounted) setState(() => _carregando = false);
     }
   }
 
-  Marketplace? get _ifood {
-    for (final m in _marketplaces) {
-      if (m.nome.toLowerCase() == 'ifood') return m;
-    }
-    return null;
+  void _abrirPlataforma(Marketplace marketplace) {
+    final destino = marketplace.nome.toLowerCase() == 'ifood'
+        ? IntegracaoIfoodScreen(marketplace: marketplace)
+        : PlataformaDetalheScreen(marketplace: marketplace);
+    Navigator.push(context, MaterialPageRoute(builder: (_) => destino)).then((_) => _carregar());
   }
 
-  Future<void> _pausarLoja() async {
-    final ifood = _ifood;
-    final empresaId = context.read<AuthProvider>().empresaId;
-    if (ifood == null || empresaId == null) return;
-
-    final motivoController = TextEditingController();
-    Duration duracaoEscolhida = const Duration(hours: 1);
-
-    final confirmado = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Pausar loja no iFood'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: motivoController,
-                decoration: const InputDecoration(labelText: 'Motivo (ex: acabou o estoque)'),
-              ),
-              const SizedBox(height: 16),
-              const Text('Por quanto tempo?', style: TextStyle(fontSize: 12)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: [
-                  ('30 min', const Duration(minutes: 30)),
-                  ('1 hora', const Duration(hours: 1)),
-                  ('2 horas', const Duration(hours: 2)),
-                  ('Resto do dia', null),
-                ].map((opcao) {
-                  final (rotulo, duracao) = opcao;
-                  final selecionado = duracao == duracaoEscolhida ||
-                      (duracao == null && duracaoEscolhida == _ateOFimDoDia());
-                  return ChoiceChip(
-                    label: Text(rotulo),
-                    selected: selecionado,
-                    onSelected: (_) => setDialogState(() => duracaoEscolhida = duracao ?? _ateOFimDoDia()),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Pausar')),
-          ],
-        ),
-      ),
-    );
-    if (confirmado != true) return;
-    final motivo = motivoController.text.trim().isEmpty ? 'Pausa manual' : motivoController.text.trim();
-
-    try {
-      await _interrupcaoRepository.pausar(
-        empresaId: empresaId,
-        marketplaceId: ifood.id,
-        motivo: motivo,
-        fim: DateTime.now().add(duracaoEscolhida),
-      );
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Loja pausada.')));
-      await _carregar();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível pausar a loja.')));
-      }
-    }
-  }
-
-  Duration _ateOFimDoDia() {
-    final agora = DateTime.now();
-    final fimDoDia = DateTime(agora.year, agora.month, agora.day, 23, 59);
-    return fimDoDia.difference(agora);
-  }
-
-  Future<void> _retomarLoja() async {
-    final interrupcao = _interrupcaoAtiva;
-    if (interrupcao == null) return;
-    try {
-      await _interrupcaoRepository.cancelar(interrupcao.id);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Loja reaberta.')));
-      await _carregar();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível reabrir a loja.')));
-      }
-    }
-  }
-
-  Widget _cardPausaLoja() {
-    if (_ifood == null) return const SizedBox.shrink();
-    final interrupcao = _interrupcaoAtiva;
-    final dateFormat = DateFormat('dd/MM HH:mm');
+  Widget _cardPlataforma(Marketplace marketplace) {
+    final config = _configs[marketplace.id];
+    final ativo = config?.ativo ?? false;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: interrupcao == null
-            ? Row(
-                children: [
-                  Icon(Icons.storefront, color: Theme.of(context).colorScheme.primary),
-                  const SizedBox(width: 10),
-                  const Expanded(child: Text('Loja aberta no iFood')),
-                  OutlinedButton(onPressed: _pausarLoja, child: const Text('Pausar loja')),
-                ],
-              )
-            : Row(
-                children: [
-                  const Icon(Icons.pause_circle_outline, color: Colors.orange),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Loja pausada: ${interrupcao.motivo}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                        Text('Até ${dateFormat.format(interrupcao.fim)}',
-                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                        if (interrupcao.status == 'erro' && interrupcao.erro != null)
-                          Text(interrupcao.erro!, style: const TextStyle(fontSize: 12, color: Colors.red)),
-                      ],
-                    ),
-                  ),
-                  TextButton(onPressed: _retomarLoja, child: const Text('Retomar agora')),
-                ],
-              ),
-      ),
-    );
-  }
-
-  Widget _cardReconciliacaoIfood() {
-    final ifood = _ifood;
-    if (ifood == null) return const SizedBox.shrink();
-    final config = _configs[ifood.id];
-    if (config == null || !config.ativo) return const SizedBox.shrink();
-
-    final checkpoint = config.ultimaReconciliacaoEstoqueEm;
-    final hoje = DateTime.now();
-    final hojeSemHora = DateTime(hoje.year, hoje.month, hoje.day);
-    final diasSemReconciliar =
-        checkpoint == null ? null : hojeSemHora.difference(DateTime(checkpoint.year, checkpoint.month, checkpoint.day)).inDays;
-
-    late final IconData icone;
-    late final Color cor;
-    late final String titulo;
-    String? subtitulo;
-
-    if (diasSemReconciliar == null) {
-      icone = Icons.help_outline;
-      cor = Colors.orange;
-      titulo = 'Estoque do iFood nunca foi reconciliado';
-      subtitulo = 'Peça pro Claude Code rodar a reconciliação de relatórios.';
-    } else if (diasSemReconciliar <= 0) {
-      icone = Icons.check_circle_outline;
-      cor = Colors.green;
-      titulo = 'Estoque do iFood reconciliado hoje';
-    } else if (diasSemReconciliar == 1) {
-      icone = Icons.schedule;
-      cor = Colors.blueGrey;
-      titulo = 'Aguardando reconciliação de hoje';
-      subtitulo = 'Última reconciliação: ${DateFormat('dd/MM').format(checkpoint!)}';
-    } else {
-      icone = Icons.warning_amber_rounded;
-      cor = Colors.red;
-      titulo = '$diasSemReconciliar dias sem reconciliar o estoque do iFood';
-      subtitulo = 'Última reconciliação: ${DateFormat('dd/MM').format(checkpoint!)}';
-    }
-
-    // Financeiro sempre fica de 2 a 3 dias atrás do estoque de propósito —
-    // o relatório "Vendas e Pedidos" do iFood só fecha os valores em D+2, ver
-    // memória do projeto. Só chama atenção se passar bem além disso.
-    final checkpointFinanceiro = config.ultimaReconciliacaoFinanceiraEm;
-    final diasSemFinanceiro = checkpointFinanceiro == null
-        ? null
-        : hojeSemHora.difference(DateTime(checkpointFinanceiro.year, checkpointFinanceiro.month, checkpointFinanceiro.day)).inDays;
-    final financeiroAtrasado = diasSemFinanceiro != null && diasSemFinanceiro > 4;
-    final subtituloFinanceiro = checkpointFinanceiro == null
-        ? 'Financeiro: aguardando primeira conciliação'
-        : 'Financeiro conciliado até ${DateFormat('dd/MM').format(checkpointFinanceiro)}';
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            Icon(icone, color: cor),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(titulo, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  if (subtitulo != null)
-                    Text(subtitulo, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                  Text(
-                    subtituloFinanceiro,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: financeiroAtrasado ? Colors.red : Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: financeiroAtrasado ? FontWeight.w600 : null,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(
+          Icons.storefront,
+          color: ativo ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
         ),
+        title: Text(marketplace.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(ativo ? 'Ativo' : 'Não configurado'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _abrirPlataforma(marketplace),
       ),
     );
-  }
-
-  Future<void> _salvarConfig(MarketplaceConfig config) async {
-    final empresaId = context.read<AuthProvider>().empresaId;
-    if (empresaId == null) return;
-
-    try {
-      await _configRepository.salvar(config, empresaId: empresaId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Configuração salva.')),
-        );
-      }
-      await _carregar();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
-      }
-    }
   }
 
   @override
@@ -320,8 +104,6 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
               : ListView(
                   padding: const EdgeInsets.all(12),
                   children: [
-                    _cardPausaLoja(),
-                    _cardReconciliacaoIfood(),
                     const Padding(
                       padding: EdgeInsets.only(bottom: 12),
                       child: AvisoBanner(
@@ -338,165 +120,9 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
                         ),
                       )
                     else
-                      ..._marketplaces.map((marketplace) => _MarketplaceConfigCard(
-                            marketplace: marketplace,
-                            config: _configs[marketplace.id] ?? MarketplaceConfig(marketplaceId: marketplace.id),
-                            onSalvar: _salvarConfig,
-                          )),
+                      ..._marketplaces.map(_cardPlataforma),
                   ],
                 ),
-    );
-  }
-}
-
-class _MarketplaceConfigCard extends StatefulWidget {
-  final Marketplace marketplace;
-  final MarketplaceConfig config;
-  final ValueChanged<MarketplaceConfig> onSalvar;
-
-  const _MarketplaceConfigCard({required this.marketplace, required this.config, required this.onSalvar});
-
-  @override
-  State<_MarketplaceConfigCard> createState() => _MarketplaceConfigCardState();
-}
-
-class _MarketplaceConfigCardState extends State<_MarketplaceConfigCard> {
-  late bool _ativo;
-  late final TextEditingController _idLojaController;
-  late final TextEditingController _apiKeyController;
-  late final TextEditingController _apiSecretController;
-  late final TextEditingController _observacoesController;
-  String? _modoEntrega;
-  bool _mostrarSecret = false;
-  bool _expandido = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _ativo = widget.config.ativo;
-    _idLojaController = TextEditingController(text: widget.config.idLojaPlataforma);
-    _apiKeyController = TextEditingController(text: widget.config.apiKey);
-    _apiSecretController = TextEditingController(text: widget.config.apiSecret);
-    _observacoesController = TextEditingController(text: widget.config.observacoes);
-    _modoEntrega = widget.config.modoEntrega;
-  }
-
-  @override
-  void dispose() {
-    _idLojaController.dispose();
-    _apiKeyController.dispose();
-    _apiSecretController.dispose();
-    _observacoesController.dispose();
-    super.dispose();
-  }
-
-  void _salvar() {
-    widget.onSalvar(MarketplaceConfig(
-      id: widget.config.id,
-      marketplaceId: widget.marketplace.id,
-      ativo: _ativo,
-      idLojaPlataforma: _idLojaController.text.trim(),
-      apiKey: _apiKeyController.text.trim(),
-      apiSecret: _apiSecretController.text.trim(),
-      observacoes: _observacoesController.text.trim(),
-      modoEntrega: _modoEntrega,
-    ));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        children: [
-          SwitchListTile(
-            title: Text(widget.marketplace.nome, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(_ativo ? 'Ativo' : 'Inativo'),
-            value: _ativo,
-            onChanged: (v) => setState(() => _ativo = v),
-            secondary: IconButton(
-              icon: Icon(_expandido ? Icons.expand_less : Icons.expand_more),
-              onPressed: () => setState(() => _expandido = !_expandido),
-            ),
-          ),
-          if (_expandido)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                children: [
-                  TextField(
-                    controller: _idLojaController,
-                    decoration: const InputDecoration(labelText: 'ID da loja na plataforma'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _apiKeyController,
-                    decoration: const InputDecoration(labelText: 'API Key'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _apiSecretController,
-                    obscureText: !_mostrarSecret,
-                    decoration: InputDecoration(
-                      labelText: 'API Secret',
-                      suffixIcon: IconButton(
-                        icon: Icon(_mostrarSecret ? Icons.visibility_off : Icons.visibility),
-                        onPressed: () => setState(() => _mostrarSecret = !_mostrarSecret),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Modo de entrega',
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      (null, 'Não definido'),
-                      (ModoEntrega.propria, 'Entrega própria'),
-                      (ModoEntrega.plataforma, 'Entrega pela plataforma'),
-                    ].map((opcao) {
-                      final (valor, rotulo) = opcao;
-                      return ChoiceChip(
-                        label: Text(rotulo),
-                        selected: _modoEntrega == valor,
-                        onSelected: (_) => setState(() => _modoEntrega = valor),
-                      );
-                    }).toList(),
-                  ),
-                  if (widget.marketplace.nome == '99Food') ...[
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const ConfiguracaoEntrega99FoodScreen()),
-                      ),
-                      icon: const Icon(Icons.map_outlined),
-                      label: const Text('Configurar zonas de entrega da 99Food'),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _observacoesController,
-                    decoration: const InputDecoration(labelText: 'Observações'),
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: _salvar,
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
-                    child: const Text('Salvar'),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
     );
   }
 }
