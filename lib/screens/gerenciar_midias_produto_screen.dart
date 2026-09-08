@@ -126,11 +126,16 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
 
       final bytesOriginais = await arquivo.readAsBytes();
       if (!mounted) return;
-      final bytesParaRecorte = await prepararImagemParaRecorte(bytesOriginais);
+      final imagemParaRecorte = await prepararImagemParaRecorte(bytesOriginais);
       if (!mounted) return;
 
       final bytesRecortados = await Navigator.of(context).push<Uint8List>(
-        MaterialPageRoute(builder: (_) => CortarImagemScreen(imagem: bytesParaRecorte)),
+        MaterialPageRoute(
+          builder: (_) => CortarImagemScreen(
+            imagem: imagemParaRecorte.bytes,
+            proporcaoConhecida: imagemParaRecorte.proporcao,
+          ),
+        ),
       );
       if (bytesRecortados == null || !mounted) return;
 

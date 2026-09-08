@@ -17,7 +17,22 @@ class CortarImagemScreen extends StatefulWidget {
   /// um recorte de formato errado ficaria mal enquadrado nos dois.
   final double? aspectRatio;
 
-  const CortarImagemScreen({super.key, required this.imagem, this.aspectRatio});
+  /// Proporção real da imagem (largura/altura), quando quem chamou já
+  /// decodificou a imagem antes (ex: `prepararImagemParaRecorte`) e já sabe
+  /// esse valor — evita decodificar a mesma imagem de novo só pra descobrir
+  /// a proporção, e principalmente evita que essa 2ª decodificação divirja
+  /// da 1ª (achado real: o resultado batia diferente em algum caso,
+  /// deixando o recorte inicial menor que a imagem inteira — sintoma de
+  /// "abre já cortado no centro"). Se não informado, decodifica a própria
+  /// `imagem` recebida pra descobrir (comportamento de antes).
+  final double? proporcaoConhecida;
+
+  const CortarImagemScreen({
+    super.key,
+    required this.imagem,
+    this.aspectRatio,
+    this.proporcaoConhecida,
+  });
 
   @override
   State<CortarImagemScreen> createState() => _CortarImagemScreenState();
@@ -31,7 +46,11 @@ class _CortarImagemScreenState extends State<CortarImagemScreen> {
   @override
   void initState() {
     super.initState();
-    _carregarProporcao();
+    if (widget.proporcaoConhecida != null) {
+      _proporcaoImagem = widget.proporcaoConhecida;
+    } else {
+      _carregarProporcao();
+    }
   }
 
   /// O pacote `crop_your_image` inicia o recorte como um quadrado (aspect

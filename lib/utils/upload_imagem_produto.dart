@@ -75,17 +75,36 @@ Future<String> uploadImagemProduto({
   return supabase.storage.from('produtos').getPublicUrl(path);
 }
 
+/// Bytes já reduzidos pra tela de recorte + a proporção real da imagem
+/// (largura/altura), calculada na MESMA decodificação que gerou os bytes —
+/// evita que a tela de recorte precise decodificar de novo só pra descobrir
+/// a proporção (2ª decodificação que, num caso real, divergiu da 1ª e
+/// deixava o recorte inicial menor que a imagem inteira).
+class ImagemParaRecorte {
+  final Uint8List bytes;
+  /// Null quando a decodificação falhou — quem chama deve deixar a tela de
+  /// recorte descobrir a proporção sozinha nesse caso (fallback original).
+  final double? proporcao;
+  const ImagemParaRecorte({required this.bytes, required this.proporcao});
+}
+
 /// Reduz a imagem ANTES de abrir a tela de recorte — mantém transparência
 /// (sempre devolve PNG, que suporta alfa) porque o enquadramento precisa
 /// mostrar o fundo removido de verdade; só vira branco depois, no upload
 /// final. Ver `_decodificarReduzido` sobre por que isso usa `dart:ui` (rápido
 /// em qualquer plataforma, inclusive web) em vez do pacote `image`.
-Future<Uint8List> prepararImagemParaRecorte(Uint8List bytes) async {
+Future<ImagemParaRecorte> prepararImagemParaRecorte(Uint8List bytes) async {
   final imagemReduzida = await _decodificarReduzido(bytes, _larguraMaximaParaRecortePx);
-  if (imagemReduzida == null) return bytes;
+  if (imagemReduzida == null) {
+    return ImagemParaRecorte(bytes: bytes, proporcao: null);
+  }
+  final proporcao = imagemReduzida.width / imagemReduzida.height;
   final png = await imagemReduzida.toByteData(format: ui.ImageByteFormat.png);
   imagemReduzida.dispose();
-  return png?.buffer.asUint8List() ?? bytes;
+  return ImagemParaRecorte(
+    bytes: png?.buffer.asUint8List() ?? bytes,
+    proporcao: proporcao,
+  );
 }
 
 /// Decodifica (já reduzindo, via `targetWidth`) usando a engine do Flutter
