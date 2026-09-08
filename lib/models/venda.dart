@@ -98,6 +98,7 @@ class Venda {
   final double? custoEntregaReal; // pedidos.custo_entrega_valor — custo real de entrega própria (modo fixo/km configurado em empresas), null se retirada/modo ainda não suportado
   final double? taxaComissaoMarketplace; // marketplace_pedidos.taxa_comissao — comissão real cobrada pelo iFood/99Food, calculada por calcular_comissao_marketplace()
   final double? taxaGatewayMarketplace; // marketplace_pedidos.taxa_gateway — taxa de pagamento online do marketplace (ex: 3,5% do contrato do iFood), separada da comissão
+  final double? promocaoReembolsadaIfood; // marketplace_pedidos.incentivo_promocional_ifood — quanto do desconto dado ao cliente foi custeado pelo iFood (não pela loja); dinheiro real que a loja recebe de volta, confirmado no Extrato Financeiro como lançamento "Promoção custeada pelo iFood"
   final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
   final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
@@ -181,6 +182,7 @@ class Venda {
     this.custoEntregaReal,
     this.taxaComissaoMarketplace,
     this.taxaGatewayMarketplace,
+    this.promocaoReembolsadaIfood,
     this.taxaServicoCliente,
     this.campanhaMarketplace,
     this.cupomMarketplace,
@@ -258,6 +260,7 @@ class Venda {
     double? custoEntregaReal,
     double? taxaComissaoMarketplace,
     double? taxaGatewayMarketplace,
+    double? promocaoReembolsadaIfood,
     double? taxaServicoCliente,
     String? campanhaMarketplace,
     String? cupomMarketplace,
@@ -326,6 +329,7 @@ class Venda {
       custoEntregaReal: custoEntregaReal ?? this.custoEntregaReal,
       taxaComissaoMarketplace: taxaComissaoMarketplace ?? this.taxaComissaoMarketplace,
       taxaGatewayMarketplace: taxaGatewayMarketplace ?? this.taxaGatewayMarketplace,
+      promocaoReembolsadaIfood: promocaoReembolsadaIfood ?? this.promocaoReembolsadaIfood,
       taxaServicoCliente: taxaServicoCliente ?? this.taxaServicoCliente,
       campanhaMarketplace: campanhaMarketplace ?? this.campanhaMarketplace,
       cupomMarketplace: cupomMarketplace ?? this.cupomMarketplace,
@@ -399,7 +403,8 @@ class Venda {
         (taxaMaquininha ?? 0) -
         (mercadoPagoTaxa ?? 0) -
         (ehMarketplace ? (taxaComissaoMarketplace ?? 0) : 0) -
-        (ehMarketplace ? (taxaGatewayMarketplace ?? 0) : 0);
+        (ehMarketplace ? (taxaGatewayMarketplace ?? 0) : 0) +
+        (ehMarketplace ? (promocaoReembolsadaIfood ?? 0) : 0);
   }
 
   /// "Pagamento Online" (rótulo genérico gravado no site pra qualquer

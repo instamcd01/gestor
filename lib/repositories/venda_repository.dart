@@ -28,7 +28,7 @@ class VendaRepository {
       'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
       'codigo_retirada_exibicao, link_confirmacao_entrega, agendado, entrega_prevista_inicio, entrega_prevista_fim, '
       'taxa_servico_cliente, campanha_marketplace, cupom_marketplace, politica_substituicao, entregador_tipo, '
-      'taxa_comissao, taxa_gateway)';
+      'taxa_comissao, taxa_gateway, incentivo_promocional_ifood)';
   // previsao_entrega_inicio/fim já vêm no '*' de pedidos (coluna própria,
   // não de marketplace_pedidos) — sem precisar listar explicitamente.
 
@@ -415,6 +415,7 @@ class VendaRepository {
       custoEntregaReal: (row['custo_entrega_valor'] as num?)?.toDouble(),
       taxaComissaoMarketplace: (marketplacePedidoRow?['taxa_comissao'] as num?)?.toDouble(),
       taxaGatewayMarketplace: (marketplacePedidoRow?['taxa_gateway'] as num?)?.toDouble(),
+      promocaoReembolsadaIfood: (marketplacePedidoRow?['incentivo_promocional_ifood'] as num?)?.toDouble(),
       taxaServicoCliente: (marketplacePedidoRow?['taxa_servico_cliente'] as num?)?.toDouble(),
       campanhaMarketplace: marketplacePedidoRow?['campanha_marketplace']?.toString(),
       cupomMarketplace: marketplacePedidoRow?['cupom_marketplace']?.toString(),

@@ -1314,6 +1314,15 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               if (venda.ehMarketplace && venda.taxaGatewayMarketplace != null)
                 _linhaValor('Taxa pagamento (marketplace)', -venda.taxaGatewayMarketplace!, currencyFormat,
                     cor: corLaranja),
+              // Quando o iFood banca parte do desconto dado ao cliente, ele
+              // devolve esse valor separado pra loja (lançamento real
+              // "Promoção custeada pelo iFood" no Extrato Financeiro) — só
+              // aparece quando existir, igual as demais linhas do card.
+              if (venda.ehMarketplace &&
+                  venda.promocaoReembolsadaIfood != null &&
+                  venda.promocaoReembolsadaIfood! > 0)
+                _linhaValor('Reembolso promoção iFood', venda.promocaoReembolsadaIfood!, currencyFormat,
+                    cor: corVerde),
               _linhaValor('Lucro líquido real', venda.lucroLiquidoReal, currencyFormat,
                   cor: corVerde, destaque: true),
               _linhaValor(
