@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -13,28 +15,9 @@ const _qualidadeJpeg = 82;
 /// Largura máxima (px) só pra tela de recorte — mais folgada que a final
 /// (1200px), suficiente pra enquadrar bem numa tela de celular sem carregar
 /// o arquivo bruto do picker inteiro (uma foto com fundo removido facilmente
-/// sai em 3000-4000px do app que gerou, bem mais do que qualquer tela
-/// precisa mostrar).
+/// sai em 3-4000px do app que gerou, bem mais do que qualquer tela precisa
+/// mostrar).
 const _larguraMaximaParaRecortePx = 1600;
-
-/// Reduz a imagem ANTES de abrir a tela de recorte — mantém transparência
-/// (sempre reencoda como PNG, que suporta alfa) porque o enquadramento
-/// precisa mostrar o fundo removido de verdade, não o branco final (isso só
-/// acontece no upload, depois do recorte). Roda em isolate separada — sem
-/// isso, decodificar um arquivo de 3-4000px de um app de remoção de fundo
-/// trava a tela de recorte inteira até terminar. Se a imagem já for pequena
-/// ou a decodificação falhar, devolve os bytes originais sem processar.
-Future<Uint8List> prepararImagemParaRecorte(Uint8List bytes) =>
-    compute(_redimensionarParaRecorte, bytes);
-
-Uint8List _redimensionarParaRecorte(Uint8List bytesOriginais) {
-  final decodificada = img.decodeImage(bytesOriginais);
-  if (decodificada == null || decodificada.width <= _larguraMaximaParaRecortePx) {
-    return bytesOriginais;
-  }
-  final redimensionada = img.copyResize(decodificada, width: _larguraMaximaParaRecortePx);
-  return Uint8List.fromList(img.encodePng(redimensionada));
-}
 
 /// Faz upload de uma imagem de produto pro bucket `produtos` do Supabase
 /// Storage e retorna a URL pública. Antes de subir, redimensiona (largura
@@ -77,11 +60,7 @@ Future<String> uploadImagemProduto({
   String? fabricante,
   String? marca,
 }) async {
-  // Decodificar/redimensionar/achatar fundo é pesado (PNG com transparência
-  // mais ainda — decodificação mais lenta + composição alfa extra) e rodava
-  // direto na isolate da UI, travando a tela inteira durante o processamento.
-  // `compute` roda numa isolate separada.
-  final bytesProcessados = await compute(_comprimirEAchatarFundo, bytes);
+  final bytesProcessados = await _redimensionarEAchatarFundo(bytes, _larguraMaximaPx);
 
   final fabricanteSlug = _slugify(_resolverFabricante(fabricante, nomeProduto, marca));
   final baseNome = _codigoBarrasValido(codigoBarras) ? codigoBarras.trim() : produtoId;
@@ -96,26 +75,98 @@ Future<String> uploadImagemProduto({
   return supabase.storage.from('produtos').getPublicUrl(path);
 }
 
-/// Redimensiona e recodifica como JPEG com fundo branco. Se a decodificação
-/// falhar por algum motivo (formato inesperado etc), sobe os bytes
-/// originais sem processar — nunca bloqueia o upload por causa disso.
-Uint8List _comprimirEAchatarFundo(Uint8List bytesOriginais) {
-  final decodificada = img.decodeImage(bytesOriginais);
+/// Reduz a imagem ANTES de abrir a tela de recorte — mantém transparência
+/// (sempre devolve PNG, que suporta alfa) porque o enquadramento precisa
+/// mostrar o fundo removido de verdade; só vira branco depois, no upload
+/// final. Ver `_decodificarReduzido` sobre por que isso usa `dart:ui` (rápido
+/// em qualquer plataforma, inclusive web) em vez do pacote `image`.
+Future<Uint8List> prepararImagemParaRecorte(Uint8List bytes) async {
+  final imagemReduzida = await _decodificarReduzido(bytes, _larguraMaximaParaRecortePx);
+  if (imagemReduzida == null) return bytes;
+  final png = await imagemReduzida.toByteData(format: ui.ImageByteFormat.png);
+  imagemReduzida.dispose();
+  return png?.buffer.asUint8List() ?? bytes;
+}
+
+/// Decodifica (já reduzindo, via `targetWidth`) usando a engine do Flutter
+/// (`dart:ui`/Skia) — a mesma que todo `Image.network`/`Image.memory` do app
+/// já usa — em vez do pacote `image`, que é decodificação pura em Dart.
+///
+/// Isso importa especialmente na web: `compute()` (usado antes aqui) NÃO
+/// roda em isolate de verdade nesse ambiente — é uma limitação documentada
+/// do próprio Flutter (não existe isolate real no Dart compilado pra web),
+/// então a função continuava rodando no mesmo thread da UI, travando a
+/// aba inteira mesmo "rodando em isolate separada". `dart:ui` não tem esse
+/// problema — decodifica/redimensiona usando a engine nativa (Skia/CanvasKit
+/// na web), rápido e sem travar em qualquer plataforma.
+///
+/// Não verifica se a imagem já é menor que `larguraMaxima` antes de pedir o
+/// `targetWidth` (evitaria um 2º decode só pra descobrir o tamanho, que
+/// anularia o ganho de performance) — no pior caso (imagem já pequena),
+/// o decoder não amplia a imagem além do tamanho original.
+Future<ui.Image?> _decodificarReduzido(Uint8List bytes, int larguraMaxima) async {
+  try {
+    final codec = await ui.instantiateImageCodec(bytes, targetWidth: larguraMaxima);
+    final frame = await codec.getNextFrame();
+    return frame.image;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Redimensiona (via `dart:ui`, ver `_decodificarReduzido`) e achata
+/// qualquer transparência pra fundo branco desenhando num canvas nativo —
+/// só a codificação final como JPEG usa o pacote `image` em Dart puro, e só
+/// depois de já reduzida (rápido mesmo sem isolate de verdade, caso da web).
+/// Se a decodificação falhar por algum motivo (formato inesperado etc),
+/// sobe os bytes originais sem processar — nunca bloqueia o upload por
+/// causa disso.
+Future<Uint8List> _redimensionarEAchatarFundo(Uint8List bytesOriginais, int larguraMaxima) async {
+  final decodificada = await _decodificarReduzido(bytesOriginais, larguraMaxima);
   if (decodificada == null) return bytesOriginais;
 
-  final redimensionada = decodificada.width > _larguraMaximaPx
-      ? img.copyResize(decodificada, width: _larguraMaximaPx)
-      : decodificada;
+  final largura = decodificada.width;
+  final altura = decodificada.height;
 
-  final comFundoBranco = img.Image(
-    width: redimensionada.width,
-    height: redimensionada.height,
-    numChannels: 3,
+  final recorder = ui.PictureRecorder();
+  final canvas = ui.Canvas(recorder);
+  canvas.drawRect(
+    ui.Rect.fromLTWH(0, 0, largura.toDouble(), altura.toDouble()),
+    ui.Paint()..color = const ui.Color(0xFFFFFFFF),
   );
-  img.fill(comFundoBranco, color: img.ColorRgb8(255, 255, 255));
-  img.compositeImage(comFundoBranco, redimensionada);
+  canvas.drawImage(decodificada, ui.Offset.zero, ui.Paint());
+  final composta = await recorder.endRecording().toImage(largura, altura);
+  decodificada.dispose();
 
-  return img.encodeJpg(comFundoBranco, quality: _qualidadeJpeg);
+  final bytesRgba = await composta.toByteData(format: ui.ImageByteFormat.rawRgba);
+  composta.dispose();
+  if (bytesRgba == null) return bytesOriginais;
+
+  final dadosCrus = _DadosImagemCrua(
+    bytes: bytesRgba.buffer.asUint8List(),
+    largura: largura,
+    altura: altura,
+  );
+  return compute(_codificarJpeg, dadosCrus);
+}
+
+/// Só pra atravessar a fronteira do `compute()` com um argumento só.
+class _DadosImagemCrua {
+  final Uint8List bytes;
+  final int largura;
+  final int altura;
+  const _DadosImagemCrua({required this.bytes, required this.largura, required this.altura});
+}
+
+Uint8List _codificarJpeg(_DadosImagemCrua dados) {
+  final imagem = img.Image.fromBytes(
+    width: dados.largura,
+    height: dados.altura,
+    bytes: dados.bytes.buffer,
+    numChannels: 4,
+    order: img.ChannelOrder.rgba,
+  );
+  return img.encodeJpg(imagem, quality: _qualidadeJpeg);
 }
 
 /// "0" e vazio são os dois jeitos que este banco usa pra dizer "sem código
