@@ -22,6 +22,7 @@ import '../widgets/marketplace_config_card.dart';
 import 'cancelamentos_ifood_screen.dart';
 import 'historico_reconciliacao_screen.dart';
 import 'qualidade_ifood_screen.dart';
+import 'recebiveis_ifood_screen.dart';
 import 'ruptura_ifood_screen.dart';
 
 /// Tela dedicada da integração com o iFood — pausa/retomar loja, indicador
@@ -50,6 +51,7 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
   bool _exportando = false;
   bool _enviandoEstoque = false;
   bool _enviandoFinanceiro = false;
+  bool _enviandoExtrato = false;
 
   @override
   void initState() {
@@ -526,6 +528,68 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
     }
   }
 
+  /// Envia o relatório "Extrato Financeiro" — diferente dos outros 2, não
+  /// tem conceito de checkpoint/período (idempotente pelo `id_lancamento` de
+  /// cada linha), e a resposta do webhook (a planilha de catálogo, sempre
+  /// gerada pelo fluxo principal) não é o ponto aqui — só confirma a
+  /// contagem de lançamentos registrados em `marketplace_lancamentos_financeiros`.
+  Future<void> _enviarExtratoFinanceiro() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      withData: true,
+    );
+    if (result == null || !mounted) return;
+
+    final bytesArquivo = result.files.single.bytes;
+    if (bytesArquivo == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível ler o arquivo selecionado.')));
+      }
+      return;
+    }
+
+    setState(() => _enviandoExtrato = true);
+
+    try {
+      final linhas = utf8.decode(bytesArquivo).split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+      if (linhas.isEmpty) {
+        throw Exception('Arquivo vazio ou formato inválido.');
+      }
+      final registros = linhas.map((l) => jsonDecode(l) as Map<String, dynamic>).toList();
+
+      final primeiro = registros.first;
+      final ehORelatorioCerto = primeiro.containsKey('id_lancamento') && primeiro.containsKey('tipo_de_lancamento');
+      if (!ehORelatorioCerto) {
+        throw Exception('Esse arquivo não parece ser o Extrato Financeiro — selecionou o relatório errado?');
+      }
+
+      final corpo = {'empresa_id': empresaId, 'lancamentos_relatorio': registros};
+
+      final resposta = await http.post(
+        Uri.parse(_urlWebhookReconciliacao),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(corpo),
+      );
+
+      if (resposta.statusCode != 200) {
+        throw Exception('O servidor recusou o envio (${resposta.statusCode}). Tente de novo em instantes.');
+      }
+
+      final mensagem = '${registros.length} lançamento(s) do Extrato Financeiro registrado(s).';
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensagem)));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao enviar relatório: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _enviandoExtrato = false);
+    }
+  }
+
   Widget _cardEnviarRelatorio() {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -554,6 +618,16 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.chevron_right),
             onTap: _enviandoFinanceiro ? null : () => _enviarRelatorio(financeiro: true),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.upload_file_outlined, color: Colors.deepOrange),
+            title: const Text('Extrato Financeiro'),
+            subtitle: const Text('Recebíveis reais — libera só 3-4 semanas depois do pedido'),
+            trailing: _enviandoExtrato
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.chevron_right),
+            onTap: _enviandoExtrato ? null : _enviarExtratoFinanceiro,
           ),
         ],
       ),
@@ -622,6 +696,16 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
                     subtitle: const Text('Motivo real de cada pedido cancelado — loja, cliente ou iFood'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CancelamentosIfoodScreen())),
+                  ),
+                ),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: const Icon(Icons.account_balance_outlined, color: Colors.green),
+                    title: const Text('Recebíveis iFood'),
+                    subtitle: const Text('Quando e quanto o iFood deposita, com conferência real vs. estimado'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecebiveisIfoodScreen())),
                   ),
                 ),
                 MarketplaceConfigCard(
