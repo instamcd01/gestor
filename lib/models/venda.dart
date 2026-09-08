@@ -377,22 +377,30 @@ class Venda {
   /// cancelamento comum (que nunca chegou a cobrar, nada a devolver).
   bool get estornadoOnline => mercadoPagoEstornadoEm != null;
 
-  /// `lucroTotal` (calculado só a partir do custo dos produtos) menos TODO
-  /// custo/taxa operacional real conhecido pra essa venda: embalagem,
-  /// entrega própria, maquininha (cartão na entrega/loja), taxa do Mercado
-  /// Pago (pagamento online) e comissão de marketplace (iFood/99Food) —
-  /// cada um só entra na conta quando existir (pedidos sem essas
-  /// configurações continuam mostrando só o lucro de produto, sem inventar
-  /// custo). É o número final de "quanto sobrou de verdade", usado em vez
-  /// de `lucroTotal` sozinho na tela de detalhe da venda.
-  double get lucroLiquidoReal =>
-      lucroTotal -
-      (custoEmbalagem ?? 0) -
-      (custoEntregaReal ?? 0) -
-      (taxaMaquininha ?? 0) -
-      (mercadoPagoTaxa ?? 0) -
-      (ehMarketplace ? (taxaComissaoMarketplace ?? 0) : 0) -
-      (ehMarketplace ? (taxaGatewayMarketplace ?? 0) : 0);
+  /// Enquanto o pedido ainda não está `entregue`+`pago`, `lucroTotal` reflete
+  /// só a margem de produto (trigger `atualizar_totais_pedido`, que roda a
+  /// cada item inserido/alterado — ver `pedidos.lucro_bruto` no banco) — aí
+  /// sim faz sentido descontar aqui embalagem, entrega própria, maquininha,
+  /// taxa do Mercado Pago e comissão/taxa de marketplace, pra mostrar uma
+  /// estimativa de "quanto sobra de verdade" antes do pedido fechar.
+  ///
+  /// Assim que o pedido vira `entregue`+`pago`, o servidor (trigger
+  /// `calcular_lucro_pedido`) já SOBRESCREVE `lucroTotal` com o lucro
+  /// líquido completo (produto − esses mesmos custos operacionais e taxas
+  /// de marketplace) — descontar de novo aqui contaria o mesmo custo 2x.
+  /// Bug real encontrado 08/09: pedido iFood de R$200,77 mostrava "Lucro
+  /// líquido real" de R$18,83 quando o valor certo era R$43,41 (dupla
+  /// subtração da comissão/taxa de gateway/embalagem/entrega).
+  double get lucroLiquidoReal {
+    if (finalizada && statusPagamento == 'pago') return lucroTotal;
+    return lucroTotal -
+        (custoEmbalagem ?? 0) -
+        (custoEntregaReal ?? 0) -
+        (taxaMaquininha ?? 0) -
+        (mercadoPagoTaxa ?? 0) -
+        (ehMarketplace ? (taxaComissaoMarketplace ?? 0) : 0) -
+        (ehMarketplace ? (taxaGatewayMarketplace ?? 0) : 0);
+  }
 
   /// "Pagamento Online" (rótulo genérico gravado no site pra qualquer
   /// meio pago via Mercado Pago) detalhado pra forma real usada — sem

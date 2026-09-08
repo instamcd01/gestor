@@ -1268,10 +1268,18 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+            // Uma vez entregue+pago, o servidor já sobrescreve lucroTotal com
+            // o lucro líquido completo (ver Venda.lucroLiquidoReal) — o
+            // rótulo "(só produto)" só é verdade enquanto o pedido ainda
+            // está em andamento, senão mostraria o valor líquido com nome
+            // de bruto (mesma confusão que gerou o bug de dupla subtração
+            // encontrado 08/09).
             _linhaValor('Custo Total', venda.custoTotal, currencyFormat, cor: corLaranja),
-            _linhaValor('Lucro Total (só produto)', venda.lucroTotal, currencyFormat, cor: corVerde),
             _linhaValor(
-              'Margem (só produto)',
+                venda.finalizada && venda.statusPagamento == 'pago' ? 'Lucro Total' : 'Lucro Total (só produto)',
+                venda.lucroTotal, currencyFormat, cor: corVerde),
+            _linhaValor(
+              venda.finalizada && venda.statusPagamento == 'pago' ? 'Margem' : 'Margem (só produto)',
               null,
               currencyFormat,
               textoCustomizado: venda.valorTotal > 0
