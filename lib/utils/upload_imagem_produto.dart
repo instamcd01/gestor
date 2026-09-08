@@ -10,6 +10,32 @@ import '../config/supabase_config.dart';
 const _larguraMaximaPx = 1200;
 const _qualidadeJpeg = 82;
 
+/// Largura máxima (px) só pra tela de recorte — mais folgada que a final
+/// (1200px), suficiente pra enquadrar bem numa tela de celular sem carregar
+/// o arquivo bruto do picker inteiro (uma foto com fundo removido facilmente
+/// sai em 3000-4000px do app que gerou, bem mais do que qualquer tela
+/// precisa mostrar).
+const _larguraMaximaParaRecortePx = 1600;
+
+/// Reduz a imagem ANTES de abrir a tela de recorte — mantém transparência
+/// (sempre reencoda como PNG, que suporta alfa) porque o enquadramento
+/// precisa mostrar o fundo removido de verdade, não o branco final (isso só
+/// acontece no upload, depois do recorte). Roda em isolate separada — sem
+/// isso, decodificar um arquivo de 3-4000px de um app de remoção de fundo
+/// trava a tela de recorte inteira até terminar. Se a imagem já for pequena
+/// ou a decodificação falhar, devolve os bytes originais sem processar.
+Future<Uint8List> prepararImagemParaRecorte(Uint8List bytes) =>
+    compute(_redimensionarParaRecorte, bytes);
+
+Uint8List _redimensionarParaRecorte(Uint8List bytesOriginais) {
+  final decodificada = img.decodeImage(bytesOriginais);
+  if (decodificada == null || decodificada.width <= _larguraMaximaParaRecortePx) {
+    return bytesOriginais;
+  }
+  final redimensionada = img.copyResize(decodificada, width: _larguraMaximaParaRecortePx);
+  return Uint8List.fromList(img.encodePng(redimensionada));
+}
+
 /// Faz upload de uma imagem de produto pro bucket `produtos` do Supabase
 /// Storage e retorna a URL pública. Antes de subir, redimensiona (largura
 /// máx. 1200px) e recodifica sempre como JPEG com fundo branco — achata

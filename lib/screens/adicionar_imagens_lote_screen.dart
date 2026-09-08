@@ -100,8 +100,10 @@ class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen>
   }
 
   Future<void> _recortarItem(_ItemImagemLote item) async {
+    final bytesParaRecorte = await prepararImagemParaRecorte(item.bytes);
+    if (!mounted) return;
     final resultado = await Navigator.of(context).push<Uint8List>(
-      MaterialPageRoute(builder: (_) => CortarImagemScreen(imagem: item.bytes)),
+      MaterialPageRoute(builder: (_) => CortarImagemScreen(imagem: bytesParaRecorte)),
     );
     if (resultado == null || !mounted) return;
     setState(() => item.bytes = resultado);
