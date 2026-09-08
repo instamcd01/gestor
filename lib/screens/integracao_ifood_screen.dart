@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -36,10 +39,14 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
   final _interrupcaoRepository = InterrupcaoMarketplaceRepository();
   final _historicoRepository = ReconciliacaoHistoricoRepository();
 
+  static const _urlWebhookReconciliacao = 'https://n8n.lukz.com.br/webhook/ifood-reconciliacao-relatorios';
+
   MarketplaceConfig? _config;
   InterrupcaoMarketplace? _interrupcaoAtiva;
   bool _carregando = true;
   bool _exportando = false;
+  bool _enviandoEstoque = false;
+  bool _enviandoFinanceiro = false;
 
   @override
   void initState() {
@@ -403,6 +410,153 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
     }
   }
 
+  /// Envia um relatório JSON (NDJSON — uma linha = um pedido/item) baixado
+  /// manualmente do Portal do Parceiro pro mesmo webhook n8n que eu (Claude
+  /// Code) chamava via curl — o backend já sabe casar produto por EAN, baixar
+  /// estoque ou fechar financeiro, atualizar checkpoint (protegido por
+  /// LEAST(), nunca avança além do que o iFood já liberou) e devolver a
+  /// planilha de catálogo atualizada, pronta pra subir de volta no portal.
+  Future<void> _enviarRelatorio({required bool financeiro}) async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      withData: true,
+    );
+    if (result == null || !mounted) return;
+
+    final bytesArquivo = result.files.single.bytes;
+    if (bytesArquivo == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível ler o arquivo selecionado.')));
+      }
+      return;
+    }
+
+    setState(() {
+      if (financeiro) {
+        _enviandoFinanceiro = true;
+      } else {
+        _enviandoEstoque = true;
+      }
+    });
+
+    try {
+      final linhas = utf8.decode(bytesArquivo).split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+      if (linhas.isEmpty) {
+        throw Exception('Arquivo vazio ou formato inválido.');
+      }
+      final registros = linhas.map((l) => jsonDecode(l) as Map<String, dynamic>).toList();
+
+      final primeiro = registros.first;
+      final ehORelatorioCerto = financeiro
+          ? primeiro.containsKey('id_pedido_ifood') &&
+              (primeiro.containsKey('valor_do_pedido') || primeiro.containsKey('status_pedido'))
+          : primeiro.containsKey('id_pedido_ifood') && primeiro.containsKey('sku');
+      if (!ehORelatorioCerto) {
+        throw Exception('Esse arquivo não parece ser o relatório certo — selecionou o relatório errado?');
+      }
+
+      // periodo_ate vem do próprio conteúdo do arquivo (maior data entre as
+      // linhas), não é digitado — o arquivo já diz qual período é.
+      String? maiorData;
+      for (final registro in registros) {
+        final dt = financeiro ? registro['dt']?.toString() : (registro['dt_pedido'] ?? registro['dt'])?.toString();
+        if (dt != null && (maiorData == null || dt.compareTo(maiorData) > 0)) {
+          maiorData = dt;
+        }
+      }
+      if (maiorData == null) {
+        throw Exception('Não achei nenhuma data válida nesse arquivo.');
+      }
+
+      final corpo = financeiro
+          ? {'empresa_id': empresaId, 'pedidos_relatorio': registros, 'periodo_ate_financeiro': maiorData}
+          : {'empresa_id': empresaId, 'itens_relatorio': registros, 'periodo_ate_estoque': maiorData};
+
+      final resposta = await http.post(
+        Uri.parse(_urlWebhookReconciliacao),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(corpo),
+      );
+
+      if (resposta.statusCode != 200) {
+        throw Exception('O servidor recusou o envio (${resposta.statusCode}). Tente de novo em instantes.');
+      }
+
+      final contentType = resposta.headers['content-type'] ?? '';
+      if (!contentType.contains('spreadsheetml')) {
+        final texto = utf8.decode(resposta.bodyBytes);
+        throw Exception(texto.isEmpty ? 'Resposta inesperada do servidor.' : texto);
+      }
+
+      final mensagem = financeiro ? 'Financeiro conciliado até $maiorData.' : 'Estoque reconciliado até $maiorData.';
+      await Share.shareXFiles(
+        [
+          XFile.fromData(
+            resposta.bodyBytes,
+            name: 'catalogo_ifood_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx',
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          ),
+        ],
+        text: '$mensagem Catálogo atualizado em anexo, pronto pra subir no Portal do Parceiro.',
+      );
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensagem)));
+
+      await _carregar();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao enviar relatório: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (financeiro) {
+            _enviandoFinanceiro = false;
+          } else {
+            _enviandoEstoque = false;
+          }
+        });
+      }
+    }
+  }
+
+  Widget _cardEnviarRelatorio() {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(14, 14, 14, 4),
+            child: Text('Enviar relatório do iFood', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.upload_file_outlined, color: Colors.deepOrange),
+            title: const Text('Itens por pedido (estoque)'),
+            subtitle: const Text('Baixa o estoque dos pedidos concluídos'),
+            trailing: _enviandoEstoque
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.chevron_right),
+            onTap: _enviandoEstoque ? null : () => _enviarRelatorio(financeiro: false),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.upload_file_outlined, color: Colors.deepOrange),
+            title: const Text('Vendas e Pedidos (financeiro)'),
+            subtitle: const Text('Fecha o valor financeiro dos pedidos já com estoque baixado'),
+            trailing: _enviandoFinanceiro
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.chevron_right),
+            onTap: _enviandoFinanceiro ? null : () => _enviarRelatorio(financeiro: true),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _salvarConfig(MarketplaceConfig config) async {
     final empresaId = context.read<AuthProvider>().empresaId;
     if (empresaId == null) return;
@@ -426,6 +580,7 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
               children: [
                 _cardPausaLoja(),
                 _cardReconciliacao(),
+                _cardEnviarRelatorio(),
                 Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   child: ListTile(
