@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -52,7 +51,11 @@ Future<String> uploadImagemProduto({
   String? fabricante,
   String? marca,
 }) async {
-  final bytesProcessados = _comprimirEAchatarFundo(bytes);
+  // Decodificar/redimensionar/achatar fundo é pesado (PNG com transparência
+  // mais ainda — decodificação mais lenta + composição alfa extra) e rodava
+  // direto na isolate da UI, travando a tela inteira durante o processamento.
+  // `compute` roda numa isolate separada.
+  final bytesProcessados = await compute(_comprimirEAchatarFundo, bytes);
 
   final fabricanteSlug = _slugify(_resolverFabricante(fabricante, nomeProduto, marca));
   final baseNome = _codigoBarrasValido(codigoBarras) ? codigoBarras.trim() : produtoId;
