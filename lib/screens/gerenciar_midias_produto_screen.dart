@@ -117,6 +117,11 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
 
     setState(() => _processando = true);
     try {
+      // Busca a contagem direto do banco (não confia em `_imagens` em
+      // memória) — evita gravar numa `ordem` que colide com uma imagem que
+      // já existe no servidor mas ainda não chegou pra esta tela (ex: outra
+      // aba/dispositivo editando o mesmo produto ao mesmo tempo).
+      final proximaOrdem = await _contarImagensNoServidor() + 1;
       final url = await uploadImagemProduto(
         bytes: bytesRecortados,
         empresaId: _empresaId!,
@@ -125,14 +130,14 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
         codigoBarras: produto.codigoBarras,
         fabricante: produto.fabricante,
         marca: produto.empresa,
-        ordem: _imagens.length + 1,
+        ordem: proximaOrdem,
       );
       await _repo.inserir(
         produtoId: widget.produtoId,
         empresaId: _empresaId!,
         tipo: 'imagem',
         url: url,
-        ordem: _imagens.length + 1,
+        ordem: proximaOrdem,
       );
       await _carregar();
       _atualizarCacheDeProdutos();
@@ -144,6 +149,11 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
     } finally {
       if (mounted) setState(() => _processando = false);
     }
+  }
+
+  Future<int> _contarImagensNoServidor() async {
+    final midias = await _repo.listar(widget.produtoId);
+    return midias.where((m) => m.isImagem).length;
   }
 
   Future<void> _recortarImagemExistente(ProdutoMidia midia) async {
@@ -195,7 +205,14 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
     setState(() => _processando = true);
     try {
       await _repo.remover(midia.id);
-      final restantes = _imagens.where((m) => m.id != midia.id).map((m) => m.id).toList();
+      // Busca a lista atual direto do banco (não confia em `_imagens` em
+      // memória, que pode estar desatualizada) antes de renumerar — senão a
+      // renumeração pode tentar gravar numa `ordem` que já pertence a uma
+      // imagem que existe no servidor mas não está nesta lista em memória,
+      // batendo na constraint de unicidade.
+      // `_repo.listar` já vem ordenado por `ordem` ascendente.
+      final midiasAtuais = await _repo.listar(widget.produtoId);
+      final restantes = midiasAtuais.where((m) => m.isImagem && m.id != midia.id).map((m) => m.id).toList();
       if (restantes.isNotEmpty) {
         await _repo.reordenar(restantes);
       }
