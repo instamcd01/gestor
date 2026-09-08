@@ -20,6 +20,8 @@ import '../repositories/marketplace_config_repository.dart';
 import '../repositories/reconciliacao_historico_repository.dart';
 import '../widgets/marketplace_config_card.dart';
 import 'historico_reconciliacao_screen.dart';
+import 'qualidade_ifood_screen.dart';
+import 'ruptura_ifood_screen.dart';
 
 /// Tela dedicada da integração com o iFood — pausa/retomar loja, indicador
 /// e histórico de reconciliação (estoque/financeiro), exportação de
@@ -589,6 +591,26 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
                     subtitle: const Text('Preço, estoque e status atuais, já no formato pra importar no Portal do Parceiro'),
                     trailing: _exportando ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.download),
                     onTap: _exportando ? null : _exportarCatalogo,
+                  ),
+                ),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: const Icon(Icons.star_outline, color: Colors.amber),
+                    title: const Text('Qualidade iFood'),
+                    subtitle: const Text('Nota de avaliação, NPS e reclamações por pedido'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const QualidadeIfoodScreen())),
+                  ),
+                ),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: const Icon(Icons.remove_shopping_cart_outlined, color: Colors.deepOrange),
+                    title: const Text('Ruptura iFood'),
+                    subtitle: const Text('Produtos que mais faltaram nos pedidos e quanto de venda se perdeu'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RupturaIfoodScreen())),
                   ),
                 ),
                 MarketplaceConfigCard(
