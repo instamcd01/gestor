@@ -19,6 +19,7 @@ import '../repositories/interrupcao_marketplace_repository.dart';
 import '../repositories/marketplace_config_repository.dart';
 import '../repositories/reconciliacao_historico_repository.dart';
 import '../widgets/marketplace_config_card.dart';
+import 'cancelamentos_ifood_screen.dart';
 import 'historico_reconciliacao_screen.dart';
 import 'qualidade_ifood_screen.dart';
 import 'ruptura_ifood_screen.dart';
@@ -611,6 +612,16 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
                     subtitle: const Text('Produtos que mais faltaram nos pedidos e quanto de venda se perdeu'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RupturaIfoodScreen())),
+                  ),
+                ),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: const Icon(Icons.cancel_outlined, color: Colors.red),
+                    title: const Text('Cancelamentos iFood'),
+                    subtitle: const Text('Motivo real de cada pedido cancelado — loja, cliente ou iFood'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CancelamentosIfoodScreen())),
                   ),
                 ),
                 MarketplaceConfigCard(
