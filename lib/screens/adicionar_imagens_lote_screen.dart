@@ -59,7 +59,10 @@ class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen>
   Future<void> _adicionarImagens() async {
     List<XFile> arquivos;
     try {
-      arquivos = await ImagePicker().pickMultiImage();
+      // Mesmo motivo de gerenciar_midias_produto_screen.dart: pedir pro
+      // seletor nativo já devolver reduzido evita decodificar em Dart o
+      // arquivo bruto (mais crítico ainda aqui, várias imagens de uma vez).
+      arquivos = await ImagePicker().pickMultiImage(maxWidth: 1600, maxHeight: 1600);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -103,7 +103,18 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       final picker = ImagePicker();
       XFile? arquivo;
       try {
-        arquivo = await picker.pickImage(source: ImageSource.gallery);
+        // maxWidth/maxHeight pedem pro seletor NATIVO da plataforma já
+        // devolver a imagem reduzida (decoder nativo, rápido) — sem isso o
+        // Dart tinha que decodificar o arquivo bruto do picker (uma foto com
+        // fundo removido facilmente sai em 3-4000px), o que sozinho já
+        // deixava a abertura da tela de recorte perceptivelmente lenta,
+        // mesmo rodando em isolate separada (prepararImagemParaRecorte
+        // continua como rede de segurança pro que passar disso).
+        arquivo = await picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1600,
+          maxHeight: 1600,
+        );
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
