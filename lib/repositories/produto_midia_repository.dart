@@ -49,22 +49,17 @@ class ProdutoMidiaRepository {
   }
 
   /// Renumera a `ordem` de uma lista de mídias (já na ordem final desejada,
-  /// índice 0 = ordem 1, etc). Feito em duas passadas com valores negativos
-  /// temporários pra nunca colidir com a constraint única
-  /// `(produto_id, tipo, ordem)` no meio do processo (ex: trocar quem é 1 e
-  /// quem é 2 direto daria conflito de unicidade na primeira atualização).
+  /// índice 0 = ordem 1, etc) — via RPC (`reordenar_midias_produto`) que
+  /// grava tudo numa transação só, com a constraint única
+  /// `(produto_id, tipo, ordem)` marcada `DEFERRABLE INITIALLY DEFERRED`
+  /// (só checada no fim da transação, não a cada UPDATE). Antes disso era
+  /// feito em 2 passadas no cliente com valores negativos temporários pra
+  /// evitar colisão — funcionava no caso limpo, mas quebrava de verdade
+  /// (`duplicate key`) sempre que já existia alguma linha presa em `ordem`
+  /// negativa de uma tentativa anterior interrompida (cada `.update()` do
+  /// cliente é sua própria transação, então o valor negativo temporário de
+  /// uma linha podia colidir com o valor negativo já persistido de outra).
   Future<void> reordenar(List<String> idsNaOrdemFinal) async {
-    for (var i = 0; i < idsNaOrdemFinal.length; i++) {
-      await supabase
-          .from('produto_midias')
-          .update({'ordem': -(i + 1)})
-          .eq('id', idsNaOrdemFinal[i]);
-    }
-    for (var i = 0; i < idsNaOrdemFinal.length; i++) {
-      await supabase
-          .from('produto_midias')
-          .update({'ordem': i + 1})
-          .eq('id', idsNaOrdemFinal[i]);
-    }
+    await supabase.rpc('reordenar_midias_produto', params: {'p_ids': idsNaOrdemFinal});
   }
 }

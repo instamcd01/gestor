@@ -39,6 +39,15 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
   bool _processando = false;
   String? _empresaId;
 
+  // O path da imagem no Storage é sempre o mesmo pro mesmo produto+posição
+  // (`upsert: true`, ver uploadImagemProduto) — trocar/recortar uma imagem
+  // grava um arquivo novo na MESMA url, então `Image.network` (que faz
+  // cache por url exata) continua mostrando o conteúdo antigo depois de
+  // uma troca. Um parâmetro que muda a cada `_carregar()` bem-sucedido
+  // força um cache miss sem precisar mudar o path real do arquivo.
+  int _cacheBuster = DateTime.now().millisecondsSinceEpoch;
+  String _comCacheBuster(String url) => '$url?cb=$_cacheBuster';
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +73,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
           ..sort((a, b) => a.ordem.compareTo(b.ordem));
         _videos = midias.where((m) => m.isVideo).toList()
           ..sort((a, b) => a.ordem.compareTo(b.ordem));
+        _cacheBuster = DateTime.now().millisecondsSinceEpoch;
       });
     } catch (e) {
       if (!mounted) return;
@@ -368,11 +378,11 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       child: Stack(
         children: [
           GestureDetector(
-            onTap: () => _abrirImagemEmTelaCheia(midia.url),
+            onTap: () => _abrirImagemEmTelaCheia(_comCacheBuster(midia.url)),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: Image.network(
-                midia.url,
+                _comCacheBuster(midia.url),
                 width: 110,
                 height: 110,
                 fit: BoxFit.cover,

@@ -89,6 +89,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   // depois de voltar dessa tela, já que ela pode ter alterado os dois.
   String? _imagemUrlAtual;
   String? _imagemUrlVersoAtual;
+  int _cacheBusterImagem = DateTime.now().millisecondsSinceEpoch;
 
   bool _isLoading = false;
   List<String> _categoriasExistentes = [];
@@ -392,6 +393,10 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       setState(() {
         _imagemUrlAtual = row['imagem_url'] as String? ?? '';
         _imagemUrlVersoAtual = row['imagem_url_secundaria'] as String?;
+        // A url do arquivo não muda quando a foto é trocada/recortada
+        // (mesmo path no Storage, `upsert: true`) — sem isso o
+        // `Image.network` continua mostrando a versão antiga em cache.
+        _cacheBusterImagem = DateTime.now().millisecondsSinceEpoch;
       });
     } catch (e) {
       debugPrint('Erro ao recarregar imagens do produto: $e');
@@ -702,7 +707,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                               color: colorScheme.surfaceContainerHighest,
                               child: (_imagemUrlAtual != null && _imagemUrlAtual!.isNotEmpty)
                                   ? Image.network(
-                                      _imagemUrlAtual!,
+                                      '$_imagemUrlAtual?cb=$_cacheBusterImagem',
                                       width: 120,
                                       height: 120,
                                       fit: BoxFit.cover,
