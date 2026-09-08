@@ -76,47 +76,57 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
   }
 
   Future<void> _adicionarImagem() async {
-    if (_imagens.length >= _maxImagens) return;
-
-    final picker = ImagePicker();
-    XFile? arquivo;
-    try {
-      arquivo = await picker.pickImage(source: ImageSource.gallery);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao selecionar imagem: $e')),
-      );
-      return;
-    }
-    if (arquivo == null) return;
-
-    final bytesOriginais = await arquivo.readAsBytes();
-    if (!mounted) return;
-
-    final bytesRecortados = await Navigator.of(context).push<Uint8List>(
-      MaterialPageRoute(builder: (_) => CortarImagemScreen(imagem: bytesOriginais)),
-    );
-    if (bytesRecortados == null || !mounted) return;
-
-    if (_empresaId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Empresa não identificada.')),
-      );
-      return;
-    }
-
-    final produto = context.read<ProdutoProvider>().getProdutoPorId(widget.produtoId);
-    if (produto == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Produto não encontrado.')),
-      );
-      return;
-    }
-
+    // Trava logo de cara, antes do seletor/recorte (que juntos podem levar
+    // vários segundos de interação do usuário) — sem isso, o botão
+    // "Adicionar" continua tocável durante essa janela inteira (só ficava
+    // `_processando` depois do recorte confirmado), e um segundo toque
+    // durante esse tempo dispara duas chamadas concorrentes desta função.
+    // Cada uma calcula a próxima `ordem` de forma independente (mesmo
+    // buscando do servidor — a corrida acontece entre a leitura de uma e a
+    // gravação da outra) e a segunda a terminar bate na constraint de
+    // unicidade `produto_midias_produto_tipo_ordem_unico`, às vezes depois
+    // de já ter subido a imagem pro Storage — sobra arquivo duplicado.
+    if (_imagens.length >= _maxImagens || _processando) return;
     setState(() => _processando = true);
+
     try {
+      final picker = ImagePicker();
+      XFile? arquivo;
+      try {
+        arquivo = await picker.pickImage(source: ImageSource.gallery);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao selecionar imagem: $e')),
+        );
+        return;
+      }
+      if (arquivo == null) return;
+
+      final bytesOriginais = await arquivo.readAsBytes();
+      if (!mounted) return;
+
+      final bytesRecortados = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(builder: (_) => CortarImagemScreen(imagem: bytesOriginais)),
+      );
+      if (bytesRecortados == null || !mounted) return;
+
+      if (_empresaId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Empresa não identificada.')),
+        );
+        return;
+      }
+
+      final produto = context.read<ProdutoProvider>().getProdutoPorId(widget.produtoId);
+      if (produto == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Produto não encontrado.')),
+        );
+        return;
+      }
+
       // Busca a contagem direto do banco (não confia em `_imagens` em
       // memória) — evita gravar numa `ordem` que colide com uma imagem que
       // já existe no servidor mas ainda não chegou pra esta tela (ex: outra
