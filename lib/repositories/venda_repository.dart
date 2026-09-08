@@ -28,7 +28,8 @@ class VendaRepository {
       'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
       'codigo_retirada_exibicao, link_confirmacao_entrega, agendado, entrega_prevista_inicio, entrega_prevista_fim, '
       'taxa_servico_cliente, campanha_marketplace, cupom_marketplace, politica_substituicao, entregador_tipo, '
-      'taxa_comissao, taxa_gateway, incentivo_promocional_ifood)';
+      'taxa_comissao, taxa_gateway, incentivo_promocional_ifood, taxa_entrega_marketplace, '
+      'taxa_entrega_paga, incentivo_promocional_loja)';
   // previsao_entrega_inicio/fim já vêm no '*' de pedidos (coluna própria,
   // não de marketplace_pedidos) — sem precisar listar explicitamente.
 
@@ -416,6 +417,9 @@ class VendaRepository {
       taxaComissaoMarketplace: (marketplacePedidoRow?['taxa_comissao'] as num?)?.toDouble(),
       taxaGatewayMarketplace: (marketplacePedidoRow?['taxa_gateway'] as num?)?.toDouble(),
       promocaoReembolsadaIfood: (marketplacePedidoRow?['incentivo_promocional_ifood'] as num?)?.toDouble(),
+      taxaEntregaMarketplace: (marketplacePedidoRow?['taxa_entrega_marketplace'] as num?)?.toDouble(),
+      taxaEntregaPagaMarketplace: (marketplacePedidoRow?['taxa_entrega_paga'] as num?)?.toDouble(),
+      custoPromocaoPropriaIfood: (marketplacePedidoRow?['incentivo_promocional_loja'] as num?)?.toDouble(),
       taxaServicoCliente: (marketplacePedidoRow?['taxa_servico_cliente'] as num?)?.toDouble(),
       campanhaMarketplace: marketplacePedidoRow?['campanha_marketplace']?.toString(),
       cupomMarketplace: marketplacePedidoRow?['cupom_marketplace']?.toString(),

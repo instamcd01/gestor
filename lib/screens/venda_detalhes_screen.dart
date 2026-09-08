@@ -1314,6 +1314,19 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               if (venda.ehMarketplace && venda.taxaGatewayMarketplace != null)
                 _linhaValor('Taxa pagamento (marketplace)', -venda.taxaGatewayMarketplace!, currencyFormat,
                     cor: corLaranja),
+              // Frete grátis bancado pela PRÓPRIA loja (não o iFood) — já
+              // embutido em valorTotal (não entra de novo na conta), só
+              // exibido informativamente pra mostrar quanto custou a
+              // promoção.
+              if (venda.ehMarketplace &&
+                  venda.custoPromocaoPropriaIfood != null &&
+                  venda.custoPromocaoPropriaIfood! > 0)
+                _linhaValor(
+                  venda.freteGratisIfood ? 'Frete grátis (custeado pela loja)' : 'Promoção própria (custeada pela loja)',
+                  -venda.custoPromocaoPropriaIfood!,
+                  currencyFormat,
+                  cor: corLaranja,
+                ),
               // Quando o iFood banca parte do desconto dado ao cliente, ele
               // devolve esse valor separado pra loja (lançamento real
               // "Promoção custeada pelo iFood" no Extrato Financeiro) — só

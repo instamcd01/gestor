@@ -164,6 +164,13 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       chips.add(_chipDestaque(context, Icons.confirmation_number_outlined, '#${venda.numeroExibicaoMarketplace}'));
     }
 
+    // Sinal direto do relatório do iFood (taxa_entrega_paga = 0 com taxa de
+    // entrega real existindo) — sem isso o lojista só descobria o frete
+    // grátis abrindo o detalhe do pedido.
+    if (venda.freteGratisIfood) {
+      chips.add(_chipInfo(context, Icons.money_off, 'Frete grátis'));
+    }
+
     if (venda.retirada) {
       chips.add(_chipInfo(context, Icons.storefront, 'Retirada'));
     } else {

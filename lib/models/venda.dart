@@ -99,6 +99,9 @@ class Venda {
   final double? taxaComissaoMarketplace; // marketplace_pedidos.taxa_comissao — comissão real cobrada pelo iFood/99Food, calculada por calcular_comissao_marketplace()
   final double? taxaGatewayMarketplace; // marketplace_pedidos.taxa_gateway — taxa de pagamento online do marketplace (ex: 3,5% do contrato do iFood), separada da comissão
   final double? promocaoReembolsadaIfood; // marketplace_pedidos.incentivo_promocional_ifood — quanto do desconto dado ao cliente foi custeado pelo iFood (não pela loja); dinheiro real que a loja recebe de volta, confirmado no Extrato Financeiro como lançamento "Promoção custeada pelo iFood"
+  final double? taxaEntregaMarketplace; // marketplace_pedidos.taxa_entrega_marketplace — valor da entrega cobrado do cliente (repassado à loja, não é mais descontado do lucro — ver Venda.lucroLiquidoReal)
+  final double? taxaEntregaPagaMarketplace; // marketplace_pedidos.taxa_entrega_paga — quanto o cliente REALMENTE pagou de entrega; 0 com taxaEntregaMarketplace>0 = frete grátis (ver Venda.freteGratisIfood)
+  final double? custoPromocaoPropriaIfood; // marketplace_pedidos.incentivo_promocional_loja — quanto do desconto (normalmente o frete grátis) a própria loja bancou, não o iFood; informativo, não entra no cálculo de lucro (já embutido em valorTotal)
   final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
   final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
@@ -183,6 +186,9 @@ class Venda {
     this.taxaComissaoMarketplace,
     this.taxaGatewayMarketplace,
     this.promocaoReembolsadaIfood,
+    this.taxaEntregaMarketplace,
+    this.taxaEntregaPagaMarketplace,
+    this.custoPromocaoPropriaIfood,
     this.taxaServicoCliente,
     this.campanhaMarketplace,
     this.cupomMarketplace,
@@ -261,6 +267,9 @@ class Venda {
     double? taxaComissaoMarketplace,
     double? taxaGatewayMarketplace,
     double? promocaoReembolsadaIfood,
+    double? taxaEntregaMarketplace,
+    double? taxaEntregaPagaMarketplace,
+    double? custoPromocaoPropriaIfood,
     double? taxaServicoCliente,
     String? campanhaMarketplace,
     String? cupomMarketplace,
@@ -330,6 +339,9 @@ class Venda {
       taxaComissaoMarketplace: taxaComissaoMarketplace ?? this.taxaComissaoMarketplace,
       taxaGatewayMarketplace: taxaGatewayMarketplace ?? this.taxaGatewayMarketplace,
       promocaoReembolsadaIfood: promocaoReembolsadaIfood ?? this.promocaoReembolsadaIfood,
+      taxaEntregaMarketplace: taxaEntregaMarketplace ?? this.taxaEntregaMarketplace,
+      taxaEntregaPagaMarketplace: taxaEntregaPagaMarketplace ?? this.taxaEntregaPagaMarketplace,
+      custoPromocaoPropriaIfood: custoPromocaoPropriaIfood ?? this.custoPromocaoPropriaIfood,
       taxaServicoCliente: taxaServicoCliente ?? this.taxaServicoCliente,
       campanhaMarketplace: campanhaMarketplace ?? this.campanhaMarketplace,
       cupomMarketplace: cupomMarketplace ?? this.cupomMarketplace,
@@ -406,6 +418,14 @@ class Venda {
         (ehMarketplace ? (taxaGatewayMarketplace ?? 0) : 0) +
         (ehMarketplace ? (promocaoReembolsadaIfood ?? 0) : 0);
   }
+
+  /// `true` quando o pedido tinha uma taxa de entrega real (`taxaEntregaMarketplace`)
+  /// mas o cliente não pagou nada por ela (`taxaEntregaPagaMarketplace == 0`) —
+  /// sinal direto do relatório do iFood, sem precisar inferir. Quando a
+  /// própria loja bancou esse frete grátis (não o iFood), o custo aparece
+  /// em `custoPromocaoPropriaIfood`.
+  bool get freteGratisIfood =>
+      ehMarketplace && (taxaEntregaMarketplace ?? 0) > 0 && (taxaEntregaPagaMarketplace ?? 0) == 0;
 
   /// "Pagamento Online" (rótulo genérico gravado no site pra qualquer
   /// meio pago via Mercado Pago) detalhado pra forma real usada — sem
