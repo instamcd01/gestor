@@ -75,17 +75,27 @@ Future<String> uploadImagemProduto({
   return supabase.storage.from('produtos').getPublicUrl(path);
 }
 
-/// Bytes já reduzidos pra tela de recorte + a proporção real da imagem
-/// (largura/altura), calculada na MESMA decodificação que gerou os bytes —
-/// evita que a tela de recorte precise decodificar de novo só pra descobrir
-/// a proporção (2ª decodificação que, num caso real, divergiu da 1ª e
-/// deixava o recorte inicial menor que a imagem inteira).
+/// Bytes já reduzidos pra tela de recorte + o tamanho real da imagem (em
+/// pixels), calculado na MESMA decodificação que gerou os bytes.
+///
+/// Confirmado no código-fonte do pacote `crop_your_image` (2.0.0,
+/// `calculator.dart`): `InitialRectBuilder.withSizeAndRatio` (usada antes
+/// aqui) deriva UMA dimensão a partir da proporção informada, em vez de usar
+/// as dimensões reais da imagem — se essa proporção não bater EXATAMENTE
+/// com o que o pacote calcula internamente pro retângulo da imagem
+/// renderizada (`imageRect`), o recorte inicial fica menor que a imagem
+/// inteira numa das dimensões. `InitialRectBuilder.withArea` (usada agora)
+/// não tem esse problema: recebe a área diretamente em pixels da imagem
+/// original (doc do pacote: "if the original image size is 1280x1024,
+/// Rect.fromLTWH(240, 212, 800, 600) covers exact center... regardless of
+/// viewport size") — passando `Rect.fromLTWH(0, 0, largura, altura)` cobre
+/// a imagem inteira sempre, sem depender de nenhuma conta de proporção.
 class ImagemParaRecorte {
   final Uint8List bytes;
   /// Null quando a decodificação falhou — quem chama deve deixar a tela de
-  /// recorte descobrir a proporção sozinha nesse caso (fallback original).
-  final double? proporcao;
-  const ImagemParaRecorte({required this.bytes, required this.proporcao});
+  /// recorte descobrir o tamanho sozinha nesse caso (fallback original).
+  final ui.Size? tamanho;
+  const ImagemParaRecorte({required this.bytes, required this.tamanho});
 }
 
 /// Reduz a imagem ANTES de abrir a tela de recorte — mantém transparência
@@ -96,14 +106,14 @@ class ImagemParaRecorte {
 Future<ImagemParaRecorte> prepararImagemParaRecorte(Uint8List bytes) async {
   final imagemReduzida = await _decodificarReduzido(bytes, _larguraMaximaParaRecortePx);
   if (imagemReduzida == null) {
-    return ImagemParaRecorte(bytes: bytes, proporcao: null);
+    return ImagemParaRecorte(bytes: bytes, tamanho: null);
   }
-  final proporcao = imagemReduzida.width / imagemReduzida.height;
+  final tamanho = ui.Size(imagemReduzida.width.toDouble(), imagemReduzida.height.toDouble());
   final png = await imagemReduzida.toByteData(format: ui.ImageByteFormat.png);
   imagemReduzida.dispose();
   return ImagemParaRecorte(
     bytes: png?.buffer.asUint8List() ?? bytes,
-    proporcao: proporcao,
+    tamanho: tamanho,
   );
 }
 

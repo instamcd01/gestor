@@ -109,7 +109,7 @@ class _AdicionarImagensLoteScreenState extends State<AdicionarImagensLoteScreen>
       MaterialPageRoute(
         builder: (_) => CortarImagemScreen(
           imagem: imagemParaRecorte.bytes,
-          proporcaoConhecida: imagemParaRecorte.proporcao,
+          tamanhoConhecido: imagemParaRecorte.tamanho,
         ),
       ),
     );

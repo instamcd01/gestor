@@ -17,21 +17,17 @@ class CortarImagemScreen extends StatefulWidget {
   /// um recorte de formato errado ficaria mal enquadrado nos dois.
   final double? aspectRatio;
 
-  /// Proporção real da imagem (largura/altura), quando quem chamou já
-  /// decodificou a imagem antes (ex: `prepararImagemParaRecorte`) e já sabe
-  /// esse valor — evita decodificar a mesma imagem de novo só pra descobrir
-  /// a proporção, e principalmente evita que essa 2ª decodificação divirja
-  /// da 1ª (achado real: o resultado batia diferente em algum caso,
-  /// deixando o recorte inicial menor que a imagem inteira — sintoma de
-  /// "abre já cortado no centro"). Se não informado, decodifica a própria
-  /// `imagem` recebida pra descobrir (comportamento de antes).
-  final double? proporcaoConhecida;
+  /// Tamanho real da imagem (em pixels), quando quem chamou já decodificou
+  /// a imagem antes (ex: `prepararImagemParaRecorte`) e já sabe esse valor —
+  /// evita decodificar a mesma imagem de novo só pra descobrir o tamanho.
+  /// Se não informado, decodifica a própria `imagem` recebida.
+  final ui.Size? tamanhoConhecido;
 
   const CortarImagemScreen({
     super.key,
     required this.imagem,
     this.aspectRatio,
-    this.proporcaoConhecida,
+    this.tamanhoConhecido,
   });
 
   @override
@@ -41,32 +37,24 @@ class CortarImagemScreen extends StatefulWidget {
 class _CortarImagemScreenState extends State<CortarImagemScreen> {
   final _controller = CropController();
   bool _processando = false;
-  double? _proporcaoImagem;
+  ui.Size? _tamanhoImagem;
 
   @override
   void initState() {
     super.initState();
-    if (widget.proporcaoConhecida != null) {
-      _proporcaoImagem = widget.proporcaoConhecida;
+    if (widget.tamanhoConhecido != null) {
+      _tamanhoImagem = widget.tamanhoConhecido;
     } else {
-      _carregarProporcao();
+      _carregarTamanho();
     }
   }
 
-  /// O pacote `crop_your_image` inicia o recorte como um quadrado (aspect
-  /// ratio 1.0) por padrão quando nenhum `aspectRatio` é passado — pra uma
-  /// foto retangular isso deixa o recorte inicial menor que a imagem
-  /// inteira, obrigando a arrastar até o máximo manualmente. Descobrir a
-  /// proporção real da imagem e passá-la só pro tamanho inicial (não pro
-  /// `Crop.aspectRatio`, que travaria o recorte nessa proporção) resolve:
-  /// começa cobrindo a imagem inteira, mas o usuário ainda pode arrastar
-  /// livremente pra qualquer formato depois.
-  Future<void> _carregarProporcao() async {
+  Future<void> _carregarTamanho() async {
     final codec = await ui.instantiateImageCodec(widget.imagem);
     final frame = await codec.getNextFrame();
     if (!mounted) return;
     setState(() {
-      _proporcaoImagem = frame.image.width / frame.image.height;
+      _tamanhoImagem = ui.Size(frame.image.width.toDouble(), frame.image.height.toDouble());
     });
   }
 
@@ -96,17 +84,32 @@ class _CortarImagemScreenState extends State<CortarImagemScreen> {
                 ),
         ],
       ),
-      body: _proporcaoImagem == null
+      body: _tamanhoImagem == null
           ? const Center(child: CircularProgressIndicator())
           : Crop(
               image: widget.imagem,
               controller: _controller,
               interactive: true,
               aspectRatio: widget.aspectRatio,
-              initialRectBuilder: InitialRectBuilder.withSizeAndRatio(
-                size: 1,
-                aspectRatio: widget.aspectRatio ?? _proporcaoImagem,
-              ),
+              // Confirmado no código-fonte do pacote (calculator.dart, v2.0.0):
+              // `withSizeAndRatio` deriva uma dimensão do retângulo inicial a
+              // partir da PROPORÇÃO passada, não das dimensões reais da
+              // imagem — se essa proporção não bater com o que o pacote
+              // calcula internamente pro retângulo renderizado, o recorte
+              // inicial fica menor que a imagem inteira numa das dimensões
+              // (o "tenho que expandir pro máximo toda vez" que o usuário
+              // reportou). `withArea`, ao contrário, recebe a área DIRETO em
+              // pixels da imagem original (doc do pacote: um Rect.fromLTWH
+              // cobrindo do canto 0,0 até largura/altura da imagem cobre a
+              // imagem inteira, sempre, "regardless of viewport size") — sem
+              // nenhuma conta de proporção envolvida. Só usa isso quando NÃO
+              // há aspectRatio travado (banner mantém o comportamento restrito
+              // à proporção fixa via withSizeAndRatio).
+              initialRectBuilder: widget.aspectRatio != null
+                  ? InitialRectBuilder.withSizeAndRatio(size: 1, aspectRatio: widget.aspectRatio)
+                  : InitialRectBuilder.withArea(
+                      ImageBasedRect.fromLTWH(0, 0, _tamanhoImagem!.width, _tamanhoImagem!.height),
+                    ),
               onCropped: (result) {
                 if (!mounted) return;
                 switch (result) {

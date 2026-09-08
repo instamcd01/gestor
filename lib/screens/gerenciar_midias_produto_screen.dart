@@ -133,7 +133,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
         MaterialPageRoute(
           builder: (_) => CortarImagemScreen(
             imagem: imagemParaRecorte.bytes,
-            proporcaoConhecida: imagemParaRecorte.proporcao,
+            tamanhoConhecido: imagemParaRecorte.tamanho,
           ),
         ),
       );
