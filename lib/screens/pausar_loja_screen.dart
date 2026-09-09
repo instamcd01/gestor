@@ -109,8 +109,12 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
 
   Future<void> _agendarPausa() async {
     final motivoController = TextEditingController();
-    DateTime? data = DateTime.now();
+    // Início e fim têm CADA UM sua própria data — antes só existia 1 data
+    // pro dia inteiro, o que impedia pausar por vários dias seguidos
+    // (ex: viagem, feriado prolongado). Reportado pelo usuário testando.
+    DateTime dataInicio = DateTime.now();
     TimeOfDay horaInicio = const TimeOfDay(hour: 14, minute: 0);
+    DateTime dataFim = DateTime.now();
     TimeOfDay horaFim = const TimeOfDay(hour: 16, minute: 0);
 
     final confirmado = await showDialog<bool>(
@@ -118,48 +122,77 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('Agendar pausa'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: motivoController,
-                decoration: const InputDecoration(labelText: 'Motivo (opcional)'),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(data == null ? 'Escolher data' : DateFormat('dd/MM/yyyy').format(data!)),
-                leading: const Icon(Icons.calendar_today_outlined),
-                onTap: () async {
-                  final escolhida = await showDatePicker(
-                    context: ctx,
-                    initialDate: data ?? DateTime.now(),
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime.now().add(const Duration(days: 90)),
-                  );
-                  if (escolhida != null) setDialogState(() => data = escolhida);
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('Início: ${horaInicio.format(ctx)}'),
-                leading: const Icon(Icons.schedule_outlined),
-                onTap: () async {
-                  final escolhida = await showTimePicker(context: ctx, initialTime: horaInicio);
-                  if (escolhida != null) setDialogState(() => horaInicio = escolhida);
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('Fim: ${horaFim.format(ctx)}'),
-                leading: const Icon(Icons.schedule_outlined),
-                onTap: () async {
-                  final escolhida = await showTimePicker(context: ctx, initialTime: horaFim);
-                  if (escolhida != null) setDialogState(() => horaFim = escolhida);
-                },
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: motivoController,
+                  decoration: const InputDecoration(labelText: 'Motivo (opcional)'),
+                ),
+                const SizedBox(height: 16),
+                const Text('Início', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(DateFormat('dd/MM/yyyy').format(dataInicio)),
+                  leading: const Icon(Icons.calendar_today_outlined),
+                  onTap: () async {
+                    final escolhida = await showDatePicker(
+                      context: ctx,
+                      initialDate: dataInicio,
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 90)),
+                    );
+                    if (escolhida != null) {
+                      setDialogState(() {
+                        dataInicio = escolhida;
+                        // Fim nunca pode ficar antes do início — empurra junto.
+                        if (dataFim.isBefore(dataInicio)) dataFim = dataInicio;
+                      });
+                    }
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text('Hora: ${horaInicio.format(ctx)}'),
+                  leading: const Icon(Icons.schedule_outlined),
+                  onTap: () async {
+                    final escolhida = await showTimePicker(context: ctx, initialTime: horaInicio);
+                    if (escolhida != null) setDialogState(() => horaInicio = escolhida);
+                  },
+                ),
+                const SizedBox(height: 12),
+                const Text('Fim', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(DateFormat('dd/MM/yyyy').format(dataFim)),
+                  leading: const Icon(Icons.calendar_today_outlined),
+                  onTap: () async {
+                    final escolhida = await showDatePicker(
+                      context: ctx,
+                      initialDate: dataFim.isBefore(dataInicio) ? dataInicio : dataFim,
+                      firstDate: dataInicio,
+                      lastDate: DateTime.now().add(const Duration(days: 90)),
+                    );
+                    if (escolhida != null) setDialogState(() => dataFim = escolhida);
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text('Hora: ${horaFim.format(ctx)}'),
+                  leading: const Icon(Icons.schedule_outlined),
+                  onTap: () async {
+                    final escolhida = await showTimePicker(context: ctx, initialTime: horaFim);
+                    if (escolhida != null) setDialogState(() => horaFim = escolhida);
+                  },
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
@@ -168,16 +201,15 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
         ),
       ),
     );
-    if (confirmado != true || data == null) return;
+    if (confirmado != true) return;
 
-    final dataEscolhida = data!;
-    final inicio = DateTime(dataEscolhida.year, dataEscolhida.month, dataEscolhida.day, horaInicio.hour, horaInicio.minute);
-    final fim = DateTime(dataEscolhida.year, dataEscolhida.month, dataEscolhida.day, horaFim.hour, horaFim.minute);
+    final inicio = DateTime(dataInicio.year, dataInicio.month, dataInicio.day, horaInicio.hour, horaInicio.minute);
+    final fim = DateTime(dataFim.year, dataFim.month, dataFim.day, horaFim.hour, horaFim.minute);
 
     if (!fim.isAfter(inicio)) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('O horário de fim precisa ser depois do início.')));
+            .showSnackBar(const SnackBar(content: Text('O fim precisa ser depois do início.')));
       }
       return;
     }

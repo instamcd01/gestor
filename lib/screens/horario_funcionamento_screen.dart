@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
+import '../models/pausa_loja.dart';
 import '../providers/auth_provider.dart';
+import '../repositories/pausa_loja_repository.dart';
+import 'pausar_loja_screen.dart';
 
 const _diasSemana = [
   ('segunda', 'Segunda-feira'),
@@ -41,6 +45,9 @@ class _GeralScreenState extends State<GeralScreen> {
       ),
   };
 
+  final _pausaRepository = PausaLojaRepository();
+  PausaLoja? _pausaAtiva;
+
   bool _carregando = true;
   bool _salvando = false;
 
@@ -48,6 +55,25 @@ class _GeralScreenState extends State<GeralScreen> {
   void initState() {
     super.initState();
     _carregarDados();
+    _carregarPausa();
+  }
+
+  // Pedido do usuário: pausa temporária e horário fixo semanal são as
+  // duas faces de "quando a loja atende" — ficam juntas nesta tela em
+  // vez de espalhadas em itens de menu separados (ver PausarLojaScreen
+  // pro fluxo completo de pausar/agendar/cancelar).
+  Future<void> _carregarPausa() async {
+    try {
+      final pausas = await _pausaRepository.listarAtivasOuAgendadas();
+      if (mounted) setState(() => _pausaAtiva = pausas.where((p) => p.ativa).firstOrNull);
+    } catch (e) {
+      debugPrint('Erro ao carregar pausa da loja: $e');
+    }
+  }
+
+  Future<void> _abrirPausarLoja() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const PausarLojaScreen()));
+    _carregarPausa();
   }
 
   TimeOfDay _parseHora(String? texto, TimeOfDay padrao) {
@@ -172,6 +198,24 @@ class _GeralScreenState extends State<GeralScreen> {
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
                 const SizedBox(height: 12),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: Icon(
+                      _pausaAtiva != null ? Icons.pause_circle_outline : Icons.event_busy_outlined,
+                      color: _pausaAtiva != null ? Colors.orange : null,
+                    ),
+                    title: const Text('Pausar loja temporariamente'),
+                    subtitle: Text(
+                      _pausaAtiva != null
+                          ? 'Em pausa${_pausaAtiva!.motivo != null ? ": ${_pausaAtiva!.motivo}" : ""} — volta às '
+                              '${DateFormat('dd/MM HH:mm').format(_pausaAtiva!.fim)}'
+                          : 'Pausa imediata ou agendada — vale pro site, WhatsApp e marketplaces',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _abrirPausarLoja,
+                  ),
+                ),
                 ..._diasSemana.map((diaInfo) {
                   final (chave, rotulo) = diaInfo;
                   final horario = _horarios[chave]!;

@@ -8,7 +8,6 @@ import 'catalogo_online_screen.dart';
 import 'banners_loja_screen.dart';
 import 'kit_de_marca_screen.dart';
 import 'horario_funcionamento_screen.dart';
-import 'pausar_loja_screen.dart';
 import 'meu_recibo_screen.dart';
 import 'opcoes_pagamento_screen.dart';
 import 'regras_venda_screen.dart';
@@ -68,7 +67,6 @@ class ConfiguracoesScreen extends StatelessWidget {
             itens: [
               MenuItem('Dados da Loja', Icons.store_outlined, const DadosLojaScreen()),
               MenuItem('Horário de Funcionamento', Icons.schedule_outlined, const GeralScreen()),
-              MenuItem('Pausar Loja', Icons.pause_circle_outlined, const PausarLojaScreen()),
               MenuItem('Aparência e Marca', Icons.palette_outlined, const AparenciaScreen()),
               if (isDono) MenuItem('Kit de Marca', Icons.auto_awesome_mosaic_outlined, const KitDeMarcaScreen()),
               MenuItem('Catálogo Online', Icons.storefront_outlined, const CatalogoOnlineScreen()),
