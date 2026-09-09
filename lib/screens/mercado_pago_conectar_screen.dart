@@ -8,17 +8,20 @@ import '../providers/auth_provider.dart';
 import '../widgets/aviso_banner.dart';
 import '../widgets/form_section.dart';
 
-/// Configurações > Vendas > Pagamento Online: conectar a conta Mercado
-/// Pago da loja (OAuth/split marketplace — o dinheiro cai direto pro
-/// lojista, nunca passa pela plataforma) e escolher se o site oferece só
-/// pagamento na entrega, só online, ou os dois. Restrito ao dono (mesma
-/// regra de "Integrar com Plataformas": credencial é dado sensível).
+/// Aba "Pagamento Online" de `PagamentoHubScreen`: conectar a conta
+/// Mercado Pago da loja (OAuth/split marketplace — o dinheiro cai direto
+/// pro lojista, nunca passa pela plataforma) e escolher se o site oferece
+/// só pagamento na entrega, só online, ou os dois. Restrito ao dono (mesma
+/// regra de "Integrar com Plataformas": credencial é dado sensível) — o
+/// hub só monta essa aba pra quem é dono, mas o texto de restrição abaixo
+/// fica como segunda trava caso o widget seja alcançado de outro jeito.
 ///
 /// O OAuth abre no navegador externo (não webview/deep link — mais simples
 /// e sem dependência nova); a troca do código por token acontece inteira
 /// no servidor do site (`/mp/callback`, tem o client_secret). O app só
 /// reconsulta o status (`mp_esta_conectado`) quando volta a ficar em
 /// primeiro plano, pra refletir sozinho depois que o lojista conectar.
+/// Sem Scaffold/AppBar próprio: quem chama decide isso.
 class MercadoPagoConectarScreen extends StatefulWidget {
   const MercadoPagoConectarScreen({super.key});
 
@@ -159,24 +162,22 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
   Widget build(BuildContext context) {
     final souDono = context.watch<AuthProvider>().isDono;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Pagamento Online')),
-      body: !souDono
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Apenas o dono da empresa pode configurar pagamento online.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
+    return !souDono
+        ? Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Apenas o dono da empresa pode configurar pagamento online.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
-            )
-          : _carregando
-              ? const Center(child: CircularProgressIndicator())
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
+            ),
+          )
+        : _carregando
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
                     const AvisoBanner(
                       texto: 'O cliente paga direto no site com cartão ou Pix, e o dinheiro cai na sua '
                           'própria conta Mercado Pago — nenhum valor passa pela conta da plataforma.',
@@ -288,7 +289,6 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
                       ],
                     ),
                   ],
-                ),
-    );
+                );
   }
 }

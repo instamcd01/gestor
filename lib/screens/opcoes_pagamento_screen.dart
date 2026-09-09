@@ -30,9 +30,12 @@ const bandeirasCartaoDisponiveis = [
 
 const _parcelaMaxima = 12;
 
-/// Configurações > Opções de Pagamento: quais métodos aparecem na tela de
+/// Aba "Opções" de `PagamentoHubScreen`: quais métodos aparecem na tela de
 /// pagamento do balcão, e a chave Pix mostrada ao caixa (pagamento continua
 /// sendo feito numa maquininha/Pix físico à parte — o app só registra).
+/// Sem Scaffold/AppBar próprio: quem chama decide isso (o botão "Salvar"
+/// no fim da lista já é o único jeito de salvar, sem ícone redundante
+/// na AppBar de antes).
 class OpcoesPagamentoScreen extends StatefulWidget {
   const OpcoesPagamentoScreen({super.key});
 
@@ -171,25 +174,9 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Opções de Pagamento'),
-        actions: [
-          _salvando
-              ? Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary, strokeWidth: 2),
-                  ),
-                )
-              : IconButton(icon: const Icon(Icons.save), onPressed: _carregando ? null : _salvar),
-        ],
-      ),
-      body: _carregando
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
+    return _carregando
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 FormSection(
@@ -342,7 +329,6 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
                   child: const Text('Salvar'),
                 ),
               ],
-            ),
-    );
+            );
   }
 }

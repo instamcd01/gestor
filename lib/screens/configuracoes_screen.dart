@@ -8,7 +8,7 @@ import 'catalogo_online_screen.dart';
 import 'banners_loja_screen.dart';
 import 'horario_funcionamento_screen.dart';
 import 'meu_recibo_screen.dart';
-import 'opcoes_pagamento_screen.dart';
+import 'pagamento_hub_screen.dart';
 import 'regras_venda_screen.dart';
 import 'cupons_hub_screen.dart';
 import 'config_petcash_screen.dart';
@@ -17,7 +17,6 @@ import 'custos_operacionais_screen.dart';
 import 'exportar_relatorios_screen.dart';
 import 'historico_entradas_screen.dart';
 import 'integrar_plataformas_screen.dart';
-import 'mercado_pago_conectar_screen.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
 
@@ -46,11 +45,11 @@ class ConfiguracoesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Kit de Marca (dentro de "Aparência e Marca") mexe na identidade
-    // visual mostrada a QUALQUER cliente/usuário (site e app) — igual
-    // usuários/finanças, é decisão só do dono; gerente só vê a aba
-    // "Aparência" (gated dentro de AparenciaMarcaHubScreen, pedido
-    // explícito do usuário).
+    // Kit de Marca (dentro de "Aparência e Marca") e Pagamento Online
+    // (dentro de "Opções de Pagamento") são decisão só do dono — igual
+    // usuários/finanças, dado sensível/identidade pública. Gerente só vê
+    // a aba padrão de cada hub (gated dentro de AparenciaMarcaHubScreen/
+    // PagamentoHubScreen, pedido explícito do usuário).
     final isDono = context.watch<AuthProvider>().isDono;
 
     return Scaffold(
@@ -76,9 +75,7 @@ class ConfiguracoesScreen extends StatelessWidget {
           MenuSecao(
             titulo: 'Vendas',
             itens: [
-              MenuItem('Opções de Pagamento', Icons.payment_outlined, const OpcoesPagamentoScreen()),
-              if (isDono)
-                MenuItem('Pagamento Online', Icons.account_balance_wallet_outlined, const MercadoPagoConectarScreen()),
+              MenuItem('Opções de Pagamento', Icons.payment_outlined, const PagamentoHubScreen()),
               if (isDono)
                 MenuItem('Custos Operacionais', Icons.calculate_outlined, const CustosOperacionaisScreen()),
               MenuItem('Pedidos e Vendas', Icons.shopping_cart_outlined, const PedidosVendasScreen()),
