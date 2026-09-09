@@ -4,15 +4,18 @@ import 'package:provider/provider.dart';
 
 import '../providers/entrada_provider.dart';
 import '../widgets/estado_erro_lista.dart';
+import 'importar_nota_fiscal_screen.dart';
 
 final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
 final _data = DateFormat('dd/MM/yyyy');
 
-/// Histórico das notas fiscais de fornecedor já importadas (`entradas` +
-/// `itens_entrada`) — até 2026-08-06 esse provider já existia inteiro
-/// (listar, erro, carregando) mas nada na UI chamava `carregar()` nem lia
-/// `entradas`, então não havia nenhuma forma de ver o que já tinha sido
-/// importado depois da tela de importação fechar.
+/// Notas fiscais de fornecedor — histórico do que já foi importado
+/// (`entradas` + `itens_entrada`) com o ponto de entrada pra importar uma
+/// nova junto na mesma tela (FAB), em vez de item de menu separado.
+/// `ImportarNotaFiscalScreen` continua existindo à parte (não mexida
+/// aqui) porque também é aberta a partir de "Receber Pedido de Compra"
+/// (`pedido_compra_detalhe_screen.dart`), um fluxo focado que não deve
+/// ganhar a lista de histórico junto.
 class HistoricoEntradasScreen extends StatefulWidget {
   const HistoricoEntradasScreen({super.key});
 
@@ -27,13 +30,23 @@ class _HistoricoEntradasScreenState extends State<HistoricoEntradasScreen> {
     Provider.of<EntradaProvider>(context, listen: false).carregar();
   }
 
+  Future<void> _importar() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const ImportarNotaFiscalScreen()));
+    if (mounted) Provider.of<EntradaProvider>(context, listen: false).carregar();
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<EntradaProvider>();
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Notas Fiscais Importadas')),
+      appBar: AppBar(title: const Text('Notas Fiscais')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _importar,
+        icon: const Icon(Icons.upload_file_outlined),
+        label: const Text('Importar'),
+      ),
       body: provider.carregando
           ? const Center(child: CircularProgressIndicator())
           : provider.erro != null
@@ -50,7 +63,7 @@ class _HistoricoEntradasScreenState extends State<HistoricoEntradasScreen> {
                             Text('Nenhuma nota importada ainda.', style: Theme.of(context).textTheme.titleMedium),
                             const SizedBox(height: 4),
                             Text(
-                              'Toda NF-e importada em "Importar Nota Fiscal" aparece aqui.',
+                              'Toque em "Importar" pra dar entrada na sua primeira NF-e.',
                               style: TextStyle(color: colorScheme.onSurfaceVariant),
                               textAlign: TextAlign.center,
                             ),
@@ -61,7 +74,7 @@ class _HistoricoEntradasScreenState extends State<HistoricoEntradasScreen> {
                   : RefreshIndicator(
                       onRefresh: provider.carregar,
                       child: ListView.builder(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
                         itemCount: provider.entradas.length,
                         itemBuilder: (context, index) {
                           final entrada = provider.entradas[index];

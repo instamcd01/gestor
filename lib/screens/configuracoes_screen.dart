@@ -19,7 +19,6 @@ import 'custos_operacionais_screen.dart';
 import 'metricas_cupons_screen.dart';
 import 'exportar_relatorios_screen.dart';
 import 'historico_entradas_screen.dart';
-import 'importar_nota_fiscal_screen.dart';
 import 'integrar_plataformas_screen.dart';
 import 'mercado_pago_conectar_screen.dart';
 import '../providers/auth_provider.dart';
@@ -98,8 +97,7 @@ class ConfiguracoesScreen extends StatelessWidget {
           MenuSecao(
             titulo: 'Dados e integrações',
             itens: [
-              MenuItem('Importar Nota Fiscal', Icons.upload_file_outlined, const ImportarNotaFiscalScreen()),
-              MenuItem('Notas Fiscais Importadas', Icons.history_outlined, const HistoricoEntradasScreen()),
+              MenuItem('Notas Fiscais', Icons.description_outlined, const HistoricoEntradasScreen()),
               MenuItem('Exportar Relatórios', Icons.file_download_outlined, const ExportarRelatoriosScreen()),
               MenuItem(
                   'Integrar com Plataformas', Icons.integration_instructions_outlined, const IntegrarPlataformasScreen()),
