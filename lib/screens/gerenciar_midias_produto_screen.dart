@@ -104,12 +104,9 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       XFile? arquivo;
       try {
         // maxWidth/maxHeight pedem pro seletor NATIVO da plataforma já
-        // devolver a imagem reduzida (decoder nativo, rápido) — sem isso o
-        // Dart tinha que decodificar o arquivo bruto do picker (uma foto com
-        // fundo removido facilmente sai em 3-4000px), o que sozinho já
-        // deixava a abertura da tela de recorte perceptivelmente lenta,
-        // mesmo rodando em isolate separada (prepararImagemParaRecorte
-        // continua como rede de segurança pro que passar disso).
+        // devolver a imagem reduzida (decoder nativo, rápido) — evita
+        // decodificar em Dart o arquivo bruto do picker (uma foto com fundo
+        // removido facilmente sai em 3-4000px).
         arquivo = await picker.pickImage(
           source: ImageSource.gallery,
           maxWidth: 1600,
@@ -124,20 +121,15 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       }
       if (arquivo == null) return;
 
+      // Adiciona a imagem inteira direto, sem forçar recorte — usuário pediu
+      // explicitamente pra não ter que expandir a área de recorte pro
+      // máximo toda vez que só quer usar a foto inteira. Recortar continua
+      // disponível depois, tocando no ícone de recortar da miniatura já
+      // salva (`_recortarImagemExistente`), mesmo padrão já usado na tela de
+      // adicionar imagens em lote (lá o recorte também é uma etapa à parte,
+      // nunca forçada ao selecionar).
       final bytesOriginais = await arquivo.readAsBytes();
       if (!mounted) return;
-      final imagemParaRecorte = await prepararImagemParaRecorte(bytesOriginais);
-      if (!mounted) return;
-
-      final bytesRecortados = await Navigator.of(context).push<Uint8List>(
-        MaterialPageRoute(
-          builder: (_) => CortarImagemScreen(
-            imagem: imagemParaRecorte.bytes,
-            tamanhoConhecido: imagemParaRecorte.tamanho,
-          ),
-        ),
-      );
-      if (bytesRecortados == null || !mounted) return;
 
       if (_empresaId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -161,7 +153,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       // aba/dispositivo editando o mesmo produto ao mesmo tempo).
       final proximaOrdem = await _contarImagensNoServidor() + 1;
       final url = await uploadImagemProduto(
-        bytes: bytesRecortados,
+        bytes: bytesOriginais,
         empresaId: _empresaId!,
         produtoId: widget.produtoId,
         nomeProduto: produto.nome,
