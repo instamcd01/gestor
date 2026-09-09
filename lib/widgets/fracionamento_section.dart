@@ -114,7 +114,95 @@ class FracionamentoSection extends StatelessWidget {
   }
 }
 
-enum _EixoFracionamento { peso, quantidade }
+enum EixoFracionamento { peso, quantidade }
+
+/// Calcula o fator de fracionamento a partir do eixo escolhido — reaproveitado
+/// pelo diálogo de criação individual e pela tela de criação em massa
+/// (`fracionamento_lote_screen.dart`). Por peso: exige que o peso do pai
+/// divida em partes inteiras (senão o estoque vinculado ficaria errado). Por
+/// quantidade: o fator é digitado direto.
+int? calcularFatorFracionamento({
+  required EixoFracionamento eixo,
+  required Produto pai,
+  String? pesoNovoTexto,
+  String? fatorTexto,
+}) {
+  if (eixo == EixoFracionamento.quantidade) {
+    return int.tryParse((fatorTexto ?? '').trim());
+  }
+  final pesoPai = pai.peso;
+  if (pesoPai == null || pesoPai <= 0) return null;
+  final pesoNovo = double.tryParse((pesoNovoTexto ?? '').trim().replaceAll(',', '.'));
+  if (pesoNovo == null || pesoNovo <= 0) return null;
+  final fator = pesoPai / pesoNovo;
+  final fatorArredondado = fator.round();
+  // Só aceita se a divisão for bem próxima de um número inteiro — senão o
+  // usuário provavelmente digitou um peso que não é uma fração exata do
+  // pai, e forçar um fator errado bagunçaria o estoque vinculado.
+  if ((fator - fatorArredondado).abs() > 0.01) return null;
+  return fatorArredondado;
+}
+
+/// Monta o `Produto` filho a partir do pai + configuração de fracionamento —
+/// mesma lógica usada pelo diálogo individual e pela criação em massa.
+/// [estoqueInicial] nulo usa a sugestão padrão (`pai.estoqueAtual * fator`);
+/// passar um valor explícito permite o usuário corrigir a sugestão (nunca
+/// calculamos estoque físico sozinhos sem dar chance de ajuste — ver
+/// feedback_nao_inferir_quantidade_fisica_real).
+Produto construirProdutoFracionado({
+  required Produto pai,
+  required EixoFracionamento eixo,
+  required int fator,
+  required String rotulo,
+  String codigoBarras = '',
+  double? pesoNovoExplicito,
+  int? estoqueInicial,
+}) {
+  final pesoNovo = eixo == EixoFracionamento.peso
+      ? pesoNovoExplicito
+      : (pai.peso != null ? pai.peso! / fator : null);
+
+  return Produto(
+    nome: pai.nome, // provisório — o trigger do banco recompõe a partir dos campos estruturados, se houver
+    preco: 0,
+    descricao: pai.descricao,
+    categoria: pai.categoria,
+    subcategoria: pai.subcategoria,
+    peso: pesoNovo,
+    volume: pai.volume,
+    ativo: true,
+    estoqueAtual: estoqueInicial ?? (pai.estoqueAtual * fator),
+    estoqueMinimo: 0,
+    imagemUrl: pai.imagemUrl,
+    imagemUrlSecundaria: pai.imagemUrlSecundaria,
+    // Vazio = o banco gera um EAN interno sozinho (faixa "2xxx", nunca
+    // colide com código de fabricante real). Se o lojista já sabe que
+    // esse tamanho fracionado tem EAN próprio de fábrica, informar aqui
+    // evita ter que criar e editar de novo só pra trocar o código.
+    codigoBarras: codigoBarras.trim(),
+    custo: pai.custo / fator,
+    exibirNoCatalogo: pai.exibirNoCatalogo,
+    empresa: pai.empresa,
+    fabricante: pai.fabricante,
+    unidadeMedida: pai.unidadeMedida,
+    nomeComercial: pai.nomeComercial,
+    tipoProduto: pai.tipoProduto,
+    especie: pai.especie,
+    fase: pai.fase,
+    porte: pai.porte,
+    sabor: pai.sabor,
+    dose: pai.dose,
+    composicao: pai.composicao,
+    apresentacao: eixo == EixoFracionamento.quantidade ? rotulo : pai.apresentacao,
+    nomeManualOverride: pai.nomeManualOverride,
+    produtoPaiId: pai.produtoPaiId ?? pai.id,
+    tipoVariacao: eixo == EixoFracionamento.peso ? 'peso' : 'quantidade',
+    varianteLabel: rotulo,
+    cicloRecompraDias: pai.cicloRecompraDias,
+    fracionadoDeId: pai.id,
+    fatorFracionamento: fator,
+  );
+}
 
 class _DialogoCriarFracionado extends StatefulWidget {
   final Produto produtoPai;
@@ -126,7 +214,7 @@ class _DialogoCriarFracionado extends StatefulWidget {
 }
 
 class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
-  _EixoFracionamento _eixo = _EixoFracionamento.peso;
+  EixoFracionamento _eixo = EixoFracionamento.peso;
   final _pesoNovoController = TextEditingController();
   final _fatorController = TextEditingController();
   final _rotuloController = TextEditingController();
@@ -142,28 +230,18 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
     super.dispose();
   }
 
-  int? get _fatorCalculado {
-    final pesoPai = widget.produtoPai.peso;
-    if (_eixo == _EixoFracionamento.quantidade) {
-      return int.tryParse(_fatorController.text.trim());
-    }
-    if (pesoPai == null || pesoPai <= 0) return null;
-    final pesoNovo = double.tryParse(_pesoNovoController.text.trim().replaceAll(',', '.'));
-    if (pesoNovo == null || pesoNovo <= 0) return null;
-    final fator = pesoPai / pesoNovo;
-    final fatorArredondado = fator.round();
-    // Só aceita se a divisão for bem próxima de um número inteiro — senão o
-    // usuário provavelmente digitou um peso que não é uma fração exata do
-    // pai, e forçar um fator errado bagunçaria o estoque vinculado.
-    if ((fator - fatorArredondado).abs() > 0.01) return null;
-    return fatorArredondado;
-  }
+  int? get _fatorCalculado => calcularFatorFracionamento(
+        eixo: _eixo,
+        pai: widget.produtoPai,
+        pesoNovoTexto: _pesoNovoController.text,
+        fatorTexto: _fatorController.text,
+      );
 
   void _confirmar() {
     final fator = _fatorCalculado;
     final rotulo = _rotuloController.text.trim();
     if (fator == null || fator < 1) {
-      setState(() => _erro = _eixo == _EixoFracionamento.peso
+      setState(() => _erro = _eixo == EixoFracionamento.peso
           ? 'Informe um peso que divida o peso do produto original em partes inteiras.'
           : 'Informe quantas unidades equivalem a 1 unidade do produto original.');
       return;
@@ -178,50 +256,13 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
       return;
     }
 
-    final pai = widget.produtoPai;
-    final pesoNovo = _eixo == _EixoFracionamento.peso
-        ? double.tryParse(_pesoNovoController.text.trim().replaceAll(',', '.'))
-        : (pai.peso != null ? pai.peso! / fator : null);
-
-    final filho = Produto(
-      nome: pai.nome, // provisório — o trigger do banco recompõe a partir dos campos estruturados, se houver
-      preco: 0,
-      descricao: pai.descricao,
-      categoria: pai.categoria,
-      subcategoria: pai.subcategoria,
-      peso: pesoNovo,
-      volume: pai.volume,
-      ativo: true,
-      estoqueAtual: pai.estoqueAtual * fator,
-      estoqueMinimo: 0,
-      imagemUrl: pai.imagemUrl,
-      imagemUrlSecundaria: pai.imagemUrlSecundaria,
-      // Vazio = o banco gera um EAN interno sozinho (faixa "2xxx", nunca
-      // colide com código de fabricante real). Se o lojista já sabe que
-      // esse tamanho fracionado tem EAN próprio de fábrica, informar aqui
-      // evita ter que criar e editar de novo só pra trocar o código.
-      codigoBarras: _codigoBarrasController.text.trim(),
-      custo: pai.custo / fator,
-      exibirNoCatalogo: pai.exibirNoCatalogo,
-      empresa: pai.empresa,
-      fabricante: pai.fabricante,
-      unidadeMedida: pai.unidadeMedida,
-      nomeComercial: pai.nomeComercial,
-      tipoProduto: pai.tipoProduto,
-      especie: pai.especie,
-      fase: pai.fase,
-      porte: pai.porte,
-      sabor: pai.sabor,
-      dose: pai.dose,
-      composicao: pai.composicao,
-      apresentacao: _eixo == _EixoFracionamento.quantidade ? rotulo : pai.apresentacao,
-      nomeManualOverride: pai.nomeManualOverride,
-      produtoPaiId: pai.produtoPaiId ?? pai.id,
-      tipoVariacao: _eixo == _EixoFracionamento.peso ? 'peso' : 'quantidade',
-      varianteLabel: rotulo,
-      cicloRecompraDias: pai.cicloRecompraDias,
-      fracionadoDeId: pai.id,
-      fatorFracionamento: fator,
+    final filho = construirProdutoFracionado(
+      pai: widget.produtoPai,
+      eixo: _eixo,
+      fator: fator,
+      rotulo: rotulo,
+      codigoBarras: _codigoBarrasController.text,
+      pesoNovoExplicito: double.tryParse(_pesoNovoController.text.trim().replaceAll(',', '.')),
     );
 
     Navigator.of(context).pop(filho);
@@ -239,10 +280,10 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
           children: [
             Text('A partir de "${widget.produtoPai.nome}"', style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 12),
-            SegmentedButton<_EixoFracionamento>(
+            SegmentedButton<EixoFracionamento>(
               segments: const [
-                ButtonSegment(value: _EixoFracionamento.peso, label: Text('Por peso')),
-                ButtonSegment(value: _EixoFracionamento.quantidade, label: Text('Por quantidade')),
+                ButtonSegment(value: EixoFracionamento.peso, label: Text('Por peso')),
+                ButtonSegment(value: EixoFracionamento.quantidade, label: Text('Por quantidade')),
               ],
               selected: {_eixo},
               onSelectionChanged: (s) => setState(() {
@@ -251,7 +292,7 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
               }),
             ),
             const SizedBox(height: 12),
-            if (_eixo == _EixoFracionamento.peso) ...[
+            if (_eixo == EixoFracionamento.peso) ...[
               if (pesoPai == null)
                 const Text('O produto original não tem peso cadastrado — use "Por quantidade".',
                     style: TextStyle(color: Colors.red))

@@ -12,6 +12,7 @@ import 'cadastro_produto_screen.dart';
 import 'configuracoes_produto_screen.dart';
 import 'detalhes_produto_screen.dart';
 import 'editar_produto_screen.dart';
+import 'fracionamento_lote_screen.dart';
 import 'kit_produto_form_screen.dart';
 import 'produtos_excluidos_screen.dart';
 
@@ -116,6 +117,16 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                   child: const ListTile(
                     leading: Icon(Icons.fact_check_outlined),
                     title: Text('Análise de produtos em massa'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                PopupMenuItem<VoidCallback>(
+                  value: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const FracionamentoLoteScreen(),
+                  )),
+                  child: const ListTile(
+                    leading: Icon(Icons.call_split),
+                    title: Text('Criar fracionamento em massa'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
