@@ -4,6 +4,7 @@ import '../models/fornecedor.dart';
 import '../models/produto_fornecedor.dart';
 import '../repositories/produto_fornecedor_repository.dart';
 import '../utils/busca_utils.dart';
+import 'vincular_produtos_fornecedor_screen.dart';
 
 /// Lista todos os produtos vinculados a um fornecedor (`produto_fornecedores`)
 /// e permite desvincular vários de uma vez — não existia forma de fazer isso
@@ -28,6 +29,19 @@ class _VinculosFornecedorScreenState extends State<VinculosFornecedorScreen> {
   String? _erro;
   final Set<String> _selecionados = {};
   bool _desvinculando = false;
+
+  Future<void> _abrirVincular() async {
+    final resultado = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VincularProdutosFornecedorScreen(
+          fornecedor: widget.fornecedor,
+          produtosJaVinculados: _vinculos.map((v) => v.produtoId).toSet(),
+        ),
+      ),
+    );
+    if (resultado == true) _carregar();
+  }
 
   @override
   void initState() {
@@ -112,7 +126,12 @@ class _VinculosFornecedorScreenState extends State<VinculosFornecedorScreen> {
     final todosMarcados = filtrados.isNotEmpty && filtrados.every((v) => _selecionados.contains(v.id));
 
     return Scaffold(
-      appBar: AppBar(title: Text('Produtos de "${widget.fornecedor.nome}"')),
+      appBar: AppBar(
+        title: Text('Produtos de "${widget.fornecedor.nome}"'),
+        actions: [
+          IconButton(icon: const Icon(Icons.add_link), tooltip: 'Vincular produtos', onPressed: _abrirVincular),
+        ],
+      ),
       body: _carregando
           ? const Center(child: CircularProgressIndicator())
           : _erro != null
