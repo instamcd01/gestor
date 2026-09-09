@@ -70,6 +70,62 @@ class _HistoricoReconciliacaoScreenState extends State<HistoricoReconciliacaoScr
     }
   }
 
+  String _rotuloMotivoExclusao(String? motivo) {
+    switch (motivo) {
+      case 'sem_ean':
+        return 'Sem código de barras';
+      case 'ean_zero':
+        return 'Código de barras inválido (placeholder "0")';
+      case 'sem_preco':
+        return 'Sem preço válido';
+      default:
+        return 'Fora do catálogo';
+    }
+  }
+
+  /// Lista de produto/item por trás de um card — mesmo formato pra "itens
+  /// não catalogados" (baixa de estoque) e "produtos excluídos" (catálogo
+  /// exportado), cada um com sua própria chave de nome/subtítulo.
+  void _abrirLista({
+    required String titulo,
+    required List<dynamic> itens,
+    required String Function(Map<String, dynamic>) nome,
+    required String Function(Map<String, dynamic>) subtitulo,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollController) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(titulo, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.separated(
+                controller: scrollController,
+                itemCount: itens.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = Map<String, dynamic>.from(itens[index] as Map);
+                  return ListTile(
+                    title: Text(nome(item)),
+                    subtitle: Text(subtitulo(item)),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
@@ -96,6 +152,36 @@ class _HistoricoReconciliacaoScreenState extends State<HistoricoReconciliacaoScr
                         itemBuilder: (context, index) {
                           final item = _historico[index];
                           final (icone, cor) = _iconeECor(item.tipo);
+
+                          // Baixa de estoque: itens do relatório que não bateram com
+                          // nenhum produto cadastrado (EAN sem match).
+                          final itensNaoCatalogados =
+                              item.detalhes['itens_nao_catalogados_detalhe'] as List<dynamic>?;
+                          // Catálogo exportado: produtos que ficaram de fora (sem EAN
+                          // válido ou sem preço).
+                          final produtosExcluidos = item.detalhes['produtos_excluidos'] as List<dynamic>?;
+
+                          VoidCallback? onTap;
+                          String? resumoExtra;
+                          if (itensNaoCatalogados != null && itensNaoCatalogados.isNotEmpty) {
+                            resumoExtra = '${itensNaoCatalogados.length} item(ns) não catalogado(s) — toque pra ver';
+                            onTap = () => _abrirLista(
+                                  titulo: 'Itens não catalogados',
+                                  itens: itensNaoCatalogados,
+                                  nome: (i) => (i['nome_relatorio'] as String?) ?? 'Sem nome no relatório',
+                                  subtitulo: (i) =>
+                                      'EAN ${i['ean'] ?? '—'} · Qtd. ${i['quantidade'] ?? '—'}',
+                                );
+                          } else if (produtosExcluidos != null && produtosExcluidos.isNotEmpty) {
+                            resumoExtra = '${produtosExcluidos.length} produto(s) fora do catálogo — toque pra ver';
+                            onTap = () => _abrirLista(
+                                  titulo: 'Produtos fora do catálogo',
+                                  itens: produtosExcluidos,
+                                  nome: (i) => (i['nome'] as String?) ?? 'Produto',
+                                  subtitulo: (i) => _rotuloMotivoExclusao(i['motivo'] as String?),
+                                );
+                          }
+
                           return Card(
                             margin: EdgeInsets.zero,
                             child: ListTile(
@@ -105,6 +191,15 @@ class _HistoricoReconciliacaoScreenState extends State<HistoricoReconciliacaoScr
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(item.mensagem),
+                                  if (resumoExtra != null)
+                                    Text(
+                                      resumoExtra,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
+                                    ),
                                   Text(
                                     dateFormat.format(item.executadoEm),
                                     style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -112,6 +207,8 @@ class _HistoricoReconciliacaoScreenState extends State<HistoricoReconciliacaoScr
                                 ],
                               ),
                               isThreeLine: true,
+                              trailing: onTap != null ? const Icon(Icons.chevron_right) : null,
+                              onTap: onTap,
                             ),
                           );
                         },

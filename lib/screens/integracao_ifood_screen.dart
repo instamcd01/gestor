@@ -332,14 +332,7 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
       await provider.carregarProdutos();
       if (!mounted) return;
 
-      // codigo_barras "0" é usado como placeholder pra produto sem EAN real
-      // (ex: taxas de entrega cadastradas como produto) — nunca representa
-      // certo no iFood (é indexado por EAN, então todos colidiriam no "0").
-      final produtos = provider.produtos.where((p) {
-        final ean = p.codigoBarras.trim();
-        return ean.isNotEmpty && ean != '0';
-      }).toList()
-        ..sort((a, b) => a.nome.compareTo(b.nome));
+      final produtos = provider.produtos.toList()..sort((a, b) => a.nome.compareTo(b.nome));
 
       final workbook = Excel.createExcel();
       final sheet = workbook['Catálogo iFood'];
@@ -358,15 +351,31 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
         TextCellValue('Canal'),
       ]);
 
-      var semPrecoValido = 0;
       var ativosNoIfood = 0;
+      var incluidos = 0;
+      // Mesma classificação usada na exportação automática do n8n — pra
+      // mostrar no histórico QUAIS produtos ficaram de fora, não só a
+      // contagem. codigo_barras "0" é placeholder de "sem EAN real" (ex:
+      // taxas de entrega cadastradas como produto).
+      final excluidos = <Map<String, String?>>[];
       for (final produto in produtos) {
-        // Portal ignora linha com preço vazio/zerado, então nem vale incluir.
+        final ean = produto.codigoBarras.trim();
         final preco = produto.precoIfood ?? produto.preco;
-        if (preco <= 0) {
-          semPrecoValido++;
+
+        String? motivo;
+        if (ean.isEmpty) {
+          motivo = 'sem_ean';
+        } else if (ean == '0') {
+          motivo = 'ean_zero';
+        } else if (preco <= 0) {
+          motivo = 'sem_preco';
+        }
+        if (motivo != null) {
+          excluidos.add({'nome': produto.nome, 'motivo': motivo});
           continue;
         }
+
+        incluidos++;
         final ativoNoIfood = produto.ativo && produto.exibirNoCatalogo && produto.estoqueAtual > 0;
         if (ativoNoIfood) ativosNoIfood++;
         // iFood rejeita a linha inteira se o preço promocional for maior ou
@@ -374,7 +383,7 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
         final precoPromocionalValido =
             produto.precoPromocional != null && produto.precoPromocional! < preco ? produto.precoPromocional : null;
         sheet.appendRow([
-          TextCellValue(produto.codigoBarras.trim()),
+          TextCellValue(ean),
           TextCellValue(produto.nome),
           DoubleCellValue(preco),
           IntCellValue(produto.estoqueAtual),
@@ -387,9 +396,8 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
         ]);
       }
 
-      final incluidos = produtos.length - semPrecoValido;
       final mensagem = 'Catálogo exportado pro iFood: $incluidos produto(s), $ativosNoIfood ativo(s)'
-          '${semPrecoValido > 0 ? ', $semPrecoValido sem preço válido ignorado(s)' : ''}.';
+          '${excluidos.isNotEmpty ? ', ${excluidos.length} fora do catálogo (sem EAN/preço válido)' : ''}.';
 
       await _exportarESalvar(
         workbook,
@@ -402,7 +410,12 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
           empresaId: empresaId,
           marketplaceId: widget.marketplace.id,
           tipo: TipoReconciliacaoHistorico.catalogoExportado,
-          detalhes: {'produtos_exportados': incluidos, 'produtos_ativos': ativosNoIfood},
+          detalhes: {
+            'produtos_exportados': incluidos,
+            'produtos_ativos': ativosNoIfood,
+            'produtos_excluidos': excluidos,
+            'produtos_excluidos_total': excluidos.length,
+          },
           mensagem: mensagem,
         );
       }
