@@ -8,11 +8,11 @@ import '../widgets/metric_card.dart';
 
 final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
 
-/// Painel simples de métricas de cupons — quantos ativos, quanto foi
-/// dado de desconto no período e o ranking de código mais usado. Mais
-/// enxuto que MetricasDespesasScreen de propósito (sem gráfico de
-/// tendência mensal) — cupom é um recurso novo aqui, sem histórico
-/// suficiente ainda pra uma série temporal ser útil.
+/// Aba "Métricas" de `CuponsHubScreen` — quantos ativos, quanto foi dado
+/// de desconto no período e o ranking de código mais usado. Mais enxuto
+/// que MetricasDespesasScreen de propósito (sem gráfico de tendência
+/// mensal) — cupom é um recurso novo aqui, sem histórico suficiente
+/// ainda pra uma série temporal ser útil.
 class MetricasCuponsScreen extends StatefulWidget {
   const MetricasCuponsScreen({super.key});
 
@@ -80,7 +80,6 @@ class _MetricasCuponsScreenState extends State<MetricasCuponsScreen> {
     final ranking = _porCodigo.entries.toList()..sort((a, b) => b.value.usos.compareTo(a.value.usos));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Métricas de Cupons')),
       body: RefreshIndicator(
         onRefresh: () async {
           await provider.carregar();

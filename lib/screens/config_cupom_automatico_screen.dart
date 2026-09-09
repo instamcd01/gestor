@@ -8,11 +8,11 @@ import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/form_section.dart';
 
-/// Regra de geração automática de cupom — pro cliente (no cadastro,
-/// trigger gerar_cupom_boas_vindas) e pro vendedor (código de indicação,
-/// trigger gerar_cupom_vendedor). Segue o mesmo padrão de DescontoScreen/
-/// PedidosVendasScreen: lê/grava colunas soltas em `empresas` direto,
-/// sem repository/provider dedicado.
+/// Aba "Automático" de `CuponsHubScreen` — regra de geração automática de
+/// cupom, pro cliente (no cadastro, trigger gerar_cupom_boas_vindas) e pro
+/// vendedor (código de indicação, trigger gerar_cupom_vendedor). Segue o
+/// mesmo padrão de DescontoScreen/PedidosVendasScreen: lê/grava colunas
+/// soltas em `empresas` direto, sem repository/provider dedicado.
 class ConfigCupomAutomaticoScreen extends StatefulWidget {
   const ConfigCupomAutomaticoScreen({super.key});
 
@@ -122,7 +122,6 @@ class _ConfigCupomAutomaticoScreenState extends State<ConfigCupomAutomaticoScree
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Cupom Automático')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(

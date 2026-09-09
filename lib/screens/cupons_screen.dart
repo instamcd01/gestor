@@ -11,6 +11,9 @@ import '../utils/produto_validators.dart';
 import '../widgets/estado_erro_lista.dart';
 import '../widgets/form_section.dart';
 
+/// Aba "Cupons" de `CuponsHubScreen` — lista + gerenciar (Scaffold próprio
+/// só pra ganhar FAB flutuante nesta aba específica; a barra de título/abas
+/// fica no hub).
 class CuponsScreen extends StatefulWidget {
   const CuponsScreen({super.key});
 
@@ -81,15 +84,10 @@ class _CuponsScreenState extends State<CuponsScreen> {
     final cupons = _filtrados(provider.cupons);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Cupons de desconto'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Novo cupom',
-            onPressed: () => _abrirFormulario(),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _abrirFormulario(),
+        tooltip: 'Novo cupom',
+        child: const Icon(Icons.add),
       ),
       body: Column(
         children: [

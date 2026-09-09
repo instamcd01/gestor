@@ -11,12 +11,10 @@ import 'horario_funcionamento_screen.dart';
 import 'meu_recibo_screen.dart';
 import 'opcoes_pagamento_screen.dart';
 import 'regras_venda_screen.dart';
-import 'cupons_screen.dart';
-import 'config_cupom_automatico_screen.dart';
+import 'cupons_hub_screen.dart';
 import 'config_petcash_screen.dart';
 import 'config_automacoes_whatsapp_screen.dart';
 import 'custos_operacionais_screen.dart';
-import 'metricas_cupons_screen.dart';
 import 'exportar_relatorios_screen.dart';
 import 'historico_entradas_screen.dart';
 import 'integrar_plataformas_screen.dart';
@@ -85,9 +83,7 @@ class ConfiguracoesScreen extends StatelessWidget {
                 MenuItem('Custos Operacionais', Icons.calculate_outlined, const CustosOperacionaisScreen()),
               MenuItem('Pedidos e Vendas', Icons.shopping_cart_outlined, const PedidosVendasScreen()),
               MenuItem('Opções de Entrega', Icons.local_shipping_outlined, const ConfiguracaoEntregaScreen()),
-              MenuItem('Cupons de Desconto', Icons.local_offer_outlined, const CuponsScreen()),
-              MenuItem('Métricas de Cupons', Icons.bar_chart_outlined, const MetricasCuponsScreen()),
-              MenuItem('Cupom Automático', Icons.auto_awesome_outlined, const ConfigCupomAutomaticoScreen()),
+              MenuItem('Cupons', Icons.local_offer_outlined, const CuponsHubScreen()),
               if (isDono) MenuItem('PetCash (Cashback)', Icons.pets_outlined, const ConfigPetCashScreen()),
               if (isDono)
                 MenuItem('Automações de WhatsApp', Icons.campaign_outlined, const ConfigAutomacoesWhatsappScreen()),
