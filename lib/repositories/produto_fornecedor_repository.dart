@@ -16,6 +16,36 @@ class ProdutoFornecedorRepository {
     return (data as List).map((row) => ProdutoFornecedor.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 
+  /// Todos os vínculos de um fornecedor, com o nome/código do produto
+  /// embutido — usado pela tela de desvincular em massa (não precisa
+  /// carregar a lista de faixas de desconto aqui, é só listagem).
+  Future<List<ProdutoFornecedor>> listarPorFornecedor(String fornecedorId) async {
+    final data = await supabase
+        .from('produto_fornecedores')
+        .select('*, produto:produtos(nome, codigo_barras)')
+        .eq('fornecedor_id', fornecedorId)
+        .order('id');
+
+    final vinculos = (data as List).map((row) => ProdutoFornecedor.fromSupabase(row as Map<String, dynamic>)).toList();
+    vinculos.sort((a, b) => (a.produtoNome ?? '').compareTo(b.produtoNome ?? ''));
+    return vinculos;
+  }
+
+  /// Remove vários vínculos de uma vez — usado pela tela de desvincular em
+  /// massa. Continua tentando os demais mesmo se um id falhar, devolvendo
+  /// os que não puderam ser removidos.
+  Future<List<String>> excluirEmLote(List<String> vinculoIds) async {
+    final falharam = <String>[];
+    for (final id in vinculoIds) {
+      try {
+        await excluir(id);
+      } catch (_) {
+        falharam.add(id);
+      }
+    }
+    return falharam;
+  }
+
   Future<ProdutoFornecedor> criar(ProdutoFornecedor vinculo, {required String empresaId}) async {
     if (vinculo.principal) {
       await _limparPrincipal(vinculo.produtoId);

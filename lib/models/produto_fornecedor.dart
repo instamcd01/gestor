@@ -39,6 +39,12 @@ class ProdutoFornecedor {
   final String produtoId;
   final String fornecedorId;
   final String? fornecedorNome;
+
+  /// Preenchidos só quando o vínculo é buscado a partir do fornecedor (ver
+  /// `ProdutoFornecedorRepository.listarPorFornecedor`) — a busca por
+  /// produto já tem o produto em mãos, não precisa desses campos.
+  final String? produtoNome;
+  final String? produtoCodigoBarras;
   final double custoUnitario;
   final String? codigoProdutoFornecedor;
   final int? multiploCompra;
@@ -51,6 +57,8 @@ class ProdutoFornecedor {
     required this.produtoId,
     required this.fornecedorId,
     this.fornecedorNome,
+    this.produtoNome,
+    this.produtoCodigoBarras,
     required this.custoUnitario,
     this.codigoProdutoFornecedor,
     this.multiploCompra,
@@ -96,12 +104,15 @@ class ProdutoFornecedor {
 
   factory ProdutoFornecedor.fromSupabase(Map<String, dynamic> row) {
     final fornecedorRow = row['fornecedor'] as Map<String, dynamic>?;
+    final produtoRow = row['produto'] as Map<String, dynamic>?;
     final faixasRows = (row['faixas_desconto_produto_fornecedor'] as List?) ?? [];
     return ProdutoFornecedor(
       id: row['id'] as String?,
       produtoId: row['produto_id'] as String,
       fornecedorId: row['fornecedor_id'] as String,
       fornecedorNome: fornecedorRow?['nome']?.toString(),
+      produtoNome: produtoRow?['nome']?.toString(),
+      produtoCodigoBarras: produtoRow?['codigo_barras']?.toString(),
       custoUnitario: (row['custo_unitario'] as num?)?.toDouble() ?? 0.0,
       codigoProdutoFornecedor: row['codigo_produto_fornecedor']?.toString(),
       multiploCompra: (row['multiplo_compra'] as num?)?.toInt(),

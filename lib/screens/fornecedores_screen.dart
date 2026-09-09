@@ -8,6 +8,7 @@ import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/estado_erro_lista.dart';
 import '../widgets/form_section.dart';
+import 'vinculos_fornecedor_screen.dart';
 
 class FornecedoresScreen extends StatefulWidget {
   const FornecedoresScreen({super.key});
@@ -142,9 +143,23 @@ class _FornecedoresScreenState extends State<FornecedoresScreen> {
                           [fornecedor.telefone, fornecedor.cnpjCpf].where((s) => s.isNotEmpty).join(' • '),
                         ),
                         onTap: () => _abrirFormulario(fornecedor: fornecedor),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: () => _excluir(fornecedor),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.inventory_2_outlined),
+                              tooltip: 'Produtos vinculados',
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => VinculosFornecedorScreen(fornecedor: fornecedor)),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.red),
+                              tooltip: 'Excluir fornecedor',
+                              onPressed: () => _excluir(fornecedor),
+                            ),
+                          ],
                         ),
                       ),
                     );
