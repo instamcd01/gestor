@@ -35,9 +35,21 @@ class KitProduto {
   bool exibirNoCatalogo;
   bool destacar;
 
-  /// Quantos kits dá pra montar agora, calculado via `estoque_disponivel_kit`
-  /// — nunca persistido, só preenchido ao listar/carregar.
+  /// EAN interno gerado automaticamente pelo banco na criação (faixa "2xxx",
+  /// reservada pra uso interno/loja) — nunca editável aqui, só leitura. É o
+  /// que faz o kit entrar na lista de Produtos normal e no catálogo
+  /// exportado do iFood/99Food (antes os dois excluíam kit de propósito).
+  final String? codigoBarras;
+
+  /// Quantos kits dá pra montar agora — vem de `estoque` (linha sincronizada
+  /// por trigger sempre que o estoque de algum componente muda), não mais
+  /// calculado aqui na hora.
   final int estoqueDisponivel;
+
+  /// Alerta de estoque baixo pro kit (mesmo campo/semântica de
+  /// `produtos.estoque_minimo`) — editável, mora na mesma linha de
+  /// `estoque` sincronizada, mas a trigger nunca sobrescreve esse valor.
+  int estoqueMinimo;
 
   List<ComponenteKit> componentes;
 
@@ -53,9 +65,20 @@ class KitProduto {
     this.ativo = true,
     this.exibirNoCatalogo = true,
     this.destacar = false,
+    this.codigoBarras,
     this.estoqueDisponivel = 0,
+    this.estoqueMinimo = 0,
     List<ComponenteKit>? componentes,
   }) : componentes = componentes ?? [];
+
+  /// Soma do custo dos componentes × quantidade de cada um — vira
+  /// `produtos.custo` ao salvar, pra qualquer venda do kit (inclusive via
+  /// reconciliação de marketplace, que não recalcula nada) ter um custo
+  /// real pro cálculo de lucro, em vez de 0. Recalculado a cada salvamento
+  /// do kit — se o custo de um componente mudar depois, só atualiza aqui
+  /// quando o kit for salvo de novo (não é sincronizado ao vivo como o
+  /// estoque).
+  double get custoCalculado => componentes.fold(0.0, (soma, c) => soma + c.custo * c.quantidade);
 
   /// Soma dos preços normais dos componentes × quantidade de cada um —
   /// "preço cheio" pra comparar com o preço fechado do kit e mostrar a
@@ -77,13 +100,14 @@ class KitProduto {
       ativo: row['ativo'] as bool? ?? true,
       exibirNoCatalogo: row['exibir_no_catalogo'] as bool? ?? true,
       destacar: row['destaque'] as bool? ?? false,
+      codigoBarras: row['codigo_barras']?.toString(),
       componentes: componentes,
     );
   }
 
-  /// Cópia com `estoqueDisponivel` preenchido — usado pelo repository
-  /// depois de chamar `estoque_disponivel_kit` (campo é `final`).
-  KitProduto comEstoqueDisponivel(int estoque) {
+  /// Cópia com estoque preenchido — usado pelo repository depois de ler a
+  /// linha de `estoque` (sincronizada por trigger, campos são `final`).
+  KitProduto comEstoque({required int disponivel, required int minimo}) {
     return KitProduto(
       id: id,
       nome: nome,
@@ -96,7 +120,9 @@ class KitProduto {
       ativo: ativo,
       exibirNoCatalogo: exibirNoCatalogo,
       destacar: destacar,
-      estoqueDisponivel: estoque,
+      codigoBarras: codigoBarras,
+      estoqueDisponivel: disponivel,
+      estoqueMinimo: minimo,
       componentes: componentes,
     );
   }
@@ -110,6 +136,7 @@ class KitProduto {
       'descricao': descricao,
       'categoria': categoria,
       'preco': preco,
+      'custo': custoCalculado,
       'preco_promocional': precoPromocional,
       'imagem_url': imagemUrl,
       'imagem_url_secundaria': imagemUrlSecundaria,

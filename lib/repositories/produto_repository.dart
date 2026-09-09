@@ -11,14 +11,15 @@ class ProdutoRepository {
       '*, estoque(id, quantidade_atual, quantidade_minima, deposito_id)';
 
   Future<List<Produto>> listar() async {
-    // eh_kit=false: kit é uma linha de produtos sem estoque próprio — sem
-    // esse filtro apareceria aqui como produto quebrado ("0 em estoque") em
-    // toda tela que lê ProdutoProvider.produtos. Kit tem listagem própria
-    // (KitProdutoProvider/KitsScreen).
+    // Kit ENTRA aqui de propósito (desde 09/09) — ganhou EAN interno e uma
+    // linha de `estoque` sincronizada por trigger (`trg_sincronizar_estoque_kit_componentes`/
+    // `trg_sincronizar_estoque_kits`, banco), então já chega com estoque
+    // real calculado, não "0 quebrado" — é assim que cupom "Produtos
+    // específicos" e o alerta de estoque baixo passam a enxergar kit,
+    // sem precisar de nenhum código novo nessas duas telas.
     final data = await supabase
         .from('produtos')
         .select(_selectComEstoque)
-        .eq('eh_kit', false)
         .isFilter('deleted_at', null)
         .order('nome', ascending: true);
 

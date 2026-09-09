@@ -28,6 +28,7 @@ class _KitProdutoFormScreenState extends State<KitProdutoFormScreen> {
   final _categoriaController = TextEditingController();
   final _precoController = TextEditingController();
   final _precoPromocionalController = TextEditingController();
+  final _estoqueMinimoController = TextEditingController(text: '0');
 
   bool _ativo = true;
   bool _destacar = false;
@@ -52,6 +53,7 @@ class _KitProdutoFormScreenState extends State<KitProdutoFormScreen> {
       if (inicial.precoPromocional != null) {
         _precoPromocionalController.text = ProdutoValidators.formatarMoeda(inicial.precoPromocional!);
       }
+      _estoqueMinimoController.text = inicial.estoqueMinimo.toString();
       _ativo = inicial.ativo;
       _destacar = inicial.destacar;
       _exibirNoCatalogo = inicial.exibirNoCatalogo;
@@ -74,6 +76,7 @@ class _KitProdutoFormScreenState extends State<KitProdutoFormScreen> {
     _categoriaController.dispose();
     _precoController.dispose();
     _precoPromocionalController.dispose();
+    _estoqueMinimoController.dispose();
     super.dispose();
   }
 
@@ -81,7 +84,11 @@ class _KitProdutoFormScreenState extends State<KitProdutoFormScreen> {
       _componentes.fold(0.0, (soma, c) => soma + c.preco * c.quantidade);
 
   Future<void> _adicionarComponente() async {
-    final produtos = context.read<ProdutoProvider>().produtos;
+    // Kit não pode ter outro kit como componente — a partir de 09/09 kit
+    // também aparece em ProdutoProvider.produtos (pra cupom/alerta de
+    // estoque enxergarem ele), então precisa filtrar aqui pra não abrir
+    // brecha de kit aninhado (a sincronização de estoque não suporta isso).
+    final produtos = context.read<ProdutoProvider>().produtos.where((p) => !p.ehKit).toList();
     final escolhido = await showModalBottomSheet<Produto>(
       context: context,
       isScrollControlled: true,
@@ -148,6 +155,7 @@ class _KitProdutoFormScreenState extends State<KitProdutoFormScreen> {
 
     setState(() => _isLoading = true);
 
+    final estoqueMinimo = int.tryParse(_estoqueMinimoController.text.trim()) ?? 0;
     final kit = KitProduto(
       id: widget.kitInicial?.id,
       nome: _nomeController.text,
@@ -167,12 +175,19 @@ class _KitProdutoFormScreenState extends State<KitProdutoFormScreen> {
       final kitProvider = context.read<KitProdutoProvider>();
       if (_editando) {
         await kitProvider.atualizarKit(kit);
+        await kitProvider.atualizarEstoqueMinimo(kit.id!, estoqueMinimo);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kit atualizado!')));
           Navigator.of(context).pop();
         }
       } else {
         final kitCriado = await kitProvider.adicionarKit(kit);
+        if (kitCriado.id != null) {
+          // Componentes já vinculados nesse ponto (adicionarKit espera a
+          // criação terminar) — a linha de estoque do kit já existe, então
+          // já dá pra gravar o mínimo escolhido.
+          await kitProvider.atualizarEstoqueMinimo(kitCriado.id!, estoqueMinimo);
+        }
         if (mounted && kitCriado.id != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Kit criado! Agora adicione uma foto.')),
@@ -212,6 +227,20 @@ class _KitProdutoFormScreenState extends State<KitProdutoFormScreen> {
               FormSection(
                 titulo: 'Identificação',
                 children: [
+                  if (widget.kitInicial?.codigoBarras != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.qr_code_outlined, size: 16, color: colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 6),
+                          Text(
+                            'EAN interno: ${widget.kitInicial!.codigoBarras}',
+                            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
                   TextFormField(
                     controller: _nomeController,
                     decoration: const InputDecoration(labelText: 'Nome do Kit'),
@@ -263,6 +292,23 @@ class _KitProdutoFormScreenState extends State<KitProdutoFormScreen> {
                     onPressed: _adicionarComponente,
                     icon: const Icon(Icons.add),
                     label: const Text('Adicionar produto'),
+                  ),
+                  if (_editando) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Disponível agora: ${widget.kitInicial!.estoqueDisponivel} kit(s) — calculado a partir do estoque dos componentes.',
+                      style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _estoqueMinimoController,
+                    decoration: const InputDecoration(
+                      labelText: 'Estoque mínimo (alerta)',
+                      helperText: 'Avisa quando só der pra montar essa quantidade (ou menos) de kits',
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [InteiroInputFormatter()],
                   ),
                 ],
               ),

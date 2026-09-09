@@ -65,4 +65,13 @@ class KitProdutoProvider with ChangeNotifier {
     _kits.removeWhere((k) => k.id == id);
     notifyListeners();
   }
+
+  Future<void> atualizarEstoqueMinimo(String kitId, int minimo) async {
+    await _repository.atualizarEstoqueMinimo(kitId, minimo);
+    final index = _kits.indexWhere((k) => k.id == kitId);
+    if (index != -1) {
+      _kits[index] = _kits[index].comEstoque(disponivel: _kits[index].estoqueDisponivel, minimo: minimo);
+      notifyListeners();
+    }
+  }
 }

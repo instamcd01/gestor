@@ -46,15 +46,24 @@ class KitProdutoRepository {
             ))
         .toList();
 
-    // Estoque de cada kit (quantos dá pra montar agora) — uma chamada por
-    // kit, em paralelo; catálogo de kits tende a ser pequeno, então N
-    // chamadas paralelas não é problema real de performance aqui.
-    final estoques = await Future.wait(
-      kits.map((k) => supabase.rpc('estoque_disponivel_kit', params: {'p_kit_id': k.id})),
-    );
+    // Estoque de cada kit já vem pronto de `estoque` — sincronizado por
+    // trigger toda vez que o estoque de algum componente muda (ou os
+    // componentes do kit são editados), não precisa mais recalcular aqui
+    // chamando `estoque_disponivel_kit` uma vez por kit.
+    final estoqueData = await supabase
+        .from('estoque')
+        .select('produto_id, quantidade_atual, quantidade_minima')
+        .inFilter('produto_id', kitIds);
+    final estoquePorKit = {
+      for (final row in (estoqueData as List)) row['produto_id'] as String: row as Map<String, dynamic>,
+    };
 
     return [
-      for (var i = 0; i < kits.length; i++) kits[i].comEstoqueDisponivel((estoques[i] as num?)?.toInt() ?? 0),
+      for (final kit in kits)
+        kit.comEstoque(
+          disponivel: (estoquePorKit[kit.id]?['quantidade_atual'] as num?)?.toInt() ?? 0,
+          minimo: (estoquePorKit[kit.id]?['quantidade_minima'] as num?)?.toInt() ?? 0,
+        ),
     ];
   }
 
@@ -103,6 +112,15 @@ class KitProdutoRepository {
           },
       ]);
     }
+  }
+
+  /// Estoque mínimo (alerta) do kit — mora na linha de `estoque`
+  /// sincronizada por trigger, não em `produtos`. A trigger nunca
+  /// sobrescreve esse valor ao ressincronizar `quantidade_atual`, então
+  /// isso é seguro de chamar a qualquer momento (o kit já tem uma linha de
+  /// `estoque` desde que o 1º componente foi vinculado).
+  Future<void> atualizarEstoqueMinimo(String kitId, int minimo) async {
+    await supabase.from('estoque').update({'quantidade_minima': minimo}).eq('produto_id', kitId);
   }
 
   /// Exclusão lógica — mesmo padrão de `ProdutoRepository.excluir`.

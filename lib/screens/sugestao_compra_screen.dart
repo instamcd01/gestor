@@ -188,7 +188,12 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
   Future<void> _adicionarProdutoManual(_GrupoFornecedor grupo) async {
     final produtos = context.read<ProdutoProvider>().produtos;
     final jaNoGrupo = grupo.itens.map((i) => i.produtoId).toSet();
-    final disponiveis = produtos.where((p) => p.ativo && p.id != null && !jaNoGrupo.contains(p.id)).toList()
+    // Kit não se compra de fornecedor (é montado a partir de produtos já
+    // em estoque) — fora daqui desde que kit passou a entrar em
+    // ProdutoProvider.produtos (09/09).
+    final disponiveis = produtos
+        .where((p) => p.ativo && p.id != null && !p.ehKit && !jaNoGrupo.contains(p.id))
+        .toList()
       ..sort((a, b) => a.nome.compareTo(b.nome));
 
     final produtoEscolhido = await showModalBottomSheet<Produto>(

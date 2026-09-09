@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/kit_produto_provider.dart';
 import '../providers/produto_provider.dart';
 import '../utils/busca_utils.dart';
 import '../widgets/importar_produtos_planilha.dart';
@@ -11,6 +12,7 @@ import 'cadastro_produto_screen.dart';
 import 'configuracoes_produto_screen.dart';
 import 'detalhes_produto_screen.dart';
 import 'editar_produto_screen.dart';
+import 'kit_produto_form_screen.dart';
 import 'produtos_excluidos_screen.dart';
 
 class ProdutosScreen extends StatefulWidget {
@@ -228,7 +230,20 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                               return _ProdutoCard(
                                 produto: produto,
                                 isVendedor: isVendedor,
-                                onTap: () {
+                                onTap: () async {
+                                  // Kit entrou na lista de Produtos (09/09) só pra cupom/alerta
+                                  // de estoque enxergarem ele — editar continua exigindo a tela
+                                  // própria (escolha de componentes), nunca o formulário normal.
+                                  if (produto.ehKit) {
+                                    final kitProvider = context.read<KitProdutoProvider>();
+                                    await kitProvider.carregarKits();
+                                    if (!context.mounted) return;
+                                    final kit = kitProvider.kits.where((k) => k.id == produto.id).firstOrNull;
+                                    if (kit == null) return;
+                                    Navigator.of(context)
+                                        .push(MaterialPageRoute(builder: (_) => KitProdutoFormScreen(kitInicial: kit)));
+                                    return;
+                                  }
                                   Navigator.of(context).push(MaterialPageRoute(
                                     builder: (context) => isVendedor
                                         ? DetalhesProdutoScreen(produto: produto)
