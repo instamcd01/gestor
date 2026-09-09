@@ -12,11 +12,12 @@ import '../widgets/form_section.dart';
 const _tiposUnicos = ['logo_completa', 'logo_slogan', 'nome_loja_imagem'];
 const _posicoes = ['site_header', 'site_sidebar', 'app_inicio', 'app_drawer', 'app_sidebar', 'app_login'];
 
-/// Kit de marca da empresa — galeria de imagens (mascote com variações,
+/// Kit de marca da empresa — aba "Kit de Marca" de
+/// `AparenciaMarcaHubScreen`: galeria de imagens (mascote com variações,
 /// logo completa, logo com slogan, nome da loja em imagem) + onde cada uma
 /// aparece (cabeçalho/sidebar do site, menu/sidebar do app). Só o dono vê
-/// esse menu (gated em `configuracoes_screen.dart`), diferente de
-/// "Aparência e Marca" (cor/tema), que dono e gerente editam.
+/// essa aba (gated no hub), diferente de "Aparência" (cor/tema), que dono
+/// e gerente editam. Sem Scaffold próprio: quem chama decide AppBar/abas.
 class KitDeMarcaScreen extends StatefulWidget {
   const KitDeMarcaScreen({super.key});
 
@@ -153,9 +154,7 @@ class _KitDeMarcaScreenState extends State<KitDeMarcaScreen> {
   Widget build(BuildContext context) {
     final branding = context.watch<BrandingProvider>();
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Kit de Marca')),
-      body: ListView(
+    return ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
@@ -232,8 +231,7 @@ class _KitDeMarcaScreenState extends State<KitDeMarcaScreen> {
             ),
           ),
         ],
-      ),
-    );
+      );
   }
 }
 

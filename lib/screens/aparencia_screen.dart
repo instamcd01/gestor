@@ -6,8 +6,11 @@ import '../providers/branding_provider.dart';
 import '../providers/preferencias_provider.dart';
 import '../theme/app_theme.dart';
 
-/// Tela de personalização visual da empresa (Configurações > Aparência e Marca).
-/// Cada empresa do SaaS edita aqui a própria identidade visual do app.
+/// Personalização visual da empresa — aba "Aparência" de
+/// `AparenciaMarcaHubScreen` (ou tela sozinha, sem abas, quando quem
+/// acessa não é dono — ver o hub). Cada empresa do SaaS edita aqui a
+/// própria identidade visual do app. Sem Scaffold próprio: quem chama
+/// decide AppBar/abas.
 class AparenciaScreen extends StatelessWidget {
   const AparenciaScreen({super.key});
 
@@ -31,9 +34,7 @@ class AparenciaScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final branding = context.watch<BrandingProvider>();
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Aparência e Marca')),
-      body: ListView(
+    return ListView(
         padding: const EdgeInsets.all(20),
         children: [
           Text(
@@ -143,8 +144,7 @@ class AparenciaScreen extends StatelessWidget {
             label: const Text('Restaurar cor do modelo'),
           ),
         ],
-      ),
-    );
+      );
   }
 
   void _abrirSeletorDeCor(
