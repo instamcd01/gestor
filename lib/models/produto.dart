@@ -16,6 +16,15 @@ class Produto {
   int estoqueMinimo;
   String imagemUrl;
   String? imagemUrlSecundaria;
+
+  /// `produtos.updated_at` — usado só pra montar [imagemUrlExibicao] (cache
+  /// busting). O path da imagem no Storage é sempre o mesmo pro mesmo
+  /// produto+posição (`upsert: true` no upload), então `Image.network`
+  /// continua mostrando a versão antiga em cache depois de trocar a foto,
+  /// se a url não mudar — achado real (08/09): usuário via a foto nova só
+  /// nas telas de edição (que já tinham cache-busting próprio), mas a antiga
+  /// continuava aparecendo na lista de produtos e na tela de detalhe.
+  final DateTime? updatedAt;
   String codigoBarras;
   double custo;
   bool destacar;
@@ -132,6 +141,7 @@ class Produto {
     required this.estoqueMinimo,
     required this.imagemUrl,
     this.imagemUrlSecundaria,
+    this.updatedAt,
     required this.codigoBarras,
     required this.custo,
     this.destacar = false,
@@ -167,6 +177,17 @@ class Produto {
     this.ehKit = false,
   });
 
+  /// Url da imagem principal com cache-buster — usar em `Image.network`
+  /// sempre que exibir a foto do produto (nunca pra upload/comparação, só
+  /// exibição). Ver comentário de [updatedAt].
+  String get imagemUrlExibicao =>
+      imagemUrl.isEmpty ? imagemUrl : '$imagemUrl?cb=${updatedAt?.millisecondsSinceEpoch ?? 0}';
+
+  /// Mesma ideia de [imagemUrlExibicao], pra imagem secundária.
+  String? get imagemUrlSecundariaExibicao => imagemUrlSecundaria == null || imagemUrlSecundaria!.isEmpty
+      ? imagemUrlSecundaria
+      : '$imagemUrlSecundaria?cb=${updatedAt?.millisecondsSinceEpoch ?? 0}';
+
   /// Monta o Produto a partir de uma linha do Supabase.
   /// Espera o formato retornado por `.select('*, estoque(id, quantidade_atual, quantidade_minima)')`.
   factory Produto.fromSupabase(Map<String, dynamic> row) {
@@ -199,6 +220,7 @@ class Produto {
       estoqueMinimo: estoqueMinimo,
       imagemUrl: row['imagem_url']?.toString() ?? '',
       imagemUrlSecundaria: row['imagem_url_secundaria']?.toString(),
+      updatedAt: row['updated_at'] != null ? DateTime.tryParse(row['updated_at'].toString()) : null,
       codigoBarras: row['codigo_barras']?.toString() ?? '',
       custo: custo,
       destacar: row['destaque'] as bool? ?? false,

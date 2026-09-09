@@ -275,7 +275,7 @@ class _ProdutoCard extends StatelessWidget {
                   color: colorScheme.surfaceContainerHighest,
                   child: produto.imagemUrl.isNotEmpty
                       ? Image.network(
-                          produto.imagemUrl,
+                          produto.imagemUrlExibicao,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => Icon(
                             Icons.inventory_2_outlined,

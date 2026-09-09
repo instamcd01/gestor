@@ -403,7 +403,7 @@ class _VendasScreenState extends State<VendasScreen> {
 
   Widget _imagemProduto(Produto produto, ColorScheme colorScheme) {
     final imagemUrl = produto.imagemUrl.isNotEmpty
-        ? produto.imagemUrl
+        ? produto.imagemUrlExibicao
         : 'http://imagens.lukz.com.br/produtos/${produto.codigoBarras}.png';
 
     return ClipRRect(

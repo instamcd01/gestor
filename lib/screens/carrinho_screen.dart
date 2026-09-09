@@ -279,7 +279,7 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
     final produto = item.produto;
     final quantidade = item.quantidade;
     final imagemUrl = produto.imagemUrl.isNotEmpty
-        ? produto.imagemUrl
+        ? produto.imagemUrlExibicao
         : 'http://imagens.lukz.com.br/produtos/${produto.codigoBarras}.png';
 
     return Card(
