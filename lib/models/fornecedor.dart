@@ -1,7 +1,19 @@
 class Fornecedor {
   final String? id;
   final String nome;
+
+  /// Telefone institucional/de contato geral (costuma vir da nota fiscal) —
+  /// não necessariamente é WhatsApp nem é quem atende pedido. Ver
+  /// [whatsappVendedor] pro número usado de verdade no botão "Enviar por
+  /// WhatsApp" do pedido de compra.
   final String telefone;
+
+  /// WhatsApp do vendedor/representante — o número usado de verdade pra
+  /// enviar pedido de compra (`PedidoCompraDetalheScreen`). Separado de
+  /// [telefone] porque muitas notas fiscais só trazem o telefone
+  /// institucional da empresa, que raramente é WhatsApp de quem atende
+  /// pedido. Vazio = usa [telefone] como fallback.
+  final String whatsappVendedor;
   final String cnpjCpf;
   final String email;
   final String observacoes;
@@ -26,6 +38,7 @@ class Fornecedor {
     this.id,
     required this.nome,
     this.telefone = '',
+    this.whatsappVendedor = '',
     this.cnpjCpf = '',
     this.email = '',
     this.observacoes = '',
@@ -35,11 +48,17 @@ class Fornecedor {
     this.valorMinimoPedido,
   });
 
+  /// Número a usar de verdade pra enviar pedido de compra por WhatsApp —
+  /// prioriza o WhatsApp do vendedor, cai pro telefone geral se aquele não
+  /// estiver cadastrado (fornecedores antigos só têm `telefone` mesmo).
+  String get telefoneParaPedido => whatsappVendedor.trim().isNotEmpty ? whatsappVendedor : telefone;
+
   factory Fornecedor.fromSupabase(Map<String, dynamic> row) {
     return Fornecedor(
       id: row['id'] as String?,
       nome: row['nome']?.toString() ?? '',
       telefone: row['telefone']?.toString() ?? '',
+      whatsappVendedor: row['whatsapp_vendedor']?.toString() ?? '',
       cnpjCpf: row['cnpj_cpf']?.toString() ?? '',
       email: row['email']?.toString() ?? '',
       observacoes: row['observacoes']?.toString() ?? '',
@@ -54,6 +73,7 @@ class Fornecedor {
     return {
       'nome': nome,
       'telefone': telefone,
+      'whatsapp_vendedor': whatsappVendedor,
       'cnpj_cpf': cnpjCpf,
       'email': email,
       'observacoes': observacoes,

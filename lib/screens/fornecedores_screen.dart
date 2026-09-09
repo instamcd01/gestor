@@ -186,6 +186,7 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nomeController;
   late final TextEditingController _telefoneController;
+  late final TextEditingController _whatsappVendedorController;
   late final TextEditingController _cnpjCpfController;
   late final TextEditingController _emailController;
   late final TextEditingController _observacoesController;
@@ -202,6 +203,7 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
     final f = widget.fornecedor;
     _nomeController = TextEditingController(text: f?.nome ?? '');
     _telefoneController = TextEditingController(text: f?.telefone ?? '');
+    _whatsappVendedorController = TextEditingController(text: f?.whatsappVendedor ?? '');
     _cnpjCpfController = TextEditingController(text: f?.cnpjCpf ?? '');
     _emailController = TextEditingController(text: f?.email ?? '');
     _observacoesController = TextEditingController(text: f?.observacoes ?? '');
@@ -216,6 +218,7 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
   void dispose() {
     _nomeController.dispose();
     _telefoneController.dispose();
+    _whatsappVendedorController.dispose();
     _cnpjCpfController.dispose();
     _emailController.dispose();
     _observacoesController.dispose();
@@ -233,6 +236,7 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
       id: widget.fornecedor?.id,
       nome: _nomeController.text.trim(),
       telefone: _telefoneController.text.trim(),
+      whatsappVendedor: _whatsappVendedorController.text.trim(),
       cnpjCpf: _cnpjCpfController.text.trim(),
       email: _emailController.text.trim(),
       observacoes: _observacoesController.text.trim(),
@@ -281,7 +285,21 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
                   ),
                   TextFormField(
                     controller: _telefoneController,
-                    decoration: const InputDecoration(labelText: 'Telefone (Opcional)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Telefone (Opcional)',
+                      helperText: 'Telefone geral/institucional (ex: o que vem na nota fiscal) — nem sempre é WhatsApp.',
+                      helperMaxLines: 2,
+                    ),
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [TelefoneInputFormatter()],
+                  ),
+                  TextFormField(
+                    controller: _whatsappVendedorController,
+                    decoration: const InputDecoration(
+                      labelText: 'WhatsApp do vendedor (Opcional)',
+                      helperText: 'Número usado de verdade pra enviar pedido de compra. Em branco, usa o telefone acima.',
+                      helperMaxLines: 2,
+                    ),
                     keyboardType: TextInputType.phone,
                     inputFormatters: [TelefoneInputFormatter()],
                   ),

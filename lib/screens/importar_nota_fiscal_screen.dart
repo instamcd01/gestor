@@ -336,29 +336,60 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final produtos = _produtosPorId;
     final pendentes = _itensResolvidos.where((i) => !i.casado).length;
     final vaiParaEstoque = _itensResolvidos.length - pendentes;
-    final custosDivergentes = _itensResolvidos.where((i) {
+    final itensComCustoDivergente = _itensResolvidos.where((i) {
       if (!i.casado || i.custoUnitario <= 0) return false;
       final produto = produtos[i.produtoId];
       return produto != null && produto.custo != i.custoUnitario;
-    }).length;
+    }).toList();
 
+    // Vínculo produto↔fornecedor: busca de uma vez quais produtos casados já
+    // têm vínculo com ESSE fornecedor, pra avisar quais serão criados agora
+    // (não é só custo mudando — pode ser a 1ª compra desse produto ali).
+    Set<String> jaVinculados = {};
+    if (_fornecedorExistente?.id != null) {
+      final vinculos = await ProdutoFornecedorRepository().listarPorFornecedor(_fornecedorExistente!.id!);
+      jaVinculados = vinculos.map((v) => v.produtoId).toSet();
+    }
+    final novosVinculos = _itensResolvidos.where((i) => i.casado && i.custoUnitario > 0 && !jaVinculados.contains(i.produtoId)).length;
+
+    if (!mounted) return;
     final confirmou = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar importação'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('$vaiParaEstoque item(ns) vão somar no estoque.'),
-            if (pendentes > 0)
-              Text('$pendentes pendente(s) NÃO vão afetar o estoque.', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
-            if (custosDivergentes > 0) Text('$custosDivergentes produto(s) terão o custo cadastrado atualizado.'),
-            if (nfe.parcelas.isNotEmpty)
-              Text('${nfe.parcelas.length} boleto(s) serão criados, totalizando ${_moeda.format(nfe.parcelas.fold<double>(0, (s, p) => s + p.valor))}.')
-            else
-              const Text('Nenhum boleto será criado (nota sem parcela/duplicata).'),
-          ],
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$vaiParaEstoque item(ns) vão somar no estoque.'),
+                if (pendentes > 0)
+                  Text('$pendentes pendente(s) NÃO vão afetar o estoque.', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+                if (novosVinculos > 0)
+                  Text('$novosVinculos produto(s) serão vinculados a "${_fornecedorExistente?.nome ?? nfe.fornecedorDetectado.nome}" pela 1ª vez.'),
+                if (itensComCustoDivergente.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('${itensComCustoDivergente.length} produto(s) terão o custo atualizado:', style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  for (final item in itensComCustoDivergente)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        '• ${produtos[item.produtoId]?.nome ?? item.produtoId} — ${_moeda.format(produtos[item.produtoId]?.custo ?? 0)} → ${_moeda.format(item.custoUnitario)}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 8),
+                if (nfe.parcelas.isNotEmpty)
+                  Text('${nfe.parcelas.length} boleto(s) serão criados, totalizando ${_moeda.format(nfe.parcelas.fold<double>(0, (s, p) => s + p.valor))}.')
+                else
+                  const Text('Nenhum boleto será criado (nota sem parcela/duplicata).'),
+              ],
+            ),
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Revisar de novo')),

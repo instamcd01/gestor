@@ -133,14 +133,14 @@ class _PedidoCompraDetalheScreenState extends State<PedidoCompraDetalheScreen> {
   Future<void> _abrirWhatsApp() async {
     final pedido = _pedido;
     if (pedido == null) return;
-    if (pedido.fornecedor.telefone.trim().isEmpty) {
+    if (pedido.fornecedor.telefoneParaPedido.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Este fornecedor não tem telefone cadastrado')),
+        const SnackBar(content: Text('Este fornecedor não tem WhatsApp/telefone cadastrado')),
       );
       return;
     }
     final texto = Uri.encodeComponent(_textoPedidoFormatado(pedido));
-    final url = Uri.parse('${linkWhatsApp(pedido.fornecedor.telefone)}?text=$texto');
+    final url = Uri.parse('${linkWhatsApp(pedido.fornecedor.telefoneParaPedido)}?text=$texto');
     try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } catch (e) {
