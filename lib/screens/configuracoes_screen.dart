@@ -4,8 +4,7 @@ import 'aparencia_marca_hub_screen.dart';
 import 'configuracao_entrega_screen.dart';
 import 'configuracao_notificacoes_screen.dart';
 import 'dados_loja_screen.dart';
-import 'catalogo_online_screen.dart';
-import 'banners_loja_screen.dart';
+import 'catalogo_online_hub_screen.dart';
 import 'horario_funcionamento_screen.dart';
 import 'meu_recibo_screen.dart';
 import 'pagamento_hub_screen.dart';
@@ -65,8 +64,7 @@ class ConfiguracoesScreen extends StatelessWidget {
               MenuItem('Dados da Loja', Icons.store_outlined, const DadosLojaScreen()),
               MenuItem('Horário de Funcionamento', Icons.schedule_outlined, const GeralScreen()),
               MenuItem('Aparência e Marca', Icons.palette_outlined, const AparenciaMarcaHubScreen()),
-              MenuItem('Catálogo Online', Icons.storefront_outlined, const CatalogoOnlineScreen()),
-              MenuItem('Banners da Home', Icons.view_carousel_outlined, const BannersLojaScreen()),
+              MenuItem('Catálogo Online', Icons.storefront_outlined, const CatalogoOnlineHubScreen()),
               MenuItem('Meu Recibo', Icons.receipt_long_outlined, const MeuReciboScreen()),
               MenuItem('Notificações', Icons.notifications_outlined, const ConfiguracaoNotificacoesScreen()),
             ],

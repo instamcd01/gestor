@@ -44,9 +44,11 @@ const _larguraMinimaRecomendada = 1600;
 /// desktop.
 const _larguraTotalRecomendada = 2100;
 
-/// Banner rotativo da home do site — Configurações > Catálogo Online.
-/// Lojista escolhe fotos ou vídeos, reordena por arrastar, ativa/desativa
-/// sem excluir. Consumido pelo site via `catalogo_banners_publico`.
+/// Aba "Banners" de `CatalogoOnlineHubScreen` — banner rotativo da home do
+/// site. Lojista escolhe fotos ou vídeos, reordena por arrastar,
+/// ativa/desativa sem excluir. Consumido pelo site via
+/// `catalogo_banners_publico`. Scaffold próprio só pra ganhar FAB
+/// flutuante nesta aba (padrão já usado em `CuponsScreen`).
 class BannersLojaScreen extends StatefulWidget {
   const BannersLojaScreen({super.key});
 
@@ -234,11 +236,10 @@ class _BannersLojaScreenState extends State<BannersLojaScreen> {
     final provider = context.watch<BannerHomeProvider>();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Banners da Home'),
-        actions: [
-          IconButton(icon: const Icon(Icons.add), tooltip: 'Adicionar banner', onPressed: _abrirMenuAdicionar),
-        ],
+      floatingActionButton: FloatingActionButton(
+        onPressed: _abrirMenuAdicionar,
+        tooltip: 'Adicionar banner',
+        child: const Icon(Icons.add),
       ),
       body: provider.carregando
           ? const Center(child: CircularProgressIndicator())

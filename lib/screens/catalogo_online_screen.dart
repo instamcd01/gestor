@@ -11,11 +11,12 @@ import '../utils/formatadores_input.dart';
 import '../widgets/aviso_banner.dart';
 import '../widgets/form_section.dart';
 
-/// Configuração do catálogo/site público (Configurações > Catálogo Online).
-/// O site em si ainda não existe — vai ser um projeto separado depois —
-/// mas os dados ficam prontos aqui: slug da loja, se o catálogo está
-/// publicado, se aceita pedido online, redes sociais e info extra que a
-/// página pública vai exibir.
+/// Aba "Catálogo" de `CatalogoOnlineHubScreen`. O site em si ainda não
+/// existe — vai ser um projeto separado depois — mas os dados ficam
+/// prontos aqui: slug da loja, se o catálogo está publicado, se aceita
+/// pedido online, redes sociais e info extra que a página pública vai
+/// exibir. Sem Scaffold/AppBar próprio: o botão "Salvar" no fim da lista
+/// já é o único jeito de salvar, sem ícone redundante na AppBar de antes.
 class CatalogoOnlineScreen extends StatefulWidget {
   const CatalogoOnlineScreen({super.key});
 
@@ -204,25 +205,9 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
     final produtosNoCatalogo =
         produtoProvider.produtos.where((p) => p.exibirNoCatalogo && p.ativo).length;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Catálogo Online'),
-        actions: [
-          _salvando
-              ? Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary, strokeWidth: 2),
-                  ),
-                )
-              : IconButton(icon: const Icon(Icons.save), onPressed: _carregando ? null : _salvar),
-        ],
-      ),
-      body: _carregando
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+    return _carregando
+        ? const Center(child: CircularProgressIndicator())
+        : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Form(
                 key: _formKey,
@@ -444,7 +429,6 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                   ],
                 ),
               ),
-            ),
-    );
+            );
   }
 }
