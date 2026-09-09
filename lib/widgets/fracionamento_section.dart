@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/produto.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
+import '../utils/formatadores_input.dart';
+import '../utils/produto_validators.dart';
 import 'form_section.dart';
 
 /// Seção "Fracionamento" em editar_produto_screen.dart — permite criar (a
@@ -128,6 +130,7 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
   final _pesoNovoController = TextEditingController();
   final _fatorController = TextEditingController();
   final _rotuloController = TextEditingController();
+  final _codigoBarrasController = TextEditingController();
   String? _erro;
 
   @override
@@ -135,6 +138,7 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
     _pesoNovoController.dispose();
     _fatorController.dispose();
     _rotuloController.dispose();
+    _codigoBarrasController.dispose();
     super.dispose();
   }
 
@@ -168,6 +172,11 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
       setState(() => _erro = 'Informe um rótulo pra identificar esta variante (ex: "1kg", "Unidade avulsa").');
       return;
     }
+    final erroCodigoBarras = ProdutoValidators.codigoBarras(_codigoBarrasController.text);
+    if (erroCodigoBarras != null) {
+      setState(() => _erro = erroCodigoBarras);
+      return;
+    }
 
     final pai = widget.produtoPai;
     final pesoNovo = _eixo == _EixoFracionamento.peso
@@ -187,7 +196,11 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
       estoqueMinimo: 0,
       imagemUrl: pai.imagemUrl,
       imagemUrlSecundaria: pai.imagemUrlSecundaria,
-      codigoBarras: '',
+      // Vazio = o banco gera um EAN interno sozinho (faixa "2xxx", nunca
+      // colide com código de fabricante real). Se o lojista já sabe que
+      // esse tamanho fracionado tem EAN próprio de fábrica, informar aqui
+      // evita ter que criar e editar de novo só pra trocar o código.
+      codigoBarras: _codigoBarrasController.text.trim(),
       custo: pai.custo / fator,
       exibirNoCatalogo: pai.exibirNoCatalogo,
       empresa: pai.empresa,
@@ -267,6 +280,17 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
               decoration: const InputDecoration(
                 labelText: 'Rótulo desta variante',
                 helperText: 'Ex: "1kg" ou "Unidade avulsa"',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _codigoBarrasController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [DigitosInputFormatter()],
+              decoration: const InputDecoration(
+                labelText: 'Código de barras (Opcional)',
+                helperText: 'Só se esse tamanho já tiver EAN próprio de fábrica — '
+                    'em branco, o sistema gera um código interno sozinho',
               ),
             ),
             if (_fatorCalculado != null)
