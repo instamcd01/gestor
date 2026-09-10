@@ -7,6 +7,9 @@ import '../models/venda.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../utils/canal_venda_utils.dart';
 import '../widgets/metric_card.dart';
+import 'crescimento_screen.dart';
+import 'painel_executivo_screen.dart';
+import 'rentabilidade_zona_screen.dart';
 
 class _AgregadoProduto {
   final String nome;
@@ -155,6 +158,27 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
       appBar: AppBar(
         title: const Text('Estatísticas'),
         actions: [
+          IconButton(
+            tooltip: 'Painel Executivo',
+            icon: const Icon(Icons.dashboard_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PainelExecutivoScreen()),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Crescimento por canal',
+            icon: const Icon(Icons.trending_up),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CrescimentoScreen()),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Rentabilidade por zona de entrega',
+            icon: const Icon(Icons.map_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RentabilidadeZonaScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: provider.carregarVendas,

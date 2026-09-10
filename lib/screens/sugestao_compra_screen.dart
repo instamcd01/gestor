@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/fornecedor.dart';
 import '../models/pedido_compra.dart';
@@ -281,6 +282,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
       ),
       body: Column(
         children: [
+          const _CardSazonalidade(),
           _FiltrosAnalise(
             diasAnalise: _diasAnalise,
             diasSeguranca: _diasSeguranca,
@@ -334,6 +336,114 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
                   onAdicionarProduto: () => _adicionarProdutoManual(_grupos[index]),
                   onCriarPedido: () => _criarPedido(_grupos[index]),
                 ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Aviso de sazonalidade comercial (Black Friday/fim de ano e outros picos
+/// de calendário) pros próximos 3 meses — não muda a quantidade sugerida
+/// sozinho (confiança ainda baixa/média com só ~2-3 anos de histórico),
+/// só avisa pra você decidir reforçar o pedido manualmente. Melhora
+/// sozinho conforme mais anos de dado real entram (RPC usa todo o
+/// histórico disponível, sem janela fixa). Ver [[gestor_pedido_compra_fornecedor]].
+class _CardSazonalidade extends StatefulWidget {
+  const _CardSazonalidade();
+
+  @override
+  State<_CardSazonalidade> createState() => _CardSazonalidadeState();
+}
+
+class _CardSazonalidadeState extends State<_CardSazonalidade> {
+  bool _carregando = true;
+  List<Map<String, dynamic>> _indices = [];
+  bool _expandido = false;
+
+  static const _nomesConfianca = {
+    'alta': 'confiança alta',
+    'media': 'confiança média',
+    'baixa': 'confiança baixa',
+    'insuficiente': 'dado insuficiente',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    try {
+      final resultado = await Supabase.instance.client
+          .rpc('indices_sazonais_categoria', params: {'p_empresa_id': empresaId, 'p_meses_futuros': 3});
+      if (!mounted) return;
+      final lista = (resultado as List).cast<Map<String, dynamic>>();
+      // Só vale a pena mostrar alta esperada de verdade (índice > 1,3) e
+      // com pelo menos algum dado (não "insuficiente") — o resto só
+      // teria valor sem confiança nenhuma nele.
+      lista.retainWhere((l) => (l['indice_medio'] as num) > 1.3 && l['confianca'] != 'insuficiente');
+      setState(() {
+        _indices = lista;
+        _carregando = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _carregando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_carregando || _indices.isEmpty) return const SizedBox.shrink();
+
+    final porMes = <String, List<Map<String, dynamic>>>{};
+    for (final i in _indices) {
+      final mes = i['mes_nome'] as String;
+      (porMes[mes] ??= []).add(i);
+    }
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.calendar_month_outlined, color: Colors.deepPurple),
+            title: const Text('Alta sazonal esperada nos próximos meses'),
+            subtitle: Text('${_indices.length} categoria(s) com sinal — baseado no histórico real de vendas'),
+            trailing: Icon(_expandido ? Icons.expand_less : Icons.expand_more),
+            onTap: () => setState(() => _expandido = !_expandido),
+          ),
+          if (_expandido)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final entry in porMes.entries) ...[
+                    Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    for (final i in entry.value)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8, top: 2, bottom: 2),
+                        child: Text(
+                          '• ${i['categoria']}: ${i['indice_medio']}× o normal '
+                          '(${_nomesConfianca[i['confianca']] ?? i['confianca']}, ${i['anos_com_dado']} ano(s) de dado)',
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                      ),
+                    const SizedBox(height: 6),
+                  ],
+                  const Text(
+                    'Isso não muda a quantidade sugerida sozinho — é só um aviso pra você reforçar o pedido se achar que vale.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic),
+                  ),
+                ],
               ),
             ),
         ],

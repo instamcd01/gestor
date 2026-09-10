@@ -1459,11 +1459,27 @@ const _quadrantes = {
   'sem_dado': _QuadranteInfo('Sem venda', Colors.grey, 'Nenhuma venda registrada no período analisado.'),
 };
 
+/// Texto curto de estratégia por célula ABC×XYZ — A/B/C é contribuição de
+/// receita (Pareto acumulado, 180 dias), X/Y/Z é variabilidade de venda
+/// (mesmo cálculo do estoque mínimo, 90 dias). Ver [[gestor_pedido_compra_fornecedor]].
+const _estrategiaAbcXyz = {
+  'A-X': 'Alto valor, previsível — controle rigoroso, é o núcleo do negócio.',
+  'A-Y': 'Alto valor, moderado — revisão frequente, vale acompanhar de perto.',
+  'A-Z': 'Alto valor, errático — atenção alta mas difícil de prever; revisar manualmente, não confiar só na média.',
+  'B-X': 'Valor médio, previsível — controle padrão.',
+  'B-Y': 'Valor médio, moderado — controle padrão.',
+  'B-Z': 'Valor médio, errático — controle mais simples, não vale afinar demais.',
+  'C-X': 'Baixo valor, previsível — pedidos grandes e espaçados, baixa prioridade administrativa.',
+  'C-Y': 'Baixo valor, moderado — controle mínimo.',
+  'C-Z': 'Baixo valor, errático — menor prioridade, manter só o piso operacional.',
+};
+
 class _AbaEstrategiaState extends State<_AbaEstrategia> {
   bool _carregando = true;
   String? _erro;
   List<Map<String, dynamic>> _linhas = [];
   List<Map<String, dynamic>> _sugestoesClientes = [];
+  Map<String, Map<String, dynamic>> _abcXyzPorProduto = {};
   String? _filtroQuadrante;
   String _busca = '';
   bool _sugestoesExpandido = false;
@@ -1484,6 +1500,7 @@ class _AbaEstrategiaState extends State<_AbaEstrategia> {
     try {
       final supabase = Supabase.instance.client;
       final resultado = await supabase.rpc('matriz_produto_margem_giro', params: {'p_empresa_id': empresaId});
+      final abcXyz = await supabase.rpc('matriz_abc_xyz', params: {'p_empresa_id': empresaId});
       final sugestoes = await supabase
           .from('sugestoes_produto_cliente')
           .select()
@@ -1492,9 +1509,11 @@ class _AbaEstrategiaState extends State<_AbaEstrategia> {
           .order('created_at', ascending: false)
           .limit(30);
       if (!mounted) return;
+      final abcXyzLista = (abcXyz as List).cast<Map<String, dynamic>>();
       setState(() {
         _linhas = (resultado as List).cast<Map<String, dynamic>>();
         _sugestoesClientes = (sugestoes as List).cast<Map<String, dynamic>>();
+        _abcXyzPorProduto = {for (final l in abcXyzLista) l['produto_id'] as String: l};
         _carregando = false;
       });
     } catch (e) {
@@ -1548,6 +1567,32 @@ class _AbaEstrategiaState extends State<_AbaEstrategia> {
                 const SizedBox(height: 4),
                 Text(quadrante.label, style: TextStyle(color: quadrante.cor, fontWeight: FontWeight.w600)),
                 Text(quadrante.explicacao, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                if (_abcXyzPorProduto[linha['produto_id']] != null) ...[
+                  const SizedBox(height: 8),
+                  Builder(builder: (context) {
+                    final cel = _abcXyzPorProduto[linha['produto_id']]!;
+                    final celula = cel['celula'] as String;
+                    final texto = _estrategiaAbcXyz[celula];
+                    return Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Classe ABC×XYZ: $celula', style: const TextStyle(fontWeight: FontWeight.w600)),
+                          if (texto != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(texto, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
                 const Divider(height: 24),
                 _linhaDiagnostico('Giro semanal', '${linha['giro_semanal']} un/semana'),
                 _linhaDiagnostico(
@@ -1699,6 +1744,7 @@ class _AbaEstrategiaState extends State<_AbaEstrategia> {
                 ],
               ),
             ),
+          if (_abcXyzPorProduto.isNotEmpty) _CardAbcXyz(dados: _abcXyzPorProduto.values.toList()),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: TextField(
@@ -1738,6 +1784,7 @@ class _AbaEstrategiaState extends State<_AbaEstrategia> {
               _CartaoProdutoEstrategia(
                 linha: linha,
                 quadrante: _quadrantes[linha['quadrante']] ?? _quadrantes['sem_dado']!,
+                celula: _abcXyzPorProduto[linha['produto_id']]?['celula'] as String?,
                 onTap: () => _abrirDetalhe(linha),
               ),
         ],
@@ -1769,9 +1816,10 @@ class _AlertaCausa extends StatelessWidget {
 class _CartaoProdutoEstrategia extends StatelessWidget {
   final Map<String, dynamic> linha;
   final _QuadranteInfo quadrante;
+  final String? celula;
   final VoidCallback onTap;
 
-  const _CartaoProdutoEstrategia({required this.linha, required this.quadrante, required this.onTap});
+  const _CartaoProdutoEstrategia({required this.linha, required this.quadrante, required this.celula, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1790,10 +1838,107 @@ class _CartaoProdutoEstrategia extends StatelessWidget {
         title: Text(linha['produto_nome'] as String, maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: Text(
           'Giro: ${linha['giro_semanal']}/sem. • Margem: ${linha['margem_pct'] ?? '—'}%'
+          '${celula != null && celula != 'sem_dado-sem_dado' ? ' • $celula' : ''}'
           '${temAlerta ? ' • ⚠ possível causa encontrada' : ''}',
         ),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// Card-resumo colapsável da matriz ABC (valor/receita) × XYZ
+/// (variabilidade) — grid com contagem por célula + estratégia curta.
+class _CardAbcXyz extends StatefulWidget {
+  final List<Map<String, dynamic>> dados;
+  const _CardAbcXyz({required this.dados});
+
+  @override
+  State<_CardAbcXyz> createState() => _CardAbcXyzState();
+}
+
+class _CardAbcXyzState extends State<_CardAbcXyz> {
+  bool _expandido = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final contagem = <String, int>{};
+    for (final d in widget.dados) {
+      final celula = d['celula'] as String? ?? 'sem_dado-sem_dado';
+      contagem[celula] = (contagem[celula] ?? 0) + 1;
+    }
+    const classesAbc = ['A', 'B', 'C'];
+    const classesXyz = ['X', 'Y', 'Z'];
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.grid_view_rounded, color: Colors.indigo),
+            title: const Text('Classificação ABC × XYZ'),
+            subtitle: const Text('A/B/C = contribuição de receita • X/Y/Z = previsibilidade da venda'),
+            trailing: Icon(_expandido ? Icons.expand_less : Icons.expand_more),
+            onTap: () => setState(() => _expandido = !_expandido),
+          ),
+          if (_expandido)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final abc in classesAbc)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            child: Text(abc, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: [
+                                for (final xyz in classesXyz)
+                                  Tooltip(
+                                    message: _estrategiaAbcXyz['$abc-$xyz'] ?? '',
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        '$abc$xyz: ${contagem['$abc-$xyz'] ?? 0}',
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Text(
+                    'Sem venda suficiente pra classificar: ${contagem['sem_dado-sem_dado'] ?? 0}',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Toque numa célula (segurar) pra ver a estratégia sugerida.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

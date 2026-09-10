@@ -50,6 +50,22 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
   final _custoEmbalagemController = TextEditingController();
   final _entregaValorController = TextEditingController();
 
+  // Custo real da moto + pagamento ao entregador — alimenta a análise de
+  // Rentabilidade por Zona (Estatísticas), não o cálculo automático de
+  // custo_entrega_valor por pedido (que continua usando o modo/valor
+  // simples acima) — são parâmetros pra simular cenário, editáveis a
+  // qualquer momento enquanto o modelo de pagamento ainda não é
+  // definitivo.
+  final _motoValorController = TextEditingController();
+  final _motoConsumoController = TextEditingController();
+  final _motoCombustivelPrecoController = TextEditingController();
+  final _motoKmMesController = TextEditingController();
+  final _motoManutencaoController = TextEditingController();
+  final _entregadorBaseController = TextEditingController();
+  final _entregadorLimiarKmController = TextEditingController();
+  final _entregadorBonusTurnoController = TextEditingController();
+  final _mediaEntregasPorRotaController = TextEditingController();
+
   String? _entregaModo;
   bool _veiculoDaLoja = false;
   List<_ComissaoMarketplace> _comissoes = [];
@@ -69,6 +85,15 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
     _taxaDebitoController.dispose();
     _custoEmbalagemController.dispose();
     _entregaValorController.dispose();
+    _motoValorController.dispose();
+    _motoConsumoController.dispose();
+    _motoCombustivelPrecoController.dispose();
+    _motoKmMesController.dispose();
+    _motoManutencaoController.dispose();
+    _entregadorBaseController.dispose();
+    _entregadorLimiarKmController.dispose();
+    _entregadorBonusTurnoController.dispose();
+    _mediaEntregasPorRotaController.dispose();
     for (final c in _comissoes) {
       c.dispose();
     }
@@ -88,7 +113,11 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
       final empresa = await supabase
           .from('empresas')
           .select('taxa_maquininha_credito, taxa_maquininha_debito, custo_embalagem_padrao, '
-              'entrega_propria_custo_modo, entrega_propria_custo_valor, entrega_propria_veiculo_da_loja')
+              'entrega_propria_custo_modo, entrega_propria_custo_valor, entrega_propria_veiculo_da_loja, '
+              'moto_valor_compra, moto_consumo_km_por_litro, moto_combustivel_preco_litro, '
+              'moto_km_rodado_mes_estimado, moto_manutencao_valor_por_km, '
+              'entregador_pagamento_base, entregador_limiar_km_distancia, entregador_bonus_turno_medio, '
+              'media_entregas_por_rota')
           .eq('id', empresaId)
           .single();
 
@@ -98,6 +127,15 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
       _entregaValorController.text = _formatarNumero(empresa['entrega_propria_custo_valor'] as num?) ?? '';
       _entregaModo = empresa['entrega_propria_custo_modo'] as String?;
       _veiculoDaLoja = empresa['entrega_propria_veiculo_da_loja'] as bool? ?? false;
+      _motoValorController.text = _formatarNumero(empresa['moto_valor_compra'] as num?) ?? '';
+      _motoConsumoController.text = _formatarNumero(empresa['moto_consumo_km_por_litro'] as num?) ?? '';
+      _motoCombustivelPrecoController.text = _formatarNumero(empresa['moto_combustivel_preco_litro'] as num?) ?? '';
+      _motoKmMesController.text = _formatarNumero(empresa['moto_km_rodado_mes_estimado'] as num?) ?? '';
+      _motoManutencaoController.text = _formatarNumero(empresa['moto_manutencao_valor_por_km'] as num?) ?? '';
+      _entregadorBaseController.text = _formatarNumero(empresa['entregador_pagamento_base'] as num?) ?? '';
+      _entregadorLimiarKmController.text = _formatarNumero(empresa['entregador_limiar_km_distancia'] as num?) ?? '';
+      _entregadorBonusTurnoController.text = _formatarNumero(empresa['entregador_bonus_turno_medio'] as num?) ?? '';
+      _mediaEntregasPorRotaController.text = _formatarNumero(empresa['media_entregas_por_rota'] as num?) ?? '';
 
       final configs = await MarketplaceConfigRepository().listar();
       final marketplacesAtivos = configs.where((c) => c.ativo).toList();
@@ -163,6 +201,15 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
         'entrega_propria_custo_modo': _entregaModo,
         'entrega_propria_custo_valor': _parseNumero(_entregaValorController.text),
         'entrega_propria_veiculo_da_loja': _veiculoDaLoja,
+        'moto_valor_compra': _parseNumero(_motoValorController.text),
+        'moto_consumo_km_por_litro': _parseNumero(_motoConsumoController.text),
+        'moto_combustivel_preco_litro': _parseNumero(_motoCombustivelPrecoController.text),
+        'moto_km_rodado_mes_estimado': _parseNumero(_motoKmMesController.text),
+        'moto_manutencao_valor_por_km': _parseNumero(_motoManutencaoController.text),
+        'entregador_pagamento_base': _parseNumero(_entregadorBaseController.text),
+        'entregador_limiar_km_distancia': _parseNumero(_entregadorLimiarKmController.text),
+        'entregador_bonus_turno_medio': _parseNumero(_entregadorBonusTurnoController.text),
+        'media_entregas_por_rota': _parseNumero(_mediaEntregasPorRotaController.text),
       }).eq('id', empresaId);
 
       // marketplace_taxas guarda histórico por vigência — só abre uma linha
@@ -342,6 +389,120 @@ class _CustosOperacionaisScreenState extends State<CustosOperacionaisScreen> {
                           subtitle: const Text('Informativo por enquanto — não muda o cálculo'),
                           value: _veiculoDaLoja,
                           onChanged: (v) => setState(() => _veiculoDaLoja = v),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    FormSection(
+                      titulo: 'Custo real da moto (análise de rentabilidade por zona)',
+                      children: [
+                        Text(
+                          'Não muda o custo automático por pedido acima — alimenta só a análise de '
+                          'Rentabilidade por Zona (Estatísticas), pra mostrar o custo real de rodar a moto '
+                          '(combustível, manutenção, depreciação) por km, separado do que você paga ao '
+                          'entregador. Ajuste sempre que quiser testar um cenário diferente.',
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _motoValorController,
+                          decoration: const InputDecoration(
+                            labelText: 'Valor de compra/mercado da moto (R\$)',
+                            prefixText: 'R\$ ',
+                            helperText: 'Usado pra estimar depreciação (~0,8% ao mês, referência real de mercado)',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: _validarValor,
+                        ),
+                        TextFormField(
+                          controller: _motoConsumoController,
+                          decoration: const InputDecoration(labelText: 'Consumo (km por litro)', suffixText: 'km/L'),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: _validarValor,
+                        ),
+                        TextFormField(
+                          controller: _motoCombustivelPrecoController,
+                          decoration: const InputDecoration(
+                            labelText: 'Preço do combustível (R\$/litro)',
+                            prefixText: 'R\$ ',
+                            helperText: 'Atualize sempre que o preço mudar de verdade',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: _validarValor,
+                        ),
+                        TextFormField(
+                          controller: _motoManutencaoController,
+                          decoration: const InputDecoration(
+                            labelText: 'Manutenção por km (R\$/km)',
+                            prefixText: 'R\$ ',
+                            helperText: 'Faixa real de mercado pra moto urbana: R\$0,15 a R\$0,30/km — troque pelo seu gasto real ÷ km rodado assim que tiver uns meses de histórico',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: _validarValor,
+                        ),
+                        TextFormField(
+                          controller: _motoKmMesController,
+                          decoration: const InputDecoration(
+                            labelText: 'Km rodado por mês (opcional)',
+                            suffixText: 'km',
+                            helperText: 'Deixe em branco até ter dado real (ex: quando o app do entregador estiver medindo) — sem isso, a depreciação não entra na conta',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: _validarValor,
+                        ),
+                        TextFormField(
+                          controller: _mediaEntregasPorRotaController,
+                          decoration: const InputDecoration(
+                            labelText: 'Entregas por rota/viagem (em média)',
+                            suffixText: 'entregas',
+                            helperText: 'Quantas entregas costumam sair juntas na mesma viagem — a ida-e-volta da moto é '
+                                'rateada entre elas, em vez de cobrar a viagem inteira de cada entrega isolada. '
+                                'Estimativa editável até o app do entregador ter dado real de rota.',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: _validarValor,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    FormSection(
+                      titulo: 'Pagamento ao entregador (análise de rentabilidade por zona)',
+                      children: [
+                        Text(
+                          'Modelo atual, editável — você mencionou que ainda está estudando a melhor forma de '
+                          'pagar, então ajuste isso sempre que decidir testar outro esquema.',
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _entregadorBaseController,
+                          decoration: const InputDecoration(
+                            labelText: 'Valor base por entrega (R\$)',
+                            prefixText: 'R\$ ',
+                            helperText: 'Pago até o limiar de distância abaixo',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: _validarValor,
+                        ),
+                        TextFormField(
+                          controller: _entregadorLimiarKmController,
+                          decoration: const InputDecoration(
+                            labelText: 'A partir de quantos km o valor escala com a distância',
+                            suffixText: 'km',
+                            helperText: 'Ex: 10 — acima disso, hoje você paga ~R\$1 por km (10km=R\$10, 15km=R\$15)',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: _validarValor,
+                        ),
+                        TextFormField(
+                          controller: _entregadorBonusTurnoController,
+                          decoration: const InputDecoration(
+                            labelText: 'Bônus médio por turno trabalhado (R\$)',
+                            prefixText: 'R\$ ',
+                            helperText: 'Custo fixo por dia trabalhado (não por entrega) — você mencionou R\$20 a R\$30, dependendo do turno',
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          validator: _validarValor,
                         ),
                       ],
                     ),
