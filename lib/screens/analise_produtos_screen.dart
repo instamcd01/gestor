@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
+import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../utils/busca_utils.dart';
 import '../utils/produto_validators.dart';
@@ -31,7 +33,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
   }
 
   @override
@@ -74,6 +76,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
             const Tab(text: 'Ciclo de recompra'),
             const Tab(text: 'Catálogo'),
             Tab(text: 'EAN duplicado ($eanDuplicado)'),
+            const Tab(text: 'Estratégia'),
           ],
         ),
       ),
@@ -86,6 +89,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
           _AbaCicloRecompra(),
           _AbaCatalogo(),
           _AbaEanDuplicado(),
+          _AbaEstrategia(),
         ],
       ),
     );
@@ -1418,6 +1422,379 @@ class _AbaEanDuplicadoState extends State<_AbaEanDuplicado> {
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// ---------------------------------------------------------------------
+/// Aba 7: Estratégia — matriz margem × giro (versão de BCG adaptada pra
+/// PME, sem precisar de dado de concorrente: eixo de "participação de
+/// mercado" clássico do BCG vira giro de venda real, que é o dado que a
+/// loja de fato tem — ver [[gestor_pedido_compra_fornecedor]] pra
+/// contexto/fontes da pesquisa) + diagnóstico por produto (preço fora da
+/// faixa da categoria, cadastro incompleto) + produtos comprados junto
+/// (cross-sell) + sugestões de produto que cliente pediu e não achou
+/// (reaproveita sugestoes_produto_cliente, já existente em Clientes —
+/// só trazida pra cá pra ficar junto do resto da análise de produto).
+/// ---------------------------------------------------------------------
+class _AbaEstrategia extends StatefulWidget {
+  const _AbaEstrategia();
+
+  @override
+  State<_AbaEstrategia> createState() => _AbaEstrategiaState();
+}
+
+class _QuadranteInfo {
+  final String label;
+  final Color cor;
+  final String explicacao;
+  const _QuadranteInfo(this.label, this.cor, this.explicacao);
+}
+
+const _quadrantes = {
+  'estrela': _QuadranteInfo('Estrela', Colors.green, 'Giro alto + margem alta — o melhor time, proteger estoque.'),
+  'vaca_leiteira': _QuadranteInfo('Vaca leiteira', Colors.blue, 'Giro alto + margem baixa — vende bem, mas rende pouco por unidade.'),
+  'interrogacao': _QuadranteInfo('Interrogação', Colors.amber, 'Giro baixo + margem alta — vale destacar/promover antes de desistir.'),
+  'abacaxi': _QuadranteInfo('Abacaxi', Colors.red, 'Giro baixo + margem baixa — candidato real a descontinuar.'),
+  'sem_dado': _QuadranteInfo('Sem venda', Colors.grey, 'Nenhuma venda registrada no período analisado.'),
+};
+
+class _AbaEstrategiaState extends State<_AbaEstrategia> {
+  bool _carregando = true;
+  String? _erro;
+  List<Map<String, dynamic>> _linhas = [];
+  List<Map<String, dynamic>> _sugestoesClientes = [];
+  String? _filtroQuadrante;
+  String _busca = '';
+  bool _sugestoesExpandido = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    try {
+      final supabase = Supabase.instance.client;
+      final resultado = await supabase.rpc('matriz_produto_margem_giro', params: {'p_empresa_id': empresaId});
+      final sugestoes = await supabase
+          .from('sugestoes_produto_cliente')
+          .select()
+          .eq('empresa_id', empresaId)
+          .eq('status', 'pendente')
+          .order('created_at', ascending: false)
+          .limit(30);
+      if (!mounted) return;
+      setState(() {
+        _linhas = (resultado as List).cast<Map<String, dynamic>>();
+        _sugestoesClientes = (sugestoes as List).cast<Map<String, dynamic>>();
+        _carregando = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _erro = 'Não foi possível carregar: $e';
+        _carregando = false;
+      });
+    }
+  }
+
+  Future<void> _abrirDetalhe(Map<String, dynamic> linha) async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    final produtoProvider = context.read<ProdutoProvider>();
+    Produto? produto;
+    try {
+      produto = produtoProvider.produtos.firstWhere((p) => p.id == linha['produto_id']);
+    } catch (_) {
+      produto = null;
+    }
+    final quadrante = _quadrantes[linha['quadrante']] ?? _quadrantes['sem_dado']!;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (context, scrollController) {
+            return ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.all(20),
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(color: quadrante.cor, shape: BoxShape.circle),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(linha['produto_nome'] as String,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(quadrante.label, style: TextStyle(color: quadrante.cor, fontWeight: FontWeight.w600)),
+                Text(quadrante.explicacao, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                const Divider(height: 24),
+                _linhaDiagnostico('Giro semanal', '${linha['giro_semanal']} un/semana'),
+                _linhaDiagnostico(
+                  'Margem',
+                  linha['margem_pct'] != null ? '${linha['margem_pct']}%' : 'sem dado',
+                ),
+                _linhaDiagnostico('Preço atual', 'R\$ ${(linha['preco_atual'] as num).toStringAsFixed(2)}'),
+                if (linha['preco_mediano_categoria'] != null)
+                  _linhaDiagnostico(
+                    'Preço mediano da categoria',
+                    'R\$ ${(linha['preco_mediano_categoria'] as num).toStringAsFixed(2)}',
+                  ),
+                const SizedBox(height: 8),
+                Text('Possíveis causas se estiver parado', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 6),
+                if (linha['preco_fora_da_faixa'] == true)
+                  const _AlertaCausa('Preço bem acima da mediana da categoria (1,5x ou mais)'),
+                if (linha['tem_foto'] == false) const _AlertaCausa('Produto sem foto no catálogo'),
+                if (linha['codigo_barras_valido'] == false)
+                  const _AlertaCausa('Sem código de barras válido — some do catálogo iFood/site'),
+                if (linha['preco_fora_da_faixa'] != true &&
+                    linha['tem_foto'] != false &&
+                    linha['codigo_barras_valido'] != false)
+                  const Text('Nenhuma causa óbvia encontrada — pode ser só falta de demanda mesmo.',
+                      style: TextStyle(fontSize: 13, color: Colors.grey)),
+                const Divider(height: 24),
+                Text('Comprado junto com', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 6),
+                FutureBuilder<List<dynamic>>(
+                  future: Supabase.instance.client.rpc('produtos_comprados_juntos', params: {
+                    'p_empresa_id': empresaId,
+                    'p_produto_id': linha['produto_id'],
+                  }),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                      );
+                    }
+                    final pares = (snapshot.data ?? []).cast<Map<String, dynamic>>();
+                    if (pares.isEmpty) {
+                      return const Text('Sem combinação frequente registrada ainda.',
+                          style: TextStyle(fontSize: 13, color: Colors.grey));
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: pares
+                          .map((par) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 3),
+                                child: Text(
+                                  '• ${par['produto_nome']} — junto em ${par['confianca_pct']}% das compras',
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ))
+                          .toList(),
+                    );
+                  },
+                ),
+                const SizedBox(height: 20),
+                if (produto != null)
+                  FilledButton.icon(
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Editar produto'),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: produto!)),
+                      );
+                    },
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _linhaDiagnostico(String label, String valor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey)),
+          Text(valor, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_carregando) return const Center(child: CircularProgressIndicator());
+    if (_erro != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_erro!, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: _carregar, child: const Text('Tentar de novo')),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final contagemPorQuadrante = <String, int>{};
+    for (final linha in _linhas) {
+      final q = linha['quadrante'] as String? ?? 'sem_dado';
+      contagemPorQuadrante[q] = (contagemPorQuadrante[q] ?? 0) + 1;
+    }
+
+    final filtrado = _linhas.where((linha) {
+      if (_filtroQuadrante != null && linha['quadrante'] != _filtroQuadrante) return false;
+      if (_busca.isNotEmpty && !contemTodasPalavras(linha['produto_nome'] as String, _busca)) return false;
+      return true;
+    }).toList()
+      ..sort((a, b) => ((b['giro_semanal'] as num?) ?? 0).compareTo((a['giro_semanal'] as num?) ?? 0));
+
+    return RefreshIndicator(
+      onRefresh: _carregar,
+      child: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          if (_sugestoesClientes.isNotEmpty)
+            Card(
+              margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.search_off, color: Colors.orange),
+                    title: Text('Clientes buscaram e não acharam (${_sugestoesClientes.length})'),
+                    trailing: Icon(_sugestoesExpandido ? Icons.expand_less : Icons.expand_more),
+                    onTap: () => setState(() => _sugestoesExpandido = !_sugestoesExpandido),
+                  ),
+                  if (_sugestoesExpandido)
+                    for (final s in _sugestoesClientes)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Text('• ${s['termo_buscado'] ?? s['mensagem'] ?? '(sem termo)'}',
+                            style: const TextStyle(fontSize: 13)),
+                      ),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: TextField(
+              decoration: const InputDecoration(hintText: 'Buscar produto', prefixIcon: Icon(Icons.search)),
+              onChanged: (v) => setState(() => _busca = v),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ChoiceChip(
+                  label: Text('Todos (${_linhas.length})'),
+                  selected: _filtroQuadrante == null,
+                  onSelected: (_) => setState(() => _filtroQuadrante = null),
+                ),
+                for (final entry in _quadrantes.entries)
+                  ChoiceChip(
+                    label: Text('${entry.value.label} (${contagemPorQuadrante[entry.key] ?? 0})'),
+                    selected: _filtroQuadrante == entry.key,
+                    selectedColor: entry.value.cor.withValues(alpha: 0.25),
+                    onSelected: (_) => setState(() => _filtroQuadrante = entry.key),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          if (filtrado.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: Text('Nenhum produto encontrado com esse filtro')),
+            )
+          else
+            for (final linha in filtrado)
+              _CartaoProdutoEstrategia(
+                linha: linha,
+                quadrante: _quadrantes[linha['quadrante']] ?? _quadrantes['sem_dado']!,
+                onTap: () => _abrirDetalhe(linha),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AlertaCausa extends StatelessWidget {
+  final String texto;
+  const _AlertaCausa(this.texto);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.orange),
+          const SizedBox(width: 6),
+          Expanded(child: Text(texto, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
+    );
+  }
+}
+
+class _CartaoProdutoEstrategia extends StatelessWidget {
+  final Map<String, dynamic> linha;
+  final _QuadranteInfo quadrante;
+  final VoidCallback onTap;
+
+  const _CartaoProdutoEstrategia({required this.linha, required this.quadrante, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final temAlerta = linha['preco_fora_da_faixa'] == true ||
+        linha['tem_foto'] == false ||
+        linha['codigo_barras_valido'] == false;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: ListTile(
+        leading: Container(
+          width: 10,
+          height: 10,
+          margin: const EdgeInsets.only(top: 4),
+          decoration: BoxDecoration(color: quadrante.cor, shape: BoxShape.circle),
+        ),
+        title: Text(linha['produto_nome'] as String, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          'Giro: ${linha['giro_semanal']}/sem. • Margem: ${linha['margem_pct'] ?? '—'}%'
+          '${temAlerta ? ' • ⚠ possível causa encontrada' : ''}',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
     );
   }
 }
