@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:gestor/providers/carrinho_provider.dart';
@@ -11,8 +13,51 @@ import 'package:uuid/uuid.dart';
 
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
+import '../providers/zona_entrega_provider.dart';
 import '../repositories/carrinho_cliente_repository.dart';
+import '../repositories/cliente_repository.dart';
+import '../services/distancia_service.dart';
 import '../utils/agendamento_utils.dart';
+
+/// Resolve e já seleciona a zona de entrega do cliente no `CarrinhoProvider`
+/// — usa a distância já salva no cadastro dele (mesmo campo que
+/// `OpcaoEntregaScreen` usa/alimenta) e, se não tiver, calcula na hora.
+/// Necessário sempre que um cliente é selecionado FORA do fluxo normal via
+/// `OpcaoEntregaScreen` (que já faz isso sozinho) — sem chamar isso, frete e
+/// "falta pro frete grátis" ficam em branco (bug real 10/09, achado ao
+/// retomar um carrinho salvo em "Carrinhos do dia").
+Future<void> resolverZonaEntregaParaCliente(
+  BuildContext context,
+  Cliente cliente,
+  CarrinhoProvider carrinhoProvider,
+) async {
+  final zonaProvider = context.read<ZonaEntregaProvider>();
+  var distanciaKm = cliente.rangeDistancia;
+
+  if (distanciaKm == null) {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null || cliente.enderecoCompleto.isEmpty) return;
+    final enderecoEmpresa = await DistanciaService.buscarEnderecoEmpresa(empresaId);
+    if (enderecoEmpresa == null) return;
+    final rota = await DistanciaService.calcularRota(
+      origem: enderecoEmpresa,
+      destino: (cliente.latitude != null && cliente.longitude != null)
+          ? '${cliente.latitude},${cliente.longitude}'
+          : cliente.enderecoCompleto,
+    );
+    if (rota == null) return;
+    distanciaKm = rota.distanciaKm;
+    if (cliente.idCliente != null) {
+      unawaited(ClienteRepository().atualizarDistancia(
+        cliente.idCliente!,
+        rangeDistancia: rota.distanciaKm,
+        estimativaEntrega: rota.duracaoMin,
+      ));
+    }
+  }
+
+  carrinhoProvider.selecionarZonaEntrega(zonaProvider.zonaParaDistancia(distanciaKm));
+}
 
 class CarrinhoScreen extends StatefulWidget {
   final String idVenda;

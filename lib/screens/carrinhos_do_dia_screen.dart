@@ -68,6 +68,8 @@ class _CarrinhosDoDiaScreenState extends State<CarrinhosDoDiaScreen> {
 
       carrinhoProvider.limparCarrinho();
       carrinhoProvider.selecionarCliente(cliente);
+      await resolverZonaEntregaParaCliente(context, cliente, carrinhoProvider);
+      if (!mounted) return;
       final catalogo = context.read<ProdutoProvider>().produtos;
       final ignorados = carrinhoProvider.mesclarItensRemotos(catalogo, carrinhoCliente.itens);
 
