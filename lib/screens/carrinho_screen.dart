@@ -309,13 +309,22 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                     '- R\$ ${carrinhoProvider.desconto.toStringAsFixed(2)}',
                     cor: Colors.green,
                   ),
+                // "Entrega" só pode dizer "Frete Grátis" depois de um cliente
+                // selecionado — sem cliente, valorEntregaCalculado também dá 0
+                // (nada foi calculado ainda), e mostrar "Grátis" nesse ponto
+                // já enganou cliente que recebeu print da tela achando que o
+                // frete tava confirmado (bug real 10/09).
                 _linhaResumo(
                   context,
                   'Entrega',
-                  carrinhoProvider.valorEntregaCalculado == 0
-                      ? 'Frete Grátis'
-                      : 'R\$ ${carrinhoProvider.valorEntregaCalculado.toStringAsFixed(2)}',
-                  cor: carrinhoProvider.valorEntregaCalculado == 0 ? Colors.green : null,
+                  carrinhoProvider.clienteSelecionado == null
+                      ? 'A calcular'
+                      : (carrinhoProvider.valorEntregaCalculado == 0
+                          ? 'Frete Grátis'
+                          : 'R\$ ${carrinhoProvider.valorEntregaCalculado.toStringAsFixed(2)}'),
+                  cor: carrinhoProvider.clienteSelecionado != null && carrinhoProvider.valorEntregaCalculado == 0
+                      ? Colors.green
+                      : null,
                 ),
                 if (carrinhoProvider.valorFaltanteParaFreteGratis > 0)
                   Padding(
