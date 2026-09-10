@@ -81,6 +81,8 @@ class ContatoCampanha {
   final bool ativou;
   final int qtdPedidos;
   final double valorGasto;
+  final bool temCarrinhoAbandonado;
+  final bool temFavoritoSemCompra;
 
   bool get enviado => enviadoEm != null;
 
@@ -98,6 +100,8 @@ class ContatoCampanha {
     required this.ativou,
     required this.qtdPedidos,
     required this.valorGasto,
+    this.temCarrinhoAbandonado = false,
+    this.temFavoritoSemCompra = false,
   });
 
   ContatoCampanha copyWith({DateTime? enviadoEm, bool limparEnviadoEm = false}) {
@@ -115,6 +119,8 @@ class ContatoCampanha {
       ativou: ativou,
       qtdPedidos: qtdPedidos,
       valorGasto: valorGasto,
+      temCarrinhoAbandonado: temCarrinhoAbandonado,
+      temFavoritoSemCompra: temFavoritoSemCompra,
     );
   }
 
@@ -133,6 +139,8 @@ class ContatoCampanha {
       ativou: row['ativou'] as bool? ?? false,
       qtdPedidos: (row['qtd_pedidos'] as num?)?.toInt() ?? 0,
       valorGasto: (row['valor_gasto'] as num?)?.toDouble() ?? 0,
+      temCarrinhoAbandonado: row['tem_carrinho_abandonado'] as bool? ?? false,
+      temFavoritoSemCompra: row['tem_favorito_sem_compra'] as bool? ?? false,
     );
   }
 }

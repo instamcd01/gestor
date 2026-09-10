@@ -119,6 +119,62 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     });
   }
 
+  /// Abre a lista de contatos por trás de um card de métrica (ex: "Ativaram",
+  /// "Carrinho abandonado") — mesmo padrão de bottom sheet já usado em
+  /// `HistoricoReconciliacaoScreen._abrirLista`. Filtra `_contatosCache` em
+  /// memória (já carregado pra montar a lista principal da tela, não busca
+  /// de novo no servidor). Tocar num contato da lista seleciona ele no
+  /// painel de mensagem e fecha o sheet — mesmo fluxo de tocar direto no
+  /// card do contato na lista de baixo.
+  void _abrirListaMetrica({
+    required String titulo,
+    required bool Function(ContatoCampanha) filtro,
+    required String Function(ContatoCampanha) subtitulo,
+  }) {
+    final todos = _contatosCache;
+    if (todos == null) return;
+    final itens = todos.where(filtro).toList();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollController) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('$titulo (${itens.length})', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: itens.isEmpty
+                  ? const Center(child: Text('Nenhum contato nessa categoria.'))
+                  : ListView.separated(
+                      controller: scrollController,
+                      itemCount: itens.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final c = itens[index];
+                        return ListTile(
+                          title: Text(c.nomeCliente ?? c.nomeWhatsapp ?? c.telefone),
+                          subtitle: Text(subtitulo(c)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _selecionarContato(c);
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Descarta o texto atual e volta pra sugestão padrão do perfil do contato
   /// selecionado — pra quando o usuário quer "recomeçar" com o tom sugerido
   /// em vez de manter o texto customizado anterior.
@@ -349,7 +405,7 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
                       child: Center(child: CircularProgressIndicator()),
                     );
                   }
-                  return _PainelMetricas(m: snapshot.data!);
+                  return _PainelMetricas(m: snapshot.data!, onAbrirLista: _abrirListaMetrica);
                 },
               ),
               const SizedBox(height: 24),
@@ -456,11 +512,23 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   }
 }
 
+/// Assinatura de `_CampanhaDetalheScreenState._abrirListaMetrica` — extraída
+/// aqui só pra dar nome ao tipo do callback que `_PainelMetricas` recebe.
+typedef AbrirListaMetrica = void Function({
+  required String titulo,
+  required bool Function(ContatoCampanha) filtro,
+  required String Function(ContatoCampanha) subtitulo,
+});
+
 class _PainelMetricas extends StatelessWidget {
   final MetricasCampanha m;
-  const _PainelMetricas({required this.m});
+  final AbrirListaMetrica onAbrirLista;
+  const _PainelMetricas({required this.m, required this.onAbrirLista});
 
   String _pct(int parte, int total) => total == 0 ? '—' : '${(parte / total * 100).toStringAsFixed(0)}%';
+
+  String _subtituloPedidos(ContatoCampanha c) =>
+      '${c.qtdPedidos} pedido(s) · ${_formatarReais(c.valorGasto)}';
 
   @override
   Widget build(BuildContext context) {
@@ -469,13 +537,53 @@ class _PainelMetricas extends StatelessWidget {
       runSpacing: 12,
       children: [
         _Metrica('Contatos', '${m.totalContatos}'),
-        _Metrica('Ativaram', '${m.ativados} (${_pct(m.ativados, m.totalContatos)})'),
-        _Metrica('Fizeram pedido', '${m.comPedido} (${_pct(m.comPedido, m.ativados)})'),
-        _Metrica('Recompraram', '${m.recompraram}'),
+        _Metrica(
+          'Ativaram',
+          '${m.ativados} (${_pct(m.ativados, m.totalContatos)})',
+          onTap: () => onAbrirLista(
+            titulo: 'Ativaram',
+            filtro: (c) => c.ativou,
+            subtitulo: (c) => c.telefone,
+          ),
+        ),
+        _Metrica(
+          'Fizeram pedido',
+          '${m.comPedido} (${_pct(m.comPedido, m.ativados)})',
+          onTap: () => onAbrirLista(
+            titulo: 'Fizeram pedido',
+            filtro: (c) => c.qtdPedidos > 0,
+            subtitulo: _subtituloPedidos,
+          ),
+        ),
+        _Metrica(
+          'Recompraram',
+          '${m.recompraram}',
+          onTap: () => onAbrirLista(
+            titulo: 'Recompraram',
+            filtro: (c) => c.qtdPedidos > 1,
+            subtitulo: _subtituloPedidos,
+          ),
+        ),
         _Metrica('Valor gerado', _formatarReais(m.valorTotal)),
         _Metrica('Ticket médio', _formatarReais(m.ticketMedio)),
-        _Metrica('Carrinho abandonado', '${m.carrinhoAbandonado}'),
-        _Metrica('Favoritou sem comprar', '${m.favoritosSemCompra}'),
+        _Metrica(
+          'Carrinho abandonado',
+          '${m.carrinhoAbandonado}',
+          onTap: () => onAbrirLista(
+            titulo: 'Carrinho abandonado',
+            filtro: (c) => c.temCarrinhoAbandonado,
+            subtitulo: (c) => c.telefone,
+          ),
+        ),
+        _Metrica(
+          'Favoritou sem comprar',
+          '${m.favoritosSemCompra}',
+          onTap: () => onAbrirLista(
+            titulo: 'Favoritou sem comprar',
+            filtro: (c) => c.temFavoritoSemCompra,
+            subtitulo: (c) => c.telefone,
+          ),
+        ),
         _Metrica('Pedidos site × WhatsApp', '${m.pedidosSite} × ${m.pedidosWhatsapp}'),
       ],
     );
@@ -485,22 +593,36 @@ class _PainelMetricas extends StatelessWidget {
 class _Metrica extends StatelessWidget {
   final String rotulo;
   final String valor;
-  const _Metrica(this.rotulo, this.valor);
+  final VoidCallback? onTap;
+  const _Metrica(this.rotulo, this.valor, {this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: 160,
       child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(rotulo, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 4),
-              Text(valor, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ],
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(rotulo, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    ),
+                    if (onTap != null)
+                      Icon(Icons.chevron_right, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(valor, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ],
+            ),
           ),
         ),
       ),
