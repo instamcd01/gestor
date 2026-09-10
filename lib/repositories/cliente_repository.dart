@@ -53,8 +53,36 @@ class ClienteRepository {
 
     final clienteId = clienteInserido['id'] as String;
     final petsInseridos = await _inserirPets(cliente.pets, clienteId);
+    await _detectarVinculos(clienteId);
 
     return Cliente.fromSupabase({...clienteInserido, 'pets': petsInseridos});
+  }
+
+  /// Cadastro manual (tela "Adicionar Cliente") não passa pela RPC
+  /// `completar_cadastro_cliente` (essa é só do fluxo de login do site), que
+  /// é quem hoje dispara a detecção de vínculo pra cadastro novo — sem isso,
+  /// digitar aqui o telefone/CPF de alguém que já tem um cadastro "Histórico
+  /// Kyte" ou um cadastro antigo sem login criaria mais um duplicado nunca
+  /// sugerido pra vínculo. Best-effort: nunca deixa isso quebrar o cadastro
+  /// em si (o cliente já foi criado com sucesso nesse ponto).
+  Future<void> _detectarVinculos(String clienteId) async {
+    try {
+      await supabase.rpc('detectar_vinculo_por_telefone_kyte', params: {'p_cliente_id': clienteId});
+      await supabase.rpc('detectar_vinculo_por_documento', params: {'p_cliente_id': clienteId});
+    } catch (_) {
+      // silencioso de propósito — não é crítico pro cadastro ter sido criado.
+    }
+  }
+
+  /// Converte um cadastro "consultivo" do Histórico Kyte num cliente normal,
+  /// pronto pra usar numa venda nova — move `telefone_kyte` pra `telefone` e
+  /// limpa `canal_origem`, na mesma linha (nenhum registro novo é criado, o
+  /// histórico de pedidos já vinculado a esse `id` continua intacto). A RPC
+  /// recusa se já existir outro cadastro real com esse telefone (aí é caso
+  /// de vínculo manual, não de promoção direta) — ver
+  /// [[gestor_vinculo_cliente_cross_canal]].
+  Future<void> promoverHistoricoKyte(String clienteId) async {
+    await supabase.rpc('promover_cliente_kyte_historico', params: {'p_cliente_id': clienteId});
   }
 
   Future<void> atualizar(Cliente cliente) async {

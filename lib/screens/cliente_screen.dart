@@ -320,11 +320,15 @@ class _AbaHistoricoKyteState extends State<_AbaHistoricoKyte> {
     await _futureClientes;
   }
 
-  void _verDetalhes(Cliente cliente) {
-    Navigator.push(
+  Future<void> _verDetalhes(Cliente cliente) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => ClienteDetalhesScreen(cliente: cliente)),
     );
+    // Cobre o caso de "Usar este cadastro" promover o cliente e sair dessa
+    // lista (ele deixa de ser histórico Kyte) — recarrega sempre que volta
+    // porque é barato (257 linhas) e evita item fantasma na tela.
+    if (mounted) await _recarregar();
   }
 
   // Lista já vem inteira do banco (só 257 linhas hoje) — filtra em

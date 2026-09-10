@@ -9,6 +9,7 @@ import '../models/venda.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
 import '../repositories/carrinho_cliente_repository.dart';
+import '../repositories/cliente_repository.dart';
 import '../repositories/saldo_repository.dart';
 import '../repositories/venda_repository.dart';
 import '../utils/canal_venda_utils.dart';
@@ -31,6 +32,7 @@ class ClienteDetalhesScreen extends StatefulWidget {
 
 class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
   bool _excluindo = false;
+  bool _promovendoKyte = false;
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +112,29 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
                 avatar: const Icon(Icons.history, size: 16),
                 label: const Text('Histórico Kyte — cadastro sem login'),
                 backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+              ),
+            ),
+          ),
+        // Só oferece o atalho enquanto não tiver vínculo aprovado ainda —
+        // depois de vinculado já existe um cadastro real pra usar direto.
+        // "Promove" a própria linha (telefone_kyte -> telefone) em vez de
+        // criar um cadastro novo: mantém o histórico de pedidos já
+        // vinculado a esse id e evita duplicar ficha + gerar sugestão de
+        // vínculo pra revisar depois (ver [[gestor_vinculo_cliente_cross_canal]]).
+        if (cliente.canalOrigem == 'kyte_historico' && cliente.pessoaId == null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Center(
+              child: OutlinedButton.icon(
+                onPressed: _promovendoKyte ? null : () => _promoverHistoricoKyte(cliente),
+                icon: _promovendoKyte
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check_circle_outline, size: 16),
+                label: const Text('Usar este cadastro'),
               ),
             ),
           ),
@@ -352,6 +377,42 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Não foi possível redefinir: $e')),
+      );
+    }
+  }
+
+  Future<void> _promoverHistoricoKyte(Cliente cliente) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Usar este cadastro'),
+        content: Text(
+          'O telefone ${cliente.telefoneKyte ?? ''} vira o telefone oficial desse cadastro e ele passa a '
+          'aparecer na lista normal de clientes, pronto pra usar numa venda. O histórico de pedidos continua o mesmo.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Confirmar')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    setState(() => _promovendoKyte = true);
+    try {
+      await ClienteRepository().promoverHistoricoKyte(cliente.idCliente!);
+      if (!mounted) return;
+      await context.read<ClientProvider>().carregarClientes();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cadastro liberado — já aparece na lista normal de clientes.')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _promovendoKyte = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível usar esse cadastro: $e')),
       );
     }
   }
