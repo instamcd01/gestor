@@ -507,6 +507,28 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
       final contentType = resposta.headers['content-type'] ?? '';
       if (!contentType.contains('spreadsheetml')) {
         final texto = utf8.decode(resposta.bodyBytes);
+        // O backend responde JSON (em vez da planilha) quando não há nada
+        // novo pra gerar catálogo nesta execução — normal em qualquer envio
+        // que não mexeu em estoque de verdade (ex: só financeiro, ou um
+        // reenvio idempotente de um relatório já processado antes). Não é
+        // erro: só não tem arquivo pra compartilhar desta vez.
+        Map<String, dynamic>? json;
+        try {
+          json = texto.isEmpty ? null : jsonDecode(texto) as Map<String, dynamic>;
+        } catch (_) {
+          json = null;
+        }
+        if (json != null && json['ok'] == true) {
+          final mensagemSucesso = financeiro ? 'Financeiro conciliado até $maiorData.' : 'Estoque reconciliado até $maiorData.';
+          final motivo = json['motivo']?.toString();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(motivo != null ? '$mensagemSucesso $motivo' : mensagemSucesso)),
+            );
+          }
+          await _carregar();
+          return;
+        }
         throw Exception(texto.isEmpty ? 'Resposta inesperada do servidor.' : texto);
       }
 
