@@ -71,3 +71,32 @@ class CarrinhoCliente {
     );
   }
 }
+
+/// Linha da lista "Carrinhos do dia" (`VendasScreen`) — resumo de todo
+/// carrinho ativo/não vazio de hoje, sem precisar carregar os itens de
+/// cada um só pra listar (isso só acontece quando o usuário abre um).
+class CarrinhoAtivoResumo {
+  final String clienteId;
+  final String clienteNome;
+  final int quantidadeItens;
+  final double valorTotal;
+  final DateTime atualizadoEm;
+
+  CarrinhoAtivoResumo({
+    required this.clienteId,
+    required this.clienteNome,
+    required this.quantidadeItens,
+    required this.valorTotal,
+    required this.atualizadoEm,
+  });
+
+  factory CarrinhoAtivoResumo.fromJson(Map<String, dynamic> json) {
+    return CarrinhoAtivoResumo(
+      clienteId: json['cliente_id'] as String,
+      clienteNome: json['cliente_nome']?.toString() ?? '',
+      quantidadeItens: (json['quantidade_itens'] as num?)?.toInt() ?? 0,
+      valorTotal: (json['valor_total'] as num?)?.toDouble() ?? 0,
+      atualizadoEm: DateTime.parse(json['atualizado_em'] as String),
+    );
+  }
+}

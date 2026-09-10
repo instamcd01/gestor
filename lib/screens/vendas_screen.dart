@@ -10,6 +10,7 @@ import '../utils/busca_utils.dart';
 import '../widgets/preco_com_desconto.dart';
 import 'cadastro_produto_screen.dart';
 import 'carrinho_screen.dart';
+import 'carrinhos_do_dia_screen.dart';
 
 /// Categoria sintética (não vem do banco) pra alternar a grade pra kits —
 /// distinto de um nome de categoria real que o lojista possa ter cadastrado
@@ -125,6 +126,15 @@ class _VendasScreenState extends State<VendasScreen> {
       appBar: AppBar(
         title: const Text('Venda de Produtos'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.shopping_bag_outlined),
+            tooltip: 'Carrinhos do dia',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (ctx) => const CarrinhosDoDiaScreen(),
+              ));
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Cadastrar produto',

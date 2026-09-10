@@ -28,6 +28,27 @@ class CarrinhoClienteRepository {
     return CarrinhoCliente.fromJson(data as Map<String, dynamic>);
   }
 
+  /// Substitui por completo o carrinho ativo de um cliente pelo que está
+  /// montado no app (staff "salvando" um orçamento em andamento pra
+  /// atender outro cliente em paralelo) — mesma tabela compartilhada com
+  /// WhatsApp/site. [itens] é `[{'produto_id': ..., 'quantidade': ...}]`;
+  /// preço e limite de estoque são sempre recalculados pela RPC a partir
+  /// do catálogo atual, nunca confia no que o app mandou.
+  Future<CarrinhoCliente> salvarComoStaff(String clienteId, List<Map<String, dynamic>> itens) async {
+    final data = await supabase.rpc('salvar_carrinho_staff', params: {
+      'p_cliente_id': clienteId,
+      'p_itens': itens,
+    });
+    return CarrinhoCliente.fromJson({'carrinho': data as Map<String, dynamic>});
+  }
+
+  /// Todo carrinho ativo/não vazio de hoje — alimenta "Carrinhos do dia"
+  /// em `VendasScreen`.
+  Future<List<CarrinhoAtivoResumo>> listarAtivosHoje() async {
+    final data = await supabase.rpc('listar_carrinhos_ativos_staff');
+    return (data as List).map((row) => CarrinhoAtivoResumo.fromJson(row as Map<String, dynamic>)).toList();
+  }
+
   Future<CarrinhoCliente> alterarQuantidade(
     String clienteId, {
     String? produtoId,

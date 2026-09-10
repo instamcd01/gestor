@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/cliente.dart';
 import '../models/cupom.dart';
+import '../models/item_carrinho_cliente.dart';
 import '../models/kit_produto.dart';
 import '../models/produto.dart'; // Seu modelo de Produto
 import '../models/zona_entrega.dart';
@@ -226,6 +227,32 @@ class CarrinhoProvider with ChangeNotifier {
         throw Exception('Estoque insuficiente para ${produto.nome}. Disponível: ${produto.estoqueAtual}');
       }
     }
+  }
+
+  /// Mescla itens vindos do carrinho compartilhado (WhatsApp/site) com o
+  /// que já está sendo montado — usado tanto ao selecionar um cliente que
+  /// já tem carrinho próprio (soma com o que já estava no carrinho ativo)
+  /// quanto ao retomar um "carrinho do dia" inteiro (carrinho ativo começa
+  /// vazio, então "mesclar" e "substituir" dão no mesmo resultado). Item
+  /// cujo produto sumiu do catálogo ou não tem mais estoque suficiente é
+  /// ignorado (best-effort — nunca trava a operação por causa de 1 item),
+  /// e devolvido pra quem chamou avisar o usuário.
+  List<String> mesclarItensRemotos(List<Produto> catalogo, List<ItemCarrinhoCliente> itensRemotos) {
+    final ignorados = <String>[];
+    for (final itemRemoto in itensRemotos) {
+      final produto = catalogo.where((p) => p.id == itemRemoto.produtoId).firstOrNull;
+      if (produto == null) {
+        ignorados.add(itemRemoto.nome);
+        continue;
+      }
+      try {
+        _adicionarItemUnico(produto, itemRemoto.quantidade);
+      } catch (_) {
+        ignorados.add(produto.nome);
+      }
+    }
+    notifyListeners();
+    return ignorados;
   }
 
   void atualizarQuantidadeProduto(String produtoId, int novaQuantidade) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:gestor/providers/carrinho_provider.dart';
+import 'package:gestor/providers/produto_provider.dart';
 import 'package:gestor/models/cliente.dart';
 import 'package:gestor/models/zona_entrega.dart';
 import 'package:gestor/screens/opcao_entrega_screen.dart';
@@ -10,6 +11,7 @@ import 'package:uuid/uuid.dart';
 
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
+import '../repositories/carrinho_cliente_repository.dart';
 import '../utils/agendamento_utils.dart';
 
 class CarrinhoScreen extends StatefulWidget {
@@ -27,6 +29,7 @@ class CarrinhoScreen extends StatefulWidget {
 class _CarrinhoScreenState extends State<CarrinhoScreen> {
   late String idVenda;
   double? _valorMinimoPedido;
+  bool _salvandoOrcamento = false;
   final TextEditingController _cupomController = TextEditingController();
 
   @override
@@ -75,6 +78,54 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
       carrinhoProvider.selecionarCliente(cliente);
       carrinhoProvider.selecionarZonaEntrega(zona);
       carrinhoProvider.selecionarAgendamento(agendamento);
+      if (cliente.idCliente != null) await _carregarCarrinhoExistente(cliente.idCliente!, carrinhoProvider);
+    }
+  }
+
+  /// Se o cliente recém-selecionado já tem algo no carrinho compartilhado
+  /// (WhatsApp/site, ou um orçamento que você mesmo salvou antes pra ele),
+  /// já mescla com o que estiver sendo montado agora — evita ter que ir
+  /// procurar em "Carrinhos do dia" quando é só continuar direto daqui.
+  Future<void> _carregarCarrinhoExistente(String clienteId, CarrinhoProvider carrinhoProvider) async {
+    try {
+      final carrinhoExistente = await CarrinhoClienteRepository().consultar(clienteId);
+      if (carrinhoExistente.vazio || !mounted) return;
+      final catalogo = Provider.of<ProdutoProvider>(context, listen: false).produtos;
+      final ignorados = carrinhoProvider.mesclarItensRemotos(catalogo, carrinhoExistente.itens);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(
+          ignorados.isEmpty
+              ? 'Itens que esse cliente já tinha no carrinho foram adicionados aqui.'
+              : 'Itens do carrinho anterior adicionados (${ignorados.length} não puderam ser trazidos: ${ignorados.join(", ")}).',
+        )),
+      );
+    } catch (e) {
+      debugPrint('Erro ao carregar carrinho existente do cliente: $e');
+    }
+  }
+
+  Future<void> _salvarOrcamento(CarrinhoProvider carrinhoProvider) async {
+    final cliente = carrinhoProvider.clienteSelecionado;
+    if (cliente?.idCliente == null) return;
+
+    setState(() => _salvandoOrcamento = true);
+    try {
+      final itensPayload = carrinhoProvider.itens
+          .map((i) => {'produto_id': i.produto.id, 'quantidade': i.quantidade})
+          .toList();
+      await CarrinhoClienteRepository().salvarComoStaff(cliente!.idCliente!, itensPayload);
+      carrinhoProvider.limparCarrinho();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Orçamento salvo pra ${cliente.nome} — retome em "Carrinhos do dia".')),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível salvar: $e')));
+    } finally {
+      if (mounted) setState(() => _salvandoOrcamento = false);
     }
   }
 
@@ -88,6 +139,22 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
       appBar: AppBar(
         title: const Text('Carrinho de Compras'),
         actions: [
+          // Salva esse carrinho no cliente selecionado (mesma tabela do
+          // WhatsApp/site) e libera o carrinho ativo pra montar outro do
+          // zero — pra quando outro cliente precisa de atenção no meio do
+          // atendimento (ver [[gestor_multiplos_atendimentos_carrinho]]).
+          if (!vazio && carrinhoProvider.clienteSelecionado != null)
+            IconButton(
+              icon: _salvandoOrcamento
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.save_outlined),
+              tooltip: 'Salvar orçamento e começar outro',
+              onPressed: _salvandoOrcamento ? null : () => _salvarOrcamento(carrinhoProvider),
+            ),
           if (!vazio)
             IconButton(
               icon: const Icon(Icons.delete_outline),
