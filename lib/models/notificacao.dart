@@ -18,6 +18,7 @@ class TipoNotificacao {
   static const pedidoAtrasadoEntrega = 'pedido_atrasado_entrega';
   static const pedidoHoraSaidaEntrega = 'pedido_hora_saida_entrega';
   static const carrinhoAbandonado = 'carrinho_abandonado';
+  static const clienteAtivoNoSite = 'cliente_ativo_no_site';
 }
 
 /// Chaves de preferência de alerta (som/vibração) por categoria — não ligam/
@@ -99,6 +100,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.carrinhoAbandonado,
     titulo: 'Carrinho abandonado',
     descricao: 'Quando um cliente adiciona produto ao carrinho e some por mais de 10 minutos, sem finalizar o pedido.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.clienteAtivoNoSite,
+    titulo: 'Cliente entrou no site',
+    descricao: 'Quando um cliente com conversa recente no WhatsApp (últimas 48h) entra ou se cadastra no site.',
   ),
 ];
 

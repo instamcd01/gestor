@@ -8,6 +8,7 @@ import '../providers/produto_provider.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'avaliacoes_disputas_screen.dart';
 import 'campanhas_ativacao_screen.dart';
+import 'cliente_screen.dart';
 import 'despesas_screen.dart';
 import 'editar_produto_screen.dart';
 import 'fila_pedidos_screen.dart';
@@ -35,6 +36,8 @@ Widget? _telaRelacionada(String tipo) {
       return const AvaliacoesDisputasScreen();
     case TipoNotificacao.carrinhoAbandonado:
       return const CampanhasAtivacaoScreen();
+    case TipoNotificacao.clienteAtivoNoSite:
+      return ClientesScreen();
     default:
       return null;
   }
@@ -67,6 +70,8 @@ Widget? _telaRelacionada(String tipo) {
       return (Icons.price_change_outlined, Colors.orange);
     case TipoNotificacao.carrinhoAbandonado:
       return (Icons.shopping_cart_outlined, Colors.orange);
+    case TipoNotificacao.clienteAtivoNoSite:
+      return (Icons.person_search_outlined, Colors.blue);
     default:
       return (Icons.notifications_outlined, colorScheme.primary);
   }
