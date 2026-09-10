@@ -123,7 +123,7 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
               IconButton(
                 icon: const Icon(Icons.message, color: Colors.green),
                 tooltip: 'Abrir WhatsApp',
-                onPressed: () => _abrirWhatsApp(cliente.celular),
+                onPressed: () => _abrirWhatsApp(cliente.telefoneKyte ?? cliente.celular),
               ),
             if (cliente.email.isNotEmpty)
               IconButton(

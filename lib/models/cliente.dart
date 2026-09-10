@@ -82,6 +82,15 @@ class Cliente {
   /// formulário genérico de editar cliente.
   final String? pessoaId;
 
+  /// Telefone real de cadastros "consultivos" do histórico do Kyte
+  /// (`canal_origem = 'kyte_historico'`) — nesses cadastros `celular` é só
+  /// um placeholder (`kyte-sem-numero-N`, nunca um telefone de verdade, de
+  /// propósito: pra nunca ser reaproveitado por `entrar_ou_criar_cliente`
+  /// quando o cliente fizer cadastro real no site). Só leitura, nunca vai
+  /// em `toSupabaseMap()` — usar sempre que precisar abrir WhatsApp/ligar
+  /// pra esse cliente em vez de `celular`.
+  final String? telefoneKyte;
+
   Cliente({
     this.idCliente,
     required this.nome,
@@ -128,6 +137,7 @@ class Cliente {
     this.longitude,
     this.authUserId,
     this.pessoaId,
+    this.telefoneKyte,
   });
 
   List<String> get especies => pets.map((p) => p.especie).toSet().toList();
@@ -179,6 +189,7 @@ class Cliente {
       // lista recarregar do servidor. Achado corrigindo o CNPJ ao lado.
       authUserId: authUserId,
       pessoaId: pessoaId,
+      telefoneKyte: telefoneKyte,
     );
   }
 
@@ -277,6 +288,7 @@ class Cliente {
       longitude: (row['longitude'] as num?)?.toDouble(),
       authUserId: row['auth_user_id'] as String?,
       pessoaId: row['pessoa_id'] as String?,
+      telefoneKyte: row['telefone_kyte'] as String?,
     );
   }
 

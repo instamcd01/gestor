@@ -691,7 +691,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   corAcao: venda.ehMarketplace ? Theme.of(context).colorScheme.primary : Colors.green,
                   onTap: venda.ehMarketplace
                       ? () => _ligarViaIfood(venda)
-                      : () => _abrirWhatsApp(venda.cliente.celular),
+                      : () => _abrirWhatsApp(venda.cliente.telefoneKyte ?? venda.cliente.celular),
                 ),
               if (venda.ehMarketplace && venda.cliente.celular.isNotEmpty)
                 Padding(
