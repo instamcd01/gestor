@@ -1,7 +1,8 @@
 /// Tipos de notificação — ver as triggers/jobs no banco (migrations
 /// `trigger_notificacao_estoque_baixo`, `job_notificacao_pedido_parado`,
 /// `job_notificacao_despesa_vencendo`, `trigger_notificacao_avaliacao_disputa_sync`,
-/// `notificar_pedidos_atrasados_entrega`, `notifica_hora_de_sair_para_entrega`)
+/// `notificar_pedidos_atrasados_entrega`, `notifica_hora_de_sair_para_entrega`,
+/// `notificar_carrinhos_abandonados`)
 /// que são a única fonte que grava nessa tabela.
 class TipoNotificacao {
   static const estoqueBaixo = 'estoque_baixo';
@@ -16,6 +17,7 @@ class TipoNotificacao {
   static const novoPedido = 'novo_pedido';
   static const pedidoAtrasadoEntrega = 'pedido_atrasado_entrega';
   static const pedidoHoraSaidaEntrega = 'pedido_hora_saida_entrega';
+  static const carrinhoAbandonado = 'carrinho_abandonado';
 }
 
 /// Chaves de preferência de alerta (som/vibração) por categoria — não ligam/
@@ -92,6 +94,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.custoAlterado,
     titulo: 'Custo do produto alterado',
     descricao: 'Quando o custo de um produto muda (ex: importação de nota fiscal) — avisa pra revisar o preço de venda.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.carrinhoAbandonado,
+    titulo: 'Carrinho abandonado',
+    descricao: 'Quando um cliente adiciona produto ao carrinho e some por mais de 2 horas, sem finalizar o pedido.',
   ),
 ];
 
