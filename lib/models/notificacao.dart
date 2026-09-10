@@ -98,7 +98,7 @@ const categoriasNotificacaoDisponiveis = [
   CategoriaNotificacao(
     chave: TipoNotificacao.carrinhoAbandonado,
     titulo: 'Carrinho abandonado',
-    descricao: 'Quando um cliente adiciona produto ao carrinho e some por mais de 2 horas, sem finalizar o pedido.',
+    descricao: 'Quando um cliente adiciona produto ao carrinho e some por mais de 10 minutos, sem finalizar o pedido.',
   ),
 ];
 
