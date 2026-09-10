@@ -9,7 +9,7 @@ class VinculoClienteRepository {
         .from('vinculos_cliente_pendentes')
         .select('''
           id, criterio, created_at,
-          cliente_novo:clientes!vinculos_cliente_pendentes_cliente_novo_id_fkey(id, nome, telefone, canal_origem),
+          cliente_novo:clientes!vinculos_cliente_pendentes_cliente_novo_id_fkey(id, nome, telefone, canal_origem, total_pedidos, saldo, saldo_petcash),
           cliente_encontrado:clientes!vinculos_cliente_pendentes_cliente_encontrado_id_fkey(id, nome, telefone, canal_origem, total_pedidos, saldo, saldo_petcash)
         ''')
         .eq('status', 'pendente')

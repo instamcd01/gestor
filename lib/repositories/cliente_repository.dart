@@ -14,6 +14,12 @@ class ClienteRepository {
         .from('clientes')
         .select(_selectComPets)
         .isFilter('deleted_at', null)
+        // Cadastros "consultivos" do histórico do Kyte (sem login, nunca
+        // fazem pedido novo) — ficam escondidos da lista padrão pra não
+        // duplicar visualmente a ficha de quem já tem conta real. Ainda
+        // acessíveis pela tela de Vínculos de Clientes e pelo detalhe de
+        // um pedido antigo do Kyte.
+        .neq('canal_origem', 'kyte_historico')
         .order('nome', ascending: true);
 
     return (data as List)

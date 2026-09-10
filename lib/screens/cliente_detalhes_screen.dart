@@ -102,6 +102,17 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
             ),
           ),
         ),
+        if (cliente.canalOrigem == 'kyte_historico')
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Center(
+              child: Chip(
+                avatar: const Icon(Icons.history, size: 16),
+                label: const Text('Histórico Kyte — cadastro sem login'),
+                backgroundColor: Theme.of(context).colorScheme.tertiaryContainer,
+              ),
+            ),
+          ),
         if (cliente.pessoaId != null)
           Padding(
             padding: const EdgeInsets.only(top: 12),

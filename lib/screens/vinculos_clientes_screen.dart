@@ -30,7 +30,11 @@ class _VinculosClientesScreenState extends State<VinculosClientesScreen> {
   }
 
   Future<void> _confirmarEAgir(VinculoCliente vinculo, {required bool aprovar}) async {
-    final valorEmRisco = vinculo.saldoEncontrado > 0 || vinculo.saldoPetCashEncontrado > 0;
+    // Qual lado tem saldo em risco varia por critério — telefone (Kyte)
+    // costuma ter o histórico no "novo", CPF costuma ter no "encontrado".
+    // Sempre checa os dois em vez de assumir um lado fixo.
+    final valorEmRiscoNovo = vinculo.saldoNovo > 0 || vinculo.saldoPetCashNovo > 0;
+    final valorEmRiscoEncontrado = vinculo.saldoEncontrado > 0 || vinculo.saldoPetCashEncontrado > 0;
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
 
     final confirmou = await showDialog<bool>(
@@ -39,10 +43,13 @@ class _VinculosClientesScreenState extends State<VinculosClientesScreen> {
         title: Text(aprovar ? 'Vincular cadastros?' : 'Rejeitar sugestão?'),
         content: Text(
           aprovar
-              ? '"${vinculo.nomeNovo}" (novo, ${vinculo.canalNovo ?? "?"}) será vinculado a '
+              ? '"${vinculo.nomeNovo}" (${vinculo.canalNovo ?? "?"}, ${vinculo.totalPedidosNovo} pedido(s)'
+                  '${valorEmRiscoNovo ? ", saldo ${currencyFormat.format(vinculo.saldoNovo)} + PetCash ${currencyFormat.format(vinculo.saldoPetCashNovo)}" : ""}'
+                  ') será vinculado a '
                   '"${vinculo.nomeEncontrado}" (${vinculo.canalEncontrado ?? "?"}, '
                   '${vinculo.totalPedidosEncontrado} pedido(s)'
-                  '${valorEmRisco ? ", saldo ${currencyFormat.format(vinculo.saldoEncontrado)} + PetCash ${currencyFormat.format(vinculo.saldoPetCashEncontrado)}" : ""}).\n\n'
+                  '${valorEmRiscoEncontrado ? ", saldo ${currencyFormat.format(vinculo.saldoEncontrado)} + PetCash ${currencyFormat.format(vinculo.saldoPetCashEncontrado)}" : ""}) — '
+                  'este último fica como cadastro raiz.\n\n'
                   'O histórico consolidado passa a aparecer na ficha de ambos.'
               : 'A sugestão será descartada — os 2 cadastros continuam separados.',
         ),
@@ -110,7 +117,8 @@ class _VinculosClientesScreenState extends State<VinculosClientesScreen> {
               itemBuilder: (context, index) {
                 final vinculo = vinculos[index];
                 final processando = _emProcessamento.contains(vinculo.id);
-                final valorEmRisco = vinculo.saldoEncontrado > 0 || vinculo.saldoPetCashEncontrado > 0;
+                final valorEmRiscoNovo = vinculo.saldoNovo > 0 || vinculo.saldoPetCashNovo > 0;
+                final valorEmRiscoEncontrado = vinculo.saldoEncontrado > 0 || vinculo.saldoPetCashEncontrado > 0;
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -124,14 +132,31 @@ class _VinculosClientesScreenState extends State<VinculosClientesScreen> {
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
                         const SizedBox(height: 8),
-                        Text('Novo: ${vinculo.nomeNovo} (${vinculo.canalNovo ?? "?"}) — ${vinculo.telefoneNovo}'),
                         Text(
-                          'Encontrado: ${vinculo.nomeEncontrado} (${vinculo.canalEncontrado ?? "?"}) — '
+                          'Novo: ${vinculo.nomeNovo} (${vinculo.canalNovo ?? "?"}) — '
+                          '${vinculo.telefoneNovo} — ${vinculo.totalPedidosNovo} pedido(s)',
+                        ),
+                        if (valorEmRiscoNovo)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              'Saldo: ${currencyFormat.format(vinculo.saldoNovo)} • '
+                              'PetCash: ${currencyFormat.format(vinculo.saldoPetCashNovo)}',
+                              style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          // "raiz" porque vincular_clientes sempre mantém este
+                          // lado como cadastro canônico (pessoa_id continua
+                          // null nele) — deixa explícito qual dos dois some
+                          // como entrada separada na lista de Clientes depois.
+                          'Encontrado (fica como raiz): ${vinculo.nomeEncontrado} (${vinculo.canalEncontrado ?? "?"}) — '
                           '${vinculo.telefoneEncontrado} — ${vinculo.totalPedidosEncontrado} pedido(s)',
                         ),
-                        if (valorEmRisco)
+                        if (valorEmRiscoEncontrado)
                           Padding(
-                            padding: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.only(top: 2),
                             child: Text(
                               'Saldo: ${currencyFormat.format(vinculo.saldoEncontrado)} • '
                               'PetCash: ${currencyFormat.format(vinculo.saldoPetCashEncontrado)}',

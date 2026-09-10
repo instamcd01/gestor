@@ -13,6 +13,9 @@ class VinculoCliente {
   final String nomeNovo;
   final String telefoneNovo;
   final String? canalNovo;
+  final int totalPedidosNovo;
+  final double saldoNovo;
+  final double saldoPetCashNovo;
 
   final String clienteEncontradoId;
   final String nomeEncontrado;
@@ -30,6 +33,9 @@ class VinculoCliente {
     required this.nomeNovo,
     required this.telefoneNovo,
     this.canalNovo,
+    required this.totalPedidosNovo,
+    required this.saldoNovo,
+    required this.saldoPetCashNovo,
     required this.clienteEncontradoId,
     required this.nomeEncontrado,
     required this.telefoneEncontrado,
@@ -51,6 +57,9 @@ class VinculoCliente {
       nomeNovo: novo['nome']?.toString() ?? '',
       telefoneNovo: novo['telefone']?.toString() ?? '',
       canalNovo: novo['canal_origem']?.toString(),
+      totalPedidosNovo: (novo['total_pedidos'] as num?)?.toInt() ?? 0,
+      saldoNovo: (novo['saldo'] as num?)?.toDouble() ?? 0.0,
+      saldoPetCashNovo: (novo['saldo_petcash'] as num?)?.toDouble() ?? 0.0,
       clienteEncontradoId: encontrado['id'] as String,
       nomeEncontrado: encontrado['nome']?.toString() ?? '',
       telefoneEncontrado: encontrado['telefone']?.toString() ?? '',
