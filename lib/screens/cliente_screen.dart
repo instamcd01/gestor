@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
+import '../repositories/cliente_repository.dart';
 import '../widgets/categoria_cliente_badge.dart';
 import '../widgets/estado_erro_lista.dart';
 import '../widgets/importar_clientes_planilha.dart';
@@ -15,15 +16,23 @@ class ClientesScreen extends StatefulWidget {
   _ClientesScreenState createState() => _ClientesScreenState();
 }
 
-class _ClientesScreenState extends State<ClientesScreen> {
+class _ClientesScreenState extends State<ClientesScreen> with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
   String _textoPesquisa = '';
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     Future.microtask(() {
       Provider.of<ClientProvider>(context, listen: false).carregarClientesDoFirestore();
     });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   void _cadastrarNovoCliente() {
@@ -84,8 +93,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
     return emojis;
   }
 
-
-
   Future<void> _confirmarExclusao(ClientProvider clientProvider, Cliente cliente) async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -115,17 +122,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final clientProvider = Provider.of<ClientProvider>(context);
-    final clientesFiltrados = clientProvider.clientes;
-    final colorScheme = Theme.of(context).colorScheme;
     final auth = context.watch<AuthProvider>();
-    // Reforça na UI o que já é bloqueado no banco (trigger) — vendedor não
-    // exclui cliente.
-    final podeExcluir = auth.podeExcluir;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Clientes (${clientesFiltrados.length})'),
+        title: const Text('Clientes'),
         actions: [
           // Importar/exportar mexe na base de clientes inteira (telefone,
           // endereço, CPF, saldo) de uma vez só — bulk admin, não venda do
@@ -142,90 +143,114 @@ class _ClientesScreenState extends State<ClientesScreen> {
             tooltip: 'Cadastrar Novo Cliente',
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Clientes'),
+            Tab(text: 'Histórico Kyte'),
+          ],
+        ),
       ),
-      body: Column(
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              onChanged: (texto) {
-                setState(() {
-                  _textoPesquisa = texto;
-                });
-                _aplicarFiltro();
-              },
-              decoration: const InputDecoration(
-                hintText: 'Pesquisar por nome, celular ou endereço',
-                prefixIcon: Icon(Icons.search),
-              ),
-            ),
-          ),
-          Expanded(
-            child: clientProvider.carregando
-                ? const Center(child: CircularProgressIndicator())
-                : clientProvider.erro != null
-                    ? EstadoErroLista(
-                        mensagem: clientProvider.erro!,
-                        onTentarNovamente: clientProvider.carregarClientes,
-                      )
-                    : clientesFiltrados.isEmpty
-                    ? _estadoVazio(colorScheme)
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                        itemCount: clientesFiltrados.length,
-                        itemBuilder: (context, index) {
-                          final cliente = clientesFiltrados[index];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              onTap: () => _verDetalhesCliente(cliente),
-                              leading: CircleAvatar(
-                                backgroundColor: colorScheme.primaryContainer,
-                                child: Text(
-                                  cliente.nome.isNotEmpty ? cliente.nome[0].toUpperCase() : '?',
-                                  style: TextStyle(color: colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                              title: Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      cliente.nome,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.w600),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  CategoriaClienteBadge(categoria: cliente.categoriaCliente),
-                                ],
-                              ),
-                              subtitle: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '${cliente.celular} • Saldo R\$${cliente.saldo.toStringAsFixed(2)}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  ..._iconesDePets(cliente),
-                                ],
-                              ),
-                              trailing: podeExcluir
-                                  ? IconButton(
-                                      icon: const Icon(Icons.delete_outline),
-                                      tooltip: 'Excluir',
-                                      onPressed: () => _confirmarExclusao(clientProvider, cliente),
-                                    )
-                                  : null,
-                            ),
-                          );
-                        },
-                      ),
-          ),
+          _buildAbaClientes(context, auth),
+          const _AbaHistoricoKyte(),
         ],
       ),
+    );
+  }
+
+  Widget _buildAbaClientes(BuildContext context, AuthProvider auth) {
+    final clientProvider = Provider.of<ClientProvider>(context);
+    final clientesFiltrados = clientProvider.clientes;
+    final colorScheme = Theme.of(context).colorScheme;
+    // Reforça na UI o que já é bloqueado no banco (trigger) — vendedor não
+    // exclui cliente.
+    final podeExcluir = auth.podeExcluir;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: TextField(
+            onChanged: (texto) {
+              setState(() {
+                _textoPesquisa = texto;
+              });
+              _aplicarFiltro();
+            },
+            decoration: const InputDecoration(
+              hintText: 'Pesquisar por nome, celular ou endereço',
+              prefixIcon: Icon(Icons.search),
+            ),
+          ),
+        ),
+        Expanded(
+          child: clientProvider.carregando
+              ? const Center(child: CircularProgressIndicator())
+              : clientProvider.erro != null
+                  ? EstadoErroLista(
+                      mensagem: clientProvider.erro!,
+                      onTentarNovamente: clientProvider.carregarClientes,
+                    )
+                  : clientesFiltrados.isEmpty
+                  ? _estadoVazio(colorScheme)
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                      itemCount: clientesFiltrados.length,
+                      itemBuilder: (context, index) {
+                        final cliente = clientesFiltrados[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            onTap: () => _verDetalhesCliente(cliente),
+                            leading: CircleAvatar(
+                              backgroundColor: colorScheme.primaryContainer,
+                              child: Text(
+                                cliente.nome.isNotEmpty ? cliente.nome[0].toUpperCase() : '?',
+                                style: TextStyle(color: colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    cliente.nome,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                CategoriaClienteBadge(categoria: cliente.categoriaCliente),
+                              ],
+                            ),
+                            subtitle: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${cliente.celular} • Saldo R\$${cliente.saldo.toStringAsFixed(2)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                ..._iconesDePets(cliente),
+                              ],
+                            ),
+                            trailing: podeExcluir
+                                ? IconButton(
+                                    icon: const Icon(Icons.delete_outline),
+                                    tooltip: 'Excluir',
+                                    onPressed: () => _confirmarExclusao(clientProvider, cliente),
+                                  )
+                                : null,
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
     );
   }
 
@@ -254,6 +279,113 @@ class _ClientesScreenState extends State<ClientesScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Cadastros "consultivos" do histórico do Kyte (sem login, sem pets, só
+/// preservam pedidos antigos — ver [[gestor_vinculo_cliente_cross_canal]]
+/// na memória do projeto). Lista própria e simples, sem busca/exclusão:
+/// não são clientes ativos, só consulta.
+class _AbaHistoricoKyte extends StatefulWidget {
+  const _AbaHistoricoKyte();
+
+  @override
+  State<_AbaHistoricoKyte> createState() => _AbaHistoricoKyteState();
+}
+
+class _AbaHistoricoKyteState extends State<_AbaHistoricoKyte> {
+  final _repository = ClienteRepository();
+  late Future<List<Cliente>> _futureClientes;
+
+  @override
+  void initState() {
+    super.initState();
+    _futureClientes = _repository.listarHistoricoKyte();
+  }
+
+  Future<void> _recarregar() async {
+    setState(() => _futureClientes = _repository.listarHistoricoKyte());
+    await _futureClientes;
+  }
+
+  void _verDetalhes(Cliente cliente) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ClienteDetalhesScreen(cliente: cliente)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return FutureBuilder<List<Cliente>>(
+      future: _futureClientes,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return EstadoErroLista(
+            mensagem: 'Erro ao carregar histórico do Kyte: ${snapshot.error}',
+            onTentarNovamente: _recarregar,
+          );
+        }
+
+        final clientes = snapshot.data ?? [];
+        if (clientes.isEmpty) {
+          return RefreshIndicator(
+            onRefresh: _recarregar,
+            child: ListView(
+              children: const [
+                SizedBox(height: 120),
+                Center(child: Text('Nenhum cadastro de histórico do Kyte.')),
+              ],
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: _recarregar,
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            itemCount: clientes.length,
+            itemBuilder: (context, index) {
+              final cliente = clientes[index];
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  onTap: () => _verDetalhes(cliente),
+                  leading: CircleAvatar(
+                    backgroundColor: colorScheme.tertiaryContainer,
+                    child: Text(
+                      cliente.nome.isNotEmpty ? cliente.nome[0].toUpperCase() : '?',
+                      style: TextStyle(color: colorScheme.onTertiaryContainer, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  title: Text(
+                    cliente.nome,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    '${cliente.telefoneKyte ?? "sem telefone"} • '
+                    '${cliente.numeroCompras ?? 0} pedido(s) • '
+                    'R\$${(cliente.totalGasto ?? 0).toStringAsFixed(2)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: cliente.pessoaId != null
+                      ? const Icon(Icons.link, size: 20)
+                      : null,
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

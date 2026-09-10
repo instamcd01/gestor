@@ -15,12 +15,29 @@ class ClienteRepository {
         .select(_selectComPets)
         .isFilter('deleted_at', null)
         // Cadastros "consultivos" do histórico do Kyte (sem login, nunca
-        // fazem pedido novo) — ficam escondidos da lista padrão pra não
-        // duplicar visualmente a ficha de quem já tem conta real. Ainda
-        // acessíveis pela tela de Vínculos de Clientes e pelo detalhe de
-        // um pedido antigo do Kyte.
+        // fazem pedido novo) — ficam fora da lista padrão (que alimenta
+        // busca de venda/entrega, onde não faz sentido escolher um deles)
+        // e têm aba própria em ClientesScreen (ver listarHistoricoKyte).
         .neq('canal_origem', 'kyte_historico')
         .order('nome', ascending: true);
+
+    return (data as List)
+        .map((row) => Cliente.fromSupabase(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Só os cadastros "consultivos" do histórico do Kyte (ver
+  /// [[gestor_vinculo_cliente_cross_canal]]) — sem login, sem pets,
+  /// existem só pra preservar o histórico de pedidos antigo. Separado de
+  /// `listar()` porque não devem aparecer em nenhum fluxo de escolher um
+  /// cliente pra ação nova (entrega, venda) — só na aba de consulta.
+  Future<List<Cliente>> listarHistoricoKyte() async {
+    final data = await supabase
+        .from('clientes')
+        .select(_selectComPets)
+        .isFilter('deleted_at', null)
+        .eq('canal_origem', 'kyte_historico')
+        .order('total_gasto', ascending: false);
 
     return (data as List)
         .map((row) => Cliente.fromSupabase(row as Map<String, dynamic>))
