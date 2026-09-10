@@ -172,7 +172,7 @@ class _ClientesScreenState extends State<ClientesScreen> with SingleTickerProvid
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: TextField(
             onChanged: (texto) {
               setState(() {
@@ -183,6 +183,16 @@ class _ClientesScreenState extends State<ClientesScreen> with SingleTickerProvid
             decoration: const InputDecoration(
               hintText: 'Pesquisar por nome, celular ou endereço',
               prefixIcon: Icon(Icons.search),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '${clientesFiltrados.length} cliente(s)',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
           ),
         ),
@@ -285,8 +295,8 @@ class _ClientesScreenState extends State<ClientesScreen> with SingleTickerProvid
 
 /// Cadastros "consultivos" do histórico do Kyte (sem login, sem pets, só
 /// preservam pedidos antigos — ver [[gestor_vinculo_cliente_cross_canal]]
-/// na memória do projeto). Lista própria e simples, sem busca/exclusão:
-/// não são clientes ativos, só consulta.
+/// na memória do projeto). Lista própria (busca própria, filtrada em
+/// memória) — não são clientes ativos, sem opção de excluir.
 class _AbaHistoricoKyte extends StatefulWidget {
   const _AbaHistoricoKyte();
 
@@ -297,6 +307,7 @@ class _AbaHistoricoKyte extends StatefulWidget {
 class _AbaHistoricoKyteState extends State<_AbaHistoricoKyte> {
   final _repository = ClienteRepository();
   late Future<List<Cliente>> _futureClientes;
+  String _textoPesquisa = '';
 
   @override
   void initState() {
@@ -316,6 +327,18 @@ class _AbaHistoricoKyteState extends State<_AbaHistoricoKyte> {
     );
   }
 
+  // Lista já vem inteira do banco (só 257 linhas hoje) — filtra em
+  // memória em vez de ida ao servidor a cada letra digitada, mesmo
+  // espírito do ClientProvider.pesquisarClientes.
+  List<Cliente> _filtrar(List<Cliente> clientes) {
+    if (_textoPesquisa.isEmpty) return clientes;
+    final termo = _textoPesquisa.toLowerCase();
+    return clientes.where((c) {
+      return c.nome.toLowerCase().contains(termo) ||
+          (c.telefoneKyte ?? '').contains(termo);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -333,57 +356,85 @@ class _AbaHistoricoKyteState extends State<_AbaHistoricoKyte> {
           );
         }
 
-        final clientes = snapshot.data ?? [];
-        if (clientes.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: _recarregar,
-            child: ListView(
-              children: const [
-                SizedBox(height: 120),
-                Center(child: Text('Nenhum cadastro de histórico do Kyte.')),
-              ],
-            ),
-          );
-        }
+        final todos = snapshot.data ?? [];
+        final clientes = _filtrar(todos);
 
-        return RefreshIndicator(
-          onRefresh: _recarregar,
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            itemCount: clientes.length,
-            itemBuilder: (context, index) {
-              final cliente = clientes[index];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  onTap: () => _verDetalhes(cliente),
-                  leading: CircleAvatar(
-                    backgroundColor: colorScheme.tertiaryContainer,
-                    child: Text(
-                      cliente.nome.isNotEmpty ? cliente.nome[0].toUpperCase() : '?',
-                      style: TextStyle(color: colorScheme.onTertiaryContainer, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  title: Text(
-                    cliente.nome,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    '${cliente.telefoneKyte ?? "sem telefone"} • '
-                    '${cliente.numeroCompras ?? 0} pedido(s) • '
-                    'R\$${(cliente.totalGasto ?? 0).toStringAsFixed(2)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: cliente.pessoaId != null
-                      ? const Icon(Icons.link, size: 20)
-                      : null,
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: TextField(
+                onChanged: (texto) => setState(() => _textoPesquisa = texto),
+                decoration: const InputDecoration(
+                  hintText: 'Pesquisar por nome ou telefone',
+                  prefixIcon: Icon(Icons.search),
                 ),
-              );
-            },
-          ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '${clientes.length} cadastro(s)',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ),
+            Expanded(
+              child: clientes.isEmpty
+                  ? RefreshIndicator(
+                      onRefresh: _recarregar,
+                      child: ListView(
+                        children: [
+                          const SizedBox(height: 100),
+                          Center(
+                            child: Text(
+                              todos.isEmpty ? 'Nenhum cadastro de histórico do Kyte.' : 'Nenhum resultado pra essa busca.',
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _recarregar,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        itemCount: clientes.length,
+                        itemBuilder: (context, index) {
+                          final cliente = clientes[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              onTap: () => _verDetalhes(cliente),
+                              leading: CircleAvatar(
+                                backgroundColor: colorScheme.tertiaryContainer,
+                                child: Text(
+                                  cliente.nome.isNotEmpty ? cliente.nome[0].toUpperCase() : '?',
+                                  style: TextStyle(color: colorScheme.onTertiaryContainer, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              title: Text(
+                                cliente.nome,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              subtitle: Text(
+                                '${cliente.telefoneKyte ?? "sem telefone"} • '
+                                '${cliente.numeroCompras ?? 0} pedido(s) • '
+                                'R\$${(cliente.totalGasto ?? 0).toStringAsFixed(2)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: cliente.pessoaId != null ? const Icon(Icons.link, size: 20) : null,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+            ),
+          ],
         );
       },
     );
