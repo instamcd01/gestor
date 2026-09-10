@@ -32,12 +32,16 @@ class CarrinhoCliente {
   final double valorTotal;
   final String? motivoUltimaOperacao;
   final List<ItemCarrinhoCliente>? itensCorrespondentes;
+  final DateTime? criadoEm;
+  final DateTime? atualizadoEm;
 
   CarrinhoCliente({
     required this.itens,
     required this.valorTotal,
     this.motivoUltimaOperacao,
     this.itensCorrespondentes,
+    this.criadoEm,
+    this.atualizadoEm,
   });
 
   bool get vazio => itens.isEmpty;
@@ -61,6 +65,9 @@ class CarrinhoCliente {
                 'subtotal': 0,
               }))
           .toList(),
+      criadoEm: carrinhoJson['criado_em'] != null ? DateTime.parse(carrinhoJson['criado_em'] as String) : null,
+      atualizadoEm:
+          carrinhoJson['atualizado_em'] != null ? DateTime.parse(carrinhoJson['atualizado_em'] as String) : null,
     );
   }
 }

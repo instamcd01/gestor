@@ -560,6 +560,21 @@ class _CarrinhoClienteTabState extends State<_CarrinhoClienteTab> {
     }
   }
 
+  /// "Criado em dd/MM HH:mm" e, se a última alteração for depois da
+  /// criação (cliente mexeu no carrinho mais de uma vez), acrescenta
+  /// "última alteração dd/MM HH:mm" também.
+  String _formatarTimestamps(CarrinhoCliente carrinho) {
+    final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
+    final criado = carrinho.criadoEm;
+    if (criado == null) return '';
+    final texto = StringBuffer('Criado em ${dateFormat.format(criado)}');
+    final atualizado = carrinho.atualizadoEm;
+    if (atualizado != null && atualizado.difference(criado).inMinutes.abs() >= 1) {
+      texto.write(' • última alteração ${dateFormat.format(atualizado)}');
+    }
+    return texto.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
@@ -587,11 +602,26 @@ class _CarrinhoClienteTabState extends State<_CarrinhoClienteTab> {
             ),
           );
         }
+        final timestamps = _formatarTimestamps(carrinho);
         return RefreshIndicator(
           onRefresh: _recarregar,
           child: ListView.builder(
-            itemCount: carrinho.itens.length + 1,
+            itemCount: carrinho.itens.length + (timestamps.isEmpty ? 1 : 2),
             itemBuilder: (context, index) {
+              if (timestamps.isNotEmpty) {
+                if (index == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text(
+                      timestamps,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  );
+                }
+                index -= 1;
+              }
               if (index == carrinho.itens.length) {
                 return Padding(
                   padding: const EdgeInsets.all(16.0),
