@@ -56,6 +56,13 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   bool _primeiraSelecaoFeita = false;
   bool _esconderEnviados = false;
 
+  // Corpo de mensagem salvo pelo usuário como padrão da campanha (sem a
+  // saudação — essa continua gerada por contato). Carregado uma vez do
+  // `widget.campanha` recebido e atualizado localmente ao salvar; sobrevive
+  // a qualquer pull-to-refresh (que não reseta esse campo) e a reabrir a
+  // tela (vem do banco de novo via `widget.campanha.mensagemPadrao`).
+  String? _mensagemPadraoAtual;
+
   // Cópia mutável da lista resolvida pelo FutureBuilder — necessária pra que
   // marcar "já enviei" num contato atualize o contador/filtro na hora, sem
   // esperar um pull-to-refresh (o Future em si só resolve uma vez).
@@ -64,6 +71,7 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   @override
   void initState() {
     super.initState();
+    _mensagemPadraoAtual = widget.campanha.mensagemPadrao;
     _carregar();
   }
 
@@ -107,7 +115,7 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
       final nome = c.nomeCliente ?? c.nomeWhatsapp;
       final textoAtual = _mensagemController.text;
       if (textoAtual.trim().isEmpty) {
-        _mensagemController.text = _mensagemPadrao(nome: nome, perfil: c.perfil);
+        _mensagemController.text = _textoInicial(nome: nome, perfil: c.perfil);
         return;
       }
       final novaSaudacao = _saudacao(nome);
@@ -175,13 +183,47 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     );
   }
 
-  /// Descarta o texto atual e volta pra sugestão padrão do perfil do contato
-  /// selecionado — pra quando o usuário quer "recomeçar" com o tom sugerido
-  /// em vez de manter o texto customizado anterior.
+  /// Descarta o texto atual e volta pra sugestão padrão do contato
+  /// selecionado — pra quando o usuário quer "recomeçar" com o texto padrão
+  /// (o salvo pra essa campanha, ou o sugerido por perfil se nada foi salvo
+  /// ainda) em vez de manter o texto customizado anterior.
   void _restaurarSugestaoPadrao(ContatoCampanha c) {
     setState(() {
-      _mensagemController.text = _mensagemPadrao(nome: c.nomeCliente ?? c.nomeWhatsapp, perfil: c.perfil);
+      _mensagemController.text = _textoInicial(nome: c.nomeCliente ?? c.nomeWhatsapp, perfil: c.perfil);
     });
+  }
+
+  /// Salva o texto atual (sem a saudação "Oi, Nome!", que continua gerada
+  /// por contato) como o padrão dessa campanha — persistido no banco, então
+  /// sobrevive a reabrir a tela/atualizar, diferente do rascunho em memória
+  /// que se perdia até aqui. Substitui a sugestão fixa por perfil
+  /// (vip/inativo/genérico) até alguém apagar esse padrão salvo.
+  Future<void> _salvarComoPadrao() async {
+    final texto = _mensagemController.text.trim();
+    if (texto.isEmpty) return;
+    final corpo = texto.replaceFirst(_regexSaudacao, '').trim();
+    try {
+      await CampanhaAtivacaoRepository().salvarMensagemPadrao(widget.campanha.id, corpo);
+      if (!mounted) return;
+      setState(() => _mensagemPadraoAtual = corpo);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mensagem salva como padrão dessa campanha.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível salvar: $e')));
+    }
+  }
+
+  /// Texto inicial pra um contato sem rascunho ainda: usa o padrão salvo
+  /// pra essa campanha (`_mensagemPadraoAtual`) se existir, senão cai na
+  /// sugestão fixa por perfil que já existia antes.
+  String _textoInicial({required String? nome, required String? perfil}) {
+    final padrao = _mensagemPadraoAtual;
+    if (padrao != null && padrao.trim().isNotEmpty) {
+      return '${_saudacao(nome)} $padrao';
+    }
+    return _mensagemPadrao(nome: nome, perfil: perfil);
   }
 
   Future<void> _abrirWhatsApp(String telefone) async {
@@ -468,6 +510,7 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
                         onEnviar: selecionado == null ? null : () => _abrirWhatsApp(selecionado!.telefone),
                         onRestaurarPadrao:
                             selecionado == null ? null : () => _restaurarSugestaoPadrao(selecionado!),
+                        onSalvarPadrao: _salvarComoPadrao,
                       ),
                       const SizedBox(height: 16),
                       Row(
@@ -692,11 +735,13 @@ class _PainelMensagem extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback? onEnviar;
   final VoidCallback? onRestaurarPadrao;
+  final VoidCallback onSalvarPadrao;
   const _PainelMensagem({
     required this.contato,
     required this.controller,
     required this.onEnviar,
     required this.onRestaurarPadrao,
+    required this.onSalvarPadrao,
   });
 
   @override
@@ -742,7 +787,16 @@ class _PainelMensagem extends StatelessWidget {
                 filled: true,
               ),
             ),
-            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onSalvarPadrao,
+                icon: const Icon(Icons.bookmark_outline, size: 16),
+                label: const Text('Salvar como padrão da campanha', style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+              ),
+            ),
+            const SizedBox(height: 4),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(

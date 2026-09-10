@@ -5,6 +5,12 @@ class CampanhaAtivacao {
   final DateTime criadoEm;
   final DateTime? arquivadaEm;
 
+  /// Corpo da mensagem salvo pelo usuário como padrão dessa campanha (sem a
+  /// saudação "Oi, Nome!" — essa parte continua gerada por contato). Null
+  /// quando ninguém salvou nada ainda, e a tela cai de volta pra sugestão
+  /// padrão por perfil (vip/inativo/genérico) que já existia antes.
+  final String? mensagemPadrao;
+
   bool get arquivada => arquivadaEm != null;
 
   CampanhaAtivacao({
@@ -13,6 +19,7 @@ class CampanhaAtivacao {
     this.descricao,
     required this.criadoEm,
     this.arquivadaEm,
+    this.mensagemPadrao,
   });
 
   factory CampanhaAtivacao.fromSupabase(Map<String, dynamic> row) {
@@ -22,6 +29,7 @@ class CampanhaAtivacao {
       descricao: row['descricao'] as String?,
       criadoEm: DateTime.parse(row['criado_em'] as String),
       arquivadaEm: row['deleted_at'] != null ? DateTime.parse(row['deleted_at'] as String) : null,
+      mensagemPadrao: row['mensagem_padrao'] as String?,
     );
   }
 }

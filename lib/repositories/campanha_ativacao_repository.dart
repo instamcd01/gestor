@@ -67,6 +67,14 @@ class CampanhaAtivacaoRepository {
         .update({'deleted_at': DateTime.now().toIso8601String()}).eq('id', campanhaId);
   }
 
+  /// Salva o corpo da mensagem (sem a saudação) como padrão da campanha —
+  /// sobrevive a qualquer recarga da tela daqui pra frente, substitui a
+  /// sugestão padrão por perfil (vip/inativo/genérico) que existia antes.
+  /// `null` limpa o padrão salvo, voltando pra sugestão original.
+  Future<void> salvarMensagemPadrao(String campanhaId, String? mensagem) async {
+    await supabase.from('campanhas_ativacao').update({'mensagem_padrao': mensagem}).eq('id', campanhaId);
+  }
+
   Future<void> desarquivar(String campanhaId) async {
     await supabase.from('campanhas_ativacao').update({'deleted_at': null}).eq('id', campanhaId);
   }
