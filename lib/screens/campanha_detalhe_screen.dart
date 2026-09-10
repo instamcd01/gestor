@@ -129,11 +129,22 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   }
 
   Future<void> _abrirWhatsApp(String telefone) async {
-    final uri = Uri.parse('https://wa.me/$telefone?text=${Uri.encodeComponent(_mensagemController.text)}');
-    if (await canLaunchUrl(uri)) {
+    final texto = Uri.encodeComponent(_mensagemController.text);
+    // `wa.me` passa por um resolvedor de link antes de abrir o WhatsApp de
+    // verdade, e esse resolvedor tem um bug conhecido com emoji fora do
+    // plano básico (🐾🐶🐱 — os que essa campanha usa) que chegam como "?"
+    // do outro lado. `whatsapp://send` abre o app direto, sem esse passo
+    // intermediário — tenta esse primeiro, cai pro `wa.me` só se o
+    // WhatsApp não estiver instalado (esquema `whatsapp://` não resolve
+    // nesse caso).
+    final uriApp = Uri.parse('whatsapp://send?phone=$telefone&text=$texto');
+    final uriWeb = Uri.parse('https://wa.me/$telefone?text=$texto');
+    if (await canLaunchUrl(uriApp)) {
+      await launchUrl(uriApp, mode: LaunchMode.externalApplication);
+    } else if (await canLaunchUrl(uriWeb)) {
       // Sem isso, em alguns aparelhos o link abre numa webview dentro do
       // próprio Gestor em vez de abrir o WhatsApp de verdade.
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await launchUrl(uriWeb, mode: LaunchMode.externalApplication);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível abrir o WhatsApp.')));
     }
