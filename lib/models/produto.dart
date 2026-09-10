@@ -61,6 +61,20 @@ class Produto {
   /// referenciado em [fracionadoDeId]. Só tem sentido junto com ele.
   final int? fatorFracionamento;
 
+  /// Margem alvo (%) sobre o custo/unidade do produto-pai — opcional, só
+  /// pra fracionados onde o preço deve acompanhar automaticamente o custo
+  /// do pai (ex: granel). `null` = preço sempre manual, igual qualquer
+  /// produto comum (ex: unidade avulsa). Gerenciado pela trigger do banco
+  /// `sincronizar_precos_fracionado_por_custo_pai`.
+  double? margemAlvoFracionado;
+
+  /// Último preço que a trigger do banco calculou automaticamente a partir
+  /// de [margemAlvoFracionado] — usado só pra detectar se alguém editou o
+  /// preço manualmente por cima (preco != precoCalculadoAutomatico) desde
+  /// então. Somente leitura: nunca enviado em `toSupabaseMap`, mesmo motivo
+  /// de [revisarPreco].
+  final double? precoCalculadoAutomatico;
+
   /// Custo mudou (ex: importação de NF-e) e o preço de venda ainda não foi
   /// revisado — gerenciado pelas triggers do banco (`sinalizar_revisar_preco`),
   /// nunca enviado em `toSupabaseMap` pra não sobrescrever por engano com um
@@ -158,6 +172,8 @@ class Produto {
     this.permiteFracionamento = false,
     this.fracionadoDeId,
     this.fatorFracionamento,
+    this.margemAlvoFracionado,
+    this.precoCalculadoAutomatico,
     this.revisarPreco = false,
     this.nomeComercial,
     this.tipoProduto,
@@ -232,6 +248,8 @@ class Produto {
       permiteFracionamento: row['permite_fracionamento'] as bool? ?? false,
       fracionadoDeId: row['fracionado_de_id'] as String?,
       fatorFracionamento: (row['fator_fracionamento'] as num?)?.toInt(),
+      margemAlvoFracionado: (row['margem_alvo_fracionado'] as num?)?.toDouble(),
+      precoCalculadoAutomatico: (row['preco_calculado_automatico'] as num?)?.toDouble(),
       precoPromocional: (row['preco_promocional'] as num?)?.toDouble(),
       precoIfood: (row['preco_ifood'] as num?)?.toDouble(),
       precoConcorrencia: (row['preco_concorrencia'] as num?)?.toDouble(),
@@ -285,6 +303,7 @@ class Produto {
       'permite_fracionamento': permiteFracionamento,
       'fracionado_de_id': fracionadoDeId,
       'fator_fracionamento': fatorFracionamento,
+      'margem_alvo_fracionado': margemAlvoFracionado,
       'preco_promocional': precoPromocional,
       'preco_ifood': precoIfood,
       'preco_concorrencia': precoConcorrencia,

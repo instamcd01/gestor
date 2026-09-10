@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/produto.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/produto_repository.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 import 'form_section.dart';
@@ -18,8 +19,14 @@ import 'form_section.dart';
 class FracionamentoSection extends StatelessWidget {
   final Produto produtoAtual;
   final ValueChanged<Produto> onAbrirProduto;
+  final TextEditingController margemAlvoFracionadoController;
 
-  const FracionamentoSection({super.key, required this.produtoAtual, required this.onAbrirProduto});
+  const FracionamentoSection({
+    super.key,
+    required this.produtoAtual,
+    required this.onAbrirProduto,
+    required this.margemAlvoFracionadoController,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +46,16 @@ class FracionamentoSection extends StatelessWidget {
           Text(
             'O estoque real fica guardado aqui; o do produto maior é recalculado automaticamente.',
             style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: margemAlvoFracionadoController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Margem alvo sobre custo do pai (%, opcional)',
+              helperText: 'Preenchido, o preço deste produto se recalcula sozinho sempre que o custo do pai mudar. '
+                  'Em branco, preço fica 100% manual (salva ao clicar em "Salvar Alterações").',
+            ),
           ),
           if (pai != null)
             OutlinedButton.icon(
@@ -157,6 +174,7 @@ Produto construirProdutoFracionado({
   String codigoBarras = '',
   double? pesoNovoExplicito,
   int? estoqueInicial,
+  double? margemAlvoFracionado,
 }) {
   final pesoNovo = eixo == EixoFracionamento.peso
       ? pesoNovoExplicito
@@ -201,6 +219,7 @@ Produto construirProdutoFracionado({
     cicloRecompraDias: pai.cicloRecompraDias,
     fracionadoDeId: pai.id,
     fatorFracionamento: fator,
+    margemAlvoFracionado: margemAlvoFracionado,
   );
 }
 
@@ -219,7 +238,28 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
   final _fatorController = TextEditingController();
   final _rotuloController = TextEditingController();
   final _codigoBarrasController = TextEditingController();
+  final _margemController = TextEditingController();
   String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarMargemSugerida();
+  }
+
+  Future<void> _carregarMargemSugerida() async {
+    try {
+      final sugestao = await ProdutoRepository().buscarMargemFracionadoSugerida(
+        fabricante: widget.produtoPai.fabricante,
+        categoria: widget.produtoPai.categoria,
+      );
+      if (sugestao != null && mounted && _margemController.text.isEmpty) {
+        setState(() => _margemController.text = sugestao.toStringAsFixed(0));
+      }
+    } catch (_) {
+      // best-effort — sem sugestão, o campo só fica em branco.
+    }
+  }
 
   @override
   void dispose() {
@@ -227,7 +267,16 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
     _fatorController.dispose();
     _rotuloController.dispose();
     _codigoBarrasController.dispose();
+    _margemController.dispose();
     super.dispose();
+  }
+
+  String _previewMargem(int fator) {
+    final margem = double.tryParse(_margemController.text.trim().replaceAll(',', '.'));
+    if (margem == null) return '';
+    final custoFilho = widget.produtoPai.custo / fator;
+    final precoSugerido = custoFilho * (1 + margem / 100);
+    return ' Custo: R\$ ${custoFilho.toStringAsFixed(2)} · Preço sugerido: R\$ ${precoSugerido.toStringAsFixed(2)}.';
   }
 
   int? get _fatorCalculado => calcularFatorFracionamento(
@@ -256,6 +305,13 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
       return;
     }
 
+    final margemTexto = _margemController.text.trim().replaceAll(',', '.');
+    final margem = margemTexto.isEmpty ? null : double.tryParse(margemTexto);
+    if (margemTexto.isNotEmpty && margem == null) {
+      setState(() => _erro = 'Margem alvo inválida — use só números (ex: 80).');
+      return;
+    }
+
     final filho = construirProdutoFracionado(
       pai: widget.produtoPai,
       eixo: _eixo,
@@ -263,6 +319,7 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
       rotulo: rotulo,
       codigoBarras: _codigoBarrasController.text,
       pesoNovoExplicito: double.tryParse(_pesoNovoController.text.trim().replaceAll(',', '.')),
+      margemAlvoFracionado: margem,
     );
 
     Navigator.of(context).pop(filho);
@@ -334,12 +391,24 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
                     'em branco, o sistema gera um código interno sozinho',
               ),
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _margemController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Margem alvo sobre custo do pai (%, opcional)',
+                helperText: 'Preço = custo/unidade do pai × (1 + margem). Deixe em branco pra preço 100% manual '
+                    '(ex: unidade avulsa). Preenchido, o preço se recalcula sozinho sempre que o custo do pai mudar.',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
             if (_fatorCalculado != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   'Fator: 1 unidade do original = $_fatorCalculado deste. '
-                  'Estoque inicial sugerido: ${widget.produtoPai.estoqueAtual * _fatorCalculado!}.',
+                  'Estoque inicial sugerido: ${widget.produtoPai.estoqueAtual * _fatorCalculado!}.'
+                  '${_previewMargem(_fatorCalculado!)}',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),

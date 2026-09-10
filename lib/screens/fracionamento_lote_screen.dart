@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/produto.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/produto_repository.dart';
 import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
@@ -28,6 +29,7 @@ class _ConfigLinha {
   final rotuloController = TextEditingController();
   final codigoBarrasController = TextEditingController();
   final estoqueController = TextEditingController();
+  final margemController = TextEditingController();
   String? erro;
 
   void dispose() {
@@ -36,6 +38,7 @@ class _ConfigLinha {
     rotuloController.dispose();
     codigoBarrasController.dispose();
     estoqueController.dispose();
+    margemController.dispose();
   }
 }
 
@@ -66,15 +69,36 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
   }
 
   void _alternarSelecao(Produto produto, bool? marcado) {
-    setState(() {
-      if (marcado == true) {
+    if (marcado == true) {
+      final config = _ConfigLinha();
+      setState(() {
         _selecionados.add(produto.id!);
-        _configs[produto.id!] = _ConfigLinha();
-      } else {
+        _configs[produto.id!] = config;
+      });
+      _carregarMargemSugerida(produto, config);
+    } else {
+      setState(() {
         _selecionados.remove(produto.id!);
         _configs.remove(produto.id!)?.dispose();
+      });
+    }
+  }
+
+  // Best-effort: reaproveita a última margem usada nesse fabricante (ou
+  // categoria) só pra agilizar o preenchimento em série — nunca aplicada
+  // sem o usuário poder ver/mudar antes de criar.
+  Future<void> _carregarMargemSugerida(Produto pai, _ConfigLinha config) async {
+    try {
+      final sugestao = await ProdutoRepository().buscarMargemFracionadoSugerida(
+        fabricante: pai.fabricante,
+        categoria: pai.categoria,
+      );
+      if (sugestao != null && mounted && config.margemController.text.isEmpty) {
+        setState(() => config.margemController.text = sugestao.toStringAsFixed(0));
       }
-    });
+    } catch (_) {
+      // sem sugestão, campo só fica em branco.
+    }
   }
 
   int? _fatorDaLinha(Produto pai, _ConfigLinha config) => calcularFatorFracionamento(
@@ -113,6 +137,12 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
           temErro = true;
           continue;
         }
+        final margemTexto = config.margemController.text.trim().replaceAll(',', '.');
+        if (margemTexto.isNotEmpty && double.tryParse(margemTexto) == null) {
+          config.erro = 'Margem alvo inválida — use só números (ex: 80).';
+          temErro = true;
+          continue;
+        }
         config.erro = null;
       }
     });
@@ -135,6 +165,7 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
       final config = _configs[id]!;
       final fator = _fatorDaLinha(pai, config)!;
       final estoqueOverride = int.tryParse(config.estoqueController.text.trim());
+      final margemTexto = config.margemController.text.trim().replaceAll(',', '.');
       final filho = construirProdutoFracionado(
         pai: pai,
         eixo: config.eixo,
@@ -143,6 +174,7 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
         codigoBarras: config.codigoBarrasController.text,
         pesoNovoExplicito: double.tryParse(config.pesoNovoController.text.trim().replaceAll(',', '.')),
         estoqueInicial: estoqueOverride,
+        margemAlvoFracionado: margemTexto.isEmpty ? null : double.tryParse(margemTexto),
       );
       try {
         await provider.adicionarProduto(filho);
@@ -327,6 +359,14 @@ class _CardConfiguracao extends StatefulWidget {
 }
 
 class _CardConfiguracaoState extends State<_CardConfiguracao> {
+  String _previewMargem(Produto pai, _ConfigLinha config, int fator) {
+    final margem = double.tryParse(config.margemController.text.trim().replaceAll(',', '.'));
+    if (margem == null) return '';
+    final custoFilho = pai.custo / fator;
+    final precoSugerido = custoFilho * (1 + margem / 100);
+    return ' Custo: R\$ ${custoFilho.toStringAsFixed(2)} · Preço sugerido: R\$ ${precoSugerido.toStringAsFixed(2)}.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final config = widget.config;
@@ -417,10 +457,24 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
                     : 'Em branco usa pai.estoqueAtual × fator',
               ),
             ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: config.margemController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Margem alvo sobre custo do pai (%, opcional)',
+                helperText: 'Preenchido, preço se recalcula sozinho quando o custo do pai mudar. '
+                    'Em branco: preço 100% manual.',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
             if (fator != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text('Fator: 1 do original = $fator deste.', style: const TextStyle(fontWeight: FontWeight.w600)),
+                child: Text(
+                  'Fator: 1 do original = $fator deste.${_previewMargem(pai, config, fator)}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
             if (config.erro != null)
               Padding(

@@ -68,6 +68,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _composicaoController;
   late TextEditingController _apresentacaoController;
   late TextEditingController _varianteLabelController;
+  late TextEditingController _margemAlvoFracionadoController;
   bool _nomeManualOverride = false;
   List<String>? _camposEstruturadosPersonalizados;
   bool _desvinculandoVariante = false;
@@ -166,6 +167,9 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _composicaoController = TextEditingController(text: widget.produto.composicao ?? '');
     _apresentacaoController = TextEditingController(text: widget.produto.apresentacao ?? '');
     _varianteLabelController = TextEditingController(text: widget.produto.varianteLabel ?? '');
+    _margemAlvoFracionadoController = TextEditingController(
+      text: widget.produto.margemAlvoFracionado?.toStringAsFixed(0) ?? '',
+    );
     _nomeManualOverride = widget.produto.nomeManualOverride;
     _camposEstruturadosPersonalizados = widget.produto.camposEstruturadosPersonalizados;
 
@@ -250,6 +254,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _composicaoController.dispose();
     _apresentacaoController.dispose();
     _varianteLabelController.dispose();
+    _margemAlvoFracionadoController.dispose();
     super.dispose();
   }
 
@@ -459,6 +464,18 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       estoqueId: widget.produto.estoqueId,
       unidadeMedida: widget.produto.unidadeMedida,
       permiteFracionamento: widget.produto.permiteFracionamento,
+      // O vínculo em si (fracionadoDeId/fatorFracionamento) só muda via a
+      // ação dedicada em FracionamentoSection, nunca por aqui — sem esse
+      // fallback pro valor atual, salvar QUALQUER edição comum num produto
+      // fracionado apagava o vínculo com o pai por engano (bug real achado
+      // 10/09, nunca chegou a afetar os produtos reais por sorte de ordem).
+      fracionadoDeId: widget.produto.fracionadoDeId,
+      fatorFracionamento: widget.produto.fatorFracionamento,
+      margemAlvoFracionado: widget.produto.fracionadoDeId == null
+          ? null
+          : (_margemAlvoFracionadoController.text.trim().isNotEmpty
+              ? double.tryParse(_margemAlvoFracionadoController.text.trim().replaceAll(',', '.'))
+              : null),
       nomeComercial: _nomeComercialController.text.isNotEmpty ? _nomeComercialController.text : null,
       tipoProduto: _tipoProdutoController.text.isNotEmpty ? _tipoProdutoController.text : null,
       especie: _especieController.text.isNotEmpty ? _especieController.text : null,
@@ -928,6 +945,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
 
               FracionamentoSection(
                 produtoAtual: produtoAtual,
+                margemAlvoFracionadoController: _margemAlvoFracionadoController,
                 onAbrirProduto: (outro) => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: outro)),
                 ),

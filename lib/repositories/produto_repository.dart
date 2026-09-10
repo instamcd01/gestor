@@ -155,6 +155,37 @@ class ProdutoRepository {
     await supabase.from('produtos').update({'deleted_at': null}).eq('id', produtoId);
   }
 
+  /// Sugestão de margem alvo pra um fracionado novo — reaproveita a última
+  /// margem usada num produto do mesmo fabricante (fallback: mesma
+  /// categoria) pra agilizar o cadastro em série de uma linha inteira.
+  /// Sempre editável no diálogo, nunca aplicada sem o usuário ver.
+  Future<double?> buscarMargemFracionadoSugerida({String? fabricante, required String categoria}) async {
+    if (fabricante != null && fabricante.isNotEmpty) {
+      final porFabricante = await supabase
+          .from('produtos')
+          .select('margem_alvo_fracionado')
+          .eq('fabricante', fabricante)
+          .not('margem_alvo_fracionado', 'is', null)
+          .order('created_at', ascending: false)
+          .limit(1);
+      if ((porFabricante as List).isNotEmpty) {
+        return (porFabricante.first['margem_alvo_fracionado'] as num?)?.toDouble();
+      }
+    }
+
+    final porCategoria = await supabase
+        .from('produtos')
+        .select('margem_alvo_fracionado')
+        .eq('categoria', categoria)
+        .not('margem_alvo_fracionado', 'is', null)
+        .order('created_at', ascending: false)
+        .limit(1);
+    if ((porCategoria as List).isNotEmpty) {
+      return (porCategoria.first['margem_alvo_fracionado'] as num?)?.toDouble();
+    }
+    return null;
+  }
+
   Future<void> marcarPrecoRevisado(String produtoId) async {
     await supabase.from('produtos').update({'revisar_preco': false}).eq('id', produtoId);
   }
