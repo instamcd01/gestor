@@ -37,6 +37,14 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
   List<Cliente> _clientesFiltrados = [];
   bool _carregandoClientes = true;
 
+  // Cadastros "consultivos" do histórico do Kyte (sem login, ficam fora da
+  // lista normal — ver [[gestor_vinculo_cliente_cross_canal]]) só aparecem
+  // aqui quando a busca acha um, com atalho pra promover na hora sem sair
+  // do fluxo de venda pra achar de novo em Clientes > Histórico Kyte.
+  List<Cliente> _todosClientesKyte = [];
+  List<Cliente> _clientesKyteFiltrados = [];
+  String? _promovendoKyteId;
+
   bool _retirarNaLoja = false;
   double? _distanciaKm;
   int? _estimativaMin;
@@ -83,9 +91,13 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
   }
 
   Future<void> _carregarClientes() async {
+    final kyte = await ClienteRepository().listarHistoricoKyte();
     await Provider.of<ClientProvider>(context, listen: false).carregarClientes();
     if (!mounted) return;
-    setState(() => _carregandoClientes = false);
+    setState(() {
+      _todosClientesKyte = kyte;
+      _carregandoClientes = false;
+    });
 
     final clienteJaSelecionado =
         Provider.of<ClientProvider>(context, listen: false).clienteSelecionado;
@@ -100,7 +112,62 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
         final textoCompleto = [c.nome, c.celular, c.enderecoCompleto].join(' ');
         return contemTodasPalavras(textoCompleto, texto);
       }).toList();
+      _clientesKyteFiltrados = texto.trim().isEmpty
+          ? []
+          : _todosClientesKyte.where((c) {
+              final textoCompleto = [c.nome, c.telefoneKyte ?? ''].join(' ');
+              return contemTodasPalavras(textoCompleto, texto);
+            }).toList();
     });
+  }
+
+  /// Promove o cadastro Kyte na hora (mesma RPC de `cliente_detalhes_screen`,
+  /// ver [[gestor_vinculo_cliente_cross_canal]]) e já seleciona pra essa
+  /// venda — evita sair da tela de entrega pra ir em Clientes > Histórico
+  /// Kyte e voltar depois.
+  Future<void> _usarCadastroKyte(Cliente cliente) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Usar este cadastro'),
+        content: Text(
+          'O telefone ${cliente.telefoneKyte ?? ''} vira o telefone oficial desse cadastro e ele passa a '
+          'fazer parte da lista normal de clientes. O histórico de pedidos continua o mesmo.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Confirmar')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    setState(() => _promovendoKyteId = cliente.idCliente);
+    try {
+      await ClienteRepository().promoverHistoricoKyte(cliente.idCliente!);
+      await _carregarClientes();
+      if (!mounted) return;
+      final promovido = Provider.of<ClientProvider>(context, listen: false)
+          .clientes
+          .firstWhere((c) => c.idCliente == cliente.idCliente, orElse: () => cliente);
+      setState(() {
+        _buscaClienteController.clear();
+        _clientesFiltrados = [];
+        _clientesKyteFiltrados = [];
+      });
+      await _selecionarCliente(promovido);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cadastro liberado — cliente selecionado pra essa venda.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível usar esse cadastro: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _promovendoKyteId = null);
+    }
   }
 
   Future<void> _selecionarCliente(Cliente cliente) async {
@@ -279,6 +346,39 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
                     );
                   },
                 ),
+
+              if (_clientesKyteFiltrados.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 4),
+                  child: Text(
+                    'Encontrado no histórico Kyte (sem cadastro ativo)',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _clientesKyteFiltrados.length,
+                  itemBuilder: (context, index) {
+                    final cliente = _clientesKyteFiltrados[index];
+                    return ListTile(
+                      leading: const Icon(Icons.history),
+                      title: Text(cliente.nome),
+                      subtitle: Text(cliente.telefoneKyte ?? ''),
+                      trailing: _promovendoKyteId == cliente.idCliente
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : TextButton(
+                              onPressed: () => _usarCadastroKyte(cliente),
+                              child: const Text('Usar este cadastro'),
+                            ),
+                    );
+                  },
+                ),
+              ],
 
               Align(
                 alignment: Alignment.centerRight,
