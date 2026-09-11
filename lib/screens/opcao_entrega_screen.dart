@@ -244,8 +244,17 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
 
   void _abrirRotaNoGoogleMaps() async {
     if (_clienteSelecionado == null) return;
+    // Sem origin, o Google Maps usa a localização atual de quem abriu o
+    // link — não a loja — e mostra uma rota totalmente diferente da que o
+    // app calculou (achado real 12/09: usuário testando de outro lugar via
+    // o botão viu 4,4km/11min, enquanto o cálculo real loja→cliente,
+    // conferido direto na API, dava 6,1km/11min corretamente).
+    final empresaId = context.read<AuthProvider>().empresaId;
+    final enderecoEmpresa = empresaId != null ? await DistanciaService.buscarEnderecoEmpresa(empresaId) : null;
     final destino = Uri.encodeComponent(_clienteSelecionado!.enderecoCompleto);
-    final url = 'https://www.google.com/maps/dir/?api=1&destination=$destino&travelmode=driving';
+    final origemParam = enderecoEmpresa != null ? '&origin=${Uri.encodeComponent(enderecoEmpresa)}' : '';
+    final url = 'https://www.google.com/maps/dir/?api=1$origemParam&destination=$destino&travelmode=driving';
+    if (!mounted) return;
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url));
     } else if (mounted) {

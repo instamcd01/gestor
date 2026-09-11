@@ -223,10 +223,18 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
 
   void _abrirGoogleMaps(String endereco) async {
     if (endereco.isEmpty) return;
-    final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeComponent(endereco)}');
+    // Sem origin, o Google Maps usa a localização atual de quem abriu o
+    // link — não a loja — e mostra uma rota diferente da que o app
+    // calcula de verdade (loja → cliente). Ver mesmo achado em
+    // opcao_entrega_screen.dart.
+    final empresaId = context.read<AuthProvider>().empresaId;
+    final enderecoEmpresa = empresaId != null ? await DistanciaService.buscarEnderecoEmpresa(empresaId) : null;
+    final origemParam = enderecoEmpresa != null ? '&origin=${Uri.encodeComponent(enderecoEmpresa)}' : '';
+    final uri = Uri.parse('https://www.google.com/maps/dir/?api=1$origemParam&destination=${Uri.encodeComponent(endereco)}');
+    if (!mounted) return;
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Não foi possível abrir o Google Maps')),
       );
