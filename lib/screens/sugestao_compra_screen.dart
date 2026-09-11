@@ -85,6 +85,7 @@ class _ItemEditavel {
   final String produtoId;
   final String produtoNome;
   final int? quantidadeSugerida;
+  final int estoqueAtual;
   int quantidadePedida;
   bool incluido;
   ProdutoFornecedor? vinculo; // custo base + faixas de desconto, se cadastrado
@@ -112,6 +113,7 @@ class _ItemEditavel {
     required this.produtoId,
     required this.produtoNome,
     this.quantidadeSugerida,
+    this.estoqueAtual = 0,
     required this.quantidadePedida,
     this.incluido = true,
     this.vinculo,
@@ -315,6 +317,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         produtoId: escolhida.produtoId,
         produtoNome: escolhida.produtoNome,
         quantidadeSugerida: escolhida.quantidadeSugerida,
+        estoqueAtual: escolhida.estoqueAtual,
         quantidadePedida: escolhida.quantidadeSugerida,
         vinculo: vinculoEscolhido,
         custoAvulso: escolhida.custoUnitario,
@@ -410,6 +413,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
       grupo.itens.add(_ItemEditavel(
         produtoId: produtoEscolhido.id!,
         produtoNome: produtoEscolhido.nome,
+        estoqueAtual: produtoEscolhido.estoqueAtual,
         quantidadePedida: vinculo?.multiploCompra ?? 1,
         vinculo: vinculo,
         custoAvulso: vinculo?.custoUnitario ?? produtoEscolhido.custo,
@@ -1032,14 +1036,17 @@ class _LinhaItemState extends State<_LinhaItem> {
               ),
             ],
           ),
-          if (item.quantidadeSugerida != null && item.quantidadeSugerida != item.quantidadePedida)
-            Padding(
-              padding: const EdgeInsets.only(left: 40),
-              child: Text(
-                'Sugerido: ${item.quantidadeSugerida}un',
-                style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
-              ),
+          Padding(
+            padding: const EdgeInsets.only(left: 40),
+            child: Text(
+              [
+                'Estoque atual: ${item.estoqueAtual}un',
+                if (item.quantidadeSugerida != null && item.quantidadeSugerida != item.quantidadePedida)
+                  'Sugerido: ${item.quantidadeSugerida}un',
+              ].join(' · '),
+              style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
             ),
+          ),
           if (proxima != null)
             Padding(
               padding: const EdgeInsets.only(left: 40),
