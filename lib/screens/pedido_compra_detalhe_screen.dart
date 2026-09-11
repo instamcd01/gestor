@@ -175,7 +175,9 @@ class _PedidoCompraDetalheScreenState extends State<PedidoCompraDetalheScreen> {
     final pedido = _pedido;
     if (pedido == null) return;
     try {
-      await context.read<PedidoCompraProvider>().marcarComoEnviado(pedido.id!);
+      await context
+          .read<PedidoCompraProvider>()
+          .marcarComoEnviado(pedido.id!, prazoEntregaDiasFornecedor: pedido.fornecedor.prazoEntregaDias);
       await _carregar();
     } catch (e) {
       if (!mounted) return;

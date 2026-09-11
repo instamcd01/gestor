@@ -317,3 +317,41 @@ class SugestaoCompra {
     );
   }
 }
+
+/// Desempenho real de um fornecedor (`desempenho_fornecedores`) — a partir
+/// dos pedidos de compra já recebidos: prazo de entrega REAL (não o
+/// cadastrado), confiabilidade (entregou no prazo prometido?) e volume
+/// total comprado (pra saber quando vale renegociar por quantidade). Ver
+/// [[gestor_pedido_compra_fornecedor]].
+class DesempenhoFornecedor {
+  final String fornecedorId;
+  final int pedidosRecebidos;
+  final double? prazoMedioRealDias;
+
+  /// Positivo = atrasou em média N dias; negativo = entregou adiantado.
+  /// Null = nenhum pedido recebido tinha data prevista pra comparar (ex:
+  /// pedidos antigos, de antes do sistema calcular isso automaticamente).
+  final double? atrasoMedioDias;
+  final double? pctNoPrazo;
+  final double valorTotalComprado;
+
+  DesempenhoFornecedor({
+    required this.fornecedorId,
+    required this.pedidosRecebidos,
+    this.prazoMedioRealDias,
+    this.atrasoMedioDias,
+    this.pctNoPrazo,
+    required this.valorTotalComprado,
+  });
+
+  factory DesempenhoFornecedor.fromSupabase(Map<String, dynamic> row) {
+    return DesempenhoFornecedor(
+      fornecedorId: row['fornecedor_id'] as String,
+      pedidosRecebidos: (row['pedidos_recebidos'] as num?)?.toInt() ?? 0,
+      prazoMedioRealDias: (row['prazo_medio_real_dias'] as num?)?.toDouble(),
+      atrasoMedioDias: (row['atraso_medio_dias'] as num?)?.toDouble(),
+      pctNoPrazo: (row['pct_no_prazo'] as num?)?.toDouble(),
+      valorTotalComprado: (row['valor_total_comprado'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}

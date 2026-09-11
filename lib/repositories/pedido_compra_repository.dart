@@ -48,6 +48,22 @@ class PedidoCompraRepository {
     return (data as List).map((row) => SugestaoCompra.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 
+  /// Desempenho real de cada fornecedor (prazo real, confiabilidade, volume
+  /// comprado) — só considera pedidos já `recebido` nos últimos
+  /// [diasAnalise] dias. Fornecedor sem nenhum pedido recebido nesse
+  /// período simplesmente não aparece no map.
+  Future<Map<String, DesempenhoFornecedor>> buscarDesempenhoFornecedores({
+    required String empresaId,
+    int diasAnalise = 180,
+  }) async {
+    final data = await supabase.rpc('desempenho_fornecedores', params: {
+      'p_empresa_id': empresaId,
+      'p_dias_analise': diasAnalise,
+    });
+    final lista = (data as List).map((row) => DesempenhoFornecedor.fromSupabase(row as Map<String, dynamic>));
+    return {for (final d in lista) d.fornecedorId: d};
+  }
+
   Future<PedidoCompra> criar({
     required PedidoCompra pedido,
     required String empresaId,

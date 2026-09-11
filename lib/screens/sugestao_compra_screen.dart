@@ -11,6 +11,7 @@ import '../providers/fornecedor_provider.dart';
 import '../providers/pedido_compra_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/entrada_repository.dart';
+import '../repositories/pedido_compra_repository.dart';
 import '../repositories/produto_fornecedor_repository.dart';
 import '../widgets/busca_produto_sheet.dart';
 import '../widgets/estado_erro_lista.dart';
@@ -50,6 +51,7 @@ class _TambemDisponivel {
   final double custoEscolhidoAtual;
   final int? prazoEscolhidoAtual;
   final String fornecedorEscolhidoNome;
+  final double? precoVenda;
 
   _TambemDisponivel({
     required this.produtoId,
@@ -60,9 +62,21 @@ class _TambemDisponivel {
     required this.custoEscolhidoAtual,
     this.prazoEscolhidoAtual,
     required this.fornecedorEscolhidoNome,
+    this.precoVenda,
   });
 
   bool get maisBarato => custoUnitario < custoEscolhidoAtual;
+
+  /// Margem % se comprado do fornecedor atual (escolhido) vs se comprado
+  /// daqui — null se não tem preço de venda cadastrado.
+  double? get margemAtual => _margemPara(custoEscolhidoAtual);
+  double? get margemAqui => _margemPara(custoUnitario);
+
+  double? _margemPara(double custo) {
+    final preco = precoVenda;
+    if (preco == null || preco <= 0) return null;
+    return (preco - custo) / preco;
+  }
 }
 
 /// Item sugerido (ou adicionado manualmente) dentro de um grupo de
@@ -90,6 +104,10 @@ class _ItemEditavel {
   /// alternativas.
   final int? prazoFornecedorAtual;
 
+  /// Preço de venda atual do produto (catálogo) — pra mostrar o impacto
+  /// real na margem de trocar de fornecedor, não só "ficou mais barato".
+  final double? precoVenda;
+
   _ItemEditavel({
     required this.produtoId,
     required this.produtoNome,
@@ -101,7 +119,16 @@ class _ItemEditavel {
     this.ultimaCompra,
     this.alternativas = const [],
     this.prazoFornecedorAtual,
+    this.precoVenda,
   });
+
+  /// Margem % atual sobre o preço de venda — null se não tem preço
+  /// cadastrado ou é zero (evita divisão por zero/dado sem sentido).
+  double? get margemAtual {
+    final preco = precoVenda;
+    if (preco == null || preco <= 0) return null;
+    return (preco - custoUnitario) / preco;
+  }
 
   double get custoUnitario => vinculo?.custoParaQuantidade(quantidadePedida) ?? custoAvulso;
   double get subtotal => incluido ? quantidadePedida * custoUnitario : 0;
@@ -178,7 +205,19 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
     final provider = context.read<PedidoCompraProvider>();
     await provider.carregarSugestoes(diasAnalise: _diasAnalise, diasCobertura: _diasCobertura);
     if (!mounted) return;
-    await _montarGrupos(provider.sugestoes, fornecedorProvider.fornecedores);
+
+    // Melhor esforço: sem pedido recebido ainda pra calcular, segue só com
+    // o prazo cadastrado no fornecedor (comportamento de sempre).
+    Map<String, DesempenhoFornecedor> desempenho = {};
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId != null) {
+      try {
+        desempenho = await PedidoCompraRepository().buscarDesempenhoFornecedores(empresaId: empresaId);
+      } catch (_) {}
+    }
+    if (!mounted) return;
+
+    await _montarGrupos(provider.sugestoes, fornecedorProvider.fornecedores, desempenho);
   }
 
   /// Busca os vínculos produto-fornecedor (com faixas de desconto) dos
@@ -187,8 +226,19 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
   /// produto e com o último custo pago de verdade (`itens_entrada`) — a RPC
   /// só devolve o custo já aplicado na quantidade sugerida, não esse
   /// contexto todo.
-  Future<void> _montarGrupos(List<SugestaoCompra> sugestoes, List<Fornecedor> fornecedores) async {
+  Future<void> _montarGrupos(
+    List<SugestaoCompra> sugestoes,
+    List<Fornecedor> fornecedores,
+    Map<String, DesempenhoFornecedor> desempenho,
+  ) async {
     setState(() => _montandoGrupos = true);
+    // Preço de venda atual (catálogo já carregado em memória) — usado só
+    // pra mostrar o impacto na margem de trocar de fornecedor, nunca
+    // alterado por esta tela.
+    final precoPorProduto = {
+      for (final p in context.read<ProdutoProvider>().produtos)
+        if (p.id != null) p.id!: p.preco,
+    };
     final repository = ProdutoFornecedorRepository();
     final todosVinculosPorProduto = <String, List<ProdutoFornecedor>>{};
     for (final produtoId in sugestoes.map((s) => s.produtoId).toSet()) {
@@ -211,6 +261,15 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
       return encontrados.isNotEmpty
           ? encontrados.first
           : Fornecedor(id: fornecedorId, nome: nomeFallback, prazoEntregaDias: prazoFallback);
+    }
+
+    // Prazo REAL (média de pedidos já recebidos) quando existir dado
+    // suficiente, senão cai pro prazo só cadastrado — comparação de
+    // fornecedor fica mais honesta que confiar num número digitado uma
+    // vez e nunca mais conferido.
+    int? prazoEfetivo(String fornecedorId, int? prazoCadastrado) {
+      final real = desempenho[fornecedorId]?.prazoMedioRealDias;
+      return real != null ? real.round() : prazoCadastrado;
     }
 
     // A RPC agora pode trazer mais de uma linha por produto (uma por
@@ -238,7 +297,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
           fornecedorId: alt.fornecedorId,
           fornecedorNome: alt.fornecedorNome,
           custoUnitario: vinculoAlt?.custoUnitario ?? alt.custoUnitario,
-          prazoEntregaDias: alt.prazoEntregaDias,
+          prazoEntregaDias: prazoEfetivo(alt.fornecedorId, alt.prazoEntregaDias),
         );
       }).toList()
         ..sort((a, b) => a.custoUnitario.compareTo(b.custoUnitario));
@@ -261,7 +320,8 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         custoAvulso: escolhida.custoUnitario,
         ultimaCompra: ultimosCustos[escolhida.produtoId],
         alternativas: alternativas,
-        prazoFornecedorAtual: escolhida.prazoEntregaDias,
+        prazoFornecedorAtual: prazoEfetivo(escolhida.fornecedorId, escolhida.prazoEntregaDias),
+        precoVenda: precoPorProduto[escolhida.produtoId],
       ));
 
       // Também aparece na lista do(s) outro(s) fornecedor(es) que vendem
@@ -282,10 +342,11 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
           produtoNome: escolhida.produtoNome,
           vinculoId: vinculoAlt?.id ?? '',
           custoUnitario: vinculoAlt?.custoUnitario ?? alt.custoUnitario,
-          prazoEntregaDias: alt.prazoEntregaDias,
+          prazoEntregaDias: prazoEfetivo(alt.fornecedorId, alt.prazoEntregaDias),
           custoEscolhidoAtual: vinculoEscolhido?.custoUnitario ?? escolhida.custoUnitario,
-          prazoEscolhidoAtual: escolhida.prazoEntregaDias,
+          prazoEscolhidoAtual: prazoEfetivo(escolhida.fornecedorId, escolhida.prazoEntregaDias),
           fornecedorEscolhidoNome: escolhida.fornecedorNome,
+          precoVenda: precoPorProduto[escolhida.produtoId],
         ));
       }
     }
@@ -870,6 +931,12 @@ class _LinhaTambemDisponivel extends StatelessWidget {
                     fontWeight: item.maisBarato ? FontWeight.w600 : null,
                   ),
                 ),
+                if (item.maisBarato && item.margemAtual != null && item.margemAqui != null)
+                  Text(
+                    'margem sobe de ${(item.margemAtual! * 100).toStringAsFixed(0)}% '
+                    'pra ${(item.margemAqui! * 100).toStringAsFixed(0)}% (mesmo preço de venda)',
+                    style: TextStyle(fontSize: 11, color: Colors.blue.shade700, fontWeight: FontWeight.w600),
+                  ),
               ],
             ),
           ),
@@ -1032,15 +1099,26 @@ class _LinhaItemState extends State<_LinhaItem> {
   /// Compara não só preço, também prazo de entrega (custo total, não só
   /// unitário — ver [[gestor_pedido_compra_fornecedor]]) — avisa o
   /// trade-off quando a alternativa mais barata também demora mais, em vez
-  /// de só gritar "mais barato" e esconder a contrapartida.
+  /// de só gritar "mais barato" e esconder a contrapartida. Quando tem
+  /// preço de venda cadastrado, também mostra o que essa troca faria com a
+  /// margem — é isso que fecha o ciclo "comprei melhor -> posso vender
+  /// melhor" que o usuário descreveu.
   String _textoAlternativa(_AlternativaFornecedor alt, _ItemEditavel item) {
     final prazoAtual = item.prazoFornecedorAtual;
-    final base = '💡 ${alt.fornecedorNome} vende por R\$${alt.custoUnitario.toStringAsFixed(2)} (mais barato)';
-    if (alt.prazoEntregaDias == null || prazoAtual == null) return base;
-    if (alt.prazoEntregaDias! > prazoAtual) {
-      return '$base, mas entrega em ${alt.prazoEntregaDias}d (em vez de ${prazoAtual}d)';
+    var texto = '💡 ${alt.fornecedorNome} vende por R\$${alt.custoUnitario.toStringAsFixed(2)} (mais barato)';
+    if (alt.prazoEntregaDias != null && prazoAtual != null) {
+      texto = alt.prazoEntregaDias! > prazoAtual
+          ? '$texto, mas entrega em ${alt.prazoEntregaDias}d (em vez de ${prazoAtual}d)'
+          : '$texto, entrega em ${alt.prazoEntregaDias}d';
     }
-    return '$base, entrega em ${alt.prazoEntregaDias}d';
+    final preco = item.precoVenda;
+    final margemAtual = item.margemAtual;
+    if (preco != null && preco > 0 && margemAtual != null) {
+      final margemNova = (preco - alt.custoUnitario) / preco;
+      texto = '$texto — margem sobe de ${(margemAtual * 100).toStringAsFixed(0)}% '
+          'pra ${(margemNova * 100).toStringAsFixed(0)}% (mesmo preço de venda)';
+    }
+    return texto;
   }
 }
 

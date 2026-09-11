@@ -98,12 +98,18 @@ class PedidoCompraProvider with ChangeNotifier {
     await recarregarPedido(pedidoId);
   }
 
-  Future<void> marcarComoEnviado(String pedidoId) async {
-    await _repository.atualizarStatus(
-      pedidoId,
-      StatusPedidoCompra.enviado,
-      camposExtras: {'data_envio': DateTime.now().toIso8601String()},
-    );
+  /// [prazoEntregaDiasFornecedor] (quando o fornecedor tem prazo
+  /// cadastrado) já calcula `data_prevista_entrega` na hora do envio —
+  /// sem isso o campo nunca era preenchido em lugar nenhum do app (achado
+  /// real 10/09), o que deixava impossível medir depois se o fornecedor
+  /// entregou no prazo que promete ou não.
+  Future<void> marcarComoEnviado(String pedidoId, {int? prazoEntregaDiasFornecedor}) async {
+    final agora = DateTime.now();
+    final camposExtras = <String, dynamic>{'data_envio': agora.toIso8601String()};
+    if (prazoEntregaDiasFornecedor != null) {
+      camposExtras['data_prevista_entrega'] = agora.add(Duration(days: prazoEntregaDiasFornecedor)).toIso8601String();
+    }
+    await _repository.atualizarStatus(pedidoId, StatusPedidoCompra.enviado, camposExtras: camposExtras);
     await recarregarPedido(pedidoId);
   }
 

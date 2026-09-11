@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/fornecedor.dart';
+import '../models/pedido_compra.dart';
+import '../providers/auth_provider.dart';
 import '../providers/fornecedor_provider.dart';
+import '../repositories/pedido_compra_repository.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/estado_erro_lista.dart';
@@ -19,12 +22,25 @@ class FornecedoresScreen extends StatefulWidget {
 
 class _FornecedoresScreenState extends State<FornecedoresScreen> {
   final _searchController = TextEditingController();
+  Map<String, DesempenhoFornecedor> _desempenho = {};
 
   @override
   void initState() {
     super.initState();
     Provider.of<FornecedorProvider>(context, listen: false).carregar();
     _searchController.addListener(() => setState(() {}));
+    _carregarDesempenho();
+  }
+
+  /// Melhor esforço: sem pedido de compra recebido ainda, ou erro de rede,
+  /// a tela continua funcionando normal, só sem a linha de desempenho.
+  Future<void> _carregarDesempenho() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    try {
+      final desempenho = await PedidoCompraRepository().buscarDesempenhoFornecedores(empresaId: empresaId);
+      if (mounted) setState(() => _desempenho = desempenho);
+    } catch (_) {}
   }
 
   @override
@@ -68,6 +84,17 @@ class _FornecedoresScreenState extends State<FornecedoresScreen> {
         SnackBar(content: Text('Não foi possível excluir: $e')),
       );
     }
+  }
+
+  /// Resumo de desempenho real (últimos 180 dias, pedidos já recebidos) —
+  /// volume comprado sempre aparece; prazo real e % no prazo só quando tem
+  /// dado o suficiente pra calcular (pedido antigo sem data prevista não
+  /// entra na conta do "% no prazo", ver [[gestor_pedido_compra_fornecedor]]).
+  String _textoDesempenho(DesempenhoFornecedor d) {
+    final partes = <String>['R\$${d.valorTotalComprado.toStringAsFixed(2)} comprado (${d.pedidosRecebidos}p)'];
+    if (d.prazoMedioRealDias != null) partes.add('${d.prazoMedioRealDias!.toStringAsFixed(1)}d prazo real');
+    if (d.pctNoPrazo != null) partes.add('${d.pctNoPrazo!.toStringAsFixed(0)}% no prazo');
+    return partes.join(' · ');
   }
 
   @override
@@ -135,12 +162,26 @@ class _FornecedoresScreenState extends State<FornecedoresScreen> {
                   itemCount: fornecedores.length,
                   itemBuilder: (context, index) {
                     final fornecedor = fornecedores[index];
+                    final desempenho = _desempenho[fornecedor.id];
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       child: ListTile(
                         title: Text(fornecedor.nome),
-                        subtitle: Text(
-                          [fornecedor.telefone, fornecedor.cnpjCpf].where((s) => s.isNotEmpty).join(' • '),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text([fornecedor.telefone, fornecedor.cnpjCpf].where((s) => s.isNotEmpty).join(' • ')),
+                            if (desempenho != null)
+                              Text(
+                                _textoDesempenho(desempenho),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: (desempenho.pctNoPrazo ?? 100) < 70
+                                      ? Theme.of(context).colorScheme.error
+                                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                          ],
                         ),
                         onTap: () => _abrirFormulario(fornecedor: fornecedor),
                         trailing: Row(
