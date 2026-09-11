@@ -18,7 +18,16 @@ class ClienteRepository {
         // fazem pedido novo) — ficam fora da lista padrão (que alimenta
         // busca de venda/entrega, onde não faz sentido escolher um deles)
         // e têm aba própria em ClientesScreen (ver listarHistoricoKyte).
-        .neq('canal_origem', 'kyte_historico')
+        //
+        // `.neq()` sozinho excluía também quem tem canal_origem NULL — em
+        // SQL, `null <> 'kyte_historico'` dá null, não true, então a linha
+        // some do resultado. E todo cliente PROMOVIDO do histórico Kyte
+        // (promover_cliente_kyte_historico) fica com canal_origem null de
+        // propósito — ou seja, isso sumia com todo mundo recém-promovido
+        // da lista normal de clientes (achado real 12/09, cliente com 11
+        // pedidos reais invisível na busca). `.or()` cobre os dois casos:
+        // null OU diferente de 'kyte_historico'.
+        .or('canal_origem.is.null,canal_origem.neq.kyte_historico')
         .order('nome', ascending: true);
 
     return (data as List)
