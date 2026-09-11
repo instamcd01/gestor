@@ -38,6 +38,10 @@ Widget? _telaRelacionada(String tipo) {
       return const CampanhasAtivacaoScreen();
     case TipoNotificacao.clienteAtivoNoSite:
       return ClientesScreen();
+    case TipoNotificacao.erroSistema:
+      // Sem tela própria — a mensagem já vem com a rota do site onde o
+      // erro aconteceu; investigar é olhar o código, não navegar no app.
+      return null;
     default:
       return null;
   }
@@ -72,6 +76,8 @@ Widget? _telaRelacionada(String tipo) {
       return (Icons.shopping_cart_outlined, Colors.orange);
     case TipoNotificacao.clienteAtivoNoSite:
       return (Icons.person_search_outlined, Colors.blue);
+    case TipoNotificacao.erroSistema:
+      return (Icons.error_outline, Colors.red);
     default:
       return (Icons.notifications_outlined, colorScheme.primary);
   }

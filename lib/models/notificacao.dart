@@ -2,8 +2,10 @@
 /// `trigger_notificacao_estoque_baixo`, `job_notificacao_pedido_parado`,
 /// `job_notificacao_despesa_vencendo`, `trigger_notificacao_avaliacao_disputa_sync`,
 /// `notificar_pedidos_atrasados_entrega`, `notifica_hora_de_sair_para_entrega`,
-/// `notificar_carrinhos_abandonados`)
-/// que são a única fonte que grava nessa tabela.
+/// `notificar_carrinhos_abandonados`) e, pra `erroSistema`,
+/// `registrarErroSistema` no site (gestor-loja/src/lib/erros.ts) — insere
+/// direto na tabela via service role, sem RPC própria.
+/// São as únicas fontes que gravam nessa tabela.
 class TipoNotificacao {
   static const estoqueBaixo = 'estoque_baixo';
   static const estoqueZerado = 'estoque_zerado';
@@ -19,6 +21,7 @@ class TipoNotificacao {
   static const pedidoHoraSaidaEntrega = 'pedido_hora_saida_entrega';
   static const carrinhoAbandonado = 'carrinho_abandonado';
   static const clienteAtivoNoSite = 'cliente_ativo_no_site';
+  static const erroSistema = 'erro_sistema';
 }
 
 /// Chaves de preferência de alerta (som/vibração) por categoria — não ligam/
@@ -105,6 +108,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.clienteAtivoNoSite,
     titulo: 'Cliente entrou no site',
     descricao: 'Quando um cliente com conversa recente no WhatsApp (últimas 48h) entra ou se cadastra no site.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.erroSistema,
+    titulo: 'Erro no site',
+    descricao: 'Quando o site do catálogo tem um erro real pra investigar (agrupado — no máximo 1 por hora por erro).',
   ),
 ];
 
