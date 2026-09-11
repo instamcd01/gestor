@@ -567,10 +567,13 @@ class _CarrinhoClienteTabState extends State<_CarrinhoClienteTab> {
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
     final criado = carrinho.criadoEm;
     if (criado == null) return '';
-    final texto = StringBuffer('Criado em ${dateFormat.format(criado)}');
+    // Vem do banco em UTC — sem .toLocal(), mostrava a hora adiantada em 3h
+    // (bug real 10/09, mesmo padrão já usado em notificacoes_screen.dart).
+    final criadoLocal = criado.toLocal();
+    final texto = StringBuffer('Criado em ${dateFormat.format(criadoLocal)}');
     final atualizado = carrinho.atualizadoEm;
     if (atualizado != null && atualizado.difference(criado).inMinutes.abs() >= 1) {
-      texto.write(' • última alteração ${dateFormat.format(atualizado)}');
+      texto.write(' • última alteração ${dateFormat.format(atualizado.toLocal())}');
     }
     return texto.toString();
   }
