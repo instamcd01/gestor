@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/marketplace.dart';
 import '../models/produto.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/marketplace_repository.dart';
+import '../repositories/produto_canal_repository.dart';
 import '../repositories/produto_repository.dart';
 import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
@@ -173,6 +176,22 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
     final falhas = <String>[];
     final idsCriados = <String>[];
 
+    // Preço no iFood preenchido = intenção de deixar o produto disponível
+    // lá — precisa gravar em produto_canal (o switch/preço reais de
+    // "Disponibilidade em Marketplaces"), não só em produtos.preco_ifood
+    // (campo legado, só usado como fallback na exportação de planilha).
+    // Busca uma vez só, fora do loop; se falhar, cria os produtos igual e
+    // só avisa depois — não trava a criação por causa de um canal.
+    Marketplace? ifood;
+    if (_selecionados.any((id) => _configs[id]!.precoIfoodController.text.trim().isNotEmpty)) {
+      try {
+        final marketplaces = await MarketplaceRepository().listarAtivos();
+        ifood = marketplaces.where((m) => m.nome == 'iFood').firstOrNull;
+      } catch (_) {
+        // segue sem — produto ainda é criado, só não habilita o canal.
+      }
+    }
+
     for (final id in _selecionados.toList()) {
       final pai = produtos.firstWhere((p) => p.id == id);
       final config = _configs[id]!;
@@ -180,6 +199,7 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
       final estoqueOverride = int.tryParse(config.estoqueController.text.trim());
       final margemTexto = config.margemController.text.trim().replaceAll(',', '.');
       final apresentacaoTexto = config.apresentacaoController.text.trim();
+      final precoIfood = ProdutoValidators.parseNumero(config.precoIfoodController.text);
       final filho = construirProdutoFracionado(
         pai: pai,
         eixo: config.eixo,
@@ -191,10 +211,18 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
         margemAlvoFracionado: margemTexto.isEmpty ? null : double.tryParse(margemTexto),
         apresentacaoExplicita: apresentacaoTexto.isEmpty ? null : apresentacaoTexto,
         preco: ProdutoValidators.parseNumero(config.precoController.text),
-        precoIfood: ProdutoValidators.parseNumero(config.precoIfoodController.text),
+        precoIfood: precoIfood,
       );
       try {
-        await provider.adicionarProduto(filho);
+        final criado = await provider.adicionarProduto(filho);
+        if (precoIfood != null && ifood != null) {
+          await ProdutoCanalRepository().salvar(
+            produtoId: criado.id!,
+            marketplaceId: ifood.id,
+            preco: precoIfood,
+            disponivel: true,
+          );
+        }
         idsCriados.add(id);
       } catch (e) {
         falhas.add('${pai.nome}: $e');
@@ -389,11 +417,16 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
     return ' Custo: R\$ ${(pai.custo / fator).toStringAsFixed(2)} · Preço sugerido: R\$ ${sugestao.toStringAsFixed(2)}.';
   }
 
-  // Só preenche se o campo ainda estiver vazio — pra não sobrescrever um
-  // preço que o usuário já digitou manualmente por cima da sugestão (mesmo
-  // critério de _textoInicial em campanha_detalhe_screen.dart).
-  void _autoPreencherPrecoSugerido(Produto pai, _ConfigLinha config, int? fator) {
-    if (config.precoController.text.trim().isNotEmpty) return;
+  // Com margem preenchida, o trigger do banco `aplicar_margem_fracionado_
+  // na_criacao` SEMPRE recalcula preco a partir dela na hora de criar,
+  // ignorando qualquer preço que o app mande — por isso o campo fica
+  // travado e sempre mostrando o valor real que vai ser salvo (achado
+  // real 12/09: usuário digitava um preço manual com margem preenchida e
+  // o produto era criado com o preço sugerido mesmo assim). Sem margem, o
+  // trigger não mexe em nada e o campo volta a ser 100% manual.
+  void _sincronizarPrecoComMargem(Produto pai, _ConfigLinha config, int? fator) {
+    final margemPreenchida = config.margemController.text.trim().isNotEmpty;
+    if (!margemPreenchida) return;
     final sugestao = _precoSugerido(pai, config, fator);
     if (sugestao != null) {
       config.precoController.text = ProdutoValidators.formatarMoeda(sugestao);
@@ -405,6 +438,12 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
     final config = widget.config;
     final pai = widget.pai;
     final fator = widget.fatorAtual(config);
+    // Roda a cada rebuild (idempotente: só mexe no campo quando a margem
+    // está preenchida, e nesse caso o campo fica desabilitado — nunca
+    // sobrescreve o que o usuário está digitando). Cobre também o caso da
+    // margem vir pré-preenchida sozinha pela sugestão (ver
+    // _carregarMargemSugerida, que roda antes desta aba existir).
+    _sincronizarPrecoComMargem(pai, config, fator);
     final sugestaoEstoque = fator != null ? pai.estoqueAtual * fator : null;
 
     return Card(
@@ -448,10 +487,7 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
                     labelText: 'Peso do novo produto (kg)',
                     helperText: 'Peso do original: ${formatarPeso(pai.peso!)}',
                   ),
-                  onChanged: (_) => setState(() {
-                    widget.onMudou();
-                    _autoPreencherPrecoSugerido(pai, config, widget.fatorAtual(config));
-                  }),
+                  onChanged: (_) => setState(() => widget.onMudou()),
                 ),
             ] else
               TextField(
@@ -461,10 +497,7 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
                   labelText: 'Quantas unidades = 1 unidade do original?',
                   helperText: 'Ex: pacote com 4 → digite 4',
                 ),
-                onChanged: (_) => setState(() {
-                  widget.onMudou();
-                  _autoPreencherPrecoSugerido(pai, config, widget.fatorAtual(config));
-                }),
+                onChanged: (_) => setState(() => widget.onMudou()),
               ),
             const SizedBox(height: 8),
             TextField(
@@ -513,18 +546,19 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
                 helperText: 'Preenchido, preço se recalcula sozinho quando o custo do pai mudar. '
                     'Em branco: preço 100% manual.',
               ),
-              onChanged: (_) => setState(() {
-                _autoPreencherPrecoSugerido(pai, config, widget.fatorAtual(config));
-              }),
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: config.precoController,
+              enabled: config.margemController.text.trim().isEmpty,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [MoedaInputFormatter()],
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Preço de venda (R\$, opcional)',
-                helperText: 'Com margem preenchida acima, já vem sugerido — pode ajustar. Em branco: cria com R\$0 pra configurar depois.',
+                helperText: config.margemController.text.trim().isNotEmpty
+                    ? 'Controlado pela margem acima — o banco recalcula sozinho ao criar.'
+                    : 'Em branco: cria com R\$0 pra configurar depois.',
               ),
             ),
             const SizedBox(height: 8),
