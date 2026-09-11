@@ -7,6 +7,8 @@ import '../providers/produto_provider.dart';
 import '../repositories/produto_repository.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
+import '../utils/variante_label_utils.dart';
+import 'busca_produto_sheet.dart';
 import 'form_section.dart';
 
 /// Seção "Fracionamento" em editar_produto_screen.dart — permite criar (a
@@ -57,12 +59,23 @@ class FracionamentoSection extends StatelessWidget {
                   'Em branco, preço fica 100% manual (salva ao clicar em "Salvar Alterações").',
             ),
           ),
-          if (pai != null)
-            OutlinedButton.icon(
-              icon: const Icon(Icons.open_in_new),
-              label: Text('Abrir "${pai.nome}"'),
-              onPressed: () => onAbrirProduto(pai),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (pai != null)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.open_in_new),
+                  label: Text('Abrir "${pai.nome}"'),
+                  onPressed: () => onAbrirProduto(pai),
+                ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.swap_horiz),
+                label: const Text('Trocar produto pai'),
+                onPressed: () => _abrirDialogoTrocarPai(context, produtos, pai),
+              ),
+            ],
+          ),
         ],
       );
     }
@@ -128,6 +141,195 @@ class FracionamentoSection extends StatelessWidget {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao criar produto fracionado: $e')));
       }
     }
+  }
+
+  /// Religa este produto (já fracionado) a um pai diferente — ex: comprava
+  /// fracionando do pacote de 10kg, passou a comprar do de 20kg, mas quer
+  /// manter o produto de 10kg ativo à venda normalmente, só sem o vínculo.
+  /// Não move nenhum estoque físico: o produto fracionado continua com o
+  /// mesmo estoque que já tinha, só passa a alimentar o cálculo automático
+  /// de um pai diferente (ver `sincronizar_estoque_pai_fracionado`).
+  Future<void> _abrirDialogoTrocarPai(BuildContext context, List<Produto> produtos, Produto? paiAtual) async {
+    final candidatos = produtos
+        .where((p) => p.id != null && p.id != produtoAtual.id && p.id != paiAtual?.id && p.ativo && !p.ehKit)
+        .toList()
+      ..sort((a, b) => a.nome.compareTo(b.nome));
+
+    final novoPai = await showModalBottomSheet<Produto>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => BuscaProdutoSheet(produtos: candidatos, permiteCadastrarNovo: false),
+    );
+    if (novoPai == null || !context.mounted) return;
+
+    // Peso é a única condição estruturada da qual dá pra derivar o fator
+    // sozinho (novoPai.peso ÷ peso deste produto); fracionamento por
+    // quantidade não tem um número comparável entre os dois, então pede
+    // pro usuário confirmar/digitar.
+    int? fatorSugerido;
+    if (produtoAtual.tipoVariacao == 'peso' && produtoAtual.peso != null && novoPai.peso != null) {
+      fatorSugerido = calcularFatorFracionamento(
+        eixo: EixoFracionamento.peso,
+        pai: novoPai,
+        pesoNovoTexto: produtoAtual.peso.toString(),
+      );
+    }
+
+    if (!context.mounted) return;
+    final fator = await showDialog<int>(
+      context: context,
+      builder: (_) => _DialogoConfirmarTrocaPai(
+        produtoAtual: produtoAtual,
+        novoPai: novoPai,
+        fatorSugerido: fatorSugerido,
+      ),
+    );
+    if (fator == null || !context.mounted) return;
+
+    final atualizado = _comNovoPai(produtoAtual, novoPaiId: novoPai.id!, fator: fator);
+    try {
+      await context.read<ProdutoProvider>().atualizarProduto(atualizado);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Vínculo trocado pra "${novoPai.nome}".')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao trocar vínculo: $e')));
+      }
+    }
+  }
+}
+
+/// Mesma instância de `produtoAtual`, só com o vínculo de fracionamento
+/// apontando pro novo pai — `fracionadoDeId`/`fatorFracionamento` são
+/// `final` no model, então precisa reconstruir o objeto inteiro (mesmo
+/// padrão do salvar comum em editar_produto_screen.dart, que também
+/// reconstrói tudo campo a campo).
+Produto _comNovoPai(Produto atual, {required String novoPaiId, required int fator}) {
+  return Produto(
+    id: atual.id,
+    nome: atual.nome,
+    preco: atual.preco,
+    precoPromocional: atual.precoPromocional,
+    descricao: atual.descricao,
+    categoria: atual.categoria,
+    subcategoria: atual.subcategoria,
+    sku: atual.sku,
+    peso: atual.peso,
+    volume: atual.volume,
+    ativo: atual.ativo,
+    estoqueAtual: atual.estoqueAtual,
+    estoqueMinimo: atual.estoqueMinimo,
+    imagemUrl: atual.imagemUrl,
+    imagemUrlSecundaria: atual.imagemUrlSecundaria,
+    updatedAt: atual.updatedAt,
+    codigoBarras: atual.codigoBarras,
+    custo: atual.custo,
+    destacar: atual.destacar,
+    exibirNoCatalogo: atual.exibirNoCatalogo,
+    precoIfood: atual.precoIfood,
+    validade: atual.validade,
+    markup: atual.markup,
+    lucro: atual.lucro,
+    empresa: atual.empresa,
+    precoConcorrencia: atual.precoConcorrencia,
+    fabricante: atual.fabricante,
+    estoqueId: atual.estoqueId,
+    unidadeMedida: atual.unidadeMedida,
+    permiteFracionamento: atual.permiteFracionamento,
+    fracionadoDeId: novoPaiId,
+    fatorFracionamento: fator,
+    margemAlvoFracionado: atual.margemAlvoFracionado,
+    precoCalculadoAutomatico: atual.precoCalculadoAutomatico,
+    revisarPreco: atual.revisarPreco,
+    nomeComercial: atual.nomeComercial,
+    tipoProduto: atual.tipoProduto,
+    especie: atual.especie,
+    fase: atual.fase,
+    porte: atual.porte,
+    sabor: atual.sabor,
+    dose: atual.dose,
+    composicao: atual.composicao,
+    apresentacao: atual.apresentacao,
+    nomeManualOverride: atual.nomeManualOverride,
+    produtoPaiId: atual.produtoPaiId,
+    tipoVariacao: atual.tipoVariacao,
+    varianteLabel: atual.varianteLabel,
+    camposEstruturadosPersonalizados: atual.camposEstruturadosPersonalizados,
+    cicloRecompraDias: atual.cicloRecompraDias,
+    ehKit: atual.ehKit,
+  );
+}
+
+class _DialogoConfirmarTrocaPai extends StatefulWidget {
+  final Produto produtoAtual;
+  final Produto novoPai;
+  final int? fatorSugerido;
+
+  const _DialogoConfirmarTrocaPai({
+    required this.produtoAtual,
+    required this.novoPai,
+    required this.fatorSugerido,
+  });
+
+  @override
+  State<_DialogoConfirmarTrocaPai> createState() => _DialogoConfirmarTrocaPaiState();
+}
+
+class _DialogoConfirmarTrocaPaiState extends State<_DialogoConfirmarTrocaPai> {
+  late final _fatorController =
+      TextEditingController(text: widget.fatorSugerido?.toString() ?? '');
+  String? _erro;
+
+  @override
+  void dispose() {
+    _fatorController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final calculadoSozinho = widget.fatorSugerido != null;
+    return AlertDialog(
+      title: const Text('Trocar produto pai'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('"${widget.produtoAtual.nome}" vai passar a ser fracionado de "${widget.novoPai.nome}".'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _fatorController,
+            keyboardType: TextInputType.number,
+            enabled: !calculadoSozinho,
+            decoration: InputDecoration(
+              labelText: 'Quantas unidades = 1 de "${widget.novoPai.nome}"?',
+              helperText: calculadoSozinho
+                  ? 'Calculado automaticamente a partir do peso dos dois produtos.'
+                  : 'Não deu pra calcular sozinho (peso não cadastrado nos dois, ou não divide em partes '
+                      'inteiras) — digite manualmente.',
+              errorText: _erro,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: () {
+            final fator = int.tryParse(_fatorController.text.trim());
+            if (fator == null || fator < 1) {
+              setState(() => _erro = 'Informe um número inteiro maior que zero.');
+              return;
+            }
+            Navigator.pop(context, fator);
+          },
+          child: const Text('Confirmar troca'),
+        ),
+      ],
+    );
   }
 }
 
@@ -354,7 +556,7 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
                 const Text('O produto original não tem peso cadastrado — use "Por quantidade".',
                     style: TextStyle(color: Colors.red))
               else ...[
-                Text('Peso do original: $pesoPai kg'),
+                Text('Peso do original: ${formatarPeso(pesoPai)}'),
                 TextField(
                   controller: _pesoNovoController,
                   keyboardType: TextInputType.number,

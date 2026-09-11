@@ -7,6 +7,7 @@ import '../repositories/produto_repository.dart';
 import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
+import '../utils/variante_label_utils.dart';
 import '../widgets/fracionamento_section.dart';
 
 /// Versão em lote do diálogo "Fracionar em unidade menor" — seleciona vários
@@ -300,7 +301,7 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
                 onChanged: (v) => _alternarSelecao(produto, v),
                 title: Text(produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
                 subtitle: Text(
-                  '${produto.categoria}${produto.peso != null ? ' • ${produto.peso}kg' : ''} • estoque: ${produto.estoqueAtual}',
+                  '${produto.categoria}${produto.peso != null ? ' • ${formatarPeso(produto.peso!)}' : ''} • estoque: ${produto.estoqueAtual}',
                 ),
               );
             },
@@ -413,7 +414,7 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
                     labelText: 'Peso do novo produto (kg)',
-                    helperText: 'Peso do original: ${pai.peso} kg',
+                    helperText: 'Peso do original: ${formatarPeso(pai.peso!)}',
                   ),
                   onChanged: (_) => setState(() => widget.onMudou()),
                 ),
