@@ -22,6 +22,11 @@ class FamiliaVariantesSection extends StatelessWidget {
   // pra dentro de cada variante só pra desvinculá-la uma a uma.
   final ValueChanged<Produto> onRemoverIrmao;
   final Set<String> removendoIrmaoIds;
+  // Sem isso, só dava pra adicionar um 3º+ produto na família indo até o
+  // cadastro do produto NOVO (ainda solto) e vinculando de lá — porque o
+  // botão de vincular em editar_produto_screen.dart só aparecia quando o
+  // produto atual não tinha família nenhuma ainda. Achado real 12/09.
+  final VoidCallback onAdicionarVariante;
 
   const FamiliaVariantesSection({
     super.key,
@@ -32,6 +37,7 @@ class FamiliaVariantesSection extends StatelessWidget {
     required this.onAbrirVariante,
     required this.onDesvincular,
     required this.onRemoverIrmao,
+    required this.onAdicionarVariante,
     this.removendoIrmaoIds = const {},
   });
 
@@ -95,6 +101,12 @@ class FamiliaVariantesSection extends StatelessWidget {
             ],
           ),
         ],
+        OutlinedButton.icon(
+          icon: const Icon(Icons.add_link),
+          label: const Text('Adicionar outra variante'),
+          onPressed: onAdicionarVariante,
+        ),
+        const SizedBox(height: 8),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
           icon: desvinculando

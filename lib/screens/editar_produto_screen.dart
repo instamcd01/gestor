@@ -414,6 +414,15 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
 
     setState(() => _isLoading = true);
 
+    // Campos "travados" abaixo (só mudam via ação dedicada — vincular
+    // variante, trocar produto pai, fracionar — nunca por este formulário)
+    // precisam do valor ATUAL do produto, não de `widget.produto` (a foto
+    // de quando esta tela abriu, que nunca muda sozinha). Sem isso: usar
+    // uma dessas ações dedicadas e DEPOIS salvar qualquer campo comum nesta
+    // mesma tela revertia o vínculo recém-criado silenciosamente — bug real
+    // achado 12/09 (família de variantes perdendo vínculo ao salvar).
+    final atual = context.read<ProdutoProvider>().getProdutoPorId(widget.produto.id ?? '') ?? widget.produto;
+
     final produtoAtualizado = Produto(
       id: widget.produto.id,
       nome: _nomeController.text,
@@ -426,7 +435,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       volume: ProdutoValidators.parseNumero(_volumeController.text),
       ativo: _ativo,
       preco: ProdutoValidators.parseNumero(_precoController.text) ??
-          widget.produto.preco,
+          atual.preco,
       // Sem fallback pro valor antigo: campo opcional, limpar o texto e
       // salvar precisa efetivamente limpar o valor (null), não manter o
       // que já estava lá — era um bug real, campo "travava" no primeiro
@@ -435,43 +444,40 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       descricao: _descricaoController.text,
       codigoBarras: _codigoBarrasController.text,
       custo: ProdutoValidators.parseNumero(_custoController.text) ??
-          widget.produto.custo,
+          atual.custo,
       estoqueAtual: int.tryParse(_estoqueAtualController.text) ??
-          widget.produto.estoqueAtual,
+          atual.estoqueAtual,
       estoqueMinimo: int.tryParse(_estoqueMinimoController.text) ??
-          widget.produto.estoqueMinimo,
+          atual.estoqueMinimo,
       cicloRecompraDias: int.tryParse(_cicloRecompraController.text),
-      imagemUrl: _imagemUrlAtual ?? widget.produto.imagemUrl,
+      imagemUrl: _imagemUrlAtual ?? atual.imagemUrl,
       imagemUrlSecundaria: _imagemUrlVersoAtual,
       destacar: _destacarProduto,
       exibirNoCatalogo: _exibirNoCatalogo,
       // Campo de preço fixo por marketplace descontinuado no formulário —
       // preço por canal agora vive em "Disponibilidade em Marketplaces".
       // Mantém o valor legado (se houver) só pra não perder dado antigo.
-      precoIfood: widget.produto.precoIfood,
+      precoIfood: atual.precoIfood,
       markup: _markupController.text.isNotEmpty
           ? '${_markupController.text}%'
-          : widget.produto.markup,
+          : atual.markup,
       lucro: _lucroController.text.isNotEmpty
           ? _lucroController.text
-          : widget.produto.lucro,
+          : atual.lucro,
       // Mesmo bug do precoPromocional acima: sem fallback pro valor antigo
       // nestes 4, senão limpar o campo e salvar não limpava de verdade.
       validade: _validadeController.text.isNotEmpty ? _validadeController.text : null,
       empresa: _empresaController.text.isNotEmpty ? _empresaController.text : null,
       fabricante: _fabricanteController.text.isNotEmpty ? _fabricanteController.text : null,
       precoConcorrencia: ProdutoValidators.parseNumero(_precoConcorrenciaController.text),
-      estoqueId: widget.produto.estoqueId,
-      unidadeMedida: widget.produto.unidadeMedida,
-      permiteFracionamento: widget.produto.permiteFracionamento,
+      estoqueId: atual.estoqueId,
+      unidadeMedida: atual.unidadeMedida,
+      permiteFracionamento: atual.permiteFracionamento,
       // O vínculo em si (fracionadoDeId/fatorFracionamento) só muda via a
-      // ação dedicada em FracionamentoSection, nunca por aqui — sem esse
-      // fallback pro valor atual, salvar QUALQUER edição comum num produto
-      // fracionado apagava o vínculo com o pai por engano (bug real achado
-      // 10/09, nunca chegou a afetar os produtos reais por sorte de ordem).
-      fracionadoDeId: widget.produto.fracionadoDeId,
-      fatorFracionamento: widget.produto.fatorFracionamento,
-      margemAlvoFracionado: widget.produto.fracionadoDeId == null
+      // ação dedicada em FracionamentoSection, nunca por aqui.
+      fracionadoDeId: atual.fracionadoDeId,
+      fatorFracionamento: atual.fatorFracionamento,
+      margemAlvoFracionado: atual.fracionadoDeId == null
           ? null
           : (_margemAlvoFracionadoController.text.trim().isNotEmpty
               ? double.tryParse(_margemAlvoFracionadoController.text.trim().replaceAll(',', '.'))
@@ -486,18 +492,18 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       composicao: _composicaoController.text.isNotEmpty ? _composicaoController.text : null,
       apresentacao: _apresentacaoController.text.isNotEmpty ? _apresentacaoController.text : null,
       nomeManualOverride: _nomeManualOverride,
-      produtoPaiId: widget.produto.produtoPaiId,
-      tipoVariacao: widget.produto.tipoVariacao,
+      produtoPaiId: atual.produtoPaiId,
+      tipoVariacao: atual.tipoVariacao,
       // Só o rótulo é editável direto no formulário (ex: corrigir "10kg"
       // pra "10 Kg") — o vínculo em si (produtoPaiId/tipoVariacao) só muda
-      // via _desvincularVariante, nunca por aqui, porque tirar/mover um
-      // produto de família pode exigir promover outro a âncora (ver RPC
-      // `desvincular_variante`).
-      varianteLabel: widget.produto.tipoVariacao == null
+      // via _desvincularVariante/VincularVarianteDialog, nunca por aqui,
+      // porque tirar/mover um produto de família pode exigir promover
+      // outro a âncora (ver RPC `desvincular_variante`).
+      varianteLabel: atual.tipoVariacao == null
           ? null
           : (_varianteLabelController.text.isNotEmpty
               ? _varianteLabelController.text
-              : widget.produto.varianteLabel),
+              : atual.varianteLabel),
       camposEstruturadosPersonalizados: _camposEstruturadosPersonalizados,
     );
 
@@ -929,6 +935,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                   onDesvincular: _desvincularVariante,
                   onRemoverIrmao: _removerIrmaoDaFamilia,
                   removendoIrmaoIds: _removendoIrmaoIds,
+                  onAdicionarVariante: () => _abrirVincularVariante(produtoAtual),
                 ),
                 const SizedBox(height: 16.0),
               ] else ...[
