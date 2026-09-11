@@ -377,6 +377,13 @@ Produto construirProdutoFracionado({
   double? pesoNovoExplicito,
   int? estoqueInicial,
   double? margemAlvoFracionado,
+  /// Preenche o "Cadastro estruturado" — em branco cai no padrão de sempre
+  /// (rótulo pra eixo quantidade, apresentação do pai pra eixo peso).
+  String? apresentacaoExplicita,
+  /// Preço de venda no site — em branco cria com 0, exatamente como antes
+  /// (quem não passar nada continua vendo o comportamento de sempre).
+  double? preco,
+  double? precoIfood,
 }) {
   final pesoNovo = eixo == EixoFracionamento.peso
       ? pesoNovoExplicito
@@ -384,7 +391,7 @@ Produto construirProdutoFracionado({
 
   return Produto(
     nome: pai.nome, // provisório — o trigger do banco recompõe a partir dos campos estruturados, se houver
-    preco: 0,
+    preco: preco ?? 0,
     descricao: pai.descricao,
     categoria: pai.categoria,
     subcategoria: pai.subcategoria,
@@ -413,7 +420,7 @@ Produto construirProdutoFracionado({
     sabor: pai.sabor,
     dose: pai.dose,
     composicao: pai.composicao,
-    apresentacao: eixo == EixoFracionamento.quantidade ? rotulo : pai.apresentacao,
+    apresentacao: apresentacaoExplicita ?? (eixo == EixoFracionamento.quantidade ? rotulo : pai.apresentacao),
     nomeManualOverride: pai.nomeManualOverride,
     produtoPaiId: pai.produtoPaiId ?? pai.id,
     tipoVariacao: eixo == EixoFracionamento.peso ? 'peso' : 'quantidade',
@@ -422,6 +429,7 @@ Produto construirProdutoFracionado({
     fracionadoDeId: pai.id,
     fatorFracionamento: fator,
     margemAlvoFracionado: margemAlvoFracionado,
+    precoIfood: precoIfood,
   );
 }
 

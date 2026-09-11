@@ -31,6 +31,9 @@ class _ConfigLinha {
   final codigoBarrasController = TextEditingController();
   final estoqueController = TextEditingController();
   final margemController = TextEditingController();
+  final apresentacaoController = TextEditingController();
+  final precoController = TextEditingController();
+  final precoIfoodController = TextEditingController();
   String? erro;
 
   void dispose() {
@@ -40,6 +43,9 @@ class _ConfigLinha {
     codigoBarrasController.dispose();
     estoqueController.dispose();
     margemController.dispose();
+    apresentacaoController.dispose();
+    precoController.dispose();
+    precoIfoodController.dispose();
   }
 }
 
@@ -144,6 +150,12 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
           temErro = true;
           continue;
         }
+        final erroPreco = ProdutoValidators.precoVenda(config.precoController.text);
+        if (config.precoController.text.trim().isNotEmpty && erroPreco != null) {
+          config.erro = erroPreco;
+          temErro = true;
+          continue;
+        }
         config.erro = null;
       }
     });
@@ -167,6 +179,7 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
       final fator = _fatorDaLinha(pai, config)!;
       final estoqueOverride = int.tryParse(config.estoqueController.text.trim());
       final margemTexto = config.margemController.text.trim().replaceAll(',', '.');
+      final apresentacaoTexto = config.apresentacaoController.text.trim();
       final filho = construirProdutoFracionado(
         pai: pai,
         eixo: config.eixo,
@@ -176,6 +189,9 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
         pesoNovoExplicito: double.tryParse(config.pesoNovoController.text.trim().replaceAll(',', '.')),
         estoqueInicial: estoqueOverride,
         margemAlvoFracionado: margemTexto.isEmpty ? null : double.tryParse(margemTexto),
+        apresentacaoExplicita: apresentacaoTexto.isEmpty ? null : apresentacaoTexto,
+        preco: ProdutoValidators.parseNumero(config.precoController.text),
+        precoIfood: ProdutoValidators.parseNumero(config.precoIfoodController.text),
       );
       try {
         await provider.adicionarProduto(filho);
@@ -360,12 +376,28 @@ class _CardConfiguracao extends StatefulWidget {
 }
 
 class _CardConfiguracaoState extends State<_CardConfiguracao> {
-  String _previewMargem(Produto pai, _ConfigLinha config, int fator) {
+  double? _precoSugerido(Produto pai, _ConfigLinha config, int? fator) {
+    if (fator == null) return null;
     final margem = double.tryParse(config.margemController.text.trim().replaceAll(',', '.'));
-    if (margem == null) return '';
-    final custoFilho = pai.custo / fator;
-    final precoSugerido = custoFilho * (1 + margem / 100);
-    return ' Custo: R\$ ${custoFilho.toStringAsFixed(2)} · Preço sugerido: R\$ ${precoSugerido.toStringAsFixed(2)}.';
+    if (margem == null) return null;
+    return (pai.custo / fator) * (1 + margem / 100);
+  }
+
+  String _previewMargem(Produto pai, _ConfigLinha config, int fator) {
+    final sugestao = _precoSugerido(pai, config, fator);
+    if (sugestao == null) return '';
+    return ' Custo: R\$ ${(pai.custo / fator).toStringAsFixed(2)} · Preço sugerido: R\$ ${sugestao.toStringAsFixed(2)}.';
+  }
+
+  // Só preenche se o campo ainda estiver vazio — pra não sobrescrever um
+  // preço que o usuário já digitou manualmente por cima da sugestão (mesmo
+  // critério de _textoInicial em campanha_detalhe_screen.dart).
+  void _autoPreencherPrecoSugerido(Produto pai, _ConfigLinha config, int? fator) {
+    if (config.precoController.text.trim().isNotEmpty) return;
+    final sugestao = _precoSugerido(pai, config, fator);
+    if (sugestao != null) {
+      config.precoController.text = ProdutoValidators.formatarMoeda(sugestao);
+    }
   }
 
   @override
@@ -416,7 +448,10 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
                     labelText: 'Peso do novo produto (kg)',
                     helperText: 'Peso do original: ${formatarPeso(pai.peso!)}',
                   ),
-                  onChanged: (_) => setState(() => widget.onMudou()),
+                  onChanged: (_) => setState(() {
+                    widget.onMudou();
+                    _autoPreencherPrecoSugerido(pai, config, widget.fatorAtual(config));
+                  }),
                 ),
             ] else
               TextField(
@@ -426,7 +461,10 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
                   labelText: 'Quantas unidades = 1 unidade do original?',
                   helperText: 'Ex: pacote com 4 → digite 4',
                 ),
-                onChanged: (_) => setState(() => widget.onMudou()),
+                onChanged: (_) => setState(() {
+                  widget.onMudou();
+                  _autoPreencherPrecoSugerido(pai, config, widget.fatorAtual(config));
+                }),
               ),
             const SizedBox(height: 8),
             TextField(
@@ -434,6 +472,14 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
               decoration: const InputDecoration(
                 labelText: 'Rótulo desta variante',
                 helperText: 'Ex: "1kg" ou "Unidade avulsa"',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: config.apresentacaoController,
+              decoration: const InputDecoration(
+                labelText: 'Apresentação (opcional)',
+                helperText: 'Ex: "Pote", "Sachê", "Caixa". Em branco: repete a do produto original.',
               ),
             ),
             const SizedBox(height: 8),
@@ -467,7 +513,29 @@ class _CardConfiguracaoState extends State<_CardConfiguracao> {
                 helperText: 'Preenchido, preço se recalcula sozinho quando o custo do pai mudar. '
                     'Em branco: preço 100% manual.',
               ),
-              onChanged: (_) => setState(() {}),
+              onChanged: (_) => setState(() {
+                _autoPreencherPrecoSugerido(pai, config, widget.fatorAtual(config));
+              }),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: config.precoController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [MoedaInputFormatter()],
+              decoration: const InputDecoration(
+                labelText: 'Preço de venda (R\$, opcional)',
+                helperText: 'Com margem preenchida acima, já vem sugerido — pode ajustar. Em branco: cria com R\$0 pra configurar depois.',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: config.precoIfoodController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [MoedaInputFormatter()],
+              decoration: const InputDecoration(
+                labelText: 'Preço no iFood (R\$, opcional)',
+                helperText: 'Em branco: usa o mesmo preço de venda na exportação do catálogo iFood.',
+              ),
             ),
             if (fator != null)
               Padding(
