@@ -9,6 +9,25 @@ import '../utils/telefone_utils.dart';
 class ClienteRepository {
   static const _selectComPets = '*, pets(*)';
 
+  /// Busca um cliente específico por id, sem os filtros de `listar()`
+  /// (inclui histórico Kyte ainda não promovido) — usado como fallback
+  /// quando quem chama já sabe o id (ex: retomar um carrinho salvo) e
+  /// `ClientProvider.clientes` (a lista filtrada) não encontra, porque o
+  /// cliente é um cadastro do histórico Kyte que nunca foi promovido.
+  /// Achado real 12/09: dava pra salvar um carrinho pra esse tipo de
+  /// cadastro (salvar_carrinho_staff não tem essa restrição), mas não
+  /// dava pra reabrir depois — "Cliente não encontrado na lista carregada".
+  Future<Cliente?> buscarPorId(String id) async {
+    final data = await supabase
+        .from('clientes')
+        .select(_selectComPets)
+        .eq('id', id)
+        .isFilter('deleted_at', null)
+        .maybeSingle();
+    if (data == null) return null;
+    return Cliente.fromSupabase(data);
+  }
+
   Future<List<Cliente>> listar() async {
     final data = await supabase
         .from('clientes')

@@ -6,6 +6,7 @@ import '../providers/carrinho_provider.dart';
 import '../providers/cliente_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/carrinho_cliente_repository.dart';
+import '../repositories/cliente_repository.dart';
 import 'carrinho_screen.dart';
 
 /// Lista os carrinhos ativos/não vazios de hoje (compartilhados com
@@ -55,13 +56,18 @@ class _CarrinhosDoDiaScreenState extends State<CarrinhosDoDiaScreen> {
 
     setState(() => _abrindoClienteIds.add(resumo.clienteId));
     try {
-      final cliente = context
+      var cliente = context
           .read<ClientProvider>()
           .clientes
           .where((c) => c.idCliente == resumo.clienteId)
           .firstOrNull;
+      // Não achou na lista normal — pode ser um cadastro do histórico Kyte
+      // ainda não promovido (salvar_carrinho_staff aceita salvar carrinho
+      // pra ele, mas a lista padrão o esconde de propósito). Busca direto
+      // por id antes de desistir.
+      cliente ??= await ClienteRepository().buscarPorId(resumo.clienteId);
       if (cliente == null) {
-        throw Exception('Cliente não encontrado na lista carregada — recarregue a tela de Clientes e tente de novo.');
+        throw Exception('Cliente não encontrado — pode ter sido excluído.');
       }
       final carrinhoCliente = await CarrinhoClienteRepository().consultar(resumo.clienteId);
       if (!mounted) return;
