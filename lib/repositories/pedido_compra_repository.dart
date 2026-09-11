@@ -30,15 +30,20 @@ class PedidoCompraRepository {
 
   /// Roda a análise de vendas + estoque + prazo de entrega e retorna a
   /// quantidade sugerida por produto, já agrupável por fornecedor na tela.
+  /// [diasCobertura] é o total que o pedido deve durar (não uma margem
+  /// somada ao prazo de entrega) — a RPC já garante que nunca cobre menos
+  /// que o prazo de entrega do próprio fornecedor (`GREATEST(prazo,
+  /// cobertura)`), senão ficaria sem estoque antes da próxima remessa
+  /// chegar.
   Future<List<SugestaoCompra>> buscarSugestoes({
     required String empresaId,
     int diasAnalise = 30,
-    int diasSeguranca = 7,
+    int diasCobertura = 14,
   }) async {
     final data = await supabase.rpc('sugestoes_pedido_compra', params: {
       'p_empresa_id': empresaId,
       'p_dias_analise': diasAnalise,
-      'p_dias_seguranca': diasSeguranca,
+      'p_dias_cobertura': diasCobertura,
     });
     return (data as List).map((row) => SugestaoCompra.fromSupabase(row as Map<String, dynamic>)).toList();
   }

@@ -91,15 +91,23 @@ class SugestaoCompraScreen extends StatefulWidget {
 
 class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
   int _diasAnalise = 30;
-  int _diasSeguranca = 7;
+  int _diasCobertura = 14;
   List<_GrupoFornecedor> _grupos = [];
   bool _montandoGrupos = false;
   final Set<String> _criandoPedidoPara = {};
+  final _buscaFornecedorController = TextEditingController();
+  String _buscaFornecedor = '';
 
   @override
   void initState() {
     super.initState();
     _carregar();
+  }
+
+  @override
+  void dispose() {
+    _buscaFornecedorController.dispose();
+    super.dispose();
   }
 
   Future<void> _carregar() async {
@@ -108,7 +116,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
       await fornecedorProvider.carregar();
     }
     final provider = context.read<PedidoCompraProvider>();
-    await provider.carregarSugestoes(diasAnalise: _diasAnalise, diasSeguranca: _diasSeguranca);
+    await provider.carregarSugestoes(diasAnalise: _diasAnalise, diasCobertura: _diasCobertura);
     if (!mounted) return;
     await _montarGrupos(provider.sugestoes, fornecedorProvider.fornecedores);
   }
@@ -285,11 +293,11 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
           const _CardSazonalidade(),
           _FiltrosAnalise(
             diasAnalise: _diasAnalise,
-            diasSeguranca: _diasSeguranca,
-            onAplicar: (dias, seguranca) {
+            diasCobertura: _diasCobertura,
+            onAplicar: (dias, cobertura) {
               setState(() {
                 _diasAnalise = dias;
-                _diasSeguranca = seguranca;
+                _diasCobertura = cobertura;
               });
               _carregar();
             },
@@ -315,7 +323,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Com base nas vendas dos últimos $_diasAnalise dias, prazo de entrega e margem de segurança de $_diasSeguranca dias.',
+                        'Com base nas vendas dos últimos $_diasAnalise dias, pra um pedido durar $_diasCobertura dias.',
                         style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                         textAlign: TextAlign.center,
                       ),
@@ -324,20 +332,59 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
                 ),
               ),
             )
-          else
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: _grupos.length,
-                itemBuilder: (context, index) => _GrupoFornecedorCard(
-                  grupo: _grupos[index],
-                  criando: _criandoPedidoPara.contains(_grupos[index].fornecedorId),
-                  onMudou: () => setState(() {}),
-                  onAdicionarProduto: () => _adicionarProdutoManual(_grupos[index]),
-                  onCriarPedido: () => _criarPedido(_grupos[index]),
+          else ...[
+            // Conforme mais fornecedores forem cadastrados essa lista cresce
+            // — busca por nome pra achar rápido sem rolar a tela toda.
+            if (_grupos.length > 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: TextField(
+                  controller: _buscaFornecedorController,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar fornecedor...',
+                    prefixIcon: const Icon(Icons.search),
+                    isDense: true,
+                    suffixIcon: _buscaFornecedor.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _buscaFornecedorController.clear();
+                              setState(() => _buscaFornecedor = '');
+                            },
+                          ),
+                  ),
+                  onChanged: (v) => setState(() => _buscaFornecedor = v),
                 ),
               ),
+            Expanded(
+              child: Builder(builder: (context) {
+                final gruposFiltrados = _buscaFornecedor.trim().isEmpty
+                    ? _grupos
+                    : _grupos
+                        .where((g) => g.fornecedorNome.toLowerCase().contains(_buscaFornecedor.trim().toLowerCase()))
+                        .toList();
+                // Só uns poucos fornecedores cadastrados hoje: mantém tudo
+                // aberto, igual sempre foi. Conforme a lista crescer, os
+                // cards nascem recolhidos (só o resumo) e você expande só o
+                // que for mexer — evita virar uma rolagem gigante.
+                final expandirPorPadrao = _grupos.length <= 3;
+                return ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: gruposFiltrados.length,
+                  itemBuilder: (context, index) => _GrupoFornecedorCard(
+                    key: ValueKey(gruposFiltrados[index].fornecedorId),
+                    grupo: gruposFiltrados[index],
+                    criando: _criandoPedidoPara.contains(gruposFiltrados[index].fornecedorId),
+                    expandidoPorPadrao: expandirPorPadrao,
+                    onMudou: () => setState(() {}),
+                    onAdicionarProduto: () => _adicionarProdutoManual(gruposFiltrados[index]),
+                    onCriarPedido: () => _criarPedido(gruposFiltrados[index]),
+                  ),
+                );
+              }),
             ),
+          ],
         ],
       ),
     );
@@ -454,10 +501,10 @@ class _CardSazonalidadeState extends State<_CardSazonalidade> {
 
 class _FiltrosAnalise extends StatelessWidget {
   final int diasAnalise;
-  final int diasSeguranca;
-  final void Function(int diasAnalise, int diasSeguranca) onAplicar;
+  final int diasCobertura;
+  final void Function(int diasAnalise, int diasCobertura) onAplicar;
 
-  const _FiltrosAnalise({required this.diasAnalise, required this.diasSeguranca, required this.onAplicar});
+  const _FiltrosAnalise({required this.diasAnalise, required this.diasCobertura, required this.onAplicar});
 
   @override
   Widget build(BuildContext context) {
@@ -467,17 +514,17 @@ class _FiltrosAnalise extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              'Análise: vendas dos últimos $diasAnalise dias + $diasSeguranca dias de margem de segurança',
+              'Análise: vendas dos últimos $diasAnalise dias, pedido pra durar $diasCobertura dias',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
           TextButton(
             onPressed: () async {
-              final resultado = await showDialog<({int dias, int seguranca})>(
+              final resultado = await showDialog<({int dias, int cobertura})>(
                 context: context,
-                builder: (ctx) => _DialogFiltros(diasAnalise: diasAnalise, diasSeguranca: diasSeguranca),
+                builder: (ctx) => _DialogFiltros(diasAnalise: diasAnalise, diasCobertura: diasCobertura),
               );
-              if (resultado != null) onAplicar(resultado.dias, resultado.seguranca);
+              if (resultado != null) onAplicar(resultado.dias, resultado.cobertura);
             },
             child: const Text('Ajustar'),
           ),
@@ -489,9 +536,9 @@ class _FiltrosAnalise extends StatelessWidget {
 
 class _DialogFiltros extends StatefulWidget {
   final int diasAnalise;
-  final int diasSeguranca;
+  final int diasCobertura;
 
-  const _DialogFiltros({required this.diasAnalise, required this.diasSeguranca});
+  const _DialogFiltros({required this.diasAnalise, required this.diasCobertura});
 
   @override
   State<_DialogFiltros> createState() => _DialogFiltrosState();
@@ -499,13 +546,13 @@ class _DialogFiltros extends StatefulWidget {
 
 class _DialogFiltrosState extends State<_DialogFiltros> {
   late final TextEditingController _analiseController;
-  late final TextEditingController _segurancaController;
+  late final TextEditingController _coberturaController;
 
   @override
   void initState() {
     super.initState();
     _analiseController = TextEditingController(text: widget.diasAnalise.toString());
-    _segurancaController = TextEditingController(text: widget.diasSeguranca.toString());
+    _coberturaController = TextEditingController(text: widget.diasCobertura.toString());
   }
 
   @override
@@ -522,8 +569,12 @@ class _DialogFiltrosState extends State<_DialogFiltros> {
           ),
           const SizedBox(height: 12),
           TextField(
-            controller: _segurancaController,
-            decoration: const InputDecoration(labelText: 'Margem de segurança extra (dias)'),
+            controller: _coberturaController,
+            decoration: const InputDecoration(
+              labelText: 'Cobertura desejada (dias)',
+              helperText: 'Quanto tempo o pedido deve durar — nunca fica menor que o prazo de entrega do fornecedor.',
+              helperMaxLines: 2,
+            ),
             keyboardType: TextInputType.number,
           ),
         ],
@@ -536,7 +587,7 @@ class _DialogFiltrosState extends State<_DialogFiltros> {
               context,
               (
                 dias: int.tryParse(_analiseController.text) ?? widget.diasAnalise,
-                seguranca: int.tryParse(_segurancaController.text) ?? widget.diasSeguranca,
+                cobertura: int.tryParse(_coberturaController.text) ?? widget.diasCobertura,
               ),
             );
           },
@@ -547,16 +598,23 @@ class _DialogFiltrosState extends State<_DialogFiltros> {
   }
 }
 
+/// Recolhido, mostra só o resumo (nome, prazo, itens, total) — expande pra
+/// ver/editar os itens. Poucos fornecedores hoje ficam abertos por padrão
+/// (igual sempre foi); conforme a lista de fornecedores cadastrados crescer,
+/// nasce recolhido pra não virar uma rolagem gigante de cards grandes.
 class _GrupoFornecedorCard extends StatelessWidget {
   final _GrupoFornecedor grupo;
   final bool criando;
+  final bool expandidoPorPadrao;
   final VoidCallback onMudou;
   final VoidCallback onAdicionarProduto;
   final VoidCallback onCriarPedido;
 
   const _GrupoFornecedorCard({
+    super.key,
     required this.grupo,
     required this.criando,
+    required this.expandidoPorPadrao,
     required this.onMudou,
     required this.onAdicionarProduto,
     required this.onCriarPedido,
@@ -569,61 +627,56 @@ class _GrupoFornecedorCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(grupo.fornecedorNome, style: Theme.of(context).textTheme.titleMedium),
-                ),
-                if (grupo.prazoEntregaDias != null)
-                  Text('Prazo: ${grupo.prazoEntregaDias}d', style: TextStyle(color: colorScheme.onSurfaceVariant)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            for (final item in grupo.itens) _LinhaItem(item: item, onMudou: onMudou),
-            TextButton.icon(
-              onPressed: onAdicionarProduto,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Adicionar produto'),
-            ),
-            const Divider(),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Total: R\$ ${grupo.total.toStringAsFixed(2)} ($incluidos itens)',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      if (grupo.valorMinimoPedido != null)
-                        Text(
-                          grupo.atingiuMinimo
-                              ? 'Mínimo de R\$ ${grupo.valorMinimoPedido!.toStringAsFixed(2)} atingido'
-                              : 'Faltam R\$ ${(grupo.valorMinimoPedido! - grupo.total).toStringAsFixed(2)} pro mínimo de R\$ ${grupo.valorMinimoPedido!.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: grupo.atingiuMinimo ? Colors.green.shade700 : colorScheme.error,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: (criando || incluidos == 0) ? null : onCriarPedido,
-                  child: criando
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Criar pedido'),
-                ),
-              ],
-            ),
-          ],
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: expandidoPorPadrao,
+        title: Text(grupo.fornecedorNome, style: Theme.of(context).textTheme.titleMedium),
+        subtitle: Text(
+          '${grupo.itens.length} ite${grupo.itens.length == 1 ? 'm' : 'ns'}'
+          '${grupo.prazoEntregaDias != null ? ' · Prazo: ${grupo.prazoEntregaDias}d' : ''}'
+          ' · R\$ ${grupo.total.toStringAsFixed(2)}',
         ),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        children: [
+          for (final item in grupo.itens) _LinhaItem(item: item, onMudou: onMudou),
+          TextButton.icon(
+            onPressed: onAdicionarProduto,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Adicionar produto'),
+          ),
+          const Divider(),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Total: R\$ ${grupo.total.toStringAsFixed(2)} ($incluidos itens)',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    if (grupo.valorMinimoPedido != null)
+                      Text(
+                        grupo.atingiuMinimo
+                            ? 'Mínimo de R\$ ${grupo.valorMinimoPedido!.toStringAsFixed(2)} atingido'
+                            : 'Faltam R\$ ${(grupo.valorMinimoPedido! - grupo.total).toStringAsFixed(2)} pro mínimo de R\$ ${grupo.valorMinimoPedido!.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: grupo.atingiuMinimo ? Colors.green.shade700 : colorScheme.error,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              ElevatedButton(
+                onPressed: (criando || incluidos == 0) ? null : onCriarPedido,
+                child: criando
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Criar pedido'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

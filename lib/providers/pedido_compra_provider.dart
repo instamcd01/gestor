@@ -38,7 +38,7 @@ class PedidoCompraProvider with ChangeNotifier {
     }
   }
 
-  Future<void> carregarSugestoes({int diasAnalise = 30, int diasSeguranca = 7}) async {
+  Future<void> carregarSugestoes({int diasAnalise = 30, int diasCobertura = 14}) async {
     if (_empresaId == null) {
       throw StateError('Nenhuma empresa definida no PedidoCompraProvider ainda.');
     }
@@ -50,7 +50,7 @@ class PedidoCompraProvider with ChangeNotifier {
       _sugestoes = await _repository.buscarSugestoes(
         empresaId: _empresaId!,
         diasAnalise: diasAnalise,
-        diasSeguranca: diasSeguranca,
+        diasCobertura: diasCobertura,
       );
     } catch (e) {
       _erro = 'Erro ao calcular sugestões de compra: $e';
