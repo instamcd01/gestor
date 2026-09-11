@@ -228,6 +228,11 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
 
   Future<void> _abrirWhatsApp(String telefone) async {
     final texto = Uri.encodeComponent(_mensagemController.text);
+    // Sem normalizar, um telefone salvo sem o "55" (comum em contato vindo
+    // do job de carrinho abandonado, que grava `clientes.telefone` cru) vira
+    // link inválido — achado real revisando envio 11/09: DDD 74 aparecia
+    // como "número não cadastrado" no WhatsApp por causa disso.
+    final telefoneNormalizado = telefoneParaLinkWhatsApp(telefone);
     // `wa.me` passa por um resolvedor de link antes de abrir o WhatsApp de
     // verdade, e esse resolvedor tem um bug conhecido com emoji fora do
     // plano básico (🐾🐶🐱 — os que essa campanha usa) que chegam como "?"
@@ -235,8 +240,8 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     // intermediário — tenta esse primeiro, cai pro `wa.me` só se o
     // WhatsApp não estiver instalado (esquema `whatsapp://` não resolve
     // nesse caso).
-    final uriApp = Uri.parse('whatsapp://send?phone=$telefone&text=$texto');
-    final uriWeb = Uri.parse('https://wa.me/$telefone?text=$texto');
+    final uriApp = Uri.parse('whatsapp://send?phone=$telefoneNormalizado&text=$texto');
+    final uriWeb = Uri.parse('https://wa.me/$telefoneNormalizado?text=$texto');
     if (await canLaunchUrl(uriApp)) {
       await launchUrl(uriApp, mode: LaunchMode.externalApplication);
     } else if (await canLaunchUrl(uriWeb)) {

@@ -27,19 +27,27 @@ String normalizarTelefoneParaAuth(String texto) {
   return digitos;
 }
 
-/// Monta o link do wa.me a partir de um telefone em qualquer formato já
-/// salvo no banco. Sem normalizar primeiro, um número já salvo com o "55"
-/// (comum em dados vindos de outras origens) virava "5555..." no link e o
-/// WhatsApp não encontrava o contato.
+/// Telefone só em dígitos, com "55" na frente, pronto pra usar num link de
+/// WhatsApp (wa.me ou whatsapp://send). Sem normalizar primeiro, um telefone
+/// já salvo com o "55" (comum em dados vindos de outras origens) virava
+/// "5555..." no link, e um salvo SEM o "55" (ex: direto de `clientes.telefone`,
+/// que nunca inclui — achado real revisando envio de campanha 11/09: carrinho
+/// abandonado com DDD 74 aparecia como "número não cadastrado" porque o link
+/// saía sem o código do país) virava um número inválido — em ambos os casos
+/// o WhatsApp não encontrava o contato.
 ///
 /// Um "+" no início marca "já é internacional, não mexe" — usado pra
 /// clientes de outros países (chegam assim via integração do WhatsApp,
 /// ver telefone.replace('+','') condicional no n8n). Sem essa saída, todo
 /// telefone levava "55" na frente e o link saía errado pra quem não é
 /// do Brasil.
-String linkWhatsApp(String telefone) {
+String telefoneParaLinkWhatsApp(String telefone) {
   if (telefone.trim().startsWith('+')) {
-    return 'https://wa.me/${telefone.replaceAll(RegExp(r'[^0-9]'), '')}';
+    return telefone.replaceAll(RegExp(r'[^0-9]'), '');
   }
-  return 'https://wa.me/55${normalizarTelefoneBr(telefone)}';
+  return '55${normalizarTelefoneBr(telefone)}';
 }
+
+/// Monta o link do wa.me a partir de um telefone em qualquer formato já
+/// salvo no banco — ver [telefoneParaLinkWhatsApp].
+String linkWhatsApp(String telefone) => 'https://wa.me/${telefoneParaLinkWhatsApp(telefone)}';
