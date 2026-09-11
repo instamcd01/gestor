@@ -33,7 +33,9 @@ class _RupturaIfoodScreenState extends State<RupturaIfoodScreen> {
     super.initState();
     final hoje = DateTime.now();
     _periodo = DateTimeRange(start: hoje.subtract(const Duration(days: 29)), end: hoje);
-    context.read<ProdutoProvider>().carregarProdutos();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<ProdutoProvider>().carregarProdutos();
+    });
     _carregar();
   }
 

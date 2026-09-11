@@ -44,10 +44,13 @@ class _InicioScreenState extends State<InicioScreen> {
   @override
   void initState() {
     super.initState();
-    Provider.of<HistoricoVendasProvider>(context, listen: false).carregarVendas();
-    Provider.of<ProdutoProvider>(context, listen: false).carregarProdutos();
-    Provider.of<DespesaProvider>(context, listen: false).carregar();
-    _carregarLucroLiquido();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<HistoricoVendasProvider>().carregarVendas();
+      context.read<ProdutoProvider>().carregarProdutos();
+      context.read<DespesaProvider>().carregar();
+      _carregarLucroLiquido();
+    });
   }
 
   Future<void> _carregarLucroLiquido() async {

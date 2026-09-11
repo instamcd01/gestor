@@ -88,7 +88,10 @@ class _NotificacoesScreenState extends State<NotificacoesScreen> {
   @override
   void initState() {
     super.initState();
-    Provider.of<NotificacaoProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<NotificacaoProvider>().carregar();
+    });
   }
 
   Future<void> _abrir(Notificacao notificacao) async {

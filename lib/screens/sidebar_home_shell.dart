@@ -37,7 +37,9 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
   @override
   void initState() {
     super.initState();
-    Provider.of<PreferenciasProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<PreferenciasProvider>().carregar();
+    });
   }
 
   @override

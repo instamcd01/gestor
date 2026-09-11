@@ -24,8 +24,11 @@ class _FluxoCaixaScreenState extends State<FluxoCaixaScreen> {
     super.initState();
     final hoje = DateTime.now();
     _periodo = DateTimeRange(start: DateTime(hoje.year, hoje.month, 1), end: hoje);
-    Provider.of<HistoricoVendasProvider>(context, listen: false).carregarVendas();
-    Provider.of<DespesaProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<HistoricoVendasProvider>().carregarVendas();
+      context.read<DespesaProvider>().carregar();
+    });
   }
 
   bool _dentroDoPeriodo(DateTime data) {

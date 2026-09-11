@@ -26,7 +26,9 @@ class _EntradasScreenState extends State<EntradasScreen> {
     super.initState();
     final hoje = DateTime.now();
     _periodo = DateTimeRange(start: DateTime(hoje.year, hoje.month, 1), end: hoje);
-    Provider.of<HistoricoVendasProvider>(context, listen: false).carregarVendas();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<HistoricoVendasProvider>().carregarVendas();
+    });
   }
 
   List<Venda> _noPeriodo(List<Venda> todas) {

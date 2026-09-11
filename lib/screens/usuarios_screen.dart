@@ -35,8 +35,11 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
   @override
   void initState() {
     super.initState();
-    Provider.of<UsuarioProvider>(context, listen: false).carregar();
-    Provider.of<EntregadorProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<UsuarioProvider>().carregar();
+      context.read<EntregadorProvider>().carregar();
+    });
     _carregarConvitesEntregador();
   }
 

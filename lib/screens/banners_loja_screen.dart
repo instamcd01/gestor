@@ -60,7 +60,10 @@ class _BannersLojaScreenState extends State<BannersLojaScreen> {
   @override
   void initState() {
     super.initState();
-    Provider.of<BannerHomeProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<BannerHomeProvider>().carregar();
+    });
   }
 
   Future<void> _adicionarFoto() async {

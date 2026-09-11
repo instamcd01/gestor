@@ -22,7 +22,9 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
   @override
   void initState() {
     super.initState();
-    _carregarVendas();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _carregarVendas();
+    });
     _searchController.addListener(() => setState(() {}));
   }
 

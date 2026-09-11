@@ -27,7 +27,9 @@ class _HistoricoEntradasScreenState extends State<HistoricoEntradasScreen> {
   @override
   void initState() {
     super.initState();
-    Provider.of<EntradaProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<EntradaProvider>().carregar();
+    });
   }
 
   Future<void> _importar() async {

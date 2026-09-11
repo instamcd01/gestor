@@ -27,7 +27,9 @@ class _CuponsScreenState extends State<CuponsScreen> {
   @override
   void initState() {
     super.initState();
-    Provider.of<CupomProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<CupomProvider>().carregar();
+    });
     _searchController.addListener(() => setState(() {}));
   }
 

@@ -27,7 +27,9 @@ class _PedidoCompraListaScreenState extends State<PedidoCompraListaScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<PedidoCompraProvider>().carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<PedidoCompraProvider>().carregar();
+    });
   }
 
   @override

@@ -27,7 +27,9 @@ class _FornecedoresScreenState extends State<FornecedoresScreen> {
   @override
   void initState() {
     super.initState();
-    Provider.of<FornecedorProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<FornecedorProvider>().carregar();
+    });
     _searchController.addListener(() => setState(() {}));
     _carregarDesempenho();
   }

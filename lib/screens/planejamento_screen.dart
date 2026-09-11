@@ -48,9 +48,12 @@ class _PlanejamentoScreenState extends State<PlanejamentoScreen> with SingleTick
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this)..addListener(() => setState(() {}));
-    Provider.of<TarefaProvider>(context, listen: false).carregar();
-    Provider.of<SugestaoPlanejamentoProvider>(context, listen: false).carregar();
-    Provider.of<MetaFinanceiraProvider>(context, listen: false).carregar(_periodo);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<TarefaProvider>().carregar();
+      context.read<SugestaoPlanejamentoProvider>().carregar();
+      context.read<MetaFinanceiraProvider>().carregar(_periodo);
+    });
   }
 
   @override

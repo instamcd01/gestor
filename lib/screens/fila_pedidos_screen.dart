@@ -43,7 +43,9 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   @override
   void initState() {
     super.initState();
-    Provider.of<HistoricoVendasProvider>(context, listen: false).carregarVendas();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<HistoricoVendasProvider>().carregarVendas();
+    });
     // Os selos de urgência dependem só da hora atual (não de dado novo do
     // servidor) — atualiza sozinho pra não precisar puxar pra atualizar só
     // pra ver um pedido virar "atrasado".

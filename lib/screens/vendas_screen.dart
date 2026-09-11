@@ -37,7 +37,9 @@ class _VendasScreenState extends State<VendasScreen> {
   @override
   void initState() {
     super.initState();
-    _carregarProdutosIniciais();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _carregarProdutosIniciais();
+    });
   }
 
   @override

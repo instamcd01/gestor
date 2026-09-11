@@ -39,7 +39,9 @@ class _DespesasScreenState extends State<DespesasScreen> {
   void initState() {
     super.initState();
     _filtro = widget.filtroInicial ?? (widget.apenasPendentes ? 'Pendentes' : 'Todas');
-    Provider.of<DespesaProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<DespesaProvider>().carregar();
+    });
   }
 
   List<Despesa> _aplicarFiltro(List<Despesa> despesas) {
@@ -358,7 +360,9 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
     _categoria = d?.categoria ?? categoriasDespesaSugeridas.first;
     _fornecedorIdSelecionado = d?.fornecedor?.id;
 
-    Provider.of<FornecedorProvider>(context, listen: false).carregar();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<FornecedorProvider>().carregar();
+    });
   }
 
   @override
