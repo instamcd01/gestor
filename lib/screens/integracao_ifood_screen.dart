@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -306,16 +308,44 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
   Future<void> _exportarESalvar(Excel workbook, String nomeArquivo, String textoCompartilhar) async {
     final bytes = workbook.encode();
     if (bytes == null) throw Exception('Falha ao gerar a planilha.');
+    final caminho = await _compartilharOuSalvar(Uint8List.fromList(bytes), nomeArquivo, textoCompartilhar);
+    if (caminho != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Planilha salva em $caminho')));
+    }
+  }
+
+  /// No Android/iOS/web, `Share.shareXFiles` abre a folha de compartilhamento
+  /// nativa e funciona bem. No desktop (Windows/Linux/macOS) o Gestor não é
+  /// empacotado como app registrado pra receber compartilhamentos do SO, então
+  /// aquele painel abre sem nenhum destino — a planilha nunca chega a ser
+  /// salva. Nessas plataformas usamos o diálogo "Salvar como" do FilePicker
+  /// em vez disso, que já grava os bytes no caminho escolhido.
+  bool get _usaSalvarComoDesktop =>
+      !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+  /// Retorna o caminho salvo no desktop, ou null se foi compartilhada
+  /// (mobile/web) ou se o usuário cancelou o diálogo "Salvar como".
+  Future<String?> _compartilharOuSalvar(Uint8List bytes, String nomeArquivo, String textoCompartilhar) async {
+    if (_usaSalvarComoDesktop) {
+      return FilePicker.platform.saveFile(
+        dialogTitle: 'Salvar planilha do catálogo iFood',
+        fileName: nomeArquivo,
+        type: FileType.custom,
+        allowedExtensions: ['xlsx'],
+        bytes: bytes,
+      );
+    }
     await Share.shareXFiles(
       [
         XFile.fromData(
-          Uint8List.fromList(bytes),
+          bytes,
           name: nomeArquivo,
           mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ),
       ],
       text: textoCompartilhar,
     );
+    return null;
   }
 
   /// Gera a planilha no formato exato que o Portal do Parceiro iFood pede em
@@ -533,17 +563,15 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
       }
 
       final mensagem = financeiro ? 'Financeiro conciliado até $maiorData.' : 'Estoque reconciliado até $maiorData.';
-      await Share.shareXFiles(
-        [
-          XFile.fromData(
-            resposta.bodyBytes,
-            name: 'catalogo_ifood_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx',
-            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          ),
-        ],
-        text: '$mensagem Catálogo atualizado em anexo, pronto pra subir no Portal do Parceiro.',
+      final caminho = await _compartilharOuSalvar(
+        resposta.bodyBytes,
+        'catalogo_ifood_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.xlsx',
+        '$mensagem Catálogo atualizado em anexo, pronto pra subir no Portal do Parceiro.',
       );
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensagem)));
+      if (mounted) {
+        final texto = caminho != null ? '$mensagem Planilha salva em $caminho.' : mensagem;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+      }
 
       await _carregar();
     } catch (e) {
