@@ -136,9 +136,18 @@ class DistanciaService {
   }
 
   /// Calcula a rota real (de carro) entre dois endereços via Google
-  /// Distance Matrix API. Retorna null se algum endereço não puder ser
-  /// localizado ou a API falhar — nunca lança exceção, quem chama decide
-  /// o que fazer na ausência do resultado (ex: deixar o campo em branco).
+  /// Directions API, pedindo rotas alternativas e ficando com a de MENOR
+  /// distância. Retorna null se algum endereço não puder ser localizado ou
+  /// a API falhar — nunca lança exceção, quem chama decide o que fazer na
+  /// ausência do resultado (ex: deixar o campo em branco).
+  ///
+  /// Antes usava a Distance Matrix API, que devolve só UMA rota por par
+  /// origem/destino — a que o Google considera "melhor" por um critério
+  /// próprio, nem sempre a mais curta. Achado real 12/09: cliente com rota
+  /// de 6,1km/11min pela Distance Matrix, mas o Maps mostrava 4,4km/11min
+  /// pedindo a rota manualmente — a Directions API com alternatives=true
+  /// confirmou as duas opções (6,1km e 4,4km, mesmo tempo), e cobrar pela
+  /// mais longa penalizava o cliente sem motivo.
   static Future<RotaCalculada?> calcularRota({
     required String origem,
     required String destino,
@@ -154,10 +163,11 @@ class DistanciaService {
     }
 
     try {
-      final uri = Uri.https('maps.googleapis.com', '/maps/api/distancematrix/json', {
-        'origins': origem,
-        'destinations': destino,
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
+        'origin': origem,
+        'destination': destino,
         'mode': 'driving',
+        'alternatives': 'true',
         'units': 'metric',
         'key': _apiKey,
       });
@@ -166,23 +176,26 @@ class DistanciaService {
       final json = jsonDecode(resposta.body) as Map<String, dynamic>;
 
       if (json['status'] != 'OK') {
-        debugPrint('Distance Matrix API status: ${json['status']}');
+        debugPrint('Directions API status: ${json['status']}');
         return null;
       }
 
-      final elemento = json['rows'][0]['elements'][0] as Map<String, dynamic>;
-      if (elemento['status'] != 'OK') {
-        debugPrint('Distance Matrix API elemento status: ${elemento['status']}');
-        return null;
+      final rotas = json['routes'] as List;
+      if (rotas.isEmpty) return null;
+
+      RotaCalculada? melhor;
+      for (final rotaRaw in rotas) {
+        final leg = ((rotaRaw as Map<String, dynamic>)['legs'] as List).first as Map<String, dynamic>;
+        final distanciaMetros = (leg['distance']['value'] as num).toDouble();
+        final duracaoSegundos = (leg['duration']['value'] as num).toDouble();
+        if (melhor == null || distanciaMetros / 1000 < melhor.distanciaKm) {
+          melhor = RotaCalculada(
+            distanciaKm: distanciaMetros / 1000,
+            duracaoMin: (duracaoSegundos / 60).round(),
+          );
+        }
       }
-
-      final distanciaMetros = (elemento['distance']['value'] as num).toDouble();
-      final duracaoSegundos = (elemento['duration']['value'] as num).toDouble();
-
-      return RotaCalculada(
-        distanciaKm: distanciaMetros / 1000,
-        duracaoMin: (duracaoSegundos / 60).round(),
-      );
+      return melhor;
     } catch (e) {
       debugPrint('Erro ao calcular rota: $e');
       return null;

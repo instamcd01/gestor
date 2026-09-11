@@ -12,30 +12,39 @@ import '../distancia_service.dart' show EnderecoEncontrado, RotaCalculada, RotaO
 /// endpoint REST não manda cabeçalho CORS, então o navegador bloqueia a
 /// resposta; a biblioteca JS roda dentro da própria origem do Google e não
 /// tem essa restrição.
+/// Pede rotas alternativas e fica com a de menor distância — a Distance
+/// Matrix (usada antes aqui) devolve só uma rota por par origem/destino,
+/// nem sempre a mais curta (mesmo achado real da versão REST em
+/// distancia_service.dart).
 Future<RotaCalculada?> calcularRotaViaJs({
   required String origem,
   required String destino,
 }) async {
   try {
-    final response = await DistanceMatrixService().getDistanceMatrix(
-      DistanceMatrixRequest(
-        origins: <JSAny>[origem.toJS].toJS,
-        destinations: <JSAny>[destino.toJS].toJS,
+    final response = await DirectionsService().route(
+      DirectionsRequest(
+        origin: origem.toJS,
+        destination: destino.toJS,
         travelMode: TravelMode.DRIVING,
         unitSystem: UnitSystem.METRIC,
+        provideRouteAlternatives: true,
       ),
     );
-    if (response.rows.isEmpty) return null;
-    final elementos = response.rows.first.elements;
-    if (elementos.isEmpty) return null;
+    if (response.routes.isEmpty) return null;
 
-    final elemento = elementos.first;
-    if (elemento.status != DistanceMatrixElementStatus.OK) return null;
-
-    return RotaCalculada(
-      distanciaKm: elemento.distance.value / 1000,
-      duracaoMin: (elemento.duration.value / 60).round(),
-    );
+    RotaCalculada? melhor;
+    for (final rota in response.routes) {
+      final legs = rota.legs;
+      if (legs.isEmpty) continue;
+      final leg = legs.first;
+      final distanciaM = leg.distance?.value.toDouble();
+      final duracaoS = leg.duration?.value.toDouble();
+      if (distanciaM == null || duracaoS == null) continue;
+      if (melhor == null || distanciaM / 1000 < melhor.distanciaKm) {
+        melhor = RotaCalculada(distanciaKm: distanciaM / 1000, duracaoMin: (duracaoS / 60).round());
+      }
+    }
+    return melhor;
   } catch (_) {
     return null;
   }
