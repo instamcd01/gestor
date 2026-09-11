@@ -16,6 +16,7 @@ import '../utils/agendamento_utils.dart';
 import '../utils/busca_utils.dart';
 import 'adicionar_cliente_screen.dart';
 import 'configuracao_entrega_screen.dart';
+import 'editar_cliente_screen.dart';
 
 /// Escolhe o cliente da venda e resolve a entrega: usa a distância já
 /// calculada e salva no cadastro do cliente (ver `DistanciaService`) pra
@@ -234,6 +235,23 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
     if (!mounted) return;
     setState(() => _calculandoDistancia = false);
     _resolverZona();
+  }
+
+  Future<void> _editarEnderecoClienteSelecionado() async {
+    final cliente = _clienteSelecionado;
+    if (cliente == null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => EditarClienteScreen(clienteSelecionado: cliente)),
+    );
+    if (!mounted) return;
+    // EditarClienteScreen já recalcula e salva a distância ao salvar — pega
+    // a versão atualizada do provider (não a `cliente` capturada acima,
+    // que ficou parada no que era antes de editar).
+    final atualizado = Provider.of<ClientProvider>(context, listen: false)
+        .clientes
+        .firstWhere((c) => c.idCliente == cliente.idCliente, orElse: () => cliente);
+    await _selecionarCliente(atualizado);
   }
 
   void _resolverZona() {
@@ -557,12 +575,30 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
     }
 
     if (_distanciaKm == null) {
+      // O cliente CONTINUA selecionado aqui — só falta endereço válido pra
+      // calcular a distância (comum em cadastro promovido do histórico
+      // Kyte, que às vezes só tem nome+telefone, sem endereço nenhum).
+      // Sem essa deixa clara, dava a impressão de que o cadastro "sumiu" e
+      // levava a criar um duplicado — achado real 12/09 (Vanessa Souza:
+      // pedido de R$119,90 foi parar num cadastro novo, separado dos 10
+      // pedidos antigos dela, até eu mesclar de volta manualmente).
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Text(
-          'Não foi possível calcular a distância até esse cliente. '
-          'Confira o endereço cadastrado dele.',
-          style: TextStyle(color: Colors.red[700]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Não foi possível calcular a distância até "${_clienteSelecionado?.nome}". '
+              'O cadastro continua selecionado — só falta um endereço válido.',
+              style: TextStyle(color: Colors.red[700]),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.edit_location_alt_outlined),
+              label: const Text('Completar endereço do cliente'),
+              onPressed: _editarEnderecoClienteSelecionado,
+            ),
+          ],
         ),
       );
     }
