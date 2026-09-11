@@ -87,6 +87,15 @@ class ProdutoFornecedorRepository {
     return await _buscarPorId(vinculo.id!);
   }
 
+  /// Marca um vínculo já existente como principal (desmarca os demais do
+  /// mesmo produto) sem precisar recarregar/reenviar o vínculo inteiro —
+  /// usado pelo atalho "Tornar principal" na Sugestão de Compra, quando o
+  /// usuário decide trocar de fornecedor por causa da comparação de preço.
+  Future<void> marcarComoPrincipal(String vinculoId, String produtoId) async {
+    await _limparPrincipal(produtoId, exceto: vinculoId);
+    await supabase.from('produto_fornecedores').update({'principal': true}).eq('id', vinculoId);
+  }
+
   Future<void> excluir(String vinculoId) async {
     await supabase.from('produto_fornecedores').delete().eq('id', vinculoId);
   }

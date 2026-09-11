@@ -19,6 +19,52 @@ import 'pedido_compra_detalhe_screen.dart';
 String _formatarDataCurta(DateTime data) =>
     '${data.day.toString().padLeft(2, '0')}/${data.month.toString().padLeft(2, '0')}';
 
+/// Outro fornecedor vinculado ao mesmo produto (comparação de custo total,
+/// não só preço — ver [[gestor_pedido_compra_fornecedor]]) — mostrado como
+/// dica embaixo do item já incluído no pedido.
+class _AlternativaFornecedor {
+  final String vinculoId;
+  final String fornecedorId;
+  final String fornecedorNome;
+  final double custoUnitario;
+  final int? prazoEntregaDias;
+
+  _AlternativaFornecedor({
+    required this.vinculoId,
+    required this.fornecedorId,
+    required this.fornecedorNome,
+    required this.custoUnitario,
+    this.prazoEntregaDias,
+  });
+}
+
+/// Produto que esse fornecedor também vende, mas que hoje está sendo
+/// comprado de outro (não entra como item editável aqui — só comparação —
+/// pra não arriscar incluir o mesmo produto em 2 pedidos ao mesmo tempo).
+class _TambemDisponivel {
+  final String produtoId;
+  final String produtoNome;
+  final String vinculoId;
+  final double custoUnitario;
+  final int? prazoEntregaDias;
+  final double custoEscolhidoAtual;
+  final int? prazoEscolhidoAtual;
+  final String fornecedorEscolhidoNome;
+
+  _TambemDisponivel({
+    required this.produtoId,
+    required this.produtoNome,
+    required this.vinculoId,
+    required this.custoUnitario,
+    this.prazoEntregaDias,
+    required this.custoEscolhidoAtual,
+    this.prazoEscolhidoAtual,
+    required this.fornecedorEscolhidoNome,
+  });
+
+  bool get maisBarato => custoUnitario < custoEscolhidoAtual;
+}
+
 /// Item sugerido (ou adicionado manualmente) dentro de um grupo de
 /// fornecedor, com a quantidade editável antes de virar pedido de verdade.
 class _ItemEditavel {
@@ -35,9 +81,14 @@ class _ItemEditavel {
   /// pedido está subindo ou descendo em relação à última compra real.
   ({double custoUnitario, String fornecedorNome, DateTime dataEntrada})? ultimaCompra;
 
-  /// Outro fornecedor vinculado a esse produto com custo menor que o
-  /// aplicado aqui — pra avisar "fornecedor Y vende mais barato".
-  ({String fornecedorNome, double custoUnitario})? fornecedorMaisBarato;
+  /// Outros fornecedores vinculados a esse produto (só produto A/B — ver
+  /// Kraljic na RPC) — ordenado do mais barato pro mais caro.
+  List<_AlternativaFornecedor> alternativas;
+
+  /// Prazo de entrega do fornecedor ATUAL (o dono deste item) — pra
+  /// comparar custo total (preço + prazo), não só preço, com as
+  /// alternativas.
+  final int? prazoFornecedorAtual;
 
   _ItemEditavel({
     required this.produtoId,
@@ -48,7 +99,8 @@ class _ItemEditavel {
     this.vinculo,
     this.custoAvulso = 0,
     this.ultimaCompra,
-    this.fornecedorMaisBarato,
+    this.alternativas = const [],
+    this.prazoFornecedorAtual,
   });
 
   double get custoUnitario => vinculo?.custoParaQuantidade(quantidadePedida) ?? custoAvulso;
@@ -65,13 +117,21 @@ class _ItemEditavel {
     final variacao = (custoUnitario - ultima.custoUnitario) / ultima.custoUnitario;
     return variacao.abs() < 0.01 ? null : variacao;
   }
+
+  /// Só as alternativas realmente mais baratas — é isso que vale como
+  /// munição de negociação, mostrar uma mais cara aqui não ajuda em nada.
+  _AlternativaFornecedor? get alternativaMaisBarata {
+    final maisBaratas = alternativas.where((a) => a.custoUnitario < custoUnitario).toList();
+    return maisBaratas.isEmpty ? null : maisBaratas.first;
+  }
 }
 
 class _GrupoFornecedor {
   final Fornecedor fornecedor;
   final List<_ItemEditavel> itens;
+  final List<_TambemDisponivel> tambemDisponiveis;
 
-  _GrupoFornecedor({required this.fornecedor, required this.itens});
+  _GrupoFornecedor({required this.fornecedor, required this.itens, this.tambemDisponiveis = const []});
 
   String get fornecedorId => fornecedor.id!;
   String get fornecedorNome => fornecedor.nome;
@@ -146,45 +206,88 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
       // Sem histórico de compra, segue sem o aviso de variação de custo.
     }
 
-    final grupos = <String, _GrupoFornecedor>{};
-    for (final s in sugestoes) {
-      final fornecedoresEncontrados = fornecedores.where((f) => f.id == s.fornecedorId).toList();
-      final fornecedor = fornecedoresEncontrados.isNotEmpty
-          ? fornecedoresEncontrados.first
-          : Fornecedor(id: s.fornecedorId, nome: s.fornecedorNome, prazoEntregaDias: s.prazoEntregaDias);
-      final grupo = grupos.putIfAbsent(
-        s.fornecedorId,
-        () => _GrupoFornecedor(fornecedor: fornecedor, itens: []),
-      );
+    Fornecedor resolverFornecedor(String fornecedorId, String nomeFallback, int? prazoFallback) {
+      final encontrados = fornecedores.where((f) => f.id == fornecedorId).toList();
+      return encontrados.isNotEmpty
+          ? encontrados.first
+          : Fornecedor(id: fornecedorId, nome: nomeFallback, prazoEntregaDias: prazoFallback);
+    }
 
-      final vinculosDoProduto = todosVinculosPorProduto[s.produtoId] ?? [];
-      final vinculoDoGrupo = vinculosDoProduto.where((v) => v.fornecedorId == s.fornecedorId).toList();
-      final custoAtual = vinculoDoGrupo.isNotEmpty ? vinculoDoGrupo.first.custoUnitario : s.custoUnitario;
-      final alternativasMaisBaratas = vinculosDoProduto
-          .where((v) => v.ativo && v.fornecedorId != s.fornecedorId && v.custoUnitario < custoAtual)
-          .toList()
+    // A RPC agora pode trazer mais de uma linha por produto (uma por
+    // fornecedor vinculado, só pra produto A/B — ver classe_abc). Agrupa
+    // por produto primeiro pra separar "o fornecedor que seria usado de
+    // verdade" (fornecedorEscolhido=true, vira item editável de pedido) das
+    // alternativas (só comparação, nunca 2 pedidos do mesmo produto de
+    // uma vez sem querer).
+    final porProduto = <String, List<SugestaoCompra>>{};
+    for (final s in sugestoes) {
+      porProduto.putIfAbsent(s.produtoId, () => []).add(s);
+    }
+
+    final grupos = <String, _GrupoFornecedor>{};
+    for (final linhas in porProduto.values) {
+      final escolhida = linhas.where((s) => s.fornecedorEscolhido).firstOrNull ?? linhas.first;
+      final alternativasRows = linhas.where((s) => s.fornecedorId != escolhida.fornecedorId).toList();
+      final vinculosDoProduto = todosVinculosPorProduto[escolhida.produtoId] ?? [];
+      final vinculoEscolhido = vinculosDoProduto.where((v) => v.fornecedorId == escolhida.fornecedorId).firstOrNull;
+
+      final alternativas = alternativasRows.map((alt) {
+        final vinculoAlt = vinculosDoProduto.where((v) => v.fornecedorId == alt.fornecedorId).firstOrNull;
+        return _AlternativaFornecedor(
+          vinculoId: vinculoAlt?.id ?? '',
+          fornecedorId: alt.fornecedorId,
+          fornecedorNome: alt.fornecedorNome,
+          custoUnitario: vinculoAlt?.custoUnitario ?? alt.custoUnitario,
+          prazoEntregaDias: alt.prazoEntregaDias,
+        );
+      }).toList()
         ..sort((a, b) => a.custoUnitario.compareTo(b.custoUnitario));
 
-      ({String fornecedorNome, double custoUnitario})? fornecedorMaisBarato;
-      if (alternativasMaisBaratas.isNotEmpty) {
-        final melhor = alternativasMaisBaratas.first;
-        final nomeConhecido = fornecedores.where((f) => f.id == melhor.fornecedorId).toList();
-        fornecedorMaisBarato = (
-          fornecedorNome: melhor.fornecedorNome ?? (nomeConhecido.isNotEmpty ? nomeConhecido.first.nome : '—'),
-          custoUnitario: melhor.custoUnitario,
-        );
-      }
+      final grupoEscolhido = grupos.putIfAbsent(
+        escolhida.fornecedorId,
+        () => _GrupoFornecedor(
+          fornecedor: resolverFornecedor(escolhida.fornecedorId, escolhida.fornecedorNome, escolhida.prazoEntregaDias),
+          itens: [],
+          tambemDisponiveis: [],
+        ),
+      );
 
-      grupo.itens.add(_ItemEditavel(
-        produtoId: s.produtoId,
-        produtoNome: s.produtoNome,
-        quantidadeSugerida: s.quantidadeSugerida,
-        quantidadePedida: s.quantidadeSugerida,
-        vinculo: vinculoDoGrupo.isNotEmpty ? vinculoDoGrupo.first : null,
-        custoAvulso: s.custoUnitario,
-        ultimaCompra: ultimosCustos[s.produtoId],
-        fornecedorMaisBarato: fornecedorMaisBarato,
+      grupoEscolhido.itens.add(_ItemEditavel(
+        produtoId: escolhida.produtoId,
+        produtoNome: escolhida.produtoNome,
+        quantidadeSugerida: escolhida.quantidadeSugerida,
+        quantidadePedida: escolhida.quantidadeSugerida,
+        vinculo: vinculoEscolhido,
+        custoAvulso: escolhida.custoUnitario,
+        ultimaCompra: ultimosCustos[escolhida.produtoId],
+        alternativas: alternativas,
+        prazoFornecedorAtual: escolhida.prazoEntregaDias,
       ));
+
+      // Também aparece na lista do(s) outro(s) fornecedor(es) que vendem
+      // o mesmo produto — só como comparação (sem checkbox/quantidade),
+      // com atalho pra virar o principal se valer a pena.
+      for (final alt in alternativasRows) {
+        final vinculoAlt = vinculosDoProduto.where((v) => v.fornecedorId == alt.fornecedorId).firstOrNull;
+        final grupoAlt = grupos.putIfAbsent(
+          alt.fornecedorId,
+          () => _GrupoFornecedor(
+            fornecedor: resolverFornecedor(alt.fornecedorId, alt.fornecedorNome, alt.prazoEntregaDias),
+            itens: [],
+            tambemDisponiveis: [],
+          ),
+        );
+        grupoAlt.tambemDisponiveis.add(_TambemDisponivel(
+          produtoId: escolhida.produtoId,
+          produtoNome: escolhida.produtoNome,
+          vinculoId: vinculoAlt?.id ?? '',
+          custoUnitario: vinculoAlt?.custoUnitario ?? alt.custoUnitario,
+          prazoEntregaDias: alt.prazoEntregaDias,
+          custoEscolhidoAtual: vinculoEscolhido?.custoUnitario ?? escolhida.custoUnitario,
+          prazoEscolhidoAtual: escolhida.prazoEntregaDias,
+          fornecedorEscolhidoNome: escolhida.fornecedorNome,
+        ));
+      }
     }
 
     if (!mounted) return;
@@ -192,6 +295,29 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
       _grupos = grupos.values.toList()..sort((a, b) => a.fornecedorNome.compareTo(b.fornecedorNome));
       _montandoGrupos = false;
     });
+  }
+
+  final Set<String> _trocandoPrincipalPara = {};
+
+  /// Troca o fornecedor principal desse produto e recarrega a sugestão
+  /// inteira — mais simples e seguro que tentar atualizar só um pedaço do
+  /// estado local (o recálculo de quantidade/custo por faixa dependeria
+  /// de tudo de novo mesmo).
+  Future<void> _tornarPrincipal(String vinculoId, String produtoId) async {
+    if (vinculoId.isEmpty) return;
+    setState(() => _trocandoPrincipalPara.add(vinculoId));
+    try {
+      await ProdutoFornecedorRepository().marcarComoPrincipal(vinculoId, produtoId);
+      await _carregar();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Não foi possível trocar o fornecedor principal: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _trocandoPrincipalPara.remove(vinculoId));
+    }
   }
 
   Future<void> _adicionarProdutoManual(_GrupoFornecedor grupo) async {
@@ -377,9 +503,11 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
                     grupo: gruposFiltrados[index],
                     criando: _criandoPedidoPara.contains(gruposFiltrados[index].fornecedorId),
                     expandidoPorPadrao: expandirPorPadrao,
+                    trocandoPrincipalPara: _trocandoPrincipalPara,
                     onMudou: () => setState(() {}),
                     onAdicionarProduto: () => _adicionarProdutoManual(gruposFiltrados[index]),
                     onCriarPedido: () => _criarPedido(gruposFiltrados[index]),
+                    onTornarPrincipal: _tornarPrincipal,
                   ),
                 );
               }),
@@ -606,18 +734,22 @@ class _GrupoFornecedorCard extends StatelessWidget {
   final _GrupoFornecedor grupo;
   final bool criando;
   final bool expandidoPorPadrao;
+  final Set<String> trocandoPrincipalPara;
   final VoidCallback onMudou;
   final VoidCallback onAdicionarProduto;
   final VoidCallback onCriarPedido;
+  final void Function(String vinculoId, String produtoId) onTornarPrincipal;
 
   const _GrupoFornecedorCard({
     super.key,
     required this.grupo,
     required this.criando,
     required this.expandidoPorPadrao,
+    required this.trocandoPrincipalPara,
     required this.onMudou,
     required this.onAdicionarProduto,
     required this.onCriarPedido,
+    required this.onTornarPrincipal,
   });
 
   @override
@@ -638,12 +770,34 @@ class _GrupoFornecedorCard extends StatelessWidget {
         ),
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
-          for (final item in grupo.itens) _LinhaItem(item: item, onMudou: onMudou),
+          for (final item in grupo.itens)
+            _LinhaItem(
+              item: item,
+              onMudou: onMudou,
+              trocandoPrincipalPara: trocandoPrincipalPara,
+              onTornarPrincipal: onTornarPrincipal,
+            ),
           TextButton.icon(
             onPressed: onAdicionarProduto,
             icon: const Icon(Icons.add, size: 18),
             label: const Text('Adicionar produto'),
           ),
+          if (grupo.tambemDisponiveis.isNotEmpty) ...[
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                'Também vende (comparar preço)',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+            ),
+            for (final tb in grupo.tambemDisponiveis)
+              _LinhaTambemDisponivel(
+                item: tb,
+                trocando: trocandoPrincipalPara.contains(tb.vinculoId),
+                onTornarPrincipal: tb.vinculoId.isEmpty ? null : () => onTornarPrincipal(tb.vinculoId, tb.produtoId),
+              ),
+          ],
           const Divider(),
           Row(
             children: [
@@ -682,11 +836,70 @@ class _GrupoFornecedorCard extends StatelessWidget {
   }
 }
 
+/// Linha compacta e só de leitura — produto que ESSE fornecedor também
+/// vende, mas que está sendo comprado de outro. Sem checkbox/quantidade de
+/// propósito (ver comentário em `_montarGrupos`), só "Tornar principal".
+class _LinhaTambemDisponivel extends StatelessWidget {
+  final _TambemDisponivel item;
+  final bool trocando;
+  final VoidCallback? onTornarPrincipal;
+
+  const _LinhaTambemDisponivel({required this.item, required this.trocando, required this.onTornarPrincipal});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.produtoNome, style: const TextStyle(fontSize: 13)),
+                Text(
+                  'R\$${item.custoUnitario.toStringAsFixed(2)}/un'
+                  '${item.prazoEntregaDias != null ? ' · entrega em ${item.prazoEntregaDias}d' : ''}'
+                  ' — hoje comprado de ${item.fornecedorEscolhidoNome} '
+                  '(R\$${item.custoEscolhidoAtual.toStringAsFixed(2)}${item.prazoEscolhidoAtual != null ? ', ${item.prazoEscolhidoAtual}d' : ''})',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: item.maisBarato ? Colors.blue.shade700 : colorScheme.onSurfaceVariant,
+                    fontWeight: item.maisBarato ? FontWeight.w600 : null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          trocando
+              ? const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                )
+              : TextButton(
+                  onPressed: onTornarPrincipal,
+                  child: const Text('Tornar principal', style: TextStyle(fontSize: 12)),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LinhaItem extends StatefulWidget {
   final _ItemEditavel item;
   final VoidCallback onMudou;
+  final Set<String> trocandoPrincipalPara;
+  final void Function(String vinculoId, String produtoId) onTornarPrincipal;
 
-  const _LinhaItem({required this.item, required this.onMudou});
+  const _LinhaItem({
+    required this.item,
+    required this.onMudou,
+    required this.trocandoPrincipalPara,
+    required this.onTornarPrincipal,
+  });
 
   @override
   State<_LinhaItem> createState() => _LinhaItemState();
@@ -784,17 +997,50 @@ class _LinhaItemState extends State<_LinhaItem> {
                 ),
               ),
             ),
-          if (item.fornecedorMaisBarato != null)
+          if (item.alternativaMaisBarata != null)
             Padding(
               padding: const EdgeInsets.only(left: 40),
-              child: Text(
-                '💡 ${item.fornecedorMaisBarato!.fornecedorNome} vende por R\$${item.fornecedorMaisBarato!.custoUnitario.toStringAsFixed(2)} (mais barato)',
-                style: TextStyle(fontSize: 11, color: Colors.blue.shade700),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _textoAlternativa(item.alternativaMaisBarata!, item),
+                      style: TextStyle(fontSize: 11, color: Colors.blue.shade700),
+                    ),
+                  ),
+                  if (widget.trocandoPrincipalPara.contains(item.alternativaMaisBarata!.vinculoId))
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  else if (item.alternativaMaisBarata!.vinculoId.isNotEmpty)
+                    TextButton(
+                      onPressed: () =>
+                          widget.onTornarPrincipal(item.alternativaMaisBarata!.vinculoId, item.produtoId),
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 28)),
+                      child: const Text('Trocar', style: TextStyle(fontSize: 11)),
+                    ),
+                ],
               ),
             ),
         ],
       ),
     );
+  }
+
+  /// Compara não só preço, também prazo de entrega (custo total, não só
+  /// unitário — ver [[gestor_pedido_compra_fornecedor]]) — avisa o
+  /// trade-off quando a alternativa mais barata também demora mais, em vez
+  /// de só gritar "mais barato" e esconder a contrapartida.
+  String _textoAlternativa(_AlternativaFornecedor alt, _ItemEditavel item) {
+    final prazoAtual = item.prazoFornecedorAtual;
+    final base = '💡 ${alt.fornecedorNome} vende por R\$${alt.custoUnitario.toStringAsFixed(2)} (mais barato)';
+    if (alt.prazoEntregaDias == null || prazoAtual == null) return base;
+    if (alt.prazoEntregaDias! > prazoAtual) {
+      return '$base, mas entrega em ${alt.prazoEntregaDias}d (em vez de ${prazoAtual}d)';
+    }
+    return '$base, entrega em ${alt.prazoEntregaDias}d';
   }
 }
 

@@ -272,6 +272,19 @@ class SugestaoCompra {
   final int quantidadeSugerida;
   final double custoUnitario;
 
+  /// Classificação ABC (valor/importância) e XYZ (previsibilidade da
+  /// demanda) — mesma fonte da Análise de Produtos (`matriz_abc_xyz`).
+  /// Kraljic: só produto A/B traz linhas de outros fornecedores pra
+  /// comparar (ver [[gestor_pedido_compra_fornecedor]]).
+  final String classeAbc;
+  final String classeXyz;
+
+  /// true = esse é o fornecedor que seria usado de verdade pro pedido
+  /// (principal, ou mais barato se ninguém for principal). false = essa
+  /// linha é só pra comparação — o mesmo produto pode aparecer várias
+  /// vezes, uma por fornecedor vinculado (só pra produto A/B).
+  final bool fornecedorEscolhido;
+
   SugestaoCompra({
     required this.produtoId,
     required this.produtoNome,
@@ -282,6 +295,9 @@ class SugestaoCompra {
     required this.vendaMediaDiaria,
     required this.quantidadeSugerida,
     required this.custoUnitario,
+    required this.classeAbc,
+    required this.classeXyz,
+    required this.fornecedorEscolhido,
   });
 
   factory SugestaoCompra.fromSupabase(Map<String, dynamic> row) {
@@ -295,6 +311,9 @@ class SugestaoCompra {
       vendaMediaDiaria: (row['venda_media_diaria'] as num?)?.toDouble() ?? 0.0,
       quantidadeSugerida: (row['quantidade_sugerida'] as num?)?.toInt() ?? 0,
       custoUnitario: (row['custo_unitario'] as num?)?.toDouble() ?? 0.0,
+      classeAbc: row['classe_abc']?.toString() ?? 'sem_dado',
+      classeXyz: row['classe_xyz']?.toString() ?? 'sem_dado',
+      fornecedorEscolhido: row['fornecedor_escolhido'] as bool? ?? true,
     );
   }
 }
