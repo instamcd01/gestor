@@ -213,17 +213,43 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   /// sobrevive a reabrir a tela/atualizar, diferente do rascunho em memória
   /// que se perdia até aqui. Substitui a sugestão fixa por perfil
   /// (vip/inativo/genérico) até alguém apagar esse padrão salvo.
-  Future<void> _salvarComoPadrao() async {
+  ///
+  /// Em campanha personalizada por produto (achado real 12/09: salvar o
+  /// texto puro travava o produto do contato selecionado pra todo mundo),
+  /// procura a frase de produtos DESSE contato dentro do texto editado e
+  /// troca por `{produtos}` antes de salvar — assim o padrão salvo continua
+  /// citando o produto certo de cada cliente, igual a saudação já faz com
+  /// o nome. Se o usuário reescreveu/apagou a menção aos produtos, não tem
+  /// o que trocar: avisa que esse padrão vai sair igual pra todo mundo.
+  Future<void> _salvarComoPadrao(ContatoCampanha? contatoAtual) async {
     final texto = _mensagemController.text.trim();
     if (texto.isEmpty) return;
-    final corpo = texto.replaceFirst(_regexSaudacao, '').trim();
+    var corpo = texto.replaceFirst(_regexSaudacao, '').trim();
+
+    var semProdutoDetectado = false;
+    if (_personalizaPorProduto) {
+      final produtos = contatoAtual?.produtosPendentes ?? const [];
+      if (produtos.isNotEmpty) {
+        final frase = _fraseProdutos(produtos);
+        if (corpo.contains(frase)) {
+          corpo = corpo.replaceFirst(frase, '{produtos}');
+        } else if (!corpo.contains('{produtos}')) {
+          semProdutoDetectado = true;
+        }
+      }
+    }
+
     try {
       await CampanhaAtivacaoRepository().salvarMensagemPadrao(widget.campanha.id, corpo);
       if (!mounted) return;
       setState(() => _mensagemPadraoAtual = corpo);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mensagem salva como padrão dessa campanha.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          semProdutoDetectado
+              ? 'Salvo, mas sem citar produto (não achei a menção original no texto) — vai sair igual pra todo mundo.'
+              : 'Mensagem salva como padrão dessa campanha.',
+        ),
+      ));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível salvar: $e')));
@@ -232,15 +258,20 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
 
   /// Texto inicial pra um contato sem rascunho ainda: usa o padrão salvo
   /// pra essa campanha (`_mensagemPadraoAtual`) se existir, senão cai na
-  /// sugestão fixa por perfil (ou, na campanha "Prontos pra recompra", na
-  /// sugestão citando os produtos vencidos desse contato).
+  /// sugestão fixa por perfil (ou, na campanha "Prontos pra recompra"/
+  /// "Segunda Chance", na sugestão citando os produtos vencidos desse
+  /// contato). Num padrão salvo de campanha personalizada por produto, o
+  /// token `{produtos}` (se presente) é trocado pelos produtos DESSE
+  /// contato — mesma ideia da saudação com o nome, só que pro produto.
   String _textoInicial({required String? nome, required String? perfil, List<String> produtosPendentes = const []}) {
     final padrao = _mensagemPadraoAtual;
     if (padrao != null && padrao.trim().isNotEmpty) {
-      return '${_saudacao(nome)} $padrao';
+      final corpo = (_personalizaPorProduto && produtosPendentes.isNotEmpty)
+          ? padrao.replaceAll('{produtos}', _fraseProdutos(produtosPendentes))
+          : padrao;
+      return '${_saudacao(nome)} $corpo';
     }
-    if ((widget.campanha.origemSistema == 'prontos_recompra' || widget.campanha.origemSistema == 'segunda_chance_recompra') &&
-        produtosPendentes.isNotEmpty) {
+    if (_personalizaPorProduto && produtosPendentes.isNotEmpty) {
       return _mensagemProntosRecompra(nome: nome, produtos: produtosPendentes);
     }
     return _mensagemPadrao(nome: nome, perfil: perfil);
@@ -535,7 +566,8 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
                         onEnviar: selecionado == null ? null : () => _abrirWhatsApp(selecionado!.telefone),
                         onRestaurarPadrao:
                             selecionado == null ? null : () => _restaurarSugestaoPadrao(selecionado!),
-                        onSalvarPadrao: _personalizaPorProduto ? null : _salvarComoPadrao,
+                        onSalvarPadrao: () => _salvarComoPadrao(selecionado),
+                        mostrarDicaProduto: _personalizaPorProduto,
                       ),
                       const SizedBox(height: 16),
                       Row(
@@ -750,23 +782,26 @@ String _mensagemPadrao({required String? nome, required String? perfil}) {
   }
 }
 
-/// Sugestão pra campanha "Prontos pra recompra" — cita os produtos vencidos
-/// desse contato (só os nomes; os dias/ciclo ficam só na nota interna, ver
-/// [ContatoCampanha.mensagemPersonalizada]) e puxa pro "Comprar novamente".
-/// Lista até 3 produtos por nome; a partir do 4º fecha em "e mais N itens"
-/// pra não ficar longa demais.
-String _mensagemProntosRecompra({required String? nome, required List<String> produtos}) {
+/// Frase citando até 3 produtos por nome ("Ração X, Antipulgas Y e mais 2
+/// itens" a partir do 4º) — reaproveitada tanto na sugestão automática
+/// quanto na substituição do token `{produtos}` num padrão salvo (ver
+/// _salvarComoPadrao/_textoInicial).
+String _fraseProdutos(List<String> produtos) {
   const maxNomeados = 3;
   final nomeados = produtos.take(maxNomeados).toList();
   final restantes = produtos.length - nomeados.length;
-  String listaProdutos;
-  if (nomeados.length == 1) {
-    listaProdutos = nomeados.first;
-  } else if (restantes <= 0) {
-    listaProdutos = '${nomeados.sublist(0, nomeados.length - 1).join(', ')} e ${nomeados.last}';
-  } else {
-    listaProdutos = '${nomeados.join(', ')} e mais $restantes item${restantes == 1 ? '' : 's'}';
+  if (nomeados.length == 1) return nomeados.first;
+  if (restantes <= 0) {
+    return '${nomeados.sublist(0, nomeados.length - 1).join(', ')} e ${nomeados.last}';
   }
+  return '${nomeados.join(', ')} e mais $restantes item${restantes == 1 ? '' : 's'}';
+}
+
+/// Sugestão pra campanha "Prontos pra recompra" — cita os produtos vencidos
+/// desse contato (só os nomes; os dias/ciclo ficam só na nota interna, ver
+/// [ContatoCampanha.mensagemPersonalizada]) e puxa pro "Comprar novamente".
+String _mensagemProntosRecompra({required String? nome, required List<String> produtos}) {
+  final listaProdutos = _fraseProdutos(produtos);
   final plural = produtos.length > 1;
   return '${_saudacao(nome)} Aqui é da Delivery Pet 🐾 Notei que $listaProdutos do seu pet '
       '${plural ? 'devem' : 'deve'} estar acabando. Quer que eu repita seu último pedido do jeitinho que ficou '
@@ -783,13 +818,15 @@ class _PainelMensagem extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback? onEnviar;
   final VoidCallback? onRestaurarPadrao;
-  final VoidCallback? onSalvarPadrao;
+  final VoidCallback onSalvarPadrao;
+  final bool mostrarDicaProduto;
   const _PainelMensagem({
     required this.contato,
     required this.controller,
     required this.onEnviar,
     required this.onRestaurarPadrao,
     required this.onSalvarPadrao,
+    this.mostrarDicaProduto = false,
   });
 
   @override
@@ -835,24 +872,24 @@ class _PainelMensagem extends StatelessWidget {
                 filled: true,
               ),
             ),
-            if (onSalvarPadrao != null)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: onSalvarPadrao,
-                  icon: const Icon(Icons.bookmark_outline, size: 16),
-                  label: const Text('Salvar como padrão da campanha', style: TextStyle(fontSize: 12)),
-                  style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
-                ),
-              )
-            else
+            if (mostrarDicaProduto)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 2),
                 child: Text(
-                  'Mensagem gerada por cliente (produto vencido) — não dá pra salvar um texto único pra todo mundo aqui.',
+                  'Pra manter o produto certo de cada cliente ao salvar, deixe a frase do produto como veio (ou '
+                  'escreva {produtos} no lugar) — o resto do texto pode editar à vontade.',
                   style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic),
                 ),
               ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onSalvarPadrao,
+                icon: const Icon(Icons.bookmark_outline, size: 16),
+                label: const Text('Salvar como padrão da campanha', style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+              ),
+            ),
             const SizedBox(height: 4),
             SizedBox(
               width: double.infinity,
