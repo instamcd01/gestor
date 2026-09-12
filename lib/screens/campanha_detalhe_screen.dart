@@ -228,7 +228,8 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     if (padrao != null && padrao.trim().isNotEmpty) {
       return '${_saudacao(nome)} $padrao';
     }
-    if (widget.campanha.origemSistema == 'prontos_recompra' && produtosPendentes.isNotEmpty) {
+    if ((widget.campanha.origemSistema == 'prontos_recompra' || widget.campanha.origemSistema == 'segunda_chance_recompra') &&
+        produtosPendentes.isNotEmpty) {
       return _mensagemProntosRecompra(nome: nome, produtos: produtosPendentes);
     }
     return _mensagemPadrao(nome: nome, perfil: perfil);
