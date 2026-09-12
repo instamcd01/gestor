@@ -11,6 +11,11 @@ class CampanhaAtivacao {
   /// padrão por perfil (vip/inativo/genérico) que já existia antes.
   final String? mensagemPadrao;
 
+  /// Quem gerou essa campanha automaticamente (`carrinho_abandonado`,
+  /// `prontos_recompra`, etc) — null pra campanha criada manualmente pelo
+  /// usuário. Usado pra escolher a sugestão de mensagem certa por tipo.
+  final String? origemSistema;
+
   bool get arquivada => arquivadaEm != null;
 
   CampanhaAtivacao({
@@ -20,6 +25,7 @@ class CampanhaAtivacao {
     required this.criadoEm,
     this.arquivadaEm,
     this.mensagemPadrao,
+    this.origemSistema,
   });
 
   factory CampanhaAtivacao.fromSupabase(Map<String, dynamic> row) {
@@ -30,6 +36,7 @@ class CampanhaAtivacao {
       criadoEm: DateTime.parse(row['criado_em'] as String),
       arquivadaEm: row['deleted_at'] != null ? DateTime.parse(row['deleted_at'] as String) : null,
       mensagemPadrao: row['mensagem_padrao'] as String?,
+      origemSistema: row['origem_sistema'] as String?,
     );
   }
 }
@@ -84,6 +91,11 @@ class ContatoCampanha {
   final double? valorReferencia;
   final String? perfil;
   final String? mensagemPersonalizada;
+
+  /// Produtos vencidos desse contato (campanha "Prontos pra recompra") — só
+  /// os nomes, pra montar a mensagem. Os dias/ciclo de cada um ficam em
+  /// [mensagemPersonalizada] (referência interna, não vai na mensagem).
+  final List<String> produtosPendentes;
   final String? clienteId;
   final String? nomeCliente;
   final bool ativou;
@@ -103,6 +115,7 @@ class ContatoCampanha {
     this.valorReferencia,
     this.perfil,
     this.mensagemPersonalizada,
+    this.produtosPendentes = const [],
     this.clienteId,
     this.nomeCliente,
     required this.ativou,
@@ -122,6 +135,7 @@ class ContatoCampanha {
       valorReferencia: valorReferencia,
       perfil: perfil,
       mensagemPersonalizada: mensagemPersonalizada,
+      produtosPendentes: produtosPendentes,
       clienteId: clienteId,
       nomeCliente: nomeCliente,
       ativou: ativou,
@@ -142,6 +156,7 @@ class ContatoCampanha {
       valorReferencia: (row['valor_referencia'] as num?)?.toDouble(),
       perfil: row['perfil'] as String?,
       mensagemPersonalizada: row['mensagem_personalizada'] as String?,
+      produtosPendentes: (row['produtos_pendentes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
       clienteId: row['cliente_id'] as String?,
       nomeCliente: row['nome_cliente'] as String?,
       ativou: row['ativou'] as bool? ?? false,

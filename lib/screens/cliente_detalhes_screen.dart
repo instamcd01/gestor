@@ -690,6 +690,55 @@ class _ComprasClienteTabState extends State<_ComprasClienteTab> {
     await _futureVendas;
   }
 
+  /// "Comprar novamente": soma os itens desse pedido antigo ao carrinho
+  /// ATIVO do cliente (preço de hoje) — mesma tabela compartilhada com
+  /// WhatsApp/site. Não abre a venda aqui: o carrinho atualizado já aparece
+  /// em "Carrinhos do dia" ou ao selecionar esse cliente numa nova venda
+  /// (mesma mesclagem automática que já existe pra carrinho de WhatsApp/site).
+  Future<void> _comprarNovamente(Venda venda) async {
+    final pedidoId = venda.idVenda;
+    if (pedidoId == null) return;
+
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Comprar novamente'),
+        content: const Text(
+          'Isso soma os itens desse pedido ao carrinho atual do cliente, com o preço de hoje. Continuar?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Repetir pedido')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    try {
+      final resultado = await CarrinhoClienteRepository().repetirPedido(pedidoId);
+      if (!mounted) return;
+      final indisponiveis = resultado.indisponiveis;
+      final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Pedido repetido no carrinho'),
+          content: Text(
+            '${resultado.qtdAdicionados} ite${resultado.qtdAdicionados == 1 ? 'm' : 'ns'} '
+            'adicionado${resultado.qtdAdicionados == 1 ? '' : 's'} ao carrinho atual do cliente '
+            '(total: ${currencyFormat.format(resultado.carrinho.valorTotal)}).'
+            '${indisponiveis.isEmpty ? '' : '\n\nNão entraram (indisponíveis): ${indisponiveis.map((i) => i.produtoNome).join(', ')}.'}'
+            '\n\nContinue em "Carrinhos do dia" ou selecionando esse cliente numa nova venda.',
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Ok'))],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao repetir pedido: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
@@ -786,6 +835,13 @@ class _ComprasClienteTabState extends State<_ComprasClienteTab> {
                           '${rotuloCanalVenda(venda.canalVenda)}${cancelada ? ' • CANCELADA' : ''}',
                           style: cancelada ? TextStyle(color: Colors.grey[600]) : null,
                         ),
+                        trailing: venda.idVenda == null
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.replay),
+                                tooltip: 'Comprar novamente',
+                                onPressed: () => _comprarNovamente(venda),
+                              ),
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => VendaDetalhesScreen(venda: venda)),

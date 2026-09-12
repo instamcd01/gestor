@@ -115,7 +115,7 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
       final nome = c.nomeCliente ?? c.nomeWhatsapp;
       final textoAtual = _mensagemController.text;
       if (textoAtual.trim().isEmpty) {
-        _mensagemController.text = _textoInicial(nome: nome, perfil: c.perfil);
+        _mensagemController.text = _textoInicial(nome: nome, perfil: c.perfil, produtosPendentes: c.produtosPendentes);
         return;
       }
       final novaSaudacao = _saudacao(nome);
@@ -189,7 +189,11 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   /// ainda) em vez de manter o texto customizado anterior.
   void _restaurarSugestaoPadrao(ContatoCampanha c) {
     setState(() {
-      _mensagemController.text = _textoInicial(nome: c.nomeCliente ?? c.nomeWhatsapp, perfil: c.perfil);
+      _mensagemController.text = _textoInicial(
+        nome: c.nomeCliente ?? c.nomeWhatsapp,
+        perfil: c.perfil,
+        produtosPendentes: c.produtosPendentes,
+      );
     });
   }
 
@@ -217,11 +221,15 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
 
   /// Texto inicial pra um contato sem rascunho ainda: usa o padrão salvo
   /// pra essa campanha (`_mensagemPadraoAtual`) se existir, senão cai na
-  /// sugestão fixa por perfil que já existia antes.
-  String _textoInicial({required String? nome, required String? perfil}) {
+  /// sugestão fixa por perfil (ou, na campanha "Prontos pra recompra", na
+  /// sugestão citando os produtos vencidos desse contato).
+  String _textoInicial({required String? nome, required String? perfil, List<String> produtosPendentes = const []}) {
     final padrao = _mensagemPadraoAtual;
     if (padrao != null && padrao.trim().isNotEmpty) {
       return '${_saudacao(nome)} $padrao';
+    }
+    if (widget.campanha.origemSistema == 'prontos_recompra' && produtosPendentes.isNotEmpty) {
+      return _mensagemProntosRecompra(nome: nome, produtos: produtosPendentes);
     }
     return _mensagemPadrao(nome: nome, perfil: perfil);
   }
@@ -730,6 +738,29 @@ String _mensagemPadrao({required String? nome, required String? perfil}) {
   }
 }
 
+/// Sugestão pra campanha "Prontos pra recompra" — cita os produtos vencidos
+/// desse contato (só os nomes; os dias/ciclo ficam só na nota interna, ver
+/// [ContatoCampanha.mensagemPersonalizada]) e puxa pro "Comprar novamente".
+/// Lista até 3 produtos por nome; a partir do 4º fecha em "e mais N itens"
+/// pra não ficar longa demais.
+String _mensagemProntosRecompra({required String? nome, required List<String> produtos}) {
+  const maxNomeados = 3;
+  final nomeados = produtos.take(maxNomeados).toList();
+  final restantes = produtos.length - nomeados.length;
+  String listaProdutos;
+  if (nomeados.length == 1) {
+    listaProdutos = nomeados.first;
+  } else if (restantes <= 0) {
+    listaProdutos = '${nomeados.sublist(0, nomeados.length - 1).join(', ')} e ${nomeados.last}';
+  } else {
+    listaProdutos = '${nomeados.join(', ')} e mais $restantes item${restantes == 1 ? '' : 's'}';
+  }
+  final plural = produtos.length > 1;
+  return '${_saudacao(nome)} Aqui é da Delivery Pet 🐾 Notei que $listaProdutos do seu pet '
+      '${plural ? 'devem' : 'deve'} estar acabando. Quer que eu repita seu último pedido do jeitinho que ficou '
+      'da última vez?';
+}
+
 /// Painel fixo com a mensagem única (pedido do usuário: mais fácil ajustar
 /// o texto de uma vez do que campo por campo em cada um dos 269 contatos).
 /// Ao selecionar um contato na lista abaixo, o texto é reescrito com o
@@ -911,6 +942,22 @@ class _CartaoContatoState extends State<_CartaoContato> {
                       Text(
                         'Gastou ${_formatarReais(c.valorReferencia!)} no histórico',
                         style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    // Nota interna (motivo/detalhe de por que esse contato está na
+                    // campanha) — nunca vai na mensagem, é só referência pra quem
+                    // vai decidir se manda agora ou espera (ex: dias desde a
+                    // última compra x ciclo previsto, na campanha de recompra).
+                    if (c.mensagemPersonalizada != null && c.mensagemPersonalizada!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          c.mensagemPersonalizada!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ),
                   ],
                 ),

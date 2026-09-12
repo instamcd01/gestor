@@ -72,6 +72,46 @@ class CarrinhoCliente {
   }
 }
 
+/// Resultado de repetir UM item de um pedido antigo no carrinho atual
+/// (`repetir_pedido_app`/`repetir_pedido_whatsapp`) — [autorizado] = false
+/// quando o produto não pôde entrar (indisponível, descontinuado etc);
+/// [motivo] traz o porquê pra mostrar ao usuário, nunca trava os outros itens.
+class ItemRepetidoResultado {
+  final String produtoNome;
+  final bool autorizado;
+  final String? motivo;
+
+  ItemRepetidoResultado({required this.produtoNome, required this.autorizado, this.motivo});
+
+  factory ItemRepetidoResultado.fromJson(Map<String, dynamic> json) {
+    return ItemRepetidoResultado(
+      produtoNome: json['produto_nome']?.toString() ?? '',
+      autorizado: json['autorizado'] as bool? ?? false,
+      motivo: json['motivo'] as String?,
+    );
+  }
+}
+
+/// Resultado completo de "Comprar novamente" — os itens do pedido antigo
+/// (um a um, com o que deu certo/errado) mais o carrinho já atualizado.
+class RepetirPedidoResultado {
+  final List<ItemRepetidoResultado> itens;
+  final CarrinhoCliente carrinho;
+
+  RepetirPedidoResultado({required this.itens, required this.carrinho});
+
+  int get qtdAdicionados => itens.where((i) => i.autorizado).length;
+  List<ItemRepetidoResultado> get indisponiveis => itens.where((i) => !i.autorizado).toList();
+
+  factory RepetirPedidoResultado.fromJson(Map<String, dynamic> json) {
+    final itensJson = (json['itens'] as List?) ?? [];
+    return RepetirPedidoResultado(
+      itens: itensJson.map((i) => ItemRepetidoResultado.fromJson(i as Map<String, dynamic>)).toList(),
+      carrinho: CarrinhoCliente.fromJson(json),
+    );
+  }
+}
+
 /// Linha da lista "Carrinhos do dia" (`VendasScreen`) — resumo de todo
 /// carrinho ativo/não vazio de hoje, sem precisar carregar os itens de
 /// cada um só pra listar (isso só acontece quando o usuário abre um).

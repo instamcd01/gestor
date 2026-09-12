@@ -64,4 +64,13 @@ class CarrinhoClienteRepository {
     });
     return CarrinhoCliente.fromJson(data as Map<String, dynamic>);
   }
+
+  /// "Comprar novamente": soma os itens de um pedido antigo ao carrinho
+  /// ATIVO do cliente (preço sempre o atual da loja) — não substitui o que
+  /// já está no carrinho. Item indisponível/descontinuado não trava o
+  /// resto, só aparece marcado em [RepetirPedidoResultado.indisponiveis].
+  Future<RepetirPedidoResultado> repetirPedido(String pedidoId) async {
+    final data = await supabase.rpc('repetir_pedido_app', params: {'p_pedido_id': pedidoId});
+    return RepetirPedidoResultado.fromJson(data as Map<String, dynamic>);
+  }
 }
