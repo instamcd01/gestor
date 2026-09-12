@@ -104,17 +104,28 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     await Future.wait([_futuroMetricas, _futuroContatos]);
   }
 
+  /// Campanhas onde a mensagem cita produto(s) específicos do contato —
+  /// nelas NUNCA dá pra reaproveitar o texto de um contato pro outro (cada
+  /// um tem produto diferente), e "salvar como padrão" fica desabilitado
+  /// (achado real 12/09: usuário salvou como padrão com um contato
+  /// selecionado e todo mundo passou a ver o produto DAQUELE contato).
+  bool get _personalizaPorProduto =>
+      widget.campanha.origemSistema == 'prontos_recompra' || widget.campanha.origemSistema == 'segunda_chance_recompra';
+
   /// Troca de contato: se ainda não tem nada digitado, usa a sugestão
   /// completa (com o tom certo pro perfil). Se já tem um texto (editado ou
-  /// não), só troca o nome na saudação inicial e preserva o resto — pedido
-  /// do usuário: editar o corpo da mensagem uma vez e não perder o ajuste
-  /// ao navegar entre contatos, só o nome deve mudar sozinho.
+  /// não) E a campanha não é personalizada por produto, só troca o nome na
+  /// saudação inicial e preserva o resto — pedido do usuário: editar o
+  /// corpo da mensagem uma vez e não perder o ajuste ao navegar entre
+  /// contatos, só o nome deve mudar sozinho. Em campanha personalizada por
+  /// produto isso não se aplica: cada contato SEMPRE gera de novo com o(s)
+  /// produto(s) certo(s) dele, nunca preserva o texto do contato anterior.
   void _selecionarContato(ContatoCampanha c) {
     setState(() {
       _contatoSelecionadoId = c.contatoId;
       final nome = c.nomeCliente ?? c.nomeWhatsapp;
       final textoAtual = _mensagemController.text;
-      if (textoAtual.trim().isEmpty) {
+      if (textoAtual.trim().isEmpty || _personalizaPorProduto) {
         _mensagemController.text = _textoInicial(nome: nome, perfil: c.perfil, produtosPendentes: c.produtosPendentes);
         return;
       }
@@ -524,7 +535,7 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
                         onEnviar: selecionado == null ? null : () => _abrirWhatsApp(selecionado!.telefone),
                         onRestaurarPadrao:
                             selecionado == null ? null : () => _restaurarSugestaoPadrao(selecionado!),
-                        onSalvarPadrao: _salvarComoPadrao,
+                        onSalvarPadrao: _personalizaPorProduto ? null : _salvarComoPadrao,
                       ),
                       const SizedBox(height: 16),
                       Row(
@@ -772,7 +783,7 @@ class _PainelMensagem extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback? onEnviar;
   final VoidCallback? onRestaurarPadrao;
-  final VoidCallback onSalvarPadrao;
+  final VoidCallback? onSalvarPadrao;
   const _PainelMensagem({
     required this.contato,
     required this.controller,
@@ -824,15 +835,24 @@ class _PainelMensagem extends StatelessWidget {
                 filled: true,
               ),
             ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: onSalvarPadrao,
-                icon: const Icon(Icons.bookmark_outline, size: 16),
-                label: const Text('Salvar como padrão da campanha', style: TextStyle(fontSize: 12)),
-                style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+            if (onSalvarPadrao != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: onSalvarPadrao,
+                  icon: const Icon(Icons.bookmark_outline, size: 16),
+                  label: const Text('Salvar como padrão da campanha', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                ),
+              )
+            else
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 2),
+                child: Text(
+                  'Mensagem gerada por cliente (produto vencido) — não dá pra salvar um texto único pra todo mundo aqui.',
+                  style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic),
+                ),
               ),
-            ),
             const SizedBox(height: 4),
             SizedBox(
               width: double.infinity,
