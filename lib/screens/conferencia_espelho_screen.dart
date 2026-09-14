@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../config/supabase_config.dart';
 import '../models/pedido_compra.dart';
@@ -15,8 +16,51 @@ import '../providers/produto_provider.dart';
 import '../repositories/pedido_compra_repository.dart';
 import '../utils/cotacao_pdf_parser.dart';
 import '../utils/produto_validators.dart';
+import '../utils/telefone_utils.dart';
 import '../widgets/busca_produto_sheet.dart';
 import 'cadastro_produto_screen.dart';
+
+/// O que pedir pro fornecedor sobre um item específico, na mensagem de
+/// ajuste (ver `_enviarMensagemAjuste`) — uma ação por item, nunca mais de
+/// uma ao mesmo tempo (não faz sentido pedir mais quantidade E remover o
+/// mesmo item).
+enum AcaoMensagemFornecedor {
+  nenhuma,
+  reportarDivergencia,
+  pedirMaisQuantidade,
+  perguntarDescontoVolume,
+  removerDoPedido,
+}
+
+extension on AcaoMensagemFornecedor {
+  String get rotulo {
+    switch (this) {
+      case AcaoMensagemFornecedor.nenhuma:
+        return 'Nenhuma ação';
+      case AcaoMensagemFornecedor.reportarDivergencia:
+        return 'Reportar divergência';
+      case AcaoMensagemFornecedor.pedirMaisQuantidade:
+        return 'Pedir mais quantidade';
+      case AcaoMensagemFornecedor.perguntarDescontoVolume:
+        return 'Perguntar desconto por volume';
+      case AcaoMensagemFornecedor.removerDoPedido:
+        return 'Remover do pedido';
+    }
+  }
+}
+
+/// Item novo pra incluir na mensagem de ajuste, digitado livre — pra
+/// produto que o fornecedor tem mas ainda nem existe no catálogo (não dá
+/// pra vincular por id porque não existe id nenhum ainda).
+class _ItemNovoMensagem {
+  final TextEditingController nomeController = TextEditingController();
+  final TextEditingController quantidadeController = TextEditingController();
+
+  void dispose() {
+    nomeController.dispose();
+    quantidadeController.dispose();
+  }
+}
 
 /// Por que um item aparece destacado na conferência — determina em qual
 /// seção da tela ele entra e a cor/explicação mostrada, pra nunca deixar
@@ -47,6 +91,14 @@ class _ItemConferencia {
   /// só um aviso visual, não impede salvar (pode ser item que o
   /// fornecedor vai mandar depois, ou já foi conferido antes).
   bool foraDaCotacaoLida = false;
+
+  /// O que incluir sobre este item na mensagem de ajuste pro fornecedor
+  /// (ver `_enviarMensagemAjuste`) — escolhido pelo usuário, exceto
+  /// `reportarDivergencia` que já vem pré-marcado quando a leitura
+  /// automática do PDF encontra preço/quantidade diferente (usuário pode
+  /// desmarcar se não quiser perguntar sobre aquele item específico).
+  AcaoMensagemFornecedor acaoMensagem = AcaoMensagemFornecedor.nenhuma;
+  final TextEditingController quantidadeDesejadaController = TextEditingController();
 
   _ItemConferencia(this.original)
       : confirmadoController = TextEditingController(
@@ -88,6 +140,7 @@ class _ItemConferencia {
   void dispose() {
     confirmadoController.dispose();
     custoController.dispose();
+    quantidadeDesejadaController.dispose();
   }
 }
 
@@ -111,6 +164,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   List<_ItemConferencia> _itens = [];
   final List<AnexoEspelho> _anexos = [];
   final List<ItemCotacaoExtraido> _naoCadastrados = [];
+  final List<_ItemNovoMensagem> _itensNovosMensagem = [];
   bool _carregando = true;
   bool _enviandoAnexo = false;
   bool _salvando = false;
@@ -124,6 +178,9 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   @override
   void dispose() {
     for (final item in _itens) {
+      item.dispose();
+    }
+    for (final item in _itensNovosMensagem) {
       item.dispose();
     }
     super.dispose();
@@ -281,6 +338,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         item.foraDaCotacaoLida = false;
         item.confirmadoController.text = lido.quantidade.toString();
         item.custoController.text = ProdutoValidators.formatarMoeda(lido.custoUnitario);
+        if (item.divergente) item.acaoMensagem = AcaoMensagemFornecedor.reportarDivergencia;
         atualizados++;
       }
 
@@ -362,6 +420,102 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     });
   }
 
+  /// Monta a mensagem de WhatsApp com os ajustes marcados (ver
+  /// `AcaoMensagemFornecedor`) e os itens novos digitados livres, e abre
+  /// pro usuário revisar/enviar — nunca envia sozinho, só prepara o texto
+  /// (mesmo padrão de `_abrirWhatsApp` em `pedido_compra_detalhe_screen.dart`).
+  Future<void> _enviarMensagemAjuste() async {
+    final pedido = _pedido;
+    if (pedido == null) return;
+
+    final remover = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.removerDoPedido).toList();
+    final maisQuantidade = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.pedirMaisQuantidade).toList();
+    final desconto = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.perguntarDescontoVolume).toList();
+    final divergencia = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.reportarDivergencia).toList();
+    final novos = _itensNovosMensagem.where((i) => i.nomeController.text.trim().isNotEmpty).toList();
+
+    if (remover.isEmpty && maisQuantidade.isEmpty && desconto.isEmpty && divergencia.isEmpty && novos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Marque uma ação em pelo menos um item (ou adicione um item novo) antes de gerar a mensagem.'),
+      ));
+      return;
+    }
+
+    if (pedido.fornecedor.telefoneParaPedido.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este fornecedor não tem WhatsApp/telefone cadastrado')),
+      );
+      return;
+    }
+
+    final numero = pedido.numeroSequencial != null ? '#${pedido.numeroSequencial}' : '';
+    final buffer = StringBuffer('Oi! Sobre o pedido $numero, preciso de alguns ajustes:\n');
+
+    if (remover.isNotEmpty) {
+      buffer.writeln('\n🗑️ Remover do pedido:');
+      for (final i in remover) {
+        buffer.writeln('• ${i.original.produtoNome}');
+      }
+    }
+    if (maisQuantidade.isNotEmpty) {
+      buffer.writeln('\n📈 Aumentar quantidade:');
+      for (final i in maisQuantidade) {
+        final desejada = i.quantidadeDesejadaController.text.trim();
+        buffer.writeln(
+          '• ${i.original.produtoNome}: de ${i.original.quantidadePedida}un pra ${desejada.isEmpty ? '?' : desejada}un',
+        );
+      }
+    }
+    if (desconto.isNotEmpty) {
+      buffer.writeln('\n💰 Consulta de preço por volume:');
+      for (final i in desconto) {
+        buffer.writeln(
+          '• ${i.original.produtoNome}: hoje R\$ ${i.original.custoUnitario.toStringAsFixed(2)} '
+          'levando ${i.original.quantidadePedida}un — tem preço melhor levando mais?',
+        );
+      }
+    }
+    if (divergencia.isNotEmpty) {
+      buffer.writeln('\n⚠️ Preço ou quantidade veio diferente do combinado:');
+      for (final i in divergencia) {
+        final partes = <String>[];
+        if (i.quantidadeMudou) partes.add('${i.original.quantidadePedida}un → ${i.quantidadeConfirmadaAtual}un');
+        if (i.precoMudou) {
+          partes.add('R\$ ${i.original.custoUnitario.toStringAsFixed(2)} → R\$ ${i.custoConfirmadoAtual.toStringAsFixed(2)}');
+        }
+        buffer.writeln('• ${i.original.produtoNome}: ${partes.join(', ')}, pode confirmar?');
+      }
+    }
+    if (novos.isNotEmpty) {
+      buffer.writeln('\n➕ Também gostaria de incluir:');
+      for (final i in novos) {
+        final qtd = i.quantidadeController.text.trim();
+        buffer.writeln('• ${i.nomeController.text.trim()}${qtd.isEmpty ? '' : ' — ${qtd}un'}');
+      }
+    }
+    buffer.write('\nPode me ajudar com isso? Obrigado!');
+
+    final texto = Uri.encodeComponent(buffer.toString());
+    final url = Uri.parse('${linkWhatsApp(pedido.fornecedor.telefoneParaPedido)}?text=$texto');
+    try {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível abrir o WhatsApp: $e')));
+    }
+  }
+
+  void _adicionarItemNovoMensagem() {
+    setState(() => _itensNovosMensagem.add(_ItemNovoMensagem()));
+  }
+
+  void _removerItemNovoMensagem(_ItemNovoMensagem item) {
+    setState(() {
+      _itensNovosMensagem.remove(item);
+      item.dispose();
+    });
+  }
+
   Future<void> _marcarSubstituto(_ItemConferencia item) async {
     final produtos = context.read<ProdutoProvider>().produtos.where((p) => p.ativo && p.id != null).toList()
       ..sort((a, b) => a.nome.compareTo(b.nome));
@@ -421,29 +575,27 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     }
   }
 
+  /// Cada seção é um accordion — pedido grande (muitos itens sem
+  /// divergência, por exemplo) não obriga rolar a tela inteira pra ver as
+  /// seções que realmente precisam de atenção.
   Widget _secao({
     required String titulo,
     required String explicacao,
     required Color cor,
     required List<_ItemConferencia> itens,
+    bool expandidoPorPadrao = true,
   }) {
     if (itens.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: expandidoPorPadrao,
+        leading: Container(width: 10, height: 10, decoration: BoxDecoration(color: cor, shape: BoxShape.circle)),
+        title: Text('$titulo (${itens.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(explicacao, style: const TextStyle(fontSize: 12)),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
-          Row(
-            children: [
-              Container(width: 10, height: 10, decoration: BoxDecoration(color: cor, shape: BoxShape.circle)),
-              const SizedBox(width: 6),
-              Text('$titulo (${itens.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 16, top: 2, bottom: 8),
-            child: Text(explicacao, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          ),
           for (final item in itens) _LinhaConferencia(item: item, onMarcarSubstituto: () => _marcarSubstituto(item)),
         ],
       ),
@@ -518,40 +670,41 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                   cor: colorScheme.secondary,
                   itens: porCategoria[CategoriaConferencia.naoEstavaNoPedido] ?? [],
                 ),
-                if (_naoCadastrados.isNotEmpty) ...[
-                  Row(
-                    children: [
-                      Container(width: 10, height: 10, decoration: BoxDecoration(color: colorScheme.primary, shape: BoxShape.circle)),
-                      const SizedBox(width: 6),
-                      Text('Produtos da cotação sem cadastro (${_naoCadastrados.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 16, top: 2, bottom: 8),
-                    child: Text(
-                      'O fornecedor cotou esses itens, mas nenhum produto no catálogo tem esse código de barras — cadastre pra poder incluir no pedido.',
-                      style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
-                    ),
-                  ),
-                  for (final lido in _naoCadastrados)
-                    Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        title: Text(lido.nome),
-                        subtitle: Text('EAN: ${lido.codigoBarras} • ${lido.quantidade}un a R\$ ${lido.custoUnitario.toStringAsFixed(2)}'),
-                        trailing: FilledButton.tonal(
-                          onPressed: () => _cadastrarProdutoNaoCatalogado(lido),
-                          child: const Text('Cadastrar'),
-                        ),
+                if (_naoCadastrados.isNotEmpty)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    clipBehavior: Clip.antiAlias,
+                    child: ExpansionTile(
+                      initiallyExpanded: true,
+                      leading: Container(width: 10, height: 10, decoration: BoxDecoration(color: colorScheme.primary, shape: BoxShape.circle)),
+                      title: Text('Produtos da cotação sem cadastro (${_naoCadastrados.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: const Text(
+                        'O fornecedor cotou esses itens, mas nenhum produto no catálogo tem esse código de barras.',
+                        style: TextStyle(fontSize: 12),
                       ),
+                      childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      children: [
+                        for (final lido in _naoCadastrados)
+                          Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: ListTile(
+                              title: Text(lido.nome),
+                              subtitle: Text('EAN: ${lido.codigoBarras} • ${lido.quantidade}un a R\$ ${lido.custoUnitario.toStringAsFixed(2)}'),
+                              trailing: FilledButton.tonal(
+                                onPressed: () => _cadastrarProdutoNaoCatalogado(lido),
+                                child: const Text('Cadastrar'),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                  const SizedBox(height: 8),
-                ],
+                  ),
                 _secao(
                   titulo: 'Sem divergência',
                   explicacao: 'Bateu certinho com o que foi pedido.',
                   cor: colorScheme.outline,
                   itens: porCategoria[CategoriaConferencia.semDivergencia] ?? [],
+                  expandidoPorPadrao: false,
                 ),
                 TextButton.icon(
                   onPressed: _adicionarItemNaoPedido,
@@ -559,6 +712,59 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                   label: const Text('Registrar item que chegou sem ter sido pedido'),
                 ),
                 const SizedBox(height: 24),
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: ExpansionTile(
+                    title: const Text('Pedir ajuste ao fornecedor', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text(
+                      'Marque uma ação nos itens acima (ou adicione item novo) e gere a mensagem de WhatsApp.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    children: [
+                      for (final novo in _itensNovosMensagem)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: TextField(
+                                  controller: novo.nomeController,
+                                  decoration: const InputDecoration(labelText: 'Produto novo (nome)', isDense: true),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: novo.quantidadeController,
+                                  decoration: const InputDecoration(labelText: 'Qtd.', isDense: true),
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                onPressed: () => _removerItemNovoMensagem(novo),
+                              ),
+                            ],
+                          ),
+                        ),
+                      TextButton.icon(
+                        onPressed: _adicionarItemNovoMensagem,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Adicionar item novo (não cadastrado ainda)'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _enviarMensagemAjuste,
+                        icon: const Icon(Icons.chat_outlined),
+                        label: const Text('Gerar mensagem de ajuste (WhatsApp)'),
+                        style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: _salvando ? null : _salvarConferencia,
                   icon: _salvando
@@ -669,6 +875,25 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
                       child: const Text('Veio outro produto?'),
                     ),
                   ),
+            const Divider(height: 16),
+            DropdownButtonFormField<AcaoMensagemFornecedor>(
+              initialValue: item.acaoMensagem,
+              isDense: true,
+              decoration: const InputDecoration(labelText: 'Pedir ajuste ao fornecedor sobre este item', isDense: true),
+              items: [
+                for (final acao in AcaoMensagemFornecedor.values) DropdownMenuItem(value: acao, child: Text(acao.rotulo)),
+              ],
+              onChanged: (acao) => setState(() => item.acaoMensagem = acao ?? AcaoMensagemFornecedor.nenhuma),
+            ),
+            if (item.acaoMensagem == AcaoMensagemFornecedor.pedirMaisQuantidade)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: TextField(
+                  controller: item.quantidadeDesejadaController,
+                  decoration: const InputDecoration(labelText: 'Nova quantidade desejada', isDense: true),
+                  keyboardType: TextInputType.number,
+                ),
+              ),
           ],
         ),
       ),
