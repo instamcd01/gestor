@@ -274,12 +274,27 @@ class _PedidoCompraDetalheScreenState extends State<PedidoCompraDetalheScreen> {
                     ),
                   ],
                   const SizedBox(height: 24),
-                  if (pedido.status == StatusPedidoCompra.rascunho) _SecaoEnvio(
-                    onWhatsApp: _abrirWhatsApp,
-                    onCompartilhar: _compartilharImagem,
-                    onMarcarEnviado: _marcarComoEnviado,
-                    compartilhando: _compartilhando,
-                  ),
+                  if (pedido.status == StatusPedidoCompra.rascunho) ...[
+                    _SecaoEnvio(
+                      onWhatsApp: _abrirWhatsApp,
+                      onCompartilhar: _compartilharImagem,
+                      onMarcarEnviado: _marcarComoEnviado,
+                      compartilhando: _compartilhando,
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _irParaConferencia,
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: const Text('Já tenho uma cotação — ler PDF do fornecedor'),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Pra conferir uma cotação antes de decidir enviar o pedido formal — não precisa marcar como enviado primeiro.',
+                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
                   if (pedido.status == StatusPedidoCompra.enviado)
                     Card(
                       color: Theme.of(context).colorScheme.primaryContainer,

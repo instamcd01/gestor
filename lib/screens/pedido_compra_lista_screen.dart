@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/pedido_compra.dart';
 import '../providers/pedido_compra_provider.dart';
 import '../widgets/estado_erro_lista.dart';
+import 'novo_pedido_manual_screen.dart';
 import 'pedido_compra_detalhe_screen.dart';
 import 'sugestao_compra_screen.dart';
 
@@ -42,6 +43,11 @@ class _PedidoCompraListaScreenState extends State<PedidoCompraListaScreen> {
       appBar: AppBar(
         title: const Text('Pedidos de Compra'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_note_outlined),
+            tooltip: 'Novo pedido manual',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NovoPedidoManualScreen())),
+          ),
           IconButton(
             icon: const Icon(Icons.auto_awesome_outlined),
             tooltip: 'Sugestão de Compra',
@@ -87,7 +93,7 @@ class _PedidoCompraListaScreenState extends State<PedidoCompraListaScreen> {
                       Text('Nenhum pedido de compra ainda', style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 4),
                       Text(
-                        'Toque no ícone acima pra ver a sugestão automática de compra.',
+                        'Toque nos ícones acima pra ver a sugestão automática de compra ou montar um pedido manual.',
                         style: TextStyle(color: colorScheme.onSurfaceVariant),
                         textAlign: TextAlign.center,
                       ),
