@@ -400,7 +400,11 @@ class _CabecalhoPedido extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text('Total: R\$ ${pedido.valorTotal.toStringAsFixed(2)}'),
+            Text(
+              pedido.valorTotalConfirmado != null
+                  ? 'Total confirmado: R\$ ${pedido.valorTotalConfirmado!.toStringAsFixed(2)}'
+                  : 'Total: R\$ ${pedido.valorTotal.toStringAsFixed(2)}',
+            ),
             if (pedido.fornecedor.valorMinimoPedido != null)
               Text(
                 pedido.valorTotal >= pedido.fornecedor.valorMinimoPedido!
@@ -440,6 +444,20 @@ class _LinhaItemPedido extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+
+    // Depois da Conferência do Espelho, o que vale é o CONFIRMADO (o que o
+    // fornecedor realmente vai mandar) — não o pedido original. Antes
+    // disso `quantidadeConfirmada`/`custoConfirmado` são null (rascunho/
+    // recém-enviado), e a linha mostra o pedido original normalmente, sem
+    // nenhuma diferença visual.
+    final quantidadeExibida = item.quantidadeConfirmada ?? item.quantidadePedida;
+    final custoExibido = item.custoConfirmado ?? item.custoUnitario;
+    final nomeExibido = item.produtoSubstitutoNome ?? item.produtoNome;
+    final subtotalExibido = quantidadeExibida * custoExibido;
+    final conferido = item.quantidadeConfirmada != null;
+    final quantidadeMudou = conferido && quantidadeExibida != item.quantidadePedida;
+    final custoMudou = conferido && custoExibido != item.custoUnitario;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       child: Padding(
@@ -451,8 +469,33 @@ class _LinhaItemPedido extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.produtoNome),
-                  Text('R\$${item.custoUnitario.toStringAsFixed(2)}/un', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                  Text(nomeExibido),
+                  if (item.produtoSubstitutoNome != null)
+                    Text(
+                      'Pedido originalmente: ${item.produtoNome}',
+                      style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                    ),
+                  Row(
+                    children: [
+                      if (custoMudou)
+                        Text(
+                          'R\$${item.custoUnitario.toStringAsFixed(2)}/un  ',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.onSurfaceVariant,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      Text(
+                        'R\$${custoExibido.toStringAsFixed(2)}/un',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: custoMudou ? colorScheme.error : colorScheme.onSurfaceVariant,
+                          fontWeight: custoMudou ? FontWeight.bold : null,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -467,11 +510,32 @@ class _LinhaItemPedido extends StatelessWidget {
                       decoration: const InputDecoration(isDense: true),
                       onChanged: (_) => onMudou(),
                     )
-                  : Text('${item.quantidadePedida}un', textAlign: TextAlign.center),
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (quantidadeMudou)
+                          Text(
+                            '${item.quantidadePedida}un',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colorScheme.onSurfaceVariant,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                        Text(
+                          '${quantidadeExibida}un',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: quantidadeMudou ? colorScheme.error : null,
+                            fontWeight: quantidadeMudou ? FontWeight.bold : null,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
             SizedBox(
               width: 70,
-              child: Text('R\$${item.subtotalPedido.toStringAsFixed(2)}', textAlign: TextAlign.right),
+              child: Text('R\$${subtotalExibido.toStringAsFixed(2)}', textAlign: TextAlign.right),
             ),
             if (onRemover != null)
               IconButton(icon: const Icon(Icons.close, size: 18), onPressed: onRemover),
@@ -585,14 +649,6 @@ class _ResumoConferencia extends StatelessWidget {
                   ),
                 ),
             ],
-            if (pedido.valorTotalConfirmado != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'Total confirmado: R\$ ${pedido.valorTotalConfirmado!.toStringAsFixed(2)}',
-                  style: TextStyle(color: corTexto),
-                ),
-              ),
           ],
         ),
       ),
