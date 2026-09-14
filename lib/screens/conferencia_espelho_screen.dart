@@ -62,6 +62,63 @@ class _ItemNovoMensagem {
   }
 }
 
+/// Item da cotação sem produto correspondente no catálogo (ver seção
+/// "Produtos da cotação sem cadastro") — mesma mecânica de ação pra
+/// mensagem que `_ItemConferencia` usa, só que sem `ItemPedidoCompra` por
+/// trás (não tem produto_id nenhum ainda, por isso não é um item real do
+/// pedido — só existe pra decidir cadastrar/ignorar/perguntar).
+class _ItemNaoCadastrado {
+  final ItemCotacaoExtraido lido;
+  AcaoMensagemFornecedor acaoMensagem = AcaoMensagemFornecedor.nenhuma;
+  final TextEditingController quantidadeDesejadaController = TextEditingController();
+
+  _ItemNaoCadastrado(this.lido);
+
+  void dispose() => quantidadeDesejadaController.dispose();
+}
+
+/// Seletor de ação reaproveitado tanto pelos itens do pedido
+/// (`_LinhaConferencia`) quanto pelos produtos da cotação sem cadastro —
+/// mesma interação nos dois lugares, pedido explícito do usuário.
+class _SeletorAcaoMensagem extends StatelessWidget {
+  final AcaoMensagemFornecedor valor;
+  final ValueChanged<AcaoMensagemFornecedor> onChanged;
+  final TextEditingController quantidadeDesejadaController;
+
+  const _SeletorAcaoMensagem({
+    required this.valor,
+    required this.onChanged,
+    required this.quantidadeDesejadaController,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<AcaoMensagemFornecedor>(
+          initialValue: valor,
+          isDense: true,
+          decoration: const InputDecoration(labelText: 'Pedir ajuste ao fornecedor sobre este item', isDense: true),
+          items: [
+            for (final acao in AcaoMensagemFornecedor.values) DropdownMenuItem(value: acao, child: Text(acao.rotulo)),
+          ],
+          onChanged: (acao) => onChanged(acao ?? AcaoMensagemFornecedor.nenhuma),
+        ),
+        if (valor == AcaoMensagemFornecedor.ajustarQuantidade)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: TextField(
+              controller: quantidadeDesejadaController,
+              decoration: const InputDecoration(labelText: 'Nova quantidade desejada', isDense: true),
+              keyboardType: TextInputType.number,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Por que um item aparece destacado na conferência — determina em qual
 /// seção da tela ele entra e a cor/explicação mostrada, pra nunca deixar
 /// um card vermelho sem dizer o motivo.
@@ -169,8 +226,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   PedidoCompra? _pedido;
   List<_ItemConferencia> _itens = [];
   final List<AnexoEspelho> _anexos = [];
-  final List<ItemCotacaoExtraido> _naoCadastrados = [];
-  final Set<String> _naoCadastradosParaPerguntar = {};
+  final List<_ItemNaoCadastrado> _naoCadastrados = [];
   final List<_ItemNovoMensagem> _itensNovosMensagem = [];
   bool _carregando = true;
   bool _enviandoAnexo = false;
@@ -188,6 +244,9 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
       item.dispose();
     }
     for (final item in _itensNovosMensagem) {
+      item.dispose();
+    }
+    for (final item in _naoCadastrados) {
       item.dispose();
     }
     super.dispose();
@@ -349,8 +408,10 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         atualizados++;
       }
 
+      for (final item in _naoCadastrados) {
+        item.dispose();
+      }
       _naoCadastrados.clear();
-      _naoCadastradosParaPerguntar.clear();
       for (final lido in eansRestantes.values) {
         final produto = produtoPorEan(lido.codigoBarras);
         if (produto == null || produto.id == null) {
@@ -359,7 +420,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
           // número na notificação, sem dizer QUAL produto era. Agora entra
           // numa lista própria (ver seção "Produtos da cotação sem
           // cadastro" na tela) pra decidir se cadastra ou ignora.
-          _naoCadastrados.add(lido);
+          _naoCadastrados.add(_ItemNaoCadastrado(lido));
           continue;
         }
         final novoItem = _ItemConferencia(ItemPedidoCompra(
@@ -393,7 +454,8 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   /// algo que o catálogo ainda não conhece). Ao salvar, o produto criado já
   /// entra como item novo na conferência (mesmo tratamento de "veio sem
   /// ter sido pedido"), sem precisar sair e voltar pra achar ele de novo.
-  Future<void> _cadastrarProdutoNaoCatalogado(ItemCotacaoExtraido lido) async {
+  Future<void> _cadastrarProdutoNaoCatalogado(_ItemNaoCadastrado item) async {
+    final lido = item.lido;
     final produtoCriado = await Navigator.of(context).push<Produto>(MaterialPageRoute(
       builder: (_) => CadastroProdutoScreen(
         retornarProdutoCriado: true,
@@ -413,7 +475,8 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     if (produtoCriado == null || produtoCriado.id == null || !mounted) return;
 
     setState(() {
-      _naoCadastrados.remove(lido);
+      _naoCadastrados.remove(item);
+      item.dispose();
       _itens.add(_ItemConferencia(ItemPedidoCompra(
         produtoId: produtoCriado.id!,
         produtoNome: produtoCriado.nome,
@@ -431,10 +494,10 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   /// Descarta um item da cotação sem cadastro — não cadastra, não entra na
   /// mensagem, só some da lista (ex: fornecedor cotou algo que não
   /// interessa comprar).
-  void _ignorarNaoCadastrado(ItemCotacaoExtraido lido) {
+  void _ignorarNaoCadastrado(_ItemNaoCadastrado item) {
     setState(() {
-      _naoCadastrados.remove(lido);
-      _naoCadastradosParaPerguntar.remove(lido.codigoBarras);
+      _naoCadastrados.remove(item);
+      item.dispose();
     });
   }
 
@@ -446,19 +509,66 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     final pedido = _pedido;
     if (pedido == null) return;
 
-    final remover = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.removerDoPedido).toList();
-    final ajustarQtd = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.ajustarQuantidade).toList();
-    final desconto = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.perguntarDescontoVolume).toList();
-    final divergencia = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.reportarDivergencia).toList();
-    final naoCadastradosPerguntar = _naoCadastrados.where((l) => _naoCadastradosParaPerguntar.contains(l.codigoBarras)).toList();
+    // Junta os itens do pedido e os "sem cadastro" — mesma ação, mesmo
+    // seletor (`_SeletorAcaoMensagem`), só a frase muda conforme a origem
+    // (pedido real tem quantidade/custo ORIGINAL pra comparar; item sem
+    // cadastro só tem o que veio cotado, sem "original" próprio).
+    final remover = <String>[];
+    final ajustarQtd = <String>[];
+    final desconto = <String>[];
+    final divergencia = <String>[];
+
+    for (final i in _itens) {
+      switch (i.acaoMensagem) {
+        case AcaoMensagemFornecedor.removerDoPedido:
+          remover.add('• ${i.original.produtoNome}');
+        case AcaoMensagemFornecedor.ajustarQuantidade:
+          final desejada = i.quantidadeDesejadaController.text.trim();
+          ajustarQtd.add('• ${i.original.produtoNome}: de ${i.original.quantidadePedida}un pra ${desejada.isEmpty ? '?' : desejada}un');
+        case AcaoMensagemFornecedor.perguntarDescontoVolume:
+          desconto.add(
+            '• ${i.original.produtoNome}: hoje R\$ ${i.original.custoUnitario.toStringAsFixed(2)} '
+            'levando ${i.original.quantidadePedida}un — tem preço melhor levando mais?',
+          );
+        case AcaoMensagemFornecedor.reportarDivergencia:
+          final partes = <String>[];
+          if (i.quantidadeMudou) partes.add('${i.original.quantidadePedida}un → ${i.quantidadeConfirmadaAtual}un');
+          if (i.precoMudou) {
+            partes.add('R\$ ${i.original.custoUnitario.toStringAsFixed(2)} → R\$ ${i.custoConfirmadoAtual.toStringAsFixed(2)}');
+          }
+          final detalhe = partes.isEmpty ? 'pode confirmar os dados desse item?' : '${partes.join(', ')}, pode confirmar?';
+          divergencia.add('• ${i.original.produtoNome}: $detalhe');
+        case AcaoMensagemFornecedor.nenhuma:
+          break;
+      }
+    }
+
+    for (final n in _naoCadastrados) {
+      final lido = n.lido;
+      switch (n.acaoMensagem) {
+        case AcaoMensagemFornecedor.removerDoPedido:
+          remover.add('• ${lido.nome} (não vou incluir esse item)');
+        case AcaoMensagemFornecedor.ajustarQuantidade:
+          final desejada = n.quantidadeDesejadaController.text.trim();
+          ajustarQtd.add('• ${lido.nome}: de ${lido.quantidade}un cotados pra ${desejada.isEmpty ? '?' : desejada}un');
+        case AcaoMensagemFornecedor.perguntarDescontoVolume:
+          desconto.add(
+            '• ${lido.nome}: hoje R\$ ${lido.custoUnitario.toStringAsFixed(2)} '
+            'levando ${lido.quantidade}un — tem preço melhor levando mais?',
+          );
+        case AcaoMensagemFornecedor.reportarDivergencia:
+          divergencia.add(
+            '• ${lido.nome} — ${lido.quantidade}un a R\$ ${lido.custoUnitario.toStringAsFixed(2)} '
+            '(EAN ${lido.codigoBarras}), ainda não tenho cadastrado — pode confirmar esse item?',
+          );
+        case AcaoMensagemFornecedor.nenhuma:
+          break;
+      }
+    }
+
     final novos = _itensNovosMensagem.where((i) => i.nomeController.text.trim().isNotEmpty).toList();
 
-    if (remover.isEmpty &&
-        ajustarQtd.isEmpty &&
-        desconto.isEmpty &&
-        divergencia.isEmpty &&
-        naoCadastradosPerguntar.isEmpty &&
-        novos.isEmpty) {
+    if (remover.isEmpty && ajustarQtd.isEmpty && desconto.isEmpty && divergencia.isEmpty && novos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Marque uma ação em pelo menos um item (ou adicione um item novo) antes de gerar a mensagem.'),
       ));
@@ -476,45 +586,20 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     final buffer = StringBuffer('Oi! Sobre o pedido $numero, preciso de alguns ajustes:\n');
 
     if (remover.isNotEmpty) {
-      buffer.writeln('\n🗑️ Remover do pedido:');
-      for (final i in remover) {
-        buffer.writeln('• ${i.original.produtoNome}');
-      }
+      buffer.writeln('\n🗑️ Remover / não incluir:');
+      remover.forEach(buffer.writeln);
     }
     if (ajustarQtd.isNotEmpty) {
       buffer.writeln('\n🔄 Ajustar quantidade:');
-      for (final i in ajustarQtd) {
-        final desejada = i.quantidadeDesejadaController.text.trim();
-        buffer.writeln(
-          '• ${i.original.produtoNome}: de ${i.original.quantidadePedida}un pra ${desejada.isEmpty ? '?' : desejada}un',
-        );
-      }
+      ajustarQtd.forEach(buffer.writeln);
     }
     if (desconto.isNotEmpty) {
       buffer.writeln('\n💰 Consulta de preço por volume:');
-      for (final i in desconto) {
-        buffer.writeln(
-          '• ${i.original.produtoNome}: hoje R\$ ${i.original.custoUnitario.toStringAsFixed(2)} '
-          'levando ${i.original.quantidadePedida}un — tem preço melhor levando mais?',
-        );
-      }
+      desconto.forEach(buffer.writeln);
     }
     if (divergencia.isNotEmpty) {
-      buffer.writeln('\n⚠️ Preço ou quantidade veio diferente do combinado:');
-      for (final i in divergencia) {
-        final partes = <String>[];
-        if (i.quantidadeMudou) partes.add('${i.original.quantidadePedida}un → ${i.quantidadeConfirmadaAtual}un');
-        if (i.precoMudou) {
-          partes.add('R\$ ${i.original.custoUnitario.toStringAsFixed(2)} → R\$ ${i.custoConfirmadoAtual.toStringAsFixed(2)}');
-        }
-        buffer.writeln('• ${i.original.produtoNome}: ${partes.join(', ')}, pode confirmar?');
-      }
-    }
-    if (naoCadastradosPerguntar.isNotEmpty) {
-      buffer.writeln('\n❓ Veio na cotação, ainda não tenho cadastrado — confirma esse item?');
-      for (final l in naoCadastradosPerguntar) {
-        buffer.writeln('• ${l.nome} — ${l.quantidade}un a R\$ ${l.custoUnitario.toStringAsFixed(2)} (EAN ${l.codigoBarras})');
-      }
+      buffer.writeln('\n⚠️ Confirmar / divergências:');
+      divergencia.forEach(buffer.writeln);
     }
     if (novos.isNotEmpty) {
       buffer.writeln('\n➕ Também gostaria de incluir:');
@@ -714,47 +799,39 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                       ),
                       childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                       children: [
-                        for (final lido in _naoCadastrados)
+                        for (final item in _naoCadastrados)
                           Card(
                             margin: const EdgeInsets.only(bottom: 8),
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
+                              padding: const EdgeInsets.all(12),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(lido.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  Text(item.lido.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
                                   Text(
-                                    'EAN: ${lido.codigoBarras} • ${lido.quantidade}un a R\$ ${lido.custoUnitario.toStringAsFixed(2)}',
+                                    'EAN: ${item.lido.codigoBarras} • ${item.lido.quantidade}un a R\$ ${item.lido.custoUnitario.toStringAsFixed(2)}',
                                     style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                                   ),
+                                  const SizedBox(height: 6),
+                                  _SeletorAcaoMensagem(
+                                    valor: item.acaoMensagem,
+                                    onChanged: (acao) => setState(() => item.acaoMensagem = acao),
+                                    quantidadeDesejadaController: item.quantidadeDesejadaController,
+                                  ),
+                                  const SizedBox(height: 6),
                                   Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
                                     children: [
-                                      Expanded(
-                                        child: CheckboxListTile(
-                                          value: _naoCadastradosParaPerguntar.contains(lido.codigoBarras),
-                                          onChanged: (v) => setState(() {
-                                            if (v == true) {
-                                              _naoCadastradosParaPerguntar.add(lido.codigoBarras);
-                                            } else {
-                                              _naoCadastradosParaPerguntar.remove(lido.codigoBarras);
-                                            }
-                                          }),
-                                          controlAffinity: ListTileControlAffinity.leading,
-                                          contentPadding: EdgeInsets.zero,
-                                          dense: true,
-                                          title: const Text('Perguntar ao fornecedor', style: TextStyle(fontSize: 13)),
-                                        ),
-                                      ),
-                                      IconButton(
-                                        tooltip: 'Ignorar (não cadastrar, não perguntar)',
-                                        icon: const Icon(Icons.close, size: 20),
-                                        onPressed: () => _ignorarNaoCadastrado(lido),
-                                      ),
-                                      FilledButton.tonal(
-                                        onPressed: () => _cadastrarProdutoNaoCatalogado(lido),
-                                        child: const Text('Cadastrar'),
+                                      TextButton.icon(
+                                        onPressed: () => _ignorarNaoCadastrado(item),
+                                        icon: const Icon(Icons.close, size: 18),
+                                        label: const Text('Ignorar'),
                                       ),
                                       const SizedBox(width: 4),
+                                      FilledButton.tonal(
+                                        onPressed: () => _cadastrarProdutoNaoCatalogado(item),
+                                        child: const Text('Cadastrar'),
+                                      ),
                                     ],
                                   ),
                                 ],
@@ -967,24 +1044,11 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
                     ),
                   ),
             const Divider(height: 16),
-            DropdownButtonFormField<AcaoMensagemFornecedor>(
-              initialValue: item.acaoMensagem,
-              isDense: true,
-              decoration: const InputDecoration(labelText: 'Pedir ajuste ao fornecedor sobre este item', isDense: true),
-              items: [
-                for (final acao in AcaoMensagemFornecedor.values) DropdownMenuItem(value: acao, child: Text(acao.rotulo)),
-              ],
-              onChanged: (acao) => setState(() => item.acaoMensagem = acao ?? AcaoMensagemFornecedor.nenhuma),
+            _SeletorAcaoMensagem(
+              valor: item.acaoMensagem,
+              onChanged: (acao) => setState(() => item.acaoMensagem = acao),
+              quantidadeDesejadaController: item.quantidadeDesejadaController,
             ),
-            if (item.acaoMensagem == AcaoMensagemFornecedor.ajustarQuantidade)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: TextField(
-                  controller: item.quantidadeDesejadaController,
-                  decoration: const InputDecoration(labelText: 'Nova quantidade desejada', isDense: true),
-                  keyboardType: TextInputType.number,
-                ),
-              ),
           ],
         ),
       ),
