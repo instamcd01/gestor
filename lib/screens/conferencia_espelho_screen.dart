@@ -170,6 +170,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   List<_ItemConferencia> _itens = [];
   final List<AnexoEspelho> _anexos = [];
   final List<ItemCotacaoExtraido> _naoCadastrados = [];
+  final Set<String> _naoCadastradosParaPerguntar = {};
   final List<_ItemNovoMensagem> _itensNovosMensagem = [];
   bool _carregando = true;
   bool _enviandoAnexo = false;
@@ -349,6 +350,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
       }
 
       _naoCadastrados.clear();
+      _naoCadastradosParaPerguntar.clear();
       for (final lido in eansRestantes.values) {
         final produto = produtoPorEan(lido.codigoBarras);
         if (produto == null || produto.id == null) {
@@ -426,6 +428,16 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     });
   }
 
+  /// Descarta um item da cotação sem cadastro — não cadastra, não entra na
+  /// mensagem, só some da lista (ex: fornecedor cotou algo que não
+  /// interessa comprar).
+  void _ignorarNaoCadastrado(ItemCotacaoExtraido lido) {
+    setState(() {
+      _naoCadastrados.remove(lido);
+      _naoCadastradosParaPerguntar.remove(lido.codigoBarras);
+    });
+  }
+
   /// Monta a mensagem de WhatsApp com os ajustes marcados (ver
   /// `AcaoMensagemFornecedor`) e os itens novos digitados livres, e abre
   /// pro usuário revisar/enviar — nunca envia sozinho, só prepara o texto
@@ -438,9 +450,15 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     final ajustarQtd = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.ajustarQuantidade).toList();
     final desconto = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.perguntarDescontoVolume).toList();
     final divergencia = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.reportarDivergencia).toList();
+    final naoCadastradosPerguntar = _naoCadastrados.where((l) => _naoCadastradosParaPerguntar.contains(l.codigoBarras)).toList();
     final novos = _itensNovosMensagem.where((i) => i.nomeController.text.trim().isNotEmpty).toList();
 
-    if (remover.isEmpty && ajustarQtd.isEmpty && desconto.isEmpty && divergencia.isEmpty && novos.isEmpty) {
+    if (remover.isEmpty &&
+        ajustarQtd.isEmpty &&
+        desconto.isEmpty &&
+        divergencia.isEmpty &&
+        naoCadastradosPerguntar.isEmpty &&
+        novos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Marque uma ação em pelo menos um item (ou adicione um item novo) antes de gerar a mensagem.'),
       ));
@@ -490,6 +508,12 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
           partes.add('R\$ ${i.original.custoUnitario.toStringAsFixed(2)} → R\$ ${i.custoConfirmadoAtual.toStringAsFixed(2)}');
         }
         buffer.writeln('• ${i.original.produtoNome}: ${partes.join(', ')}, pode confirmar?');
+      }
+    }
+    if (naoCadastradosPerguntar.isNotEmpty) {
+      buffer.writeln('\n❓ Veio na cotação, ainda não tenho cadastrado — confirma esse item?');
+      for (final l in naoCadastradosPerguntar) {
+        buffer.writeln('• ${l.nome} — ${l.quantidade}un a R\$ ${l.custoUnitario.toStringAsFixed(2)} (EAN ${l.codigoBarras})');
       }
     }
     if (novos.isNotEmpty) {
@@ -693,12 +717,47 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                         for (final lido in _naoCadastrados)
                           Card(
                             margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              title: Text(lido.nome),
-                              subtitle: Text('EAN: ${lido.codigoBarras} • ${lido.quantidade}un a R\$ ${lido.custoUnitario.toStringAsFixed(2)}'),
-                              trailing: FilledButton.tonal(
-                                onPressed: () => _cadastrarProdutoNaoCatalogado(lido),
-                                child: const Text('Cadastrar'),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(lido.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  Text(
+                                    'EAN: ${lido.codigoBarras} • ${lido.quantidade}un a R\$ ${lido.custoUnitario.toStringAsFixed(2)}',
+                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                                  ),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: CheckboxListTile(
+                                          value: _naoCadastradosParaPerguntar.contains(lido.codigoBarras),
+                                          onChanged: (v) => setState(() {
+                                            if (v == true) {
+                                              _naoCadastradosParaPerguntar.add(lido.codigoBarras);
+                                            } else {
+                                              _naoCadastradosParaPerguntar.remove(lido.codigoBarras);
+                                            }
+                                          }),
+                                          controlAffinity: ListTileControlAffinity.leading,
+                                          contentPadding: EdgeInsets.zero,
+                                          dense: true,
+                                          title: const Text('Perguntar ao fornecedor', style: TextStyle(fontSize: 13)),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: 'Ignorar (não cadastrar, não perguntar)',
+                                        icon: const Icon(Icons.close, size: 20),
+                                        onPressed: () => _ignorarNaoCadastrado(lido),
+                                      ),
+                                      FilledButton.tonal(
+                                        onPressed: () => _cadastrarProdutoNaoCatalogado(lido),
+                                        child: const Text('Cadastrar'),
+                                      ),
+                                      const SizedBox(width: 4),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
                           ),
