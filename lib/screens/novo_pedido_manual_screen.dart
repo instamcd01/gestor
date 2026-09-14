@@ -139,6 +139,28 @@ class _NovoPedidoManualScreenState extends State<NovoPedidoManualScreen> {
             ],
             onChanged: (f) => setState(() => _fornecedor = f),
           ),
+          if (_fornecedor != null && _fornecedor!.observacoes.trim().isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.sticky_note_2_outlined, size: 18, color: colorScheme.onSecondaryContainer),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _fornecedor!.observacoes,
+                      style: TextStyle(fontSize: 12, color: colorScheme.onSecondaryContainer),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 16),
           Text('Itens (opcional)', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),

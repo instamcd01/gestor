@@ -878,6 +878,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final pedido = _pedido;
 
     final porCategoria = <CategoriaConferencia, List<_ItemConferencia>>{};
     for (final item in _itens) {
@@ -891,6 +892,28 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                if (pedido != null && pedido.fornecedor.observacoes.trim().isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.sticky_note_2_outlined, size: 18, color: colorScheme.onSecondaryContainer),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            pedido.fornecedor.observacoes,
+                            style: TextStyle(fontSize: 12, color: colorScheme.onSecondaryContainer),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 Text('Anexos do espelho', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
                 Text(

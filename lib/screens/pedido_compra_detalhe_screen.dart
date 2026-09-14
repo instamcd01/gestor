@@ -443,6 +443,30 @@ class _CabecalhoPedido extends StatelessWidget {
               ),
             if (pedido.fornecedor.prazoEntregaDias != null)
               Text('Prazo de entrega: ${pedido.fornecedor.prazoEntregaDias} dias', style: const TextStyle(fontSize: 12)),
+            if (pedido.fornecedor.observacoes.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.sticky_note_2_outlined, size: 18, color: Theme.of(context).colorScheme.onSecondaryContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          pedido.fornecedor.observacoes,
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSecondaryContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),

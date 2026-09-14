@@ -358,7 +358,12 @@ class _FornecedorFormScreenState extends State<_FornecedorFormScreen> {
                   ),
                   TextFormField(
                     controller: _observacoesController,
-                    decoration: const InputDecoration(labelText: 'Observações (Opcional)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Observações (Opcional)',
+                      helperText: 'Ex: condições de desconto por mix ("Funny: 12un+ misturando qualquer '
+                          'sabor = 10% off") — aparece destacado ao montar pedido pra este fornecedor.',
+                      helperMaxLines: 3,
+                    ),
                     maxLines: 3,
                   ),
                   TextFormField(
