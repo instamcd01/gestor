@@ -415,6 +415,15 @@ class _CabecalhoPedido extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
+            Builder(builder: (context) {
+              final mix = pedido.itens.length;
+              final totalUnidades = pedido.itens.fold<int>(0, (soma, i) => soma + (i.quantidadeConfirmada ?? i.quantidadePedida));
+              return Text(
+                '$totalUnidades ite${totalUnidades == 1 ? 'm' : 'ns'} · $mix produto${mix == 1 ? '' : 's'} (mix)',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              );
+            }),
+            const SizedBox(height: 2),
             Text(
               pedido.valorTotalConfirmado != null
                   ? 'Total confirmado: R\$ ${pedido.valorTotalConfirmado!.toStringAsFixed(2)}'

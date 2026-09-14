@@ -10,10 +10,12 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/supabase_config.dart';
 import '../models/pedido_compra.dart';
 import '../models/produto.dart';
+import '../models/produto_fornecedor.dart';
 import '../providers/auth_provider.dart';
 import '../providers/pedido_compra_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/pedido_compra_repository.dart';
+import '../repositories/produto_fornecedor_repository.dart';
 import '../utils/cotacao_pdf_parser.dart';
 import '../utils/produto_validators.dart';
 import '../utils/telefone_utils.dart';
@@ -262,6 +264,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   final List<AnexoEspelho> _anexos = [];
   final List<_ItemNaoCadastrado> _naoCadastrados = [];
   final List<_ItemNovoMensagem> _itensNovosMensagem = [];
+  final Map<String, ProdutoFornecedor> _vinculosPorProdutoId = {};
   bool _carregando = true;
   bool _enviandoAnexo = false;
   bool _salvando = false;
@@ -290,6 +293,24 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     setState(() => _carregando = true);
     try {
       final pedido = await _repository.buscarPorId(widget.pedidoId);
+
+      // Vínculo produto-fornecedor (com faixas de desconto) de cada item,
+      // pra mostrar "peça mais Nun e economize R$X" igual já existe na
+      // Sugestão de Compra — antes essa dica só aparecia lá, não aqui, que
+      // é justamente onde a negociação com o fornecedor acontece de verdade.
+      final produtoFornecedorRepo = ProdutoFornecedorRepository();
+      final produtoIds = {for (final i in pedido.itens) i.produtoSubstitutoId ?? i.produtoId};
+      final vinculos = <String, ProdutoFornecedor>{};
+      for (final produtoId in produtoIds) {
+        final lista = await produtoFornecedorRepo.listarPorProduto(produtoId);
+        for (final v in lista) {
+          if (v.fornecedorId == pedido.fornecedor.id) {
+            vinculos[produtoId] = v;
+            break;
+          }
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         _pedido = pedido;
@@ -297,6 +318,9 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         _anexos
           ..clear()
           ..addAll(pedido.anexosEspelho);
+        _vinculosPorProdutoId
+          ..clear()
+          ..addAll(vinculos);
         _carregando = false;
       });
     } catch (e) {
@@ -682,6 +706,83 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     });
   }
 
+  /// Salva uma faixa de desconto nova pro vínculo produto-fornecedor deste
+  /// item, pré-preenchida com o que acabou de ser confirmado (ex: fornecedor
+  /// deu 18% a partir de 120un — você já ajustou Confirmado/Custo pra
+  /// refletir isso, aqui só registra a condição pra próxima vez). Sem isso,
+  /// a única forma de cadastrar uma faixa era saindo daqui e indo em Editar
+  /// Produto > Fornecedores deste produto.
+  Future<void> _registrarFaixaDesconto(_ItemConferencia item) async {
+    final produtoId = item.produtoSubstitutoId ?? item.original.produtoId;
+    final vinculo = _vinculosPorProdutoId[produtoId];
+    if (vinculo == null || vinculo.id == null) return;
+
+    final quantidadeController = TextEditingController(text: item.quantidadeConfirmadaAtual.toString());
+    final custoController = TextEditingController(text: ProdutoValidators.formatarMoeda(item.custoConfirmadoAtual));
+
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Registrar faixa de desconto'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('A partir de quantas unidades esse custo passa a valer com este fornecedor?'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: quantidadeController,
+              decoration: const InputDecoration(labelText: 'Quantidade mínima'),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: custoController,
+              decoration: const InputDecoration(labelText: 'Custo unitário (R\$)'),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Registrar')),
+        ],
+      ),
+    );
+    final quantidadeMinima = int.tryParse(quantidadeController.text);
+    final custoUnitario = ProdutoValidators.parseNumero(custoController.text);
+    quantidadeController.dispose();
+    custoController.dispose();
+    if (confirmou != true || quantidadeMinima == null || custoUnitario == null || !mounted) return;
+
+    final vinculoAtualizado = ProdutoFornecedor(
+      id: vinculo.id,
+      produtoId: vinculo.produtoId,
+      fornecedorId: vinculo.fornecedorId,
+      fornecedorNome: vinculo.fornecedorNome,
+      produtoNome: vinculo.produtoNome,
+      produtoCodigoBarras: vinculo.produtoCodigoBarras,
+      custoUnitario: vinculo.custoUnitario,
+      codigoProdutoFornecedor: vinculo.codigoProdutoFornecedor,
+      multiploCompra: vinculo.multiploCompra,
+      principal: vinculo.principal,
+      ativo: vinculo.ativo,
+      faixasDesconto: [
+        ...vinculo.faixasDesconto,
+        FaixaDescontoProdutoFornecedor(quantidadeMinima: quantidadeMinima, custoUnitario: custoUnitario),
+      ],
+    );
+
+    try {
+      final salvo = await ProdutoFornecedorRepository().atualizar(vinculoAtualizado);
+      if (!mounted) return;
+      setState(() => _vinculosPorProdutoId[produtoId] = salvo);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Faixa de desconto registrada.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao registrar faixa: $e')));
+    }
+  }
+
   Future<void> _marcarSubstituto(_ItemConferencia item) async {
     final produtos = context.read<ProdutoProvider>().produtos.where((p) => p.ativo && p.id != null).toList()
       ..sort((a, b) => a.nome.compareTo(b.nome));
@@ -762,7 +863,13 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         subtitle: Text(explicacao, style: const TextStyle(fontSize: 12)),
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
-          for (final item in itens) _LinhaConferencia(item: item, onMarcarSubstituto: () => _marcarSubstituto(item)),
+          for (final item in itens)
+            _LinhaConferencia(
+              item: item,
+              onMarcarSubstituto: () => _marcarSubstituto(item),
+              vinculo: _vinculosPorProdutoId[item.produtoSubstitutoId ?? item.original.produtoId],
+              onRegistrarFaixaDesconto: () => _registrarFaixaDesconto(item),
+            ),
         ],
       ),
     );
@@ -1002,7 +1109,17 @@ class _LinhaConferencia extends StatefulWidget {
   final _ItemConferencia item;
   final VoidCallback onMarcarSubstituto;
 
-  const _LinhaConferencia({required this.item, required this.onMarcarSubstituto});
+  /// null quando o produto não tem vínculo com ESTE fornecedor (ou nunca
+  /// foi vinculado) — sem faixas de desconto pra mostrar nem pra registrar.
+  final ProdutoFornecedor? vinculo;
+  final VoidCallback onRegistrarFaixaDesconto;
+
+  const _LinhaConferencia({
+    required this.item,
+    required this.onMarcarSubstituto,
+    required this.vinculo,
+    required this.onRegistrarFaixaDesconto,
+  });
 
   @override
   State<_LinhaConferencia> createState() => _LinhaConferenciaState();
@@ -1088,6 +1205,7 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
                 ),
               ],
             ),
+            if (widget.vinculo != null) _dicaFaixaDesconto(widget.vinculo!, item),
             const SizedBox(height: 6),
             item.produtoSubstitutoNome != null
                 ? Chip(
@@ -1113,6 +1231,39 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Mesma dica "peça mais Nun e economize R$X" já usada na Sugestão de
+  /// Compra, agora também aqui — onde a negociação com o fornecedor
+  /// realmente acontece. Botão "Registrar" fica sempre disponível (mesmo
+  /// sem faixa melhor à frente), pra guardar uma condição nova que o
+  /// fornecedor acabou de conceder na conversa.
+  Widget _dicaFaixaDesconto(ProdutoFornecedor vinculo, _ItemConferencia item) {
+    final proxima = vinculo.proximaFaixa(item.quantidadeConfirmadaAtual);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: proxima == null
+                ? const SizedBox.shrink()
+                : Text(
+                    'Peça mais ${proxima.unidadesFaltando}un e economize R\$${proxima.economiaPorUnidade.toStringAsFixed(2)}/un',
+                    style: TextStyle(fontSize: 11, color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                  ),
+          ),
+          TextButton(
+            onPressed: widget.onRegistrarFaixaDesconto,
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 0),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text('Registrar faixa de desconto', style: TextStyle(fontSize: 11)),
+          ),
+        ],
       ),
     );
   }
