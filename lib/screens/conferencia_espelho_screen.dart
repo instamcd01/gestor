@@ -217,6 +217,11 @@ class _ItemConferencia {
   }
 }
 
+/// 10 anos — bucket 'pedidos-compra' é privado, então o anexo só fica
+/// acessível via signed URL; um documento de pedido precisa continuar
+/// abrível "pra sempre" na prática, não só por alguns minutos/horas.
+const _validadeAnexoSegundos = 315360000;
+
 /// Conferência do espelho enviado pelo fornecedor: registra quantas fotos
 /// forem necessárias (pedido grande costuma vir em mais de uma imagem) e a
 /// quantidade que realmente foi confirmada por item — cobrindo não só
@@ -301,7 +306,12 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         final nomeArquivo = arquivo.name;
         final path = '$empresaId/${widget.pedidoId}/${DateTime.now().millisecondsSinceEpoch}_$nomeArquivo';
         await supabase.storage.from('pedidos-compra').uploadBinary(path, bytes);
-        final url = supabase.storage.from('pedidos-compra').getPublicUrl(path);
+        // Bucket 'pedidos-compra' é PRIVADO — getPublicUrl gera um link que
+        // nunca funciona pra ninguém (404 silencioso, achado real: o anexo
+        // salvo nunca dava pra abrir de novo). Signed URL de longa duração
+        // (10 anos) resolve pra um documento que precisa continuar
+        // acessível indefinidamente, sem tornar o bucket inteiro público.
+        final url = await supabase.storage.from('pedidos-compra').createSignedUrl(path, _validadeAnexoSegundos);
         if (!mounted) return;
         setState(() {
           _anexos.add(AnexoEspelho(url: url, tipo: 'imagem', nomeArquivo: nomeArquivo, criadoEm: DateTime.now()));
@@ -329,7 +339,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
             arquivo.bytes!,
             fileOptions: const FileOptions(contentType: 'application/pdf'),
           );
-      final url = supabase.storage.from('pedidos-compra').getPublicUrl(path);
+      final url = await supabase.storage.from('pedidos-compra').createSignedUrl(path, _validadeAnexoSegundos);
       if (!mounted) return;
       setState(() {
         _anexos.add(AnexoEspelho(url: url, tipo: 'pdf', nomeArquivo: arquivo.name, criadoEm: DateTime.now()));
@@ -945,11 +955,21 @@ class _ChipAnexo extends StatelessWidget {
 
   const _ChipAnexo({required this.anexo, required this.onRemover});
 
+  Future<void> _abrir(BuildContext context) async {
+    try {
+      await launchUrl(Uri.parse(anexo.url), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível abrir o anexo: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return InputChip(
       avatar: Icon(anexo.tipo == 'pdf' ? Icons.picture_as_pdf_outlined : Icons.image_outlined, size: 18),
       label: Text(anexo.nomeArquivo, overflow: TextOverflow.ellipsis),
+      onPressed: () => _abrir(context),
       onDeleted: onRemover,
     );
   }

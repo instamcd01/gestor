@@ -14,6 +14,7 @@ import '../providers/entrada_provider.dart';
 import '../providers/fornecedor_provider.dart';
 import '../providers/pedido_compra_provider.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/pedido_compra_repository.dart';
 import '../repositories/produto_fornecedor_repository.dart';
 import '../services/nfe_xml_parser.dart';
 import '../utils/busca_utils.dart';
@@ -449,6 +450,24 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             pedidoCompraId: widget.pedidoCompra?.id,
             criadoPor: context.read<AuthProvider>().usuarioAtual?.id,
           );
+
+      // "quantidade_recebida" no pedido nunca era gravada por nenhum dos 2
+      // caminhos de dar entrada — casamento aqui é por produto_id (mesmo
+      // critério de "casado" já usado pra vincular custo acima), já que a
+      // NF-e não sabe de qual linha do pedido cada item veio.
+      if (widget.pedidoCompra != null) {
+        final pedidoRepo = PedidoCompraRepository();
+        for (final pedidoItem in widget.pedidoCompra!.itens) {
+          if (pedidoItem.id == null) continue;
+          final produtoIdReal = pedidoItem.produtoSubstitutoId ?? pedidoItem.produtoId;
+          for (final resolvido in _itensResolvidos) {
+            if (resolvido.casado && resolvido.produtoId == produtoIdReal) {
+              await pedidoRepo.atualizarItem(pedidoItem.copyWith(quantidadeRecebida: resolvido.quantidade.round()));
+              break;
+            }
+          }
+        }
+      }
 
       if (widget.pedidoCompra?.id != null) {
         await context.read<PedidoCompraProvider>().marcarComoRecebido(widget.pedidoCompra!.id!);

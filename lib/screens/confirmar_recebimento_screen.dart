@@ -7,6 +7,8 @@ import '../models/pedido_compra.dart';
 import '../providers/auth_provider.dart';
 import '../providers/pedido_compra_provider.dart';
 import '../repositories/entrada_repository.dart';
+import '../repositories/pedido_compra_repository.dart';
+import '../repositories/produto_fornecedor_repository.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 
@@ -103,6 +105,31 @@ class _ConfirmarRecebimentoScreenState extends State<ConfirmarRecebimentoScreen>
         pedidoCompraId: widget.pedido.id,
         criadoPor: authProvider.usuarioAtual?.id,
       );
+
+      // Mesmo efeito colateral que "Importar Nota Fiscal" já tem (achado
+      // real: recebimento manual gravava a entrada/estoque certinho, mas
+      // nunca atualizava o custo do vínculo produto-fornecedor nem
+      // "quantidade_recebida" no pedido — os dois caminhos de dar entrada
+      // devem se comportar igual).
+      final fornecedorId = widget.pedido.fornecedor.id;
+      final pedidoRepo = PedidoCompraRepository();
+      for (final item in _itens) {
+        final quantidade = ProdutoValidators.parseNumero(item.quantidadeController.text) ?? 0;
+        final custo = ProdutoValidators.parseNumero(item.custoController.text) ?? 0;
+        final produtoId = item.origem.produtoSubstitutoId ?? item.origem.produtoId;
+
+        if (fornecedorId != null && custo > 0) {
+          await ProdutoFornecedorRepository().vincularDeEntrada(
+            produtoId: produtoId,
+            fornecedorId: fornecedorId,
+            empresaId: empresaId,
+            custoUnitario: custo,
+          );
+        }
+        if (item.origem.id != null) {
+          await pedidoRepo.atualizarItem(item.origem.copyWith(quantidadeRecebida: quantidade.round()));
+        }
+      }
 
       if (mounted) {
         await context.read<PedidoCompraProvider>().marcarComoRecebido(widget.pedido.id!);
