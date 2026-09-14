@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:gestor/screens/produto_categorias_screen.dart';
 import 'package:gestor/screens/fabricante_screen.dart';
@@ -12,6 +14,7 @@ import '../utils/calculadora_preco.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/gerador_nome_produto.dart';
 import '../utils/produto_validators.dart';
+import '../repositories/produto_repository.dart';
 import '../repositories/valor_estruturado_repository.dart';
 import '../services/descricao_produto_service.dart';
 import '../widgets/campos_estruturados_variante.dart';
@@ -94,6 +97,13 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   Map<String, List<String>> _camposPorCategoria = {};
   Map<String, Map<String, List<String>>> _valoresEstruturadosPorCategoria = {};
 
+  // Sugestão automática de ciclo de recompra (ver [[gestor_recompra_estrutura_completa]]
+  // pra origem da pesquisa) — dispara ao mudar categoria/porte/fase/espécie/
+  // nome comercial/peso, só preenche se o campo estiver vazio ou ainda com a
+  // última sugestão nossa (nunca sobrescreve valor digitado à mão).
+  Timer? _debounceSugestaoCiclo;
+  String? _ultimaSugestaoCicloTexto;
+
   late final CalculadoraPrecoMarkup _calculadora;
   late final CalculadoraDesconto _calculadoraDesconto;
   late final GeradorNomeProduto _geradorNome;
@@ -144,6 +154,49 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       empresaId: () => context.read<AuthProvider>().empresaId,
       ordemCampos: () => _camposEstruturadosPersonalizados,
     );
+    _porteController.addListener(_agendarSugestaoCiclo);
+    _faseController.addListener(_agendarSugestaoCiclo);
+    _especieController.addListener(_agendarSugestaoCiclo);
+    _nomeComercialController.addListener(_agendarSugestaoCiclo);
+    _pesoController.addListener(_agendarSugestaoCiclo);
+  }
+
+  void _agendarSugestaoCiclo() {
+    _debounceSugestaoCiclo?.cancel();
+    _debounceSugestaoCiclo = Timer(const Duration(milliseconds: 500), _calcularSugestaoCiclo);
+  }
+
+  Future<void> _calcularSugestaoCiclo() async {
+    final categoria = _categoriaController.text.trim();
+    if (categoria.isEmpty) return;
+
+    // Só mexe se o campo estiver vazio ou ainda igual à última sugestão que
+    // nós mesmos escrevemos — nunca sobrescreve valor digitado à mão.
+    final textoAtual = _cicloRecompraController.text.trim();
+    if (textoAtual.isNotEmpty && textoAtual != _ultimaSugestaoCicloTexto) return;
+
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+
+    try {
+      final sugestao = await ProdutoRepository().sugerirCicloRecompraDias(
+        empresaId: empresaId,
+        categoria: categoria,
+        porte: _porteController.text.trim().isEmpty ? null : _porteController.text.trim(),
+        fase: _faseController.text.trim().isEmpty ? null : _faseController.text.trim(),
+        especie: _especieController.text.trim().isEmpty ? null : _especieController.text.trim(),
+        nomeComercial: _nomeComercialController.text.trim().isEmpty ? null : _nomeComercialController.text.trim(),
+        peso: ProdutoValidators.parseNumero(_pesoController.text),
+      );
+      if (!mounted || sugestao == null) return;
+      final texto = sugestao.toString();
+      setState(() {
+        _cicloRecompraController.text = texto;
+        _ultimaSugestaoCicloTexto = texto;
+      });
+    } catch (e) {
+      debugPrint('Erro ao sugerir ciclo de recompra: $e');
+    }
   }
 
   Future<void> _carregarCategorias() async {
@@ -266,6 +319,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
 
   @override
   void dispose() {
+    _debounceSugestaoCiclo?.cancel();
     _calculadora.dispose();
     _calculadoraDesconto.dispose();
     _geradorNome.dispose();
@@ -543,6 +597,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                                     onChanged: (value) {
                                       setState(() => _categoriaController.text = value!);
                                       _carregarSubcategorias();
+                                      _agendarSugestaoCiclo();
                                     },
                                     validator: ProdutoValidators.categoria,
                                   ),
@@ -564,6 +619,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                           if (categoriaEscolhida != null && categoriaEscolhida.isNotEmpty) {
                             setState(() => _categoriaController.text = categoriaEscolhida);
                             await _carregarSubcategorias();
+                            _agendarSugestaoCiclo();
                           }
                         },
                       ),
@@ -775,13 +831,17 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                 children: [
                   TextFormField(
                     controller: _cicloRecompraController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Ciclo de recompra (dias)',
-                      helperText: 'Quantos dias esse produto costuma durar pro cliente. '
-                          'Vazio = usa o padrão da loja (Configurações do Produto).',
+                      helperText: _cicloRecompraController.text.isNotEmpty &&
+                              _cicloRecompraController.text == _ultimaSugestaoCicloTexto
+                          ? 'Sugestão automática baseada em produtos parecidos já cadastrados — pode ajustar.'
+                          : 'Quantos dias esse produto costuma durar pro cliente. '
+                              'Vazio = usa o padrão da loja (Configurações do Produto).',
                     ),
                     keyboardType: TextInputType.number,
                     inputFormatters: [InteiroInputFormatter()],
+                    onChanged: (_) => setState(() {}),
                   ),
                 ],
               ),

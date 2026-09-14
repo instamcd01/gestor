@@ -10,6 +10,38 @@ class ProdutoRepository {
   static const _selectComEstoque =
       '*, estoque(id, quantidade_atual, quantidade_minima, deposito_id)';
 
+  /// Sugere um ciclo de recompra (dias) pra um produto ainda não salvo, com
+  /// base em produtos parecidos já cadastrados que já têm ciclo definido
+  /// (RPC `sugerir_ciclo_recompra_dias`) — mesma pesquisa por categoria já
+  /// aplicada manualmente aos produtos existentes (ver
+  /// [[gestor_recompra_estrutura_completa]]), generalizada: prioriza match
+  /// por nome comercial (pega o ciclo já certo pra mesma linha/molécula,
+  /// caso de antipulgas/vermífugos), senão por porte/fase/espécie, e quando
+  /// há peso escala pela proporção dias/kg mediana do grupo encontrado (caso
+  /// de ração, onde o ciclo é proporcional ao peso da embalagem). Categoria
+  /// sem nenhum produto com ciclo (ex: Sachês, Petiscos — decisão deliberada
+  /// de não ter ciclo automático) sempre volta null, sem sugestão.
+  Future<int?> sugerirCicloRecompraDias({
+    required String empresaId,
+    required String categoria,
+    String? porte,
+    String? fase,
+    String? especie,
+    String? nomeComercial,
+    double? peso,
+  }) async {
+    final resultado = await supabase.rpc('sugerir_ciclo_recompra_dias', params: {
+      'p_empresa_id': empresaId,
+      'p_categoria': categoria,
+      'p_porte': porte,
+      'p_fase': fase,
+      'p_especie': especie,
+      'p_nome_comercial': nomeComercial,
+      'p_peso': peso,
+    });
+    return resultado as int?;
+  }
+
   Future<List<Produto>> listar() async {
     // Kit ENTRA aqui de propósito (desde 09/09) — ganhou EAN interno e uma
     // linha de `estoque` sincronizada por trigger (`trg_sincronizar_estoque_kit_componentes`/
