@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../config/supabase_config.dart';
 import '../models/entrada.dart';
 import '../models/fornecedor.dart';
 import '../models/pedido_compra.dart';
@@ -224,9 +225,11 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
 
   /// Busca o XML da NF-e pela chave de acesso — pensado pra fornecedor que
   /// só manda a DANFE impressa (PDF/papel), sem XML anexo (achado real:
-  /// MixPet manda só PDF). Ainda não integrado — falta a Api-Key/endpoint
-  /// da API do Meu Danfe (ver [[gestor_app_context]] quando essa integração
-  /// for configurada). Por enquanto só valida o formato e avisa.
+  /// MixPet manda só PDF). Chama a edge function `buscar-nfe-por-chave`, que
+  /// fala com a API do Meu Danfe (a Api-Key nunca fica no app — vive só no
+  /// Supabase Vault, lida pela função). A função já cuida do fluxo de 2
+  /// passos da API (adicionar pela chave + baixar o XML) e do retry
+  /// enquanto o status vem "buscando".
   Future<void> _buscarPorChaveDeAcesso() async {
     final chave = _chaveAcessoController.text.trim();
     if (chave.length != 44) {
@@ -235,11 +238,25 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       );
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Busca automática (Meu Danfe) ainda não configurada — falta a Api-Key da integração.'),
-      ),
-    );
+
+    setState(() => _processando = true);
+    try {
+      final resposta = await supabase.functions.invoke(
+        'buscar-nfe-por-chave',
+        body: {'chave': chave},
+      );
+      final dados = resposta.data as Map<String, dynamic>;
+      if (dados['ok'] != true) {
+        throw Exception(dados['mensagem'] ?? 'Erro desconhecido ao buscar a NF-e.');
+      }
+      await _processarXml(dados['xml'] as String);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _processando = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao buscar NF-e pela chave: $e')),
+      );
+    }
   }
 
   Future<void> _processarXml(String conteudo) async {
