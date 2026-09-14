@@ -95,10 +95,21 @@ class _SeletorAcaoMensagem extends StatelessWidget {
   final ValueChanged<AcaoMensagemFornecedor> onChanged;
   final TextEditingController quantidadeDesejadaController;
 
+  /// true pros "Produtos da cotação sem cadastro" (não têm campo
+  /// "Confirmado" próprio — só existe [quantidadeDesejadaController] mesmo
+  /// pra dizer quanto pedir). false pros itens do pedido real
+  /// (`_LinhaConferencia`), que JÁ têm um campo "Confirmado" editável
+  /// acima — usar esse mesmo campo em vez de duplicar em outro,
+  /// exatamente o que causava "ajustei a quantidade mas não salvou nada":
+  /// a quantidade negociada ficava só no campo da mensagem, nunca no
+  /// campo que a Conferência realmente salva.
+  final bool exibirCampoQuantidade;
+
   const _SeletorAcaoMensagem({
     required this.valor,
     required this.onChanged,
     required this.quantidadeDesejadaController,
+    this.exibirCampoQuantidade = true,
   });
 
   @override
@@ -115,7 +126,15 @@ class _SeletorAcaoMensagem extends StatelessWidget {
           ],
           onChanged: (acao) => onChanged(acao ?? AcaoMensagemFornecedor.nenhuma),
         ),
-        if (valor == AcaoMensagemFornecedor.ajustarQuantidade)
+        if (valor == AcaoMensagemFornecedor.ajustarQuantidade && !exibirCampoQuantidade)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Edite o campo "Confirmado" acima com a quantidade que você quer pedir — é ele que a mensagem usa e que fica salvo.',
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ),
+        if (valor == AcaoMensagemFornecedor.ajustarQuantidade && exibirCampoQuantidade)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: TextField(
@@ -543,8 +562,12 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         case AcaoMensagemFornecedor.removerDoPedido:
           remover.add('• ${i.original.produtoNome}');
         case AcaoMensagemFornecedor.ajustarQuantidade:
-          final desejada = i.quantidadeDesejadaController.text.trim();
-          ajustarQtd.add('• ${i.original.produtoNome}: de ${i.original.quantidadePedida}un pra ${desejada.isEmpty ? '?' : desejada}un');
+          // Lê direto do campo "Confirmado" (edite-o pra digitar a
+          // quantidade que quer pedir) — não um campo separado, senão a
+          // quantidade negociada nunca chega a ser salva de verdade (bug
+          // real: usuário ajustava um campo só da mensagem, o pedido
+          // continuava com o valor antigo depois de "Salvar conferência").
+          ajustarQtd.add('• ${i.original.produtoNome}: de ${i.original.quantidadePedida}un pra ${i.quantidadeConfirmadaAtual}un');
         case AcaoMensagemFornecedor.perguntarDescontoVolume:
           // Referência é a quantidade/custo CONFIRMADOS (o que a leitura do
           // PDF já indicou, ou o que foi digitado à mão), não o pedido
@@ -1086,6 +1109,7 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
               valor: item.acaoMensagem,
               onChanged: (acao) => setState(() => item.acaoMensagem = acao),
               quantidadeDesejadaController: item.quantidadeDesejadaController,
+              exibirCampoQuantidade: false,
             ),
           ],
         ),
