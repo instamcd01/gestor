@@ -61,9 +61,26 @@ class ValorEstruturadoRepository {
   /// consome combina `porCategoria[categoria] + porCategoria['']` — ver
   /// `campos_estruturados_variante.dart`.
   Future<Map<String, Map<String, List<String>>>> carregarPorCategoria() async {
-    final linhas = await supabase.from('valores_estruturados_variante').select('campo, categoria, valor');
+    // Paginado explicitamente: o Supabase corta em 1000 linhas por consulta
+    // sem isso, e essa tabela já passou desse tamanho (achado real — depois
+    // do backfill de vocabulário, "nome_comercial" sumiu das sugestões
+    // porque suas linhas ficaram fora do corte de 1000).
+    const tamanhoPagina = 1000;
+    final linhas = <Map<String, dynamic>>[];
+    var pagina = 0;
+    while (true) {
+      final inicio = pagina * tamanhoPagina;
+      final resultado = await supabase
+          .from('valores_estruturados_variante')
+          .select('campo, categoria, valor')
+          .range(inicio, inicio + tamanhoPagina - 1);
+      linhas.addAll(List<Map<String, dynamic>>.from(resultado));
+      if (resultado.length < tamanhoPagina) break;
+      pagina++;
+    }
+
     final porCategoria = <String, Map<String, Set<String>>>{};
-    for (final linha in (linhas as List)) {
+    for (final linha in linhas) {
       final categoria = linha['categoria'] as String? ?? '';
       final campo = linha['campo'] as String;
       final valor = linha['valor'] as String;
