@@ -11,11 +11,13 @@ import '../providers/auth_provider.dart';
 import '../providers/pedido_compra_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/pedido_compra_repository.dart';
+import '../utils/produto_validators.dart';
 import '../widgets/busca_produto_sheet.dart';
 
 class _ItemConferencia {
   final ItemPedidoCompra original;
   final TextEditingController confirmadoController;
+  final TextEditingController custoController;
   final TextEditingController observacaoController;
   String? produtoSubstitutoId;
   String? produtoSubstitutoNome;
@@ -24,17 +26,22 @@ class _ItemConferencia {
       : confirmadoController = TextEditingController(
           text: (original.quantidadeConfirmada ?? original.quantidadePedida).toString(),
         ),
+        custoController = TextEditingController(
+          text: ProdutoValidators.formatarMoeda(original.custoConfirmado ?? original.custoUnitario),
+        ),
         observacaoController = TextEditingController(text: original.observacao ?? '');
 
   bool get divergente {
     final confirmado = int.tryParse(confirmadoController.text) ?? original.quantidadePedida;
-    return produtoSubstitutoId != null || confirmado != original.quantidadePedida;
+    final custo = ProdutoValidators.parseNumero(custoController.text) ?? original.custoUnitario;
+    return produtoSubstitutoId != null || confirmado != original.quantidadePedida || custo != original.custoUnitario;
   }
 
   ItemPedidoCompra paraSalvar() {
     return original.copyWith(
       quantidadeConfirmada: int.tryParse(confirmadoController.text) ?? original.quantidadePedida,
       quantidadeConfirmadaDefinir: true,
+      custoConfirmado: ProdutoValidators.parseNumero(custoController.text) ?? original.custoUnitario,
       produtoSubstitutoId: produtoSubstitutoId,
       produtoSubstitutoNome: produtoSubstitutoNome,
       produtoSubstitutoDefinir: true,
@@ -44,6 +51,7 @@ class _ItemConferencia {
 
   void dispose() {
     confirmadoController.dispose();
+    custoController.dispose();
     observacaoController.dispose();
   }
 }
@@ -268,7 +276,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                 Text('Itens pedidos', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
                 Text(
-                  'Confirme o que o fornecedor realmente vai mandar — pode ser diferente do pedido (a mais, a menos, ou produto trocado).',
+                  'Confirme o que o fornecedor realmente vai mandar — pode ser diferente do pedido (a mais, a menos, produto trocado, ou preço diferente do cotado).',
                   style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 8),
@@ -369,7 +377,7 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
             Row(
               children: [
                 SizedBox(
-                  width: 140,
+                  width: 110,
                   child: TextField(
                     controller: item.confirmadoController,
                     decoration: const InputDecoration(labelText: 'Confirmado', isDense: true),
@@ -378,22 +386,33 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: item.produtoSubstitutoNome != null
-                      ? Chip(
-                          label: Text('Veio: ${item.produtoSubstitutoNome}', overflow: TextOverflow.ellipsis),
-                          onDeleted: () => setState(() {
-                            item.produtoSubstitutoId = null;
-                            item.produtoSubstitutoNome = null;
-                          }),
-                        )
-                      : TextButton(
-                          onPressed: widget.onMarcarSubstituto,
-                          child: const Text('Veio outro produto?'),
-                        ),
+                SizedBox(
+                  width: 130,
+                  child: TextField(
+                    controller: item.custoController,
+                    decoration: const InputDecoration(labelText: 'Custo (R\$)', isDense: true),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setState(() {}),
+                  ),
                 ),
               ],
             ),
+            const SizedBox(height: 6),
+            item.produtoSubstitutoNome != null
+                ? Chip(
+                    label: Text('Veio: ${item.produtoSubstitutoNome}', overflow: TextOverflow.ellipsis),
+                    onDeleted: () => setState(() {
+                      item.produtoSubstitutoId = null;
+                      item.produtoSubstitutoNome = null;
+                    }),
+                  )
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: widget.onMarcarSubstituto,
+                      child: const Text('Veio outro produto?'),
+                    ),
+                  ),
             const SizedBox(height: 4),
             TextField(
               controller: item.observacaoController,
