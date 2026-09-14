@@ -67,6 +67,7 @@ dependencies:
   crop_your_image: ^2.0.0
   youtube_player_flutter: ^10.0.1
   image: ^4.3.0
+  syncfusion_flutter_pdf: ^33.2.13
 
 
 dev_dependencies:

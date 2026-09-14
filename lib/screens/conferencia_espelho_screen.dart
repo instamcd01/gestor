@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/pedido_compra_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/pedido_compra_repository.dart';
+import '../utils/cotacao_pdf_parser.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/busca_produto_sheet.dart';
 
@@ -21,6 +24,12 @@ class _ItemConferencia {
   final TextEditingController observacaoController;
   String? produtoSubstitutoId;
   String? produtoSubstitutoNome;
+
+  /// true depois de ler um PDF de cotação/pedido automaticamente (ver
+  /// [parseCotacaoTargetSistemas]) quando este item não apareceu nele —
+  /// só um aviso visual, não impede salvar (pode ser item que o
+  /// fornecedor vai mandar depois, ou já foi conferido antes).
+  bool foraDaCotacaoLida = false;
 
   _ItemConferencia(this.original)
       : confirmadoController = TextEditingController(
@@ -165,6 +174,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
       setState(() {
         _anexos.add(AnexoEspelho(url: url, tipo: 'pdf', nomeArquivo: arquivo.name, criadoEm: DateTime.now()));
       });
+      await _tentarConferirAutomaticamente(arquivo.bytes!);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao enviar PDF: $e')));
@@ -175,6 +185,86 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
 
   void _removerAnexo(int index) {
     setState(() => _anexos.removeAt(index));
+  }
+
+  /// Lê o PDF recém-anexado e pré-preenche quantidade/custo confirmados com
+  /// o que o fornecedor realmente cotou — antes disso, anexar o PDF só
+  /// guardava o arquivo como referência e o usuário tinha que digitar tudo
+  /// olhando pro PDF manualmente. Casamento é só por código de barras
+  /// (nunca por nome — mesmo princípio de toda reconciliação por EAN já
+  /// usada no projeto), então um produto com nome diferente no PDF mas EAN
+  /// igual ainda é reconhecido certo. PDF em formato não reconhecido (não é
+  /// do Target Sistemas) simplesmente não muda nada — segue manual, igual
+  /// antes.
+  Future<void> _tentarConferirAutomaticamente(Uint8List bytes) async {
+    List<ItemCotacaoExtraido> itensLidos;
+    try {
+      final texto = extrairTextoPdf(bytes);
+      itensLidos = parseCotacaoTargetSistemas(texto);
+    } catch (e) {
+      debugPrint('Não deu pra ler o PDF automaticamente: $e');
+      return;
+    }
+    if (itensLidos.isEmpty || !mounted) return;
+
+    final produtosPorId = {for (final p in context.read<ProdutoProvider>().produtos) p.id: p};
+    Produto? produtoPorEan(String ean) {
+      for (final p in produtosPorId.values) {
+        if (p.codigoBarras == ean) return p;
+      }
+      return null;
+    }
+
+    final eansRestantes = {for (final i in itensLidos) i.codigoBarras: i};
+    var atualizados = 0;
+    var adicionados = 0;
+
+    setState(() {
+      for (final item in _itens) {
+        // Casa pelo EAN do produto REAL deste item — o substituto, se
+        // houver (fornecedor mandou outro produto no lugar), senão o
+        // produto originalmente pedido.
+        final produtoId = item.produtoSubstitutoId ?? item.original.produtoId;
+        final ean = produtosPorId[produtoId]?.codigoBarras;
+        final lido = ean == null ? null : eansRestantes.remove(ean);
+        if (lido == null) {
+          item.foraDaCotacaoLida = true;
+          continue;
+        }
+        item.foraDaCotacaoLida = false;
+        item.confirmadoController.text = lido.quantidade.toString();
+        item.custoController.text = ProdutoValidators.formatarMoeda(lido.custoUnitario);
+        atualizados++;
+      }
+
+      for (final lido in eansRestantes.values) {
+        final produto = produtoPorEan(lido.codigoBarras);
+        if (produto == null || produto.id == null) continue;
+        final novoItem = _ItemConferencia(ItemPedidoCompra(
+          produtoId: produto.id!,
+          produtoNome: produto.nome,
+          quantidadePedida: 0,
+          quantidadeConfirmada: lido.quantidade,
+          custoUnitario: produto.custo,
+          custoConfirmado: lido.custoUnitario,
+          origem: OrigemItemPedidoCompra.conferencia,
+        ))
+          ..confirmadoController.text = lido.quantidade.toString()
+          ..custoController.text = ProdutoValidators.formatarMoeda(lido.custoUnitario);
+        _itens.add(novoItem);
+        adicionados++;
+      }
+    });
+
+    if (!mounted) return;
+    final naoIdentificados = eansRestantes.length - adicionados;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 6),
+      content: Text(
+        '${itensLidos.length} item(ns) lido(s) do PDF: $atualizados atualizado(s), $adicionados novo(s)'
+        '${naoIdentificados > 0 ? ', $naoIdentificados sem produto correspondente no catálogo' : ''}.',
+      ),
+    ));
   }
 
   Future<void> _marcarSubstituto(_ItemConferencia item) async {
@@ -364,6 +454,21 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
                     child: Text(
                       'não pedido',
                       style: TextStyle(fontSize: 10, color: colorScheme.onSecondaryContainer),
+                    ),
+                  ),
+                if (item.foraDaCotacaoLida)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: colorScheme.tertiaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'não veio no PDF lido',
+                        style: TextStyle(fontSize: 10, color: colorScheme.onTertiaryContainer),
+                      ),
                     ),
                   ),
               ],
