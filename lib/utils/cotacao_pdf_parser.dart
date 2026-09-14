@@ -5,11 +5,13 @@ import 'package:syncfusion_flutter_pdf/pdf.dart';
 /// Um item lido de um PDF de cotação/pedido do fornecedor.
 class ItemCotacaoExtraido {
   final String codigoBarras;
+  final String nome;
   final int quantidade;
   final double custoUnitario;
 
   ItemCotacaoExtraido({
     required this.codigoBarras,
+    required this.nome,
     required this.quantidade,
     required this.custoUnitario,
   });
@@ -46,15 +48,20 @@ String extrairTextoPdf(Uint8List bytes) {
 /// antes desta função existir).
 List<ItemCotacaoExtraido> parseCotacaoTargetSistemas(String texto) {
   final itens = <ItemCotacaoExtraido>[];
+  // Grupo 1/2: nome do item + marca, do cabeçalho "(código) NOME\nMARCA"
+  // que abre cada bloco. Resto igual a antes (EAN/Qtde/preço unitário).
   final regexItem = RegExp(
-    r'C[oó]d\.\s*Barras\s*\n(\d{8,14})[\s\S]*?Qtde\s*\n(\d+)[\s\S]*?Vl\s*L[ií]q\s*\n([\d.,]+)\s*\n',
+    r'\(\d+\)\s*([^\n]+)\n([^\n]+)\n[\s\S]*?C[oó]d\.\s*Barras\s*\n(\d{8,14})[\s\S]*?Qtde\s*\n(\d+)[\s\S]*?Vl\s*L[ií]q\s*\n([\d.,]+)\s*\n',
   );
   for (final m in regexItem.allMatches(texto)) {
-    final ean = m.group(1);
-    final quantidade = int.tryParse(m.group(2) ?? '');
-    final custo = double.tryParse((m.group(3) ?? '').replaceAll('.', '').replaceAll(',', '.'));
-    if (ean == null || quantidade == null || custo == null) continue;
-    itens.add(ItemCotacaoExtraido(codigoBarras: ean, quantidade: quantidade, custoUnitario: custo));
+    final nomeItem = m.group(1)?.trim();
+    final marca = m.group(2)?.trim();
+    final ean = m.group(3);
+    final quantidade = int.tryParse(m.group(4) ?? '');
+    final custo = double.tryParse((m.group(5) ?? '').replaceAll('.', '').replaceAll(',', '.'));
+    if (nomeItem == null || ean == null || quantidade == null || custo == null) continue;
+    final nome = (marca == null || marca.isEmpty) ? nomeItem : '$nomeItem — $marca';
+    itens.add(ItemCotacaoExtraido(codigoBarras: ean, nome: nome, quantidade: quantidade, custoUnitario: custo));
   }
   return itens;
 }

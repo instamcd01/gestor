@@ -16,6 +16,7 @@ import '../repositories/pedido_compra_repository.dart';
 import '../utils/cotacao_pdf_parser.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/busca_produto_sheet.dart';
+import 'cadastro_produto_screen.dart';
 
 /// Por que um item aparece destacado na conferência — determina em qual
 /// seção da tela ele entra e a cor/explicação mostrada, pra nunca deixar
@@ -109,6 +110,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   PedidoCompra? _pedido;
   List<_ItemConferencia> _itens = [];
   final List<AnexoEspelho> _anexos = [];
+  final List<ItemCotacaoExtraido> _naoCadastrados = [];
   bool _carregando = true;
   bool _enviandoAnexo = false;
   bool _salvando = false;
@@ -282,9 +284,18 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         atualizados++;
       }
 
+      _naoCadastrados.clear();
       for (final lido in eansRestantes.values) {
         final produto = produtoPorEan(lido.codigoBarras);
-        if (produto == null || produto.id == null) continue;
+        if (produto == null || produto.id == null) {
+          // Fornecedor mandou esse item na cotação, mas não existe produto
+          // com esse EAN no catálogo — antes disso ficava só contado num
+          // número na notificação, sem dizer QUAL produto era. Agora entra
+          // numa lista própria (ver seção "Produtos da cotação sem
+          // cadastro" na tela) pra decidir se cadastra ou ignora.
+          _naoCadastrados.add(lido);
+          continue;
+        }
         final novoItem = _ItemConferencia(ItemPedidoCompra(
           produtoId: produto.id!,
           produtoNome: produto.nome,
@@ -302,14 +313,53 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     });
 
     if (!mounted) return;
-    final naoIdentificados = eansRestantes.length - adicionados;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       duration: const Duration(seconds: 6),
       content: Text(
         '${itensLidos.length} item(ns) lido(s) do PDF: $atualizados atualizado(s), $adicionados novo(s)'
-        '${naoIdentificados > 0 ? ', $naoIdentificados sem produto correspondente no catálogo' : ''}.',
+        '${_naoCadastrados.isNotEmpty ? ', ${_naoCadastrados.length} sem cadastro no catálogo (veja a lista abaixo)' : ''}.',
       ),
     ));
+  }
+
+  /// Abre o cadastro de produto já com nome/EAN/custo vindos da cotação —
+  /// pro caso de "Produtos da cotação sem cadastro" (o fornecedor vendeu
+  /// algo que o catálogo ainda não conhece). Ao salvar, o produto criado já
+  /// entra como item novo na conferência (mesmo tratamento de "veio sem
+  /// ter sido pedido"), sem precisar sair e voltar pra achar ele de novo.
+  Future<void> _cadastrarProdutoNaoCatalogado(ItemCotacaoExtraido lido) async {
+    final produtoCriado = await Navigator.of(context).push<Produto>(MaterialPageRoute(
+      builder: (_) => CadastroProdutoScreen(
+        retornarProdutoCriado: true,
+        produtoInicial: Produto(
+          nome: lido.nome,
+          codigoBarras: lido.codigoBarras,
+          custo: lido.custoUnitario,
+          preco: lido.custoUnitario,
+          descricao: '',
+          categoria: '',
+          estoqueAtual: 0,
+          estoqueMinimo: 0,
+          imagemUrl: '',
+        ),
+      ),
+    ));
+    if (produtoCriado == null || produtoCriado.id == null || !mounted) return;
+
+    setState(() {
+      _naoCadastrados.remove(lido);
+      _itens.add(_ItemConferencia(ItemPedidoCompra(
+        produtoId: produtoCriado.id!,
+        produtoNome: produtoCriado.nome,
+        quantidadePedida: 0,
+        quantidadeConfirmada: lido.quantidade,
+        custoUnitario: produtoCriado.custo,
+        custoConfirmado: lido.custoUnitario,
+        origem: OrigemItemPedidoCompra.conferencia,
+      ))
+        ..confirmadoController.text = lido.quantidade.toString()
+        ..custoController.text = ProdutoValidators.formatarMoeda(lido.custoUnitario));
+    });
   }
 
   Future<void> _marcarSubstituto(_ItemConferencia item) async {
@@ -468,6 +518,35 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                   cor: colorScheme.secondary,
                   itens: porCategoria[CategoriaConferencia.naoEstavaNoPedido] ?? [],
                 ),
+                if (_naoCadastrados.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Container(width: 10, height: 10, decoration: BoxDecoration(color: colorScheme.primary, shape: BoxShape.circle)),
+                      const SizedBox(width: 6),
+                      Text('Produtos da cotação sem cadastro (${_naoCadastrados.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 16, top: 2, bottom: 8),
+                    child: Text(
+                      'O fornecedor cotou esses itens, mas nenhum produto no catálogo tem esse código de barras — cadastre pra poder incluir no pedido.',
+                      style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                  for (final lido in _naoCadastrados)
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        title: Text(lido.nome),
+                        subtitle: Text('EAN: ${lido.codigoBarras} • ${lido.quantidade}un a R\$ ${lido.custoUnitario.toStringAsFixed(2)}'),
+                        trailing: FilledButton.tonal(
+                          onPressed: () => _cadastrarProdutoNaoCatalogado(lido),
+                          child: const Text('Cadastrar'),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                ],
                 _secao(
                   titulo: 'Sem divergência',
                   explicacao: 'Bateu certinho com o que foi pedido.',
