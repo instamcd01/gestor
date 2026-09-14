@@ -72,6 +72,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   bool _nomeManualOverride = false;
   List<String>? _camposEstruturadosPersonalizados;
   bool _desvinculandoVariante = false;
+  bool _excluindo = false;
   final Set<String> _removendoIrmaoIds = {};
   bool _gerandoDescricao = false;
 
@@ -605,6 +606,44 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     }
   }
 
+  /// Exclusão é soft-delete (`produtos.deleted_at`) — o produto some das
+  /// listas e do catálogo, mas fica recuperável em "Produtos excluídos"
+  /// (`ProdutosExcluidosScreen`, acessível pelo menu da lista de produtos)
+  /// em vez de apagado de vez, já que o histórico de venda pode depender
+  /// dele.
+  Future<void> _excluirProduto() async {
+    if (widget.produto.id == null) return;
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Excluir produto?'),
+        content: Text(
+          '"${widget.produto.nome}" sai das listas e do catálogo. Não é apagado '
+          'de vez — dá pra restaurar depois em Produtos > menu (⋮) > '
+          '"Produtos excluídos".',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    setState(() => _excluindo = true);
+    try {
+      await Provider.of<ProdutoProvider>(context, listen: false).deletarProduto(widget.produto.id!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Produto excluído.')));
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao excluir produto: $e')));
+    } finally {
+      if (mounted) setState(() => _excluindo = false);
+    }
+  }
+
   // Remove um IRMÃO da família direto da tela do produto atual, sem precisar
   // navegar até a tela dele — resolve o caso de famílias com muitas opções
   // (ex: 10+ pesos de uma ração), onde antes só dava pra sair da própria
@@ -696,6 +735,20 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       appBar: AppBar(
         title: Text('Editar Produto'),
         actions: [
+          _excluindo
+              ? Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.error),
+                  ),
+                )
+              : IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Excluir produto',
+                  onPressed: _excluirProduto,
+                ),
           _isLoading
               ? Padding(
                   padding: const EdgeInsets.all(16.0),
