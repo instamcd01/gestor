@@ -31,6 +31,35 @@ class ProdutoFornecedorRepository {
     return vinculos;
   }
 
+  /// Produto -> nomes dos fornecedores que já compram esse produto,
+  /// considerando TODOS os fornecedores (não só um específico) — usado no
+  /// seletor de "vincular produtos" pra avisar quando um produto já tem
+  /// fornecedor antes de vincular de novo sem querer. `excetoFornecedorId`
+  /// tira o fornecedor atual do resultado (ele já é excluído da lista de
+  /// candidatos por outro caminho, mas filtra aqui também por segurança).
+  Future<Map<String, List<String>>> listarFornecedoresPorProduto(
+    String empresaId, {
+    String? excetoFornecedorId,
+  }) async {
+    var query = supabase
+        .from('produto_fornecedores')
+        .select('produto_id, fornecedor:fornecedores(nome)')
+        .eq('empresa_id', empresaId);
+    if (excetoFornecedorId != null) {
+      query = query.neq('fornecedor_id', excetoFornecedorId);
+    }
+    final data = await query;
+
+    final mapa = <String, List<String>>{};
+    for (final row in (data as List)) {
+      final produtoId = row['produto_id'] as String;
+      final nome = (row['fornecedor'] as Map?)?['nome'] as String?;
+      if (nome == null) continue;
+      (mapa[produtoId] ??= []).add(nome);
+    }
+    return mapa;
+  }
+
   /// Remove vários vínculos de uma vez — usado pela tela de desvincular em
   /// massa. Continua tentando os demais mesmo se um id falhar, devolvendo
   /// os que não puderam ser removidos.

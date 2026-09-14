@@ -31,6 +31,8 @@ class VincularProdutosFornecedorScreen extends StatefulWidget {
   State<VincularProdutosFornecedorScreen> createState() => _VincularProdutosFornecedorScreenState();
 }
 
+enum _FiltroVinculo { todos, semFornecedor, comFornecedor }
+
 class _ConfigVinculo {
   final custoController = TextEditingController();
   final codigoController = TextEditingController();
@@ -51,10 +53,33 @@ class _VincularProdutosFornecedorScreenState extends State<VincularProdutosForne
   final Map<String, _ConfigVinculo> _configs = {};
   bool _vinculando = false;
 
+  String _categoriaSelecionada = 'Tudo';
+  _FiltroVinculo _filtroVinculo = _FiltroVinculo.todos;
+
+  /// Produto -> fornecedores que já compram dele, de QUALQUER fornecedor
+  /// (não só o atual) — carregado uma vez ao abrir a tela.
+  Map<String, List<String>> _fornecedoresPorProduto = {};
+  bool _carregandoVinculos = true;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _carregarVinculosExistentes();
+  }
+
+  Future<void> _carregarVinculosExistentes() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    final mapa = await ProdutoFornecedorRepository().listarFornecedoresPorProduto(
+      empresaId,
+      excetoFornecedorId: widget.fornecedor.id,
+    );
+    if (!mounted) return;
+    setState(() {
+      _fornecedoresPorProduto = mapa;
+      _carregandoVinculos = false;
+    });
   }
 
   @override
@@ -165,10 +190,16 @@ class _VincularProdutosFornecedorScreenState extends State<VincularProdutosForne
     final produtos = context.watch<ProdutoProvider>().produtos;
     final busca = _buscaController.text;
 
+    final categorias = ['Tudo', ...(produtos.map((p) => p.categoria).toSet().toList()..sort())];
+
     final candidatos = produtos.where((p) {
       if (p.id == null) return false;
       if (p.ehKit) return false;
       if (widget.produtosJaVinculados.contains(p.id)) return false;
+      if (_categoriaSelecionada != 'Tudo' && p.categoria != _categoriaSelecionada) return false;
+      final temOutroFornecedor = _fornecedoresPorProduto.containsKey(p.id);
+      if (_filtroVinculo == _FiltroVinculo.semFornecedor && temOutroFornecedor) return false;
+      if (_filtroVinculo == _FiltroVinculo.comFornecedor && !temOutroFornecedor) return false;
       return contemTodasPalavras(p.nome, busca) || p.codigoBarras.toLowerCase().contains(busca.toLowerCase());
     }).toList();
 
@@ -186,7 +217,7 @@ class _VincularProdutosFornecedorScreenState extends State<VincularProdutosForne
       body: TabBarView(
         controller: _tabController,
         children: [
-          _abaSelecionar(candidatos),
+          _abaSelecionar(candidatos, categorias),
           _abaConfigurar(produtos),
         ],
       ),
@@ -206,11 +237,11 @@ class _VincularProdutosFornecedorScreenState extends State<VincularProdutosForne
     );
   }
 
-  Widget _abaSelecionar(List<Produto> candidatos) {
+  Widget _abaSelecionar(List<Produto> candidatos, List<String> categorias) {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
           child: TextField(
             controller: _buscaController,
             decoration: const InputDecoration(
@@ -221,22 +252,82 @@ class _VincularProdutosFornecedorScreenState extends State<VincularProdutosForne
             onChanged: (_) => setState(() {}),
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: SegmentedButton<_FiltroVinculo>(
+            segments: const [
+              ButtonSegment(value: _FiltroVinculo.todos, label: Text('Todos')),
+              ButtonSegment(value: _FiltroVinculo.semFornecedor, label: Text('Sem fornecedor')),
+              ButtonSegment(value: _FiltroVinculo.comFornecedor, label: Text('Já tem fornecedor')),
+            ],
+            selected: {_filtroVinculo},
+            onSelectionChanged: (s) => setState(() => _filtroVinculo = s.first),
+          ),
+        ),
+        SizedBox(
+          height: 40,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            scrollDirection: Axis.horizontal,
+            itemCount: categorias.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final categoria = categorias[i];
+              return ChoiceChip(
+                label: Text(categoria),
+                selected: _categoriaSelecionada == categoria,
+                onSelected: (_) => setState(() => _categoriaSelecionada = categoria),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
-          child: candidatos.isEmpty
-              ? const Center(child: Text('Nenhum produto disponível pra vincular (já vinculados ficam de fora).'))
-              : ListView.builder(
-                  itemCount: candidatos.length,
-                  itemBuilder: (context, i) {
-                    final produto = candidatos[i];
-                    final marcado = _selecionados.contains(produto.id);
-                    return CheckboxListTile(
-                      value: marcado,
-                      onChanged: (v) => _alternarSelecao(produto, v),
-                      title: Text(produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
-                      subtitle: Text('${produto.categoria} • custo atual: R\$ ${produto.custo.toStringAsFixed(2)}'),
-                    );
-                  },
-                ),
+          child: _carregandoVinculos
+              ? const Center(child: CircularProgressIndicator())
+              : candidatos.isEmpty
+                  ? const Center(child: Text('Nenhum produto encontrado com esses filtros.'))
+                  : ListView.builder(
+                      itemCount: candidatos.length,
+                      itemBuilder: (context, i) {
+                        final produto = candidatos[i];
+                        final marcado = _selecionados.contains(produto.id);
+                        final outrosFornecedores = _fornecedoresPorProduto[produto.id];
+                        return CheckboxListTile(
+                          value: marcado,
+                          onChanged: (v) => _alternarSelecao(produto, v),
+                          title: Text(produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${produto.categoria} • custo atual: R\$ ${produto.custo.toStringAsFixed(2)}'),
+                              if (outrosFornecedores != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.link, size: 14, color: Theme.of(context).colorScheme.tertiary),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          'Já compra de: ${outrosFornecedores.join(', ')}',
+                                          style: TextStyle(
+                                            color: Theme.of(context).colorScheme.tertiary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                          isThreeLine: outrosFornecedores != null,
+                        );
+                      },
+                    ),
         ),
       ],
     );
