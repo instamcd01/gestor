@@ -17,11 +17,27 @@ import '../utils/cotacao_pdf_parser.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/busca_produto_sheet.dart';
 
+/// Por que um item aparece destacado na conferência — determina em qual
+/// seção da tela ele entra e a cor/explicação mostrada, pra nunca deixar
+/// um card vermelho sem dizer o motivo.
+enum CategoriaConferencia {
+  /// Preço e/ou quantidade confirmados diferem do que foi pedido.
+  divergente,
+
+  /// Estava no pedido, mas o PDF lido automaticamente não trouxe esse item.
+  faltanteNoPdf,
+
+  /// Veio no PDF (ou foi registrado manualmente) sem ter sido pedido.
+  naoEstavaNoPedido,
+
+  /// Bateu certinho — pedido, PDF e confirmação concordam.
+  semDivergencia,
+}
+
 class _ItemConferencia {
   final ItemPedidoCompra original;
   final TextEditingController confirmadoController;
   final TextEditingController custoController;
-  final TextEditingController observacaoController;
   String? produtoSubstitutoId;
   String? produtoSubstitutoNome;
 
@@ -37,31 +53,40 @@ class _ItemConferencia {
         ),
         custoController = TextEditingController(
           text: ProdutoValidators.formatarMoeda(original.custoConfirmado ?? original.custoUnitario),
-        ),
-        observacaoController = TextEditingController(text: original.observacao ?? '');
+        );
 
-  bool get divergente {
-    final confirmado = int.tryParse(confirmadoController.text) ?? original.quantidadePedida;
-    final custo = ProdutoValidators.parseNumero(custoController.text) ?? original.custoUnitario;
-    return produtoSubstitutoId != null || confirmado != original.quantidadePedida || custo != original.custoUnitario;
+  int get quantidadeConfirmadaAtual => int.tryParse(confirmadoController.text) ?? original.quantidadePedida;
+  double get custoConfirmadoAtual => ProdutoValidators.parseNumero(custoController.text) ?? original.custoUnitario;
+  bool get quantidadeMudou => quantidadeConfirmadaAtual != original.quantidadePedida;
+  bool get precoMudou => custoConfirmadoAtual != original.custoUnitario;
+
+  bool get naoEstavaNoPedido => original.quantidadePedida == 0;
+
+  bool get divergente => produtoSubstitutoId != null || quantidadeMudou || precoMudou;
+
+  /// Uma única categoria por item, nessa prioridade — usada pra agrupar a
+  /// lista em seções (ver `_ConferenciaEspelhoScreenState.build`).
+  CategoriaConferencia get categoria {
+    if (naoEstavaNoPedido) return CategoriaConferencia.naoEstavaNoPedido;
+    if (foraDaCotacaoLida) return CategoriaConferencia.faltanteNoPdf;
+    if (divergente) return CategoriaConferencia.divergente;
+    return CategoriaConferencia.semDivergencia;
   }
 
   ItemPedidoCompra paraSalvar() {
     return original.copyWith(
-      quantidadeConfirmada: int.tryParse(confirmadoController.text) ?? original.quantidadePedida,
+      quantidadeConfirmada: quantidadeConfirmadaAtual,
       quantidadeConfirmadaDefinir: true,
-      custoConfirmado: ProdutoValidators.parseNumero(custoController.text) ?? original.custoUnitario,
+      custoConfirmado: custoConfirmadoAtual,
       produtoSubstitutoId: produtoSubstitutoId,
       produtoSubstitutoNome: produtoSubstitutoNome,
       produtoSubstitutoDefinir: true,
-      observacao: observacaoController.text.trim().isEmpty ? null : observacaoController.text.trim(),
     );
   }
 
   void dispose() {
     confirmadoController.dispose();
     custoController.dispose();
-    observacaoController.dispose();
   }
 }
 
@@ -346,9 +371,44 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     }
   }
 
+  Widget _secao({
+    required String titulo,
+    required String explicacao,
+    required Color cor,
+    required List<_ItemConferencia> itens,
+  }) {
+    if (itens.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: cor, shape: BoxShape.circle)),
+              const SizedBox(width: 6),
+              Text('$titulo (${itens.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, top: 2, bottom: 8),
+            child: Text(explicacao, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ),
+          for (final item in itens) _LinhaConferencia(item: item, onMarcarSubstituto: () => _marcarSubstituto(item)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+
+    final porCategoria = <CategoriaConferencia, List<_ItemConferencia>>{};
+    for (final item in _itens) {
+      (porCategoria[item.categoria] ??= []).add(item);
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('Conferência do Espelho')),
       body: _carregando
@@ -389,8 +449,31 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                   'Confirme o que o fornecedor realmente vai mandar — pode ser diferente do pedido (a mais, a menos, produto trocado, ou preço diferente do cotado).',
                   style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                 ),
-                const SizedBox(height: 8),
-                for (final item in _itens) _LinhaConferencia(item: item, onMarcarSubstituto: () => _marcarSubstituto(item)),
+                const SizedBox(height: 12),
+                _secao(
+                  titulo: 'Preço ou quantidade diferente do pedido',
+                  explicacao: 'O que foi confirmado (do PDF lido, ou digitado à mão) não bate com o que você pediu.',
+                  cor: colorScheme.error,
+                  itens: porCategoria[CategoriaConferencia.divergente] ?? [],
+                ),
+                _secao(
+                  titulo: 'Não vieram no PDF lido',
+                  explicacao: 'Estavam no pedido, mas o PDF anexado não trouxe esses itens — confirme manualmente ou remova se o fornecedor não vai mandar.',
+                  cor: colorScheme.tertiary,
+                  itens: porCategoria[CategoriaConferencia.faltanteNoPdf] ?? [],
+                ),
+                _secao(
+                  titulo: 'Vieram sem ter sido pedidos',
+                  explicacao: 'O PDF trouxe esses itens (ou foram registrados manualmente) mesmo sem estarem no pedido original.',
+                  cor: colorScheme.secondary,
+                  itens: porCategoria[CategoriaConferencia.naoEstavaNoPedido] ?? [],
+                ),
+                _secao(
+                  titulo: 'Sem divergência',
+                  explicacao: 'Bateu certinho com o que foi pedido.',
+                  cor: colorScheme.outline,
+                  itens: porCategoria[CategoriaConferencia.semDivergencia] ?? [],
+                ),
                 TextButton.icon(
                   onPressed: _adicionarItemNaoPedido,
                   icon: const Icon(Icons.add, size: 18),
@@ -442,61 +525,30 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
   Widget build(BuildContext context) {
     final item = widget.item;
     final colorScheme = Theme.of(context).colorScheme;
-    final naoFoiPedido = item.original.quantidadePedida == 0;
-    // errorContainer/onErrorContainer em vez de Colors.orange.shade50 fixo —
-    // esse fundo claro isolado ficava ilegível no tema escuro porque o
-    // texto não tinha cor explícita (herdava a cor clara padrão do app).
-    final corTexto = item.divergente ? colorScheme.onErrorContainer : null;
 
     return Card(
-      color: item.divergente ? colorScheme.errorContainer : null,
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    item.original.produtoNome,
-                    style: TextStyle(fontWeight: FontWeight.w600, color: corTexto),
-                  ),
-                ),
-                if (naoFoiPedido)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'não pedido',
-                      style: TextStyle(fontSize: 10, color: colorScheme.onSecondaryContainer),
-                    ),
-                  ),
-                if (item.foraDaCotacaoLida)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: colorScheme.tertiaryContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'não veio no PDF lido',
-                        style: TextStyle(fontSize: 10, color: colorScheme.onTertiaryContainer),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            if (!naoFoiPedido)
+            Text(item.original.produtoNome, style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (!item.naoEstavaNoPedido)
               Text(
-                'Pedido: ${item.original.quantidadePedida}un',
-                style: TextStyle(fontSize: 12, color: corTexto ?? colorScheme.onSurfaceVariant),
+                'Pedido: ${item.original.quantidadePedida}un a R\$ ${item.original.custoUnitario.toStringAsFixed(2)}',
+                style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+              ),
+            if (item.quantidadeMudou || item.precoMudou)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (item.quantidadeMudou) _linhaMudanca('Quantidade', item.original.quantidadePedida.toString(), item.quantidadeConfirmadaAtual.toString(), item.quantidadeConfirmadaAtual > item.original.quantidadePedida),
+                    if (item.precoMudou) _linhaMudanca('Preço', 'R\$ ${item.original.custoUnitario.toStringAsFixed(2)}', 'R\$ ${item.custoConfirmadoAtual.toStringAsFixed(2)}', item.custoConfirmadoAtual > item.original.custoUnitario),
+                  ],
+                ),
               ),
             const SizedBox(height: 6),
             Row(
@@ -538,13 +590,26 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
                       child: const Text('Veio outro produto?'),
                     ),
                   ),
-            const SizedBox(height: 4),
-            TextField(
-              controller: item.observacaoController,
-              decoration: const InputDecoration(labelText: 'Observação (opcional)', isDense: true),
-            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _linhaMudanca(String rotulo, String de, String para, bool subiu) {
+    // Preço/quantidade que sobe custa mais caro pro negócio (vermelho);
+    // que desce é bom pro negócio (verde) — cores fixas de propósito, não
+    // seguem o tema claro/escuro do error/tertiary porque aqui o sentido é
+    // sempre "ruim"/"bom" em qualquer tema, não uma categoria neutra.
+    final cor = subiu ? Colors.red.shade700 : Colors.green.shade700;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Icon(subiu ? Icons.arrow_upward : Icons.arrow_downward, size: 14, color: cor),
+          const SizedBox(width: 4),
+          Text('$rotulo: $de → $para', style: TextStyle(fontSize: 12, color: cor, fontWeight: FontWeight.w600)),
+        ],
       ),
     );
   }
