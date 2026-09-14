@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/produto.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/marketplace_repository.dart';
+import '../repositories/produto_canal_repository.dart';
 import '../repositories/produto_repository.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
@@ -134,6 +136,27 @@ class FracionamentoSection extends StatelessWidget {
 
     try {
       final criado = await context.read<ProdutoProvider>().adicionarProduto(novoProduto);
+      // Mesmo passo da criação em massa: preço no iFood só produz efeito de
+      // verdade em produto_canal (o switch/preço reais de "Disponibilidade em
+      // Marketplaces") — produtos.preco_ifood sozinho é só fallback legado da
+      // exportação de planilha. Best-effort: se falhar, o produto já foi
+      // criado igual, só não habilita o canal sozinho.
+      if (novoProduto.precoIfood != null && criado.id != null) {
+        try {
+          final marketplaces = await MarketplaceRepository().listarAtivos();
+          final ifood = marketplaces.where((m) => m.nome == 'iFood').firstOrNull;
+          if (ifood != null) {
+            await ProdutoCanalRepository().salvar(
+              produtoId: criado.id!,
+              marketplaceId: ifood.id,
+              preco: novoProduto.precoIfood!,
+              disponivel: true,
+            );
+          }
+        } catch (_) {
+          // segue sem — produto já foi criado, só não habilita o canal.
+        }
+      }
       if (!context.mounted) return;
       onAbrirProduto(criado);
     } catch (e) {
@@ -447,8 +470,12 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
   final _pesoNovoController = TextEditingController();
   final _fatorController = TextEditingController();
   final _rotuloController = TextEditingController();
+  final _apresentacaoController = TextEditingController();
   final _codigoBarrasController = TextEditingController();
+  final _estoqueController = TextEditingController();
   final _margemController = TextEditingController();
+  final _precoController = TextEditingController();
+  final _precoIfoodController = TextEditingController();
   String? _erro;
 
   @override
@@ -476,9 +503,33 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
     _pesoNovoController.dispose();
     _fatorController.dispose();
     _rotuloController.dispose();
+    _apresentacaoController.dispose();
     _codigoBarrasController.dispose();
+    _estoqueController.dispose();
     _margemController.dispose();
+    _precoController.dispose();
+    _precoIfoodController.dispose();
     super.dispose();
+  }
+
+  // Mesmo comportamento da criação em massa: com margem preenchida, o
+  // trigger do banco `aplicar_margem_fracionado_na_criacao` sempre recalcula
+  // o preço a partir dela ao criar, ignorando qualquer preço que o app
+  // mande — por isso o campo fica travado mostrando o valor real que vai
+  // ser salvo. Sem margem, volta a ser 100% manual.
+  void _sincronizarPrecoComMargem(int? fator) {
+    if (_margemController.text.trim().isEmpty) return;
+    final sugestao = _precoSugerido(fator);
+    if (sugestao != null) {
+      _precoController.text = ProdutoValidators.formatarMoeda(sugestao);
+    }
+  }
+
+  double? _precoSugerido(int? fator) {
+    if (fator == null) return null;
+    final margem = double.tryParse(_margemController.text.trim().replaceAll(',', '.'));
+    if (margem == null) return null;
+    return (widget.produtoPai.custo / fator) * (1 + margem / 100);
   }
 
   String _previewMargem(int fator) {
@@ -521,7 +572,13 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
       setState(() => _erro = 'Margem alvo inválida — use só números (ex: 80).');
       return;
     }
+    final erroPreco = ProdutoValidators.precoVenda(_precoController.text);
+    if (_precoController.text.trim().isNotEmpty && erroPreco != null) {
+      setState(() => _erro = erroPreco);
+      return;
+    }
 
+    final apresentacaoTexto = _apresentacaoController.text.trim();
     final filho = construirProdutoFracionado(
       pai: widget.produtoPai,
       eixo: _eixo,
@@ -529,7 +586,11 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
       rotulo: rotulo,
       codigoBarras: _codigoBarrasController.text,
       pesoNovoExplicito: double.tryParse(_pesoNovoController.text.trim().replaceAll(',', '.')),
+      estoqueInicial: int.tryParse(_estoqueController.text.trim()),
       margemAlvoFracionado: margem,
+      apresentacaoExplicita: apresentacaoTexto.isEmpty ? null : apresentacaoTexto,
+      preco: ProdutoValidators.parseNumero(_precoController.text),
+      precoIfood: ProdutoValidators.parseNumero(_precoIfoodController.text),
     );
 
     Navigator.of(context).pop(filho);
@@ -538,6 +599,9 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
   @override
   Widget build(BuildContext context) {
     final pesoPai = widget.produtoPai.peso;
+    final fator = _fatorCalculado;
+    _sincronizarPrecoComMargem(fator);
+    final sugestaoEstoque = fator != null ? widget.produtoPai.estoqueAtual * fator : null;
     return AlertDialog(
       title: const Text('Fracionar em unidade menor'),
       content: SingleChildScrollView(
@@ -592,6 +656,14 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
             ),
             const SizedBox(height: 12),
             TextField(
+              controller: _apresentacaoController,
+              decoration: const InputDecoration(
+                labelText: 'Apresentação (opcional)',
+                helperText: 'Ex: "Pote", "Sachê", "Caixa". Em branco: repete a do produto original.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
               controller: _codigoBarrasController,
               keyboardType: TextInputType.number,
               inputFormatters: [DigitosInputFormatter()],
@@ -599,6 +671,18 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
                 labelText: 'Código de barras (Opcional)',
                 helperText: 'Só se esse tamanho já tiver EAN próprio de fábrica — '
                     'em branco, o sistema gera um código interno sozinho',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _estoqueController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [DigitosInputFormatter()],
+              decoration: InputDecoration(
+                labelText: 'Estoque inicial (opcional)',
+                helperText: sugestaoEstoque != null
+                    ? 'Em branco usa a sugestão: $sugestaoEstoque (pai atual × fator)'
+                    : 'Em branco usa pai.estoqueAtual × fator',
               ),
             ),
             const SizedBox(height: 12),
@@ -612,13 +696,36 @@ class _DialogoCriarFracionadoState extends State<_DialogoCriarFracionado> {
               ),
               onChanged: (_) => setState(() {}),
             ),
-            if (_fatorCalculado != null)
+            const SizedBox(height: 12),
+            TextField(
+              controller: _precoController,
+              enabled: _margemController.text.trim().isEmpty,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [MoedaInputFormatter()],
+              decoration: InputDecoration(
+                labelText: 'Preço de venda (R\$, opcional)',
+                helperText: _margemController.text.trim().isNotEmpty
+                    ? 'Controlado pela margem acima — o banco recalcula sozinho ao criar.'
+                    : 'Em branco: cria com R\$0 pra configurar depois.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _precoIfoodController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [MoedaInputFormatter()],
+              decoration: const InputDecoration(
+                labelText: 'Preço no iFood (R\$, opcional)',
+                helperText: 'Em branco: usa o mesmo preço de venda na exportação do catálogo iFood.',
+              ),
+            ),
+            if (fator != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  'Fator: 1 unidade do original = $_fatorCalculado deste. '
-                  'Estoque inicial sugerido: ${widget.produtoPai.estoqueAtual * _fatorCalculado!}.'
-                  '${_previewMargem(_fatorCalculado!)}',
+                  'Fator: 1 unidade do original = $fator deste. '
+                  'Estoque inicial sugerido: ${widget.produtoPai.estoqueAtual * fator}.'
+                  '${_previewMargem(fator)}',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
