@@ -27,7 +27,7 @@ import 'cadastro_produto_screen.dart';
 enum AcaoMensagemFornecedor {
   nenhuma,
   reportarDivergencia,
-  pedirMaisQuantidade,
+  ajustarQuantidade,
   perguntarDescontoVolume,
   removerDoPedido,
 }
@@ -39,8 +39,8 @@ extension on AcaoMensagemFornecedor {
         return 'Nenhuma ação';
       case AcaoMensagemFornecedor.reportarDivergencia:
         return 'Reportar divergência';
-      case AcaoMensagemFornecedor.pedirMaisQuantidade:
-        return 'Pedir mais quantidade';
+      case AcaoMensagemFornecedor.ajustarQuantidade:
+        return 'Ajustar quantidade (pra mais ou pra menos)';
       case AcaoMensagemFornecedor.perguntarDescontoVolume:
         return 'Perguntar desconto por volume';
       case AcaoMensagemFornecedor.removerDoPedido:
@@ -85,6 +85,12 @@ class _ItemConferencia {
   final TextEditingController custoController;
   String? produtoSubstitutoId;
   String? produtoSubstitutoNome;
+
+  /// Marcado manualmente pelo usuário conferindo item por item — "já
+  /// revisei este, tá tudo certo" — puramente pra ajudar a acompanhar o
+  /// progresso numa lista grande, não afeta o que é salvo nem a mensagem
+  /// pro fornecedor.
+  bool revisadoOk = false;
 
   /// true depois de ler um PDF de cotação/pedido automaticamente (ver
   /// [parseCotacaoTargetSistemas]) quando este item não apareceu nele —
@@ -429,12 +435,12 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     if (pedido == null) return;
 
     final remover = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.removerDoPedido).toList();
-    final maisQuantidade = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.pedirMaisQuantidade).toList();
+    final ajustarQtd = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.ajustarQuantidade).toList();
     final desconto = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.perguntarDescontoVolume).toList();
     final divergencia = _itens.where((i) => i.acaoMensagem == AcaoMensagemFornecedor.reportarDivergencia).toList();
     final novos = _itensNovosMensagem.where((i) => i.nomeController.text.trim().isNotEmpty).toList();
 
-    if (remover.isEmpty && maisQuantidade.isEmpty && desconto.isEmpty && divergencia.isEmpty && novos.isEmpty) {
+    if (remover.isEmpty && ajustarQtd.isEmpty && desconto.isEmpty && divergencia.isEmpty && novos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Marque uma ação em pelo menos um item (ou adicione um item novo) antes de gerar a mensagem.'),
       ));
@@ -457,9 +463,9 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         buffer.writeln('• ${i.original.produtoNome}');
       }
     }
-    if (maisQuantidade.isNotEmpty) {
-      buffer.writeln('\n📈 Aumentar quantidade:');
-      for (final i in maisQuantidade) {
+    if (ajustarQtd.isNotEmpty) {
+      buffer.writeln('\n🔄 Ajustar quantidade:');
+      for (final i in ajustarQtd) {
         final desejada = i.quantidadeDesejadaController.text.trim();
         buffer.writeln(
           '• ${i.original.produtoNome}: de ${i.original.quantidadePedida}un pra ${desejada.isEmpty ? '?' : desejada}un',
@@ -811,6 +817,25 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
     final item = widget.item;
     final colorScheme = Theme.of(context).colorScheme;
 
+    // Marcado como "tudo certo" recolhe pro resumo de 1 linha — numa lista
+    // grande, conferir item por item e ir marcando limpa a tela conforme
+    // avança, em vez de ter que rolar por tudo de novo toda vez.
+    if (item.revisadoOk) {
+      return Card(
+        margin: const EdgeInsets.only(bottom: 8),
+        child: CheckboxListTile(
+          value: true,
+          onChanged: (_) => setState(() => item.revisadoOk = false),
+          controlAffinity: ListTileControlAffinity.leading,
+          title: Text(
+            item.original.produtoNome,
+            style: TextStyle(decoration: TextDecoration.lineThrough, color: colorScheme.onSurfaceVariant),
+          ),
+          subtitle: Text('${item.quantidadeConfirmadaAtual}un a R\$ ${item.custoConfirmadoAtual.toStringAsFixed(2)}'),
+        ),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -818,7 +843,14 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(item.original.produtoNome, style: const TextStyle(fontWeight: FontWeight.w600)),
+            Row(
+              children: [
+                Checkbox(value: item.revisadoOk, onChanged: (v) => setState(() => item.revisadoOk = v ?? false)),
+                Expanded(
+                  child: Text(item.original.produtoNome, style: const TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
             if (!item.naoEstavaNoPedido)
               Text(
                 'Pedido: ${item.original.quantidadePedida}un a R\$ ${item.original.custoUnitario.toStringAsFixed(2)}',
@@ -885,7 +917,7 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
               ],
               onChanged: (acao) => setState(() => item.acaoMensagem = acao ?? AcaoMensagemFornecedor.nenhuma),
             ),
-            if (item.acaoMensagem == AcaoMensagemFornecedor.pedirMaisQuantidade)
+            if (item.acaoMensagem == AcaoMensagemFornecedor.ajustarQuantidade)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: TextField(
