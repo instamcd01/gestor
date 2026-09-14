@@ -196,6 +196,21 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   /// igual ainda é reconhecido certo. PDF em formato não reconhecido (não é
   /// do Target Sistemas) simplesmente não muda nada — segue manual, igual
   /// antes.
+  /// Formato de PDF que o parser ainda não reconhece — avisa explicitamente
+  /// em vez de falhar em silêncio, pra pedir pro usuário voltar aqui e
+  /// mostrar o arquivo (o parser é ensinado formato por formato, ver
+  /// [parseCotacaoTargetSistemas]).
+  void _avisarFormatoNaoReconhecido() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: const Text(
+        'Não reconheci o formato deste PDF pra ler automaticamente. Confirme os itens manualmente '
+        'abaixo — e se puder, volte aqui e mostre esse arquivo pra ensinar esse formato novo.',
+      ),
+    ));
+  }
+
   Future<void> _tentarConferirAutomaticamente(Uint8List bytes) async {
     List<ItemCotacaoExtraido> itensLidos;
     try {
@@ -203,9 +218,14 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
       itensLidos = parseCotacaoTargetSistemas(texto);
     } catch (e) {
       debugPrint('Não deu pra ler o PDF automaticamente: $e');
+      _avisarFormatoNaoReconhecido();
       return;
     }
-    if (itensLidos.isEmpty || !mounted) return;
+    if (itensLidos.isEmpty) {
+      _avisarFormatoNaoReconhecido();
+      return;
+    }
+    if (!mounted) return;
 
     final produtosPorId = {for (final p in context.read<ProdutoProvider>().produtos) p.id: p};
     Produto? produtoPorEan(String ean) {
