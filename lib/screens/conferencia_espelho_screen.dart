@@ -20,6 +20,16 @@ import '../utils/telefone_utils.dart';
 import '../widgets/busca_produto_sheet.dart';
 import 'cadastro_produto_screen.dart';
 
+/// "R$ X,XX/un" sempre, e quando a quantidade é maior que 1 também mostra
+/// o total (unitário × quantidade) — pedido explícito do usuário: nunca
+/// esconder o valor por unidade, e somar o total quando for múltiplo.
+String _formatarValorUnitarioETotal(double unitario, int quantidade) {
+  final porUnidade = 'R\$ ${unitario.toStringAsFixed(2)}/un';
+  if (quantidade <= 1) return porUnidade;
+  final total = unitario * quantidade;
+  return '$porUnidade (R\$ ${total.toStringAsFixed(2)} no total, ${quantidade}un)';
+}
+
 /// O que pedir pro fornecedor sobre um item específico, na mensagem de
 /// ajuste (ver `_enviarMensagemAjuste`) — uma ação por item, nunca mais de
 /// uma ao mesmo tempo (não faz sentido pedir mais quantidade E remover o
@@ -526,15 +536,23 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
           final desejada = i.quantidadeDesejadaController.text.trim();
           ajustarQtd.add('• ${i.original.produtoNome}: de ${i.original.quantidadePedida}un pra ${desejada.isEmpty ? '?' : desejada}un');
         case AcaoMensagemFornecedor.perguntarDescontoVolume:
+          // Referência é a quantidade/custo CONFIRMADOS (o que a leitura do
+          // PDF já indicou, ou o que foi digitado à mão), não o pedido
+          // original — se o fornecedor já cotou 18un a R$2,27, é sobre
+          // essa realidade que faz sentido perguntar "tem melhor levando
+          // mais", não sobre a 1un que eu tinha pedido antes de cotar.
           desconto.add(
-            '• ${i.original.produtoNome}: hoje R\$ ${i.original.custoUnitario.toStringAsFixed(2)} '
-            'levando ${i.original.quantidadePedida}un — tem preço melhor levando mais?',
+            '• ${i.original.produtoNome}: hoje ${_formatarValorUnitarioETotal(i.custoConfirmadoAtual, i.quantidadeConfirmadaAtual)}'
+            ' — tem preço melhor levando mais?',
           );
         case AcaoMensagemFornecedor.reportarDivergencia:
           final partes = <String>[];
           if (i.quantidadeMudou) partes.add('${i.original.quantidadePedida}un → ${i.quantidadeConfirmadaAtual}un');
           if (i.precoMudou) {
-            partes.add('R\$ ${i.original.custoUnitario.toStringAsFixed(2)} → R\$ ${i.custoConfirmadoAtual.toStringAsFixed(2)}');
+            partes.add(
+              '${_formatarValorUnitarioETotal(i.original.custoUnitario, i.original.quantidadePedida)} → '
+              '${_formatarValorUnitarioETotal(i.custoConfirmadoAtual, i.quantidadeConfirmadaAtual)}',
+            );
           }
           final detalhe = partes.isEmpty ? 'pode confirmar os dados desse item?' : '${partes.join(', ')}, pode confirmar?';
           divergencia.add('• ${i.original.produtoNome}: $detalhe');
@@ -553,12 +571,12 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
           ajustarQtd.add('• ${lido.nome}: de ${lido.quantidade}un cotados pra ${desejada.isEmpty ? '?' : desejada}un');
         case AcaoMensagemFornecedor.perguntarDescontoVolume:
           desconto.add(
-            '• ${lido.nome}: hoje R\$ ${lido.custoUnitario.toStringAsFixed(2)} '
-            'levando ${lido.quantidade}un — tem preço melhor levando mais?',
+            '• ${lido.nome}: hoje ${_formatarValorUnitarioETotal(lido.custoUnitario, lido.quantidade)}'
+            ' — tem preço melhor levando mais?',
           );
         case AcaoMensagemFornecedor.reportarDivergencia:
           divergencia.add(
-            '• ${lido.nome} — ${lido.quantidade}un a R\$ ${lido.custoUnitario.toStringAsFixed(2)} '
+            '• ${lido.nome} — ${_formatarValorUnitarioETotal(lido.custoUnitario, lido.quantidade)} '
             '(EAN ${lido.codigoBarras}), ainda não tenho cadastrado — pode confirmar esse item?',
           );
         case AcaoMensagemFornecedor.nenhuma:

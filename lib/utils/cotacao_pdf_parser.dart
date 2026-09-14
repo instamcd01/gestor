@@ -34,13 +34,14 @@ String extrairTextoPdf(Uint8List bytes) {
 /// "Target Sistemas" no PDF) — ERP usado pela Seropec e possivelmente
 /// outros distribuidores. Cada item vem como um bloco de campos rotulados
 /// sempre na mesma ordem: Cód. Barras / NCM / Qtde / Emb / Bonif / Vl Líq
-/// (preço unitário SEM imposto — mesmo critério de custo já usado no
-/// resto do projeto) / Vl ST / Vl IPI / Vl Líq + Imp / Vl Liq Tot s/Imp /
-/// Vl Líq Tot. Casamento é só por código de barras — nunca por nome
-/// (mesmo princípio de toda reconciliação por EAN já usada no projeto,
-/// ver iFood/Kyte) — produto com nome diferente do cadastro mas EAN igual
-/// ainda casa certo; EAN sem produto correspondente no catálogo fica de
-/// fora, quem chama decide o que fazer.
+/// (preço unitário SEM imposto) / Vl ST / Vl IPI / **Vl Líq + Imp** (preço
+/// unitário COM imposto — usado aqui como custo, é o valor real que sai do
+/// bolso por unidade) / Vl Liq Tot s/Imp / Vl Líq Tot. Casamento é só por
+/// código de barras — nunca por nome (mesmo princípio de toda
+/// reconciliação por EAN já usada no projeto, ver iFood/Kyte) — produto
+/// com nome diferente do cadastro mas EAN igual ainda casa certo; EAN sem
+/// produto correspondente no catálogo fica de fora, quem chama decide o
+/// que fazer.
 ///
 /// Nunca lança exceção — PDF em formato diferente simplesmente devolve
 /// lista vazia, e quem chama trata isso como "não deu pra ler
@@ -49,9 +50,12 @@ String extrairTextoPdf(Uint8List bytes) {
 List<ItemCotacaoExtraido> parseCotacaoTargetSistemas(String texto) {
   final itens = <ItemCotacaoExtraido>[];
   // Grupo 1/2: nome do item + marca, do cabeçalho "(código) NOME\nMARCA"
-  // que abre cada bloco. Resto igual a antes (EAN/Qtde/preço unitário).
+  // que abre cada bloco. Grupo 5: "Vl Líq + Imp" (com "+ Imp" literal),
+  // não confundir com o "Vl Líq" bare (sem imposto) que aparece antes no
+  // mesmo bloco — o `[\s\S]*?` não-guloso pula o "Vl Líq" solto porque ali
+  // não vem seguido de "+ Imp".
   final regexItem = RegExp(
-    r'\(\d+\)\s*([^\n]+)\n([^\n]+)\n[\s\S]*?C[oó]d\.\s*Barras\s*\n(\d{8,14})[\s\S]*?Qtde\s*\n(\d+)[\s\S]*?Vl\s*L[ií]q\s*\n([\d.,]+)\s*\n',
+    r'\(\d+\)\s*([^\n]+)\n([^\n]+)\n[\s\S]*?C[oó]d\.\s*Barras\s*\n(\d{8,14})[\s\S]*?Qtde\s*\n(\d+)[\s\S]*?Vl\s*L[ií]q\s*\+\s*Imp\s*\n([\d.,]+)\s*\n',
   );
   for (final m in regexItem.allMatches(texto)) {
     final nomeItem = m.group(1)?.trim();
