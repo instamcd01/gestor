@@ -945,7 +945,12 @@ class _CartaoContatoState extends State<_CartaoContato> {
     final c = widget.c;
     final enviado = c.enviado;
     final status = !c.ativou
-        ? ('Não ativou', Colors.grey)
+        ? (c.qtdPedidos == 0
+            ? ('Não ativou', Colors.grey)
+            // Comprou por outro canal (WhatsApp/loja física) sem nunca ter
+            // criado conta no site — achado real: aparecia como "Não ativou"
+            // sem pedido nenhum, escondendo que o cliente continua ativo.
+            : ('Não ativou — ${c.qtdPedidos} pedido${c.qtdPedidos == 1 ? '' : 's'}', Colors.blueGrey))
         : c.qtdPedidos == 0
             ? ('Ativou, sem pedido', Colors.orange)
             : ('Ativou — ${c.qtdPedidos} pedido${c.qtdPedidos == 1 ? '' : 's'}', Colors.green);
