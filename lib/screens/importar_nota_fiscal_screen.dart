@@ -19,6 +19,7 @@ import '../repositories/produto_fornecedor_repository.dart';
 import '../services/nfe_xml_parser.dart';
 import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
+import '../utils/leitor_codigo_barras.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/aviso_banner.dart';
 import 'cadastro_produto_screen.dart';
@@ -86,6 +87,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   // seria silenciosamente perdido ao mexer no fator.
   final Set<int> _itensComValorManual = {};
   late final TextEditingController _fatorController;
+  final _chaveAcessoController = TextEditingController();
 
   bool get _temPreVia => _nfe != null;
 
@@ -104,6 +106,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   void dispose() {
     _limparControllers();
     _fatorController.dispose();
+    _chaveAcessoController.dispose();
     super.dispose();
   }
 
@@ -203,10 +206,46 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     );
     if (resultado == null || !mounted) return;
 
+    final arquivo = File(resultado.files.single.path!);
+    final conteudo = await arquivo.readAsString();
+    await _processarXml(conteudo);
+  }
+
+  /// Lê o código de barras da chave de acesso (impressa em cima de
+  /// qualquer DANFE, mesmo sem XML anexo) e joga no campo — evita digitar
+  /// os 44 dígitos na mão. Só extrai dígitos: o valor lido às vezes vem com
+  /// espaços/formatação dependendo do leitor.
+  Future<void> _lerChaveDeAcessoPorCamera() async {
+    final lido = await lerCodigoDeBarras(context);
+    if (lido == null || !mounted) return;
+    final apenasDigitos = lido.replaceAll(RegExp(r'\D'), '');
+    setState(() => _chaveAcessoController.text = apenasDigitos);
+  }
+
+  /// Busca o XML da NF-e pela chave de acesso — pensado pra fornecedor que
+  /// só manda a DANFE impressa (PDF/papel), sem XML anexo (achado real:
+  /// MixPet manda só PDF). Ainda não integrado — falta a Api-Key/endpoint
+  /// da API do Meu Danfe (ver [[gestor_app_context]] quando essa integração
+  /// for configurada). Por enquanto só valida o formato e avisa.
+  Future<void> _buscarPorChaveDeAcesso() async {
+    final chave = _chaveAcessoController.text.trim();
+    if (chave.length != 44) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chave de acesso precisa ter 44 dígitos.')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Busca automática (Meu Danfe) ainda não configurada — falta a Api-Key da integração.'),
+      ),
+    );
+  }
+
+  Future<void> _processarXml(String conteudo) async {
+    if (!mounted) return;
     setState(() => _processando = true);
     try {
-      final arquivo = File(resultado.files.single.path!);
-      final conteudo = await arquivo.readAsString();
       final nfe = NfeXmlParser.parse(conteudo);
 
       final produtoProvider = context.read<ProdutoProvider>();
@@ -560,6 +599,44 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
               onPressed: _selecionarArquivo,
               icon: const Icon(Icons.upload_file),
               label: const Text('Selecionar XML'),
+            ),
+            const SizedBox(height: 24),
+            Row(children: const [
+              Expanded(child: Divider()),
+              Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('ou')),
+              Expanded(child: Divider()),
+            ]),
+            const SizedBox(height: 16),
+            Text(
+              'Fornecedor só mandou a nota impressa (DANFE)? Busque pela chave de acesso — '
+              'os 44 dígitos que ficam em cima de qualquer DANFE, com um código de barras junto.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _chaveAcessoController,
+              keyboardType: TextInputType.number,
+              maxLength: 44,
+              textAlign: TextAlign.center,
+              inputFormatters: [DigitosInputFormatter()],
+              decoration: InputDecoration(
+                labelText: 'Chave de acesso (44 dígitos)',
+                counterText: '',
+                suffixIcon: IconButton(
+                  tooltip: 'Ler código de barras',
+                  icon: const Icon(Icons.qr_code_scanner),
+                  onPressed: _lerChaveDeAcessoPorCamera,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _buscarPorChaveDeAcesso,
+              icon: const Icon(Icons.search),
+              label: const Text('Buscar e importar'),
             ),
           ],
         ),

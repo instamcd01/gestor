@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.gestor">
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Leitor de código de barras (barcode_scan2) — sem isso a permissão
+         de câmera nem chega a ser solicitada em runtime. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
    <application
         android:label="gestor"
         android:name="${applicationName}"
