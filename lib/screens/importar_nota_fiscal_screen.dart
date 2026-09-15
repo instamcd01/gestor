@@ -15,6 +15,7 @@ import '../providers/entrada_provider.dart';
 import '../providers/fornecedor_provider.dart';
 import '../providers/pedido_compra_provider.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/nfe_pendente_entrada_repository.dart';
 import '../repositories/pedido_compra_repository.dart';
 import '../repositories/produto_fornecedor_repository.dart';
 import '../services/nfe_xml_parser.dart';
@@ -26,6 +27,7 @@ import '../utils/produto_validators.dart';
 import '../widgets/aviso_banner.dart';
 import 'cadastro_produto_screen.dart';
 import 'despesas_screen.dart';
+import 'notas_pendentes_entrada_screen.dart';
 
 final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
 final _data = DateFormat('dd/MM/yyyy');
@@ -93,6 +95,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   final Set<int> _itensComValorManual = {};
   late final TextEditingController _fatorController;
   final _chaveAcessoController = TextEditingController();
+  int? _pendentesCount;
 
   bool get _temPreVia => _nfe != null;
 
@@ -105,6 +108,29 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   void initState() {
     super.initState();
     _fatorController = TextEditingController(text: _formatarFator(1.0));
+    _carregarContagemPendentes();
+  }
+
+  /// Só a contagem, pra mostrar no botão sem esperar carregar (e parsear)
+  /// todas as notas antes de a tela inicial aparecer.
+  Future<void> _carregarContagemPendentes() async {
+    try {
+      final pendentes = await NfePendenteEntradaRepository().listar();
+      if (mounted) setState(() => _pendentesCount = pendentes.length);
+    } catch (_) {
+      // Falha aqui não deve travar a tela de importação normal (scan/XML
+      // continuam funcionando) - só o atalho de pendentes fica indisponível.
+      if (mounted) setState(() => _pendentesCount = 0);
+    }
+  }
+
+  Future<void> _abrirNotasPendentes() async {
+    final xml = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const NotasPendentesEntradaScreen()),
+    );
+    if (xml == null || !mounted) return;
+    await _processarXml(xml);
   }
 
   @override
@@ -583,6 +609,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         _fornecedorExistente = null;
         _processando = false;
       });
+      _carregarContagemPendentes();
     } catch (e) {
       if (!mounted) return;
       setState(() => _processando = false);
@@ -630,6 +657,20 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 24),
+            if (_pendentesCount != null && _pendentesCount! > 0) ...[
+              FilledButton.tonalIcon(
+                onPressed: _abrirNotasPendentes,
+                icon: const Icon(Icons.inbox_outlined),
+                label: Text('Notas pendentes de entrada ($_pendentesCount)'),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Já baixadas da Sefaz automaticamente — escolha uma pra dar entrada sem escanear de novo.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+            ],
             FilledButton.icon(
               onPressed: _selecionarArquivo,
               icon: const Icon(Icons.upload_file),
