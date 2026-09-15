@@ -118,6 +118,9 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       if (inicial.custo > 0) {
         _custoController.text = ProdutoValidators.formatarMoeda(inicial.custo);
       }
+      if (inicial.empresa != null && inicial.empresa!.isNotEmpty) {
+        _empresaController.text = inicial.empresa!;
+      }
     }
     _carregarCategorias();
     _carregarSubcategorias();

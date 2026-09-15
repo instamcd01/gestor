@@ -391,6 +391,10 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             imagemUrl: '',
             codigoBarras: item.eanNfe,
             custo: item.custoUnitario,
+            // Fornecedor já identificado (cadastrado ou detectado no XML) —
+            // sem isso o usuário tinha que digitar de novo um nome que a
+            // tela já sabia, pra cada produto novo da mesma nota.
+            empresa: _fornecedorExistente?.nome ?? _nfe?.fornecedorDetectado.nome,
           ),
         ),
       ),
