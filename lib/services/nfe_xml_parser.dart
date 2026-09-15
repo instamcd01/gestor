@@ -101,6 +101,29 @@ class NfeXmlParser {
       return ItemEntrada(eanNfe: '', descricaoNfe: 'Item sem dados de produto', quantidade: 0, custoUnitario: 0, valorTotal: 0);
     }
 
+    // Custo real de aquisição não é só `vProd` (valor do produto "puro") —
+    // precisa somar os encargos que o comprador paga mas não recupera
+    // depois: ICMS-ST (e o FCP-ST que sempre acompanha) é definitivo, o
+    // varejo não é industrial então IPI também não vira crédito. Achado
+    // real 15/09 comparando com uma nota de verdade: item com CST 70 tinha
+    // vICMSST > 0 nunca somado ao custo, subestimando o custo e superestimando
+    // a margem — mesma classe de bug já corrigida antes na comissão do
+    // iFood (ver memória "Custo real por venda").
+    // Frete/seguro/outras despesas e desconto só quando o emitente
+    // detalha por item (tags `vFrete`/`vSeg`/`vOutro`/`vDesc` dentro do
+    // próprio `prod`) — quando é só um total rateado na nota inteira, isso
+    // fica de fora por ora (rateio proporcional entre itens é uma conta
+    // separada, não implementada aqui).
+    final imposto = _primeiroFilho(det, 'imposto');
+    final vICMSST = _somarDescendentes(imposto, 'vICMSST');
+    final vFCPST = _somarDescendentes(imposto, 'vFCPST');
+    final vIPI = _somarDescendentes(imposto, 'vIPI');
+    final vFrete = double.tryParse(_texto(prod, 'vFrete') ?? '0') ?? 0.0;
+    final vSeg = double.tryParse(_texto(prod, 'vSeg') ?? '0') ?? 0.0;
+    final vOutro = double.tryParse(_texto(prod, 'vOutro') ?? '0') ?? 0.0;
+    final vDesc = double.tryParse(_texto(prod, 'vDesc') ?? '0') ?? 0.0;
+    final encargosNaoRecuperaveis = vICMSST + vFCPST + vIPI + vFrete + vSeg + vOutro - vDesc;
+
     // cEAN vem literalmente "SEM GTIN" quando o fornecedor não cadastrou
     // código de barras pro item — não é um EAN de verdade, tratar como
     // ausente e cair pro cEANTrib (código tributável, às vezes preenchido
@@ -120,17 +143,37 @@ class NfeXmlParser {
     final dFab = rastro != null ? _texto(rastro, 'dFab') : null;
     final dVal = rastro != null ? _texto(rastro, 'dVal') : null;
 
+    final quantidade = double.tryParse(_texto(prod, 'qCom') ?? '0') ?? 0.0;
+    final valorProduto = double.tryParse(_texto(prod, 'vProd') ?? '0') ?? 0.0;
+    final valorTotalComEncargos = valorProduto + encargosNaoRecuperaveis;
+    // Redivide pela quantidade em vez de usar `vUnCom` direto — `vUnCom` é
+    // só o preço do produto, sem os encargos que acabaram de entrar na
+    // conta acima.
+    final custoUnitario = quantidade > 0 ? valorTotalComEncargos / quantidade : 0.0;
+
     return ItemEntrada(
       eanNfe: ean,
       descricaoNfe: _texto(prod, 'xProd') ?? '',
       ncm: _texto(prod, 'NCM'),
-      quantidade: double.tryParse(_texto(prod, 'qCom') ?? '0') ?? 0.0,
-      custoUnitario: double.tryParse(_texto(prod, 'vUnCom') ?? '0') ?? 0.0,
-      valorTotal: double.tryParse(_texto(prod, 'vProd') ?? '0') ?? 0.0,
+      quantidade: quantidade,
+      custoUnitario: custoUnitario,
+      valorTotal: valorTotalComEncargos,
       numeroLote: rastro != null ? _texto(rastro, 'nLote') : null,
       dataFabricacao: dFab != null ? DateTime.tryParse(dFab) : null,
       dataValidade: dVal != null ? DateTime.tryParse(dVal) : null,
     );
+  }
+
+  /// Soma o valor de todas as ocorrências da tag [nome] dentro de [el],
+  /// em qualquer profundidade — usado pra pegar `vICMSST`/`vFCPST`/`vIPI`
+  /// sem precisar enumerar cada variante de CST (ICMS10/30/60/70/90,
+  /// IPITrib) que pode conter esses campos.
+  static double _somarDescendentes(XmlElement? el, String nome) {
+    if (el == null) return 0.0;
+    return el.findAllElements(nome).fold<double>(
+          0.0,
+          (soma, tag) => soma + (double.tryParse(tag.innerText.trim()) ?? 0.0),
+        );
   }
 
   /// Nem toda NF-e tem duplicatas (ex: pagamento à vista sem boleto) —
