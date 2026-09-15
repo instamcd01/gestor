@@ -9,6 +9,7 @@ class Produto {
   String categoria;
   String? subcategoria;
   String? sku;
+  String? ncm;
   double? peso;
   double? volume;
   bool ativo;
@@ -148,6 +149,7 @@ class Produto {
     required this.categoria,
     this.subcategoria,
     this.sku,
+    this.ncm,
     this.peso,
     this.volume,
     this.ativo = true,
@@ -229,6 +231,7 @@ class Produto {
       categoria: row['categoria']?.toString() ?? '',
       subcategoria: row['subcategoria']?.toString(),
       sku: row['sku']?.toString(),
+      ncm: row['ncm']?.toString(),
       peso: (row['peso'] as num?)?.toDouble(),
       volume: (row['volume'] as num?)?.toDouble(),
       ativo: row['ativo'] as bool? ?? true,
@@ -287,6 +290,7 @@ class Produto {
       'categoria': categoria,
       'subcategoria': subcategoria,
       'sku': sku,
+      'ncm': ncm,
       'peso': peso,
       'volume': volume,
       'ativo': ativo,

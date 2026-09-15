@@ -42,6 +42,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   late TextEditingController _categoriaController;
   late TextEditingController _subcategoriaController;
   late TextEditingController _skuController;
+  late TextEditingController _ncmController;
   late TextEditingController _pesoController;
   late TextEditingController _volumeController;
   late TextEditingController _precoController;
@@ -118,6 +119,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _subcategoriaController =
         TextEditingController(text: widget.produto.subcategoria ?? '');
     _skuController = TextEditingController(text: widget.produto.sku ?? '');
+    _ncmController = TextEditingController(text: widget.produto.ncm ?? '');
     _pesoController = TextEditingController(
         text: widget.produto.peso?.toString().replaceAll('.', ',') ?? '');
     _volumeController = TextEditingController(
@@ -229,6 +231,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _categoriaController.dispose();
     _subcategoriaController.dispose();
     _skuController.dispose();
+    _ncmController.dispose();
     _pesoController.dispose();
     _volumeController.dispose();
     _precoController.dispose();
@@ -433,6 +436,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
           ? _subcategoriaController.text
           : null,
       sku: _skuController.text.isNotEmpty ? _skuController.text : null,
+      ncm: _ncmController.text.isNotEmpty ? _ncmController.text : null,
       peso: ProdutoValidators.parseNumero(_pesoController.text),
       volume: ProdutoValidators.parseNumero(_volumeController.text),
       ativo: _ativo,
@@ -947,6 +951,15 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                       labelText: 'SKU (Opcional)',
                       helperText: 'Código interno usado para integrar com marketplaces',
                     ),
+                  ),
+                  TextFormField(
+                    controller: _ncmController,
+                    decoration: const InputDecoration(
+                      labelText: 'NCM (Opcional)',
+                      helperText: 'Classificação fiscal — vem preenchido sozinho ao importar de uma NF-e',
+                    ),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [DigitosInputFormatter()],
                   ),
                 ],
               ),

@@ -395,6 +395,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             // sem isso o usuário tinha que digitar de novo um nome que a
             // tela já sabia, pra cada produto novo da mesma nota.
             empresa: _fornecedorExistente?.nome ?? _nfe?.fornecedorDetectado.nome,
+            ncm: item.ncm,
           ),
         ),
       ),
