@@ -53,6 +53,15 @@ String _formatarFator(double fator) => fator.toStringAsFixed(2).replaceAll('.', 
 
 String _formatarQuantidade(double q) => q == q.roundToDouble() ? q.toStringAsFixed(0) : q.toStringAsFixed(2).replaceAll('.', ',');
 
+/// Compara custo por centavo (não `!=`/`==` direto em `double`) — o custo do
+/// item da nota agora é uma conta com várias somas/divisões (produto +
+/// ICMS-ST/FCP-ST/IPI, dividido pela quantidade), então frequentemente cai
+/// em algo tipo 11.200000000000001 em vez de 11.2 exato. Achado real 15/09:
+/// isso fazia o aviso de "custo mudou" aparecer mostrando o MESMO valor dos
+/// dois lados (ex: "era 11,20 → nota traz 11,20"), porque a diferença real
+/// é menor que 1 centavo mas ainda diferente de zero pro Dart.
+bool _custosDivergem(double a, double b) => (a * 100).round() != (b * 100).round();
+
 /// Importa uma NF-e (XML) de um fornecedor: casa os itens por código de
 /// barras contra os produtos já cadastrados, mostra uma prévia — separada
 /// em pendentes/prontos, com o produto vinculado sempre visível por nome
@@ -445,7 +454,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final itensComCustoDivergente = _itensResolvidos.where((i) {
       if (!i.casado || i.custoUnitario <= 0) return false;
       final produto = produtos[i.produtoId];
-      return produto != null && produto.custo != i.custoUnitario;
+      return produto != null && _custosDivergem(produto.custo, i.custoUnitario);
     }).toList();
 
     // Vínculo produto↔fornecedor: busca de uma vez quais produtos casados já
@@ -526,7 +535,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       for (final item in _itensResolvidos) {
         if (!item.casado || item.custoUnitario <= 0) continue;
         final produto = produtos[item.produtoId];
-        if (produto == null || produto.custo == item.custoUnitario) continue;
+        if (produto == null || !_custosDivergem(produto.custo, item.custoUnitario)) continue;
         produto.custo = item.custoUnitario;
         await context.read<ProdutoProvider>().atualizarProduto(produto);
       }
@@ -938,7 +947,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
           texto: 'Custo não informado pela nota — mantém ${_moeda.format(produtoCasado.custo)} do cadastro.',
           tipo: TipoAviso.info,
         );
-      } else if (produtoCasado.custo != item.custoUnitario) {
+      } else if (_custosDivergem(produtoCasado.custo, item.custoUnitario)) {
         final subiu = item.custoUnitario > produtoCasado.custo;
         avisoCusto = (
           texto: 'Custo ${subiu ? "subiu" : "caiu"}: era ${_moeda.format(produtoCasado.custo)} → nota traz ${_moeda.format(item.custoUnitario)}.',
