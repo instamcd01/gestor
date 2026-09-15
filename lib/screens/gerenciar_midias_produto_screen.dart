@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -370,9 +371,9 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
         appBar: AppBar(backgroundColor: Colors.black, iconTheme: const IconThemeData(color: Colors.white)),
         body: Center(
           child: InteractiveViewer(
-            child: Image.network(
-              url,
-              errorBuilder: (_, __, ___) =>
+            child: CachedNetworkImage(
+              imageUrl: url,
+              errorWidget: (_, __, ___) =>
                   const Icon(Icons.broken_image, color: Colors.white, size: 64),
             ),
           ),
@@ -391,12 +392,12 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
             onTap: () => _abrirImagemEmTelaCheia(_comCacheBuster(midia.url)),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                _comCacheBuster(midia.url),
+              child: CachedNetworkImage(
+                imageUrl: _comCacheBuster(midia.url),
                 width: 110,
                 height: 110,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
+                errorWidget: (_, __, ___) => Container(
                   width: 110,
                   height: 110,
                   color: colorScheme.surfaceContainerHighest,

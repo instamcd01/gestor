@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -403,10 +404,10 @@ class _Miniatura extends StatelessWidget {
               borderRadius: BorderRadius.circular(7),
               child: Padding(
                 padding: const EdgeInsets.all(4),
-                child: Image.network(
-                  url!,
+                child: CachedNetworkImage(
+                  imageUrl: url!,
                   fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined),
+                  errorWidget: (_, __, ___) => const Icon(Icons.broken_image_outlined),
                 ),
               ),
             ),

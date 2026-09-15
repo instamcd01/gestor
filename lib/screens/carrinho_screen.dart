@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:gestor/providers/carrinho_provider.dart';
@@ -415,10 +416,10 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
               child: SizedBox(
                 width: 48,
                 height: 48,
-                child: Image.network(
-                  imagemUrl,
+                child: CachedNetworkImage(
+                  imageUrl: imagemUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
+                  errorWidget: (context, url, error) => Container(
                     color: colorScheme.surfaceContainerHighest,
                     child: Icon(Icons.image_not_supported_outlined, size: 20, color: colorScheme.onSurfaceVariant),
                   ),

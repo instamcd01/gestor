@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -132,10 +133,10 @@ class _KitCard extends StatelessWidget {
                   height: 64,
                   color: colorScheme.surfaceContainerHighest,
                   child: kit.imagemUrl.isNotEmpty
-                      ? Image.network(
-                          kit.imagemUrl,
+                      ? CachedNetworkImage(
+                          imageUrl: kit.imagemUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(Icons.card_giftcard, color: colorScheme.onSurfaceVariant),
+                          errorWidget: (_, __, ___) => Icon(Icons.card_giftcard, color: colorScheme.onSurfaceVariant),
                         )
                       : Icon(Icons.card_giftcard, color: colorScheme.onSurfaceVariant),
                 ),

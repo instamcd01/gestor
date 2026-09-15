@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../models/produto.dart';
@@ -37,10 +38,10 @@ class DetalhesProdutoScreen extends StatelessWidget {
                 height: 140,
                 color: colorScheme.surfaceContainerHighest,
                 child: produto.imagemUrl.isNotEmpty
-                    ? Image.network(
-                        produto.imagemUrlExibicao,
+                    ? CachedNetworkImage(
+                        imageUrl: produto.imagemUrlExibicao,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Icon(
+                        errorWidget: (_, __, ___) => Icon(
                           Icons.inventory_2_outlined,
                           size: 48,
                           color: colorScheme.onSurfaceVariant,

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:gestor/screens/produto_categorias_screen.dart';
 import 'package:gestor/screens/fabricante_screen.dart';
@@ -782,12 +783,12 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                               height: 120,
                               color: colorScheme.surfaceContainerHighest,
                               child: (_imagemUrlAtual != null && _imagemUrlAtual!.isNotEmpty)
-                                  ? Image.network(
-                                      '$_imagemUrlAtual?cb=$_cacheBusterImagem',
+                                  ? CachedNetworkImage(
+                                      imageUrl: '$_imagemUrlAtual?cb=$_cacheBusterImagem',
                                       width: 120,
                                       height: 120,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Icon(
+                                      errorWidget: (_, __, ___) => Icon(
                                         Icons.image,
                                         size: 40,
                                         color: colorScheme.onSurfaceVariant,

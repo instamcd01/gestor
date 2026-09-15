@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -244,10 +245,10 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
                         width: 40,
                         height: 40,
                         child: pet.imagemUrl.isNotEmpty
-                            ? Image.network(
-                                pet.imagemUrl,
+                            ? CachedNetworkImage(
+                                imageUrl: pet.imagemUrl,
                                 fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) => Container(
+                                errorWidget: (context, url, error) => Container(
                                   color: colorScheme.surfaceContainerHighest,
                                   child: Icon(Icons.pets, color: colorScheme.onSurfaceVariant),
                                 ),

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -300,10 +301,10 @@ class _ProdutoCard extends StatelessWidget {
                   height: 64,
                   color: colorScheme.surfaceContainerHighest,
                   child: produto.imagemUrl.isNotEmpty
-                      ? Image.network(
-                          produto.imagemUrlExibicao,
+                      ? CachedNetworkImage(
+                          imageUrl: produto.imagemUrlExibicao,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
+                          errorWidget: (_, __, ___) => Icon(
                             Icons.inventory_2_outlined,
                             color: colorScheme.onSurfaceVariant,
                           ),

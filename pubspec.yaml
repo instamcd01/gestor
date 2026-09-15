@@ -68,6 +68,7 @@ dependencies:
   youtube_player_flutter: ^10.0.1
   image: ^4.3.0
   syncfusion_flutter_pdf: ^33.2.13
+  cached_network_image: ^3.4.1
 
 
 dev_dependencies:

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -37,7 +38,7 @@ class _DrawerHomeShellState extends State<DrawerHomeShell> {
       appBar: AppBar(
         title: logoTopo == null
             ? Text(nomeEmpresa)
-            : Image.network(logoTopo, height: 44, fit: BoxFit.contain),
+            : CachedNetworkImage(imageUrl: logoTopo, height: 44, fit: BoxFit.contain),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.menu),
@@ -125,11 +126,11 @@ class _DrawerHomeShellState extends State<DrawerHomeShell> {
     }
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: tamanho * 3),
-      child: Image.network(
-        logoUrl,
+      child: CachedNetworkImage(
+        imageUrl: logoUrl,
         height: tamanho,
         fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => Icon(Icons.pets, size: tamanho, color: colorScheme.onPrimary),
+        errorWidget: (context, url, error) => Icon(Icons.pets, size: tamanho, color: colorScheme.onPrimary),
       ),
     );
   }

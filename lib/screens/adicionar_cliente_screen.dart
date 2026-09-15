@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
@@ -557,7 +558,7 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
                                     width: 40,
                                     height: 40,
                                     child: pet.imagemUrl.isNotEmpty
-                                        ? Image.network(pet.imagemUrl, fit: BoxFit.cover)
+                                        ? CachedNetworkImage(imageUrl: pet.imagemUrl, fit: BoxFit.cover)
                                         : Container(
                                             color: colorScheme.surfaceContainerHighest,
                                             child: Icon(Icons.pets, color: colorScheme.onSurfaceVariant),

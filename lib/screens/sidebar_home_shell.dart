@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -184,11 +185,11 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
     }
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: tamanho * 3),
-      child: Image.network(
-        logoUrl,
+      child: CachedNetworkImage(
+        imageUrl: logoUrl,
         height: tamanho,
         fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => Icon(Icons.pets, size: tamanho, color: colorScheme.primary),
+        errorWidget: (context, url, error) => Icon(Icons.pets, size: tamanho, color: colorScheme.primary),
       ),
     );
   }

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:diacritic/diacritic.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -339,10 +340,10 @@ class _VendasScreenState extends State<VendasScreen> {
                           width: double.infinity,
                           color: colorScheme.surfaceContainerHighest,
                           child: kit.imagemUrl.isNotEmpty
-                              ? Image.network(
-                                  kit.imagemUrl,
+                              ? CachedNetworkImage(
+                                  imageUrl: kit.imagemUrl,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
+                                  errorWidget: (_, __, ___) =>
                                       Icon(Icons.card_giftcard, color: colorScheme.onSurfaceVariant),
                                 )
                               : Icon(Icons.card_giftcard, color: colorScheme.onSurfaceVariant),
@@ -422,21 +423,18 @@ class _VendasScreenState extends State<VendasScreen> {
       borderRadius: BorderRadius.circular(8),
       child: Container(
         color: colorScheme.surfaceContainerHighest,
-        child: Image.network(
-          imagemUrl,
+        child: CachedNetworkImage(
+          imageUrl: imagemUrl,
           fit: BoxFit.cover,
           width: double.infinity,
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return Center(
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary),
-              ),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) {
+          placeholder: (context, url) => Center(
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary),
+            ),
+          ),
+          errorWidget: (context, url, error) {
             return Icon(Icons.image_not_supported_outlined, color: colorScheme.onSurfaceVariant);
           },
         ),

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
@@ -349,10 +350,10 @@ class _CardBanner extends StatelessWidget {
                     color: Theme.of(context).colorScheme.surfaceContainerHighest,
                     child: const Icon(Icons.videocam_outlined),
                   )
-                : Image.network(
-                    banner.url,
+                : CachedNetworkImage(
+                    imageUrl: banner.url,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined),
+                    errorWidget: (_, __, ___) => const Icon(Icons.broken_image_outlined),
                   ),
           ),
         ),
@@ -533,7 +534,7 @@ class _BannerFormScreenState extends State<_BannerFormScreen> {
                         color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         child: const Center(child: Icon(Icons.videocam_outlined, size: 40)),
                       )
-                    : Image.network(_url, fit: BoxFit.cover),
+                    : CachedNetworkImage(imageUrl: _url, fit: BoxFit.cover),
               ),
             ),
             if (!_base.isVideo) ...[
@@ -569,7 +570,7 @@ class _BannerFormScreenState extends State<_BannerFormScreen> {
                   borderRadius: BorderRadius.circular(12),
                   child: AspectRatio(
                     aspectRatio: _proporcaoBannerMobile,
-                    child: Image.network(_urlMobile!, fit: BoxFit.cover),
+                    child: CachedNetworkImage(imageUrl: _urlMobile!, fit: BoxFit.cover),
                   ),
                 ),
               ],
