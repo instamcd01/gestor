@@ -21,6 +21,7 @@ import '../services/nfe_xml_parser.dart';
 import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/leitor_codigo_barras.dart';
+import '../utils/nfe_chave_acesso_validator.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/aviso_banner.dart';
 import 'cadastro_produto_screen.dart';
@@ -229,16 +230,29 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   /// Busca o XML da NF-e pela chave de acesso — pensado pra fornecedor que
   /// só manda a DANFE impressa (PDF/papel), sem XML anexo (achado real:
   /// MixPet manda só PDF). Chama a edge function `buscar-nfe-por-chave`, que
-  /// repassa pro workflow n8n "NFe - Buscar por Chave (Sefaz
-  /// DistribuicaoDFe)" — consulta direta ao webservice oficial da Sefaz
-  /// com o certificado digital A1 da empresa, sem depender de API paga de
-  /// terceiro (a Meu Danfe foi usada antes, trocada por inconsistência de
-  /// confiabilidade encontrada em uso real).
+  /// repassa pro serviço `nfe-sefaz-service` (Node.js, Easypanel) — consulta
+  /// direta ao webservice oficial da Sefaz com o certificado digital A1 da
+  /// empresa, sem depender de API paga de terceiro (a Meu Danfe foi usada
+  /// antes, trocada por inconsistência de confiabilidade encontrada em uso
+  /// real; n8n e a edge function sozinha também foram tentados e abandonados
+  /// por bugs de infraestrutura — ver `buscar-nfe-por-chave` na edge
+  /// function pro histórico completo).
   Future<void> _buscarPorChaveDeAcesso() async {
     final chave = _chaveAcessoController.text.trim();
     if (chave.length != 44) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Chave de acesso precisa ter 44 dígitos.')),
+      );
+      return;
+    }
+    // Confere o dígito verificador ANTES de gastar uma chamada de verdade
+    // à Sefaz — sem isso, uma chave lida errado (código de barras errado
+    // perto, ex: boleto) ou digitada errada só aparecia como "não
+    // encontrado", ambíguo com o caso real de nota ainda não indexada
+    // (achado real 15/09).
+    if (!chaveDeAcessoValida(chave)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chave de acesso inválida — confira se leu o código de barras certo ou digitou certo.')),
       );
       return;
     }
