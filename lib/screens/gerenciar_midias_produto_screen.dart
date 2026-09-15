@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -17,6 +18,24 @@ import '../utils/upload_imagem_produto.dart';
 import 'cortar_imagem_screen.dart';
 
 const _maxImagens = 6;
+
+// Nenhuma chamada de rede no app tinha timeout configurado (nem no client
+// Supabase, nem aqui) — achado real 15/09: um upload de imagem pelo celular
+// (rede móvel, mais sujeita a engasgo do que wifi/desktop) ficou "carregando
+// pra sempre", sem erro nenhum, porque o Future simplesmente nunca resolvia.
+// Timeout generoso (rede móvel/upload de foto pode ser lento de verdade,
+// isso não é sobre ser rápido, é sobre eventualmente desistir e avisar).
+const _timeoutRede = Duration(seconds: 45);
+
+/// Mensagem amigável pra qualquer timeout de rede nesta tela — mesma ideia
+/// já usada no serviço de NF-e (nunca deixar um erro técnico cru chegar
+/// pro usuário sem contexto do que fazer a respeito).
+String _mensagemErroRede(Object e) {
+  if (e is TimeoutException) {
+    return 'Sem resposta do servidor — verifique sua conexão e tente de novo.';
+  }
+  return '$e';
+}
 
 /// Tela dedicada de galeria de um produto: até 6 imagens (com recorte,
 /// reordenação por arrastar e exclusão) + vídeos por link (com player
@@ -67,7 +86,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
     setState(() => _carregando = true);
     try {
       _empresaId ??= await obterEmpresaIdAtual();
-      final midias = await _repo.listar(widget.produtoId);
+      final midias = await _repo.listar(widget.produtoId).timeout(_timeoutRede);
       if (!mounted) return;
       setState(() {
         _imagens = midias.where((m) => m.isImagem).toList()
@@ -79,7 +98,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao carregar mídias: $e')),
+        SnackBar(content: Text('Erro ao carregar mídias: ${_mensagemErroRede(e)}')),
       );
     } finally {
       if (mounted) setState(() => _carregando = false);
@@ -152,7 +171,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
       // memória) — evita gravar numa `ordem` que colide com uma imagem que
       // já existe no servidor mas ainda não chegou pra esta tela (ex: outra
       // aba/dispositivo editando o mesmo produto ao mesmo tempo).
-      final proximaOrdem = await _contarImagensNoServidor() + 1;
+      final proximaOrdem = await _contarImagensNoServidor().timeout(_timeoutRede) + 1;
       final url = await uploadImagemProduto(
         bytes: bytesOriginais,
         empresaId: _empresaId!,
@@ -162,20 +181,20 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
         fabricante: produto.fabricante,
         marca: produto.empresa,
         ordem: proximaOrdem,
-      );
+      ).timeout(_timeoutRede);
       await _repo.inserir(
         produtoId: widget.produtoId,
         empresaId: _empresaId!,
         tipo: 'imagem',
         url: url,
         ordem: proximaOrdem,
-      );
+      ).timeout(_timeoutRede);
       await _carregar();
       _atualizarCacheDeProdutos();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao enviar imagem: $e')),
+        SnackBar(content: Text('Erro ao enviar imagem: ${_mensagemErroRede(e)}')),
       );
     } finally {
       if (mounted) setState(() => _processando = false);
@@ -190,7 +209,7 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
   Future<void> _recortarImagemExistente(ProdutoMidia midia) async {
     setState(() => _processando = true);
     try {
-      final resposta = await http.get(Uri.parse(midia.url));
+      final resposta = await http.get(Uri.parse(midia.url)).timeout(_timeoutRede);
       if (resposta.statusCode != 200) {
         throw Exception('Não foi possível carregar a imagem atual.');
       }
@@ -218,14 +237,14 @@ class _GerenciarMidiasProdutoScreenState extends State<GerenciarMidiasProdutoScr
         fabricante: produto.fabricante,
         marca: produto.empresa,
         ordem: midia.ordem,
-      );
-      await _repo.atualizarUrl(midia.id, novaUrl);
+      ).timeout(_timeoutRede);
+      await _repo.atualizarUrl(midia.id, novaUrl).timeout(_timeoutRede);
       await _carregar();
       _atualizarCacheDeProdutos();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao recortar imagem: $e')),
+        SnackBar(content: Text('Erro ao recortar imagem: ${_mensagemErroRede(e)}')),
       );
     } finally {
       if (mounted) setState(() => _processando = false);
