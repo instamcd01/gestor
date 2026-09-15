@@ -58,9 +58,12 @@ String _formatarQuantidade(double q) => q == q.roundToDouble() ? q.toStringAsFix
 /// aviso de custo divergente, fator de custo do fornecedor ajustável ali
 /// mesmo — e parcelas que virarão boletos/despesas. Um resumo final
 /// confirma o que vai acontecer antes de gravar (soma no estoque via
-/// trigger no banco + uma `Despesa` por parcela). Só cobre XML direto por
-/// enquanto — PDF/DANFE impressa (consulta à Sefaz pela chave de acesso)
-/// é uma fase futura, pausada.
+/// trigger no banco + uma `Despesa` por parcela). Também cobre PDF/DANFE
+/// impressa sem XML anexo: busca por chave de acesso (44 dígitos, lida por
+/// câmera ou digitada) via a edge function `buscar-nfe-por-chave`, que
+/// consulta o webservice oficial NFeDistribuicaoDFe da Sefaz (certificado
+/// A1 da empresa) através de um workflow n8n — ver
+/// `integrations/n8n/nfe-buscar-por-chave-sefaz.json`.
 class ImportarNotaFiscalScreen extends StatefulWidget {
   /// Quando aberta a partir de um Pedido de Compra confirmado ("Confirmar
   /// recebimento"), a entrada gerada fica linkada a esse pedido
@@ -226,10 +229,11 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   /// Busca o XML da NF-e pela chave de acesso — pensado pra fornecedor que
   /// só manda a DANFE impressa (PDF/papel), sem XML anexo (achado real:
   /// MixPet manda só PDF). Chama a edge function `buscar-nfe-por-chave`, que
-  /// fala com a API do Meu Danfe (a Api-Key nunca fica no app — vive só no
-  /// Supabase Vault, lida pela função). A função já cuida do fluxo de 2
-  /// passos da API (adicionar pela chave + baixar o XML) e do retry
-  /// enquanto o status vem "buscando".
+  /// repassa pro workflow n8n "NFe - Buscar por Chave (Sefaz
+  /// DistribuicaoDFe)" — consulta direta ao webservice oficial da Sefaz
+  /// com o certificado digital A1 da empresa, sem depender de API paga de
+  /// terceiro (a Meu Danfe foi usada antes, trocada por inconsistência de
+  /// confiabilidade encontrada em uso real).
   Future<void> _buscarPorChaveDeAcesso() async {
     final chave = _chaveAcessoController.text.trim();
     if (chave.length != 44) {

@@ -1,0 +1,189 @@
+{
+  "name": "NFe - Buscar por Chave (Sefaz DistribuicaoDFe)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nfe-buscar-por-chave-sefaz",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst chaveLimpa = String(body.chave || '').replace(/\\D/g, '');\n\nif (chaveLimpa.length !== 44) {\n  return [{ json: { ok: false, erro: 'chave_invalida', mensagem: 'Chave de acesso precisa ter 44 dígitos.' } }];\n}\n\n// Único empresa hoje (Delivery Pet) — se virar multi-tenant, buscar\n// CNPJ/estado da tabela `empresas` em vez de hardcode (ver Postgres\n// node/credential \"Postgres cloud\" já usado em outros workflows).\nconst CNPJ = '52816710000198';\nconst cUFAutor = '33'; // RJ\nconst tpAmb = '1'; // 1 = produção, 2 = homologação\n\nconst soap = `<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap12:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap12=\"http://www.w3.org/2003/05/soap-envelope\">\n  <soap12:Body>\n    <nfeDistDFeInteresse xmlns=\"http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe\">\n      <nfeDadosMsg>\n        <distDFeInt xmlns=\"http://www.portalfiscal.inf.br/nfe\" versao=\"1.35\">\n          <tpAmb>${tpAmb}</tpAmb>\n          <cUFAutor>${cUFAutor}</cUFAutor>\n          <CNPJ>${CNPJ}</CNPJ>\n          <consChNFe>\n            <chNFe>${chaveLimpa}</chNFe>\n          </consChNFe>\n        </distDFeInt>\n      </nfeDadosMsg>\n    </nfeDistDFeInteresse>\n  </soap12:Body>\n</soap12:Envelope>`;\n\nreturn [{ json: { ok: true, chave: chaveLimpa, soapBody: soap } }];"
+      },
+      "id": "montar-soap",
+      "name": "Montar SOAP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "chave-valida",
+      "name": "Chave válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpSslAuth",
+        "sendBody": true,
+        "specifyBody": "raw",
+        "rawContentType": "application/soap+xml; charset=utf-8; action=\"http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse\"",
+        "body": "={{ $json.soapBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "consultar-sefaz",
+      "name": "Consultar Sefaz (DistribuicaoDFe)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resposta = $input.first().json;\nconst corpo = typeof resposta.data === 'string' ? resposta.data : String(resposta.data || '');\n\nfunction extrairTag(xml, tag) {\n  const m = xml.match(new RegExp('<' + tag + '[^>]*>([^<]*)</' + tag + '>', 'i'));\n  return m ? m[1] : null;\n}\n\nconst cStat = extrairTag(corpo, 'cStat');\nconst xMotivo = extrairTag(corpo, 'xMotivo');\nconst docZipMatch = corpo.match(/<docZip[^>]*schema=\"([^\"]*)\"[^>]*>([^<]*)<\\/docZip>/i);\n\nif (!docZipMatch) {\n  return [{ json: {\n    ok: false,\n    erro: cStat === '137' ? 'nao_encontrada' : 'falha_busca',\n    mensagem: xMotivo || 'NF-e não encontrada na Sefaz pra essa chave, ou nenhum documento retornado.',\n    cStat,\n  } }];\n}\n\nconst schema = docZipMatch[1];\nconst docZipBase64 = docZipMatch[2];\n\n// require('zlib') é builtin do Node — se o n8n bloquear (\"Cannot find\n// module 'zlib'\"), a alternativa é trocar este passo por um nó\n// Compression (core node, decompress/gzip) em vez de Code.\nconst zlib = require('zlib');\nconst xml = zlib.gunzipSync(Buffer.from(docZipBase64, 'base64')).toString('utf-8');\n\nreturn [{ json: { ok: true, xml, schema, cStat } }];"
+      },
+      "id": "extrair-xml",
+      "name": "Extrair XML da Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "responder",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Montar SOAP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar SOAP": {
+      "main": [
+        [
+          {
+            "node": "Chave válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chave válida?": {
+      "main": [
+        [
+          {
+            "node": "Consultar Sefaz (DistribuicaoDFe)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Sefaz (DistribuicaoDFe)": {
+      "main": [
+        [
+          {
+            "node": "Extrair XML da Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair XML da Resposta": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
