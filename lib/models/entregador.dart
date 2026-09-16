@@ -19,6 +19,7 @@ class Entregador {
   final String? placaVeiculo;
   final bool ativo;
   final bool veiculoDaLoja;
+  final String? veiculoId; // qual veículo da loja (tabela `veiculos`) — só quando veiculoDaLoja=true
   final String? custoModo; // ver ModoCustoEntregador
   final double? custoPorEntrega; // modo fixo
   final double? custoPorKm; // modo km e modo rota
@@ -36,6 +37,7 @@ class Entregador {
     this.placaVeiculo,
     this.ativo = true,
     this.veiculoDaLoja = false,
+    this.veiculoId,
     this.custoModo,
     this.custoPorEntrega,
     this.custoPorKm,
@@ -55,6 +57,7 @@ class Entregador {
       placaVeiculo: row['placa_veiculo']?.toString(),
       ativo: row['ativo'] as bool? ?? true,
       veiculoDaLoja: row['veiculo_da_loja'] as bool? ?? false,
+      veiculoId: row['veiculo_id'] as String?,
       custoModo: row['custo_modo']?.toString(),
       custoPorEntrega: (row['custo_por_entrega'] as num?)?.toDouble(),
       custoPorKm: (row['custo_por_km'] as num?)?.toDouble(),
@@ -74,6 +77,7 @@ class Entregador {
       'placa_veiculo': placaVeiculo,
       'ativo': ativo,
       'veiculo_da_loja': veiculoDaLoja,
+      'veiculo_id': veiculoId,
       'custo_modo': custoModo,
       'custo_por_entrega': custoPorEntrega,
       'custo_por_km': custoPorKm,

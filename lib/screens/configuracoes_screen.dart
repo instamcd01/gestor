@@ -14,6 +14,7 @@ import 'config_petcash_screen.dart';
 import 'config_automacoes_whatsapp_screen.dart';
 import 'custos_operacionais_screen.dart';
 import 'margem_alvo_categoria_screen.dart';
+import 'veiculos_screen.dart';
 import 'exportar_relatorios_screen.dart';
 import 'historico_entradas_screen.dart';
 import 'integrar_plataformas_screen.dart';
@@ -79,6 +80,8 @@ class ConfiguracoesScreen extends StatelessWidget {
                 MenuItem('Custos Operacionais', Icons.calculate_outlined, const CustosOperacionaisScreen()),
               if (isDono)
                 MenuItem('Margem por Categoria', Icons.trending_up_outlined, const MargemAlvoCategoriaScreen()),
+              if (isDono)
+                MenuItem('Veículos', Icons.two_wheeler_outlined, const VeiculosScreen()),
               MenuItem('Pedidos e Vendas', Icons.shopping_cart_outlined, const PedidosVendasScreen()),
               MenuItem('Opções de Entrega', Icons.local_shipping_outlined, const ConfiguracaoEntregaScreen()),
               MenuItem('Cupons', Icons.local_offer_outlined, const CuponsHubScreen()),

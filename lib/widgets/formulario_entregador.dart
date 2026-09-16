@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/entregador.dart';
+import '../models/veiculo.dart';
 import '../providers/entregador_provider.dart';
+import '../repositories/veiculo_repository.dart';
 import '../utils/cliente_validators.dart';
 
 const _rotulosModoCustoEntregador = {
@@ -38,12 +40,15 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
   late final TextEditingController _custoSalarioDiariaController;
   late bool _ativo;
   late bool _veiculoDaLoja;
+  String? _veiculoId;
   String? _custoModo;
   bool _salvando = false;
+  List<Veiculo> _veiculosDaLoja = [];
 
   @override
   void initState() {
     super.initState();
+    _carregarVeiculos();
     final e = widget.existente;
     _nomeController = TextEditingController(text: e?.nome ?? '');
     _telefoneController = TextEditingController(text: e?.telefone ?? '');
@@ -56,7 +61,18 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
     _custoSalarioDiariaController = TextEditingController(text: ClienteValidators.formatarMoeda(e?.custoSalarioDiaria));
     _ativo = e?.ativo ?? true;
     _veiculoDaLoja = e?.veiculoDaLoja ?? false;
+    _veiculoId = e?.veiculoId;
     _custoModo = e?.custoModo;
+  }
+
+  Future<void> _carregarVeiculos() async {
+    try {
+      final veiculos = await VeiculoRepository().listar(apenasAtivos: true);
+      if (mounted) setState(() => _veiculosDaLoja = veiculos);
+    } catch (_) {
+      // Sem lista de veículos não deve travar o cadastro de entregador —
+      // o vínculo pode ser feito depois, editando de novo.
+    }
   }
 
   @override
@@ -85,6 +101,7 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
       placaVeiculo: _placaController.text.trim().isEmpty ? null : _placaController.text.trim(),
       ativo: _ativo,
       veiculoDaLoja: _veiculoDaLoja,
+      veiculoId: _veiculoDaLoja ? _veiculoId : null,
       custoModo: _custoModo,
       custoPorEntrega: ClienteValidators.parseNumero(_custoPorEntregaController.text),
       custoPorKm: ClienteValidators.parseNumero(_custoPorKmController.text),
@@ -170,10 +187,29 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Veículo é da loja'),
-                subtitle: const Text('Informativo por enquanto — não muda o cálculo'),
+                subtitle: const Text('Vincula a um veículo cadastrado — o custo/km real dele entra na conta da entrega'),
                 value: _veiculoDaLoja,
                 onChanged: (v) => setState(() => _veiculoDaLoja = v),
               ),
+              if (_veiculoDaLoja) ...[
+                DropdownButtonFormField<String>(
+                  initialValue: _veiculosDaLoja.any((v) => v.id == _veiculoId) ? _veiculoId : null,
+                  decoration: const InputDecoration(labelText: 'Qual veículo'),
+                  items: [
+                    for (final v in _veiculosDaLoja) DropdownMenuItem(value: v.id, child: Text(v.nome)),
+                  ],
+                  onChanged: (v) => setState(() => _veiculoId = v),
+                ),
+                if (_veiculosDaLoja.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4, bottom: 8),
+                    child: Text(
+                      'Nenhum veículo cadastrado ainda — cadastre em Configurações > Veículos.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+              ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Ativo'),
