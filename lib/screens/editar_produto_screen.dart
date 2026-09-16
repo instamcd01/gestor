@@ -5,6 +5,7 @@ import 'package:gestor/screens/fabricante_screen.dart';
 import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
+import '../models/margem_alvo_categoria.dart';
 import '../models/produto.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
@@ -12,7 +13,9 @@ import '../utils/calculadora_desconto.dart';
 import '../utils/calculadora_preco.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/gerador_nome_produto.dart';
+import '../utils/preco_sugerido.dart';
 import '../utils/produto_validators.dart';
+import '../repositories/margem_alvo_categoria_repository.dart';
 import '../repositories/valor_estruturado_repository.dart';
 import '../services/descricao_produto_service.dart';
 import '../widgets/campos_estruturados_variante.dart';
@@ -108,6 +111,8 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   Map<String, List<String>> _camposPorCategoria = {};
   Map<String, Map<String, List<String>>> _valoresEstruturadosPorCategoria = {};
 
+  List<MargemAlvoCategoria> _margensAlvo = [];
+
   @override
   void initState() {
     super.initState();
@@ -190,6 +195,10 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       markupController: _markupController,
       lucroController: _lucroController,
     );
+    _carregarMargensAlvo();
+    _custoController.addListener(_atualizarSugestao);
+    _categoriaController.addListener(_atualizarSugestao);
+    _subcategoriaController.addListener(_atualizarSugestao);
     _calculadoraDesconto = CalculadoraDesconto(
       precoController: _precoController,
       promocionalController: _precoPromocionalController,
@@ -261,6 +270,51 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     _varianteLabelController.dispose();
     _margemAlvoFracionadoController.dispose();
     super.dispose();
+  }
+
+  Future<void> _carregarMargensAlvo() async {
+    try {
+      final margens = await MargemAlvoCategoriaRepository().listar();
+      if (mounted) setState(() => _margensAlvo = margens);
+    } catch (_) {
+      // Sem sugestão de preço não deve travar a edição do produto.
+    }
+  }
+
+  void _atualizarSugestao() {
+    if (mounted) setState(() {});
+  }
+
+  /// Sugestão calculada a partir da margem-alvo da categoria (Configurações
+  /// > Margem por Categoria) — nunca aplicada sozinha, só mostrada com um
+  /// botão "Usar" pro usuário decidir.
+  Widget _widgetPrecoSugerido() {
+    final sugestao = calcularPrecoSugerido(
+      margens: _margensAlvo,
+      categoria: _categoriaController.text.trim(),
+      subcategoria: _subcategoriaController.text.trim().isEmpty ? null : _subcategoriaController.text.trim(),
+      custo: ProdutoValidators.parseNumero(_custoController.text) ?? 0,
+    );
+    if (sugestao == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Sugerido: ${ProdutoValidators.formatarMoeda(sugestao.preco)} '
+              '(margem ${sugestao.margemPercentual.toStringAsFixed(1).replaceAll('.', ',')}% da categoria)',
+              style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12.5),
+            ),
+          ),
+          TextButton(
+            onPressed: () => _precoController.text = ProdutoValidators.formatarMoeda(sugestao.preco),
+            child: const Text('Usar'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _carregarCategoriasDoSupabase() async {
@@ -1083,6 +1137,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                       inputFormatters: [MoedaInputFormatter()],
                       validator: ProdutoValidators.custo,
                     ),
+                    _widgetPrecoSugerido(),
                     TextFormField(
                       controller: _markupController,
                       decoration: const InputDecoration(

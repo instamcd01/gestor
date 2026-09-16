@@ -6,6 +6,7 @@ import 'package:gestor/screens/fabricante_screen.dart';
 import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
+import '../models/margem_alvo_categoria.dart';
 import '../models/produto.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
@@ -13,7 +14,9 @@ import '../utils/calculadora_desconto.dart';
 import '../utils/calculadora_preco.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/gerador_nome_produto.dart';
+import '../utils/preco_sugerido.dart';
 import '../utils/produto_validators.dart';
+import '../repositories/margem_alvo_categoria_repository.dart';
 import '../repositories/produto_repository.dart';
 import '../repositories/valor_estruturado_repository.dart';
 import '../services/descricao_produto_service.dart';
@@ -109,9 +112,17 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
   late final CalculadoraDesconto _calculadoraDesconto;
   late final GeradorNomeProduto _geradorNome;
 
+  List<MargemAlvoCategoria> _margensAlvo = [];
+
   @override
   void initState() {
     super.initState();
+    _carregarMargensAlvo();
+    // Recalcula a sugestão de preço só com um rebuild — o cálculo em si é
+    // barato o bastante (lista pequena, sem I/O) pra fazer direto no build.
+    _custoController.addListener(_atualizarSugestao);
+    _categoriaController.addListener(_atualizarSugestao);
+    _subcategoriaController.addListener(_atualizarSugestao);
     final inicial = widget.produtoInicial;
     if (inicial != null) {
       _nomeController.text = inicial.nome;
@@ -204,6 +215,52 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
     } catch (e) {
       debugPrint('Erro ao sugerir ciclo de recompra: $e');
     }
+  }
+
+  Future<void> _carregarMargensAlvo() async {
+    try {
+      final margens = await MargemAlvoCategoriaRepository().listar();
+      if (mounted) setState(() => _margensAlvo = margens);
+    } catch (_) {
+      // Sem sugestão de preço não deve travar o resto do cadastro — o
+      // campo de preço continua editável manualmente normalmente.
+    }
+  }
+
+  void _atualizarSugestao() {
+    if (mounted) setState(() {});
+  }
+
+  /// Sugestão calculada a partir da margem-alvo da categoria (Configurações
+  /// > Margem por Categoria) — nunca aplicada sozinha, só mostrada com um
+  /// botão "Usar" pro usuário decidir.
+  Widget _widgetPrecoSugerido() {
+    final sugestao = calcularPrecoSugerido(
+      margens: _margensAlvo,
+      categoria: _categoriaController.text.trim(),
+      subcategoria: _subcategoriaController.text.trim().isEmpty ? null : _subcategoriaController.text.trim(),
+      custo: ProdutoValidators.parseNumero(_custoController.text) ?? 0,
+    );
+    if (sugestao == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Sugerido: ${ProdutoValidators.formatarMoeda(sugestao.preco)} '
+              '(margem ${sugestao.margemPercentual.toStringAsFixed(1).replaceAll('.', ',')}% da categoria)',
+              style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12.5),
+            ),
+          ),
+          TextButton(
+            onPressed: () => _precoVendaController.text = ProdutoValidators.formatarMoeda(sugestao.preco),
+            child: const Text('Usar'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _carregarCategorias() async {
@@ -784,6 +841,7 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                       inputFormatters: [MoedaInputFormatter()],
                       validator: ProdutoValidators.custo,
                     ),
+                    _widgetPrecoSugerido(),
                     TextFormField(
                       controller: _markupController,
                       decoration: const InputDecoration(

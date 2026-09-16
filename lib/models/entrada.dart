@@ -140,7 +140,7 @@ class Entrada {
     this.observacoes = '',
     this.itens = const [],
     this.pedidoCompraId,
-  }) : dataEntrada = dataEntrada ?? DateTime.now();
+  }) : dataEntrada = dataEntrada ?? DateTime.now().toUtc();
 
   factory Entrada.fromSupabase(Map<String, dynamic> row) {
     final fornecedorRow = row['fornecedor'] as Map<String, dynamic>?;
