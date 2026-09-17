@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/aviso_banner.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../repositories/cancelamentos_ifood_repository.dart';
 import '../repositories/venda_repository.dart';
 import '../utils/canal_venda_utils.dart';
 import '../utils/telefone_utils.dart';
@@ -133,27 +134,55 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     Navigator.push(context, MaterialPageRoute(builder: (_) => ReciboScreen(venda: _venda)));
   }
 
-  /// Motivos de cancelamento aceitos pela API de pedidos da iFood (códigos
-  /// observados via `GET /order/v1.0/orders/{id}/cancellationReasons` para
-  /// esse merchant — a lista é fixa aqui porque o app não pode chamar a API
-  /// da iFood diretamente, só o n8n tem as credenciais).
-  static const _motivosCancelamentoIfood = [
-    (codigo: '801', descricao: 'Problemas de sistema na loja'),
-    (codigo: '503', descricao: 'Item indisponível/desatualizado'),
-    (codigo: '815', descricao: 'A loja está passando por dificuldades internas'),
-    (codigo: '805', descricao: 'A loja está sem entregadores disponíveis'),
-    (codigo: '807', descricao: 'O pedido está fora da área de entrega'),
-    (codigo: '804', descricao: 'O endereço está incompleto e o cliente não atende'),
-    (codigo: '818', descricao: 'O valor da taxa de entrega está errado'),
-    (codigo: '820', descricao: 'A entrega é em uma área de risco'),
-    (codigo: '808', descricao: 'Suspeita de golpe ou trote'),
+  /// Motivos usados só se a consulta ao vivo (`_escolherMotivoCancelamentoIfood`)
+  /// falhar — a iFood pede explicitamente pra nunca validar contra uma lista
+  /// fixa (podem mudar/adicionar códigos), então isso é só uma rede de
+  /// segurança pra não travar o cancelamento se a API estiver fora do ar.
+  static const _motivosCancelamentoIfoodFallback = [
+    (codigo: '501', descricao: 'Problemas de sistema na loja'),
+    (codigo: '503', descricao: 'Item indisponível'),
+    (codigo: '509', descricao: 'A loja está passando por dificuldades internas'),
+    (codigo: '504', descricao: 'A loja está sem entregadores disponíveis'),
+    (codigo: '506', descricao: 'O pedido está fora da área de entrega'),
+    (codigo: '511', descricao: 'A entrega é em uma área de risco'),
+    (codigo: '507', descricao: 'Suspeita de golpe ou trote'),
+    (codigo: '512', descricao: 'A loja abrirá mais tarde'),
   ];
 
   /// Pra pedidos de marketplace (iFood), pede o motivo do cancelamento —
-  /// esse motivo é repassado pro n8n avisar a iFood, ao invés de sempre usar
-  /// o mesmo motivo genérico (que pode prejudicar a loja nas métricas dela).
-  Future<({String codigo, String descricao})?> _escolherMotivoCancelamentoIfood() {
-    var selecionado = _motivosCancelamentoIfood.first;
+  /// consulta os códigos válidos PRA ESSE PEDIDO ao vivo na API (via n8n,
+  /// já que o app não tem as credenciais), em vez de uma lista fixa: a doc
+  /// da iFood é explícita que os códigos podem mudar e não devem ser
+  /// hardcoded. Cai pra `_motivosCancelamentoIfoodFallback` só se a consulta
+  /// falhar (API fora do ar, timeout etc.) — não pode travar o cancelamento.
+  Future<({String codigo, String descricao})?> _escolherMotivoCancelamentoIfood() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    final marketplacePedidoId = _venda.marketplacePedidoId;
+
+    List<({String codigo, String descricao})> motivos = _motivosCancelamentoIfoodFallback;
+    bool usandoFallback = true;
+    if (empresaId != null && marketplacePedidoId != null) {
+      if (!mounted) return null;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+      try {
+        motivos = await CancelamentosIfoodRepository().buscarMotivosDisponiveis(
+          empresaId: empresaId,
+          marketplacePedidoId: marketplacePedidoId,
+        );
+        usandoFallback = false;
+      } catch (_) {
+        // Mantém o fallback — ver comentário acima.
+      } finally {
+        if (mounted) Navigator.pop(context);
+      }
+    }
+    if (!mounted) return null;
+
+    var selecionado = motivos.first;
     return showDialog<({String codigo, String descricao})>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -164,11 +193,13 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Esse pedido veio do iFood — escolha o motivo que será informado a ele.',
+                Text(
+                  usandoFallback
+                      ? 'Esse pedido veio do iFood — não consegui consultar os motivos ao vivo, escolha da lista padrão.'
+                      : 'Esse pedido veio do iFood — escolha o motivo que será informado a ele.',
                 ),
                 const SizedBox(height: 8),
-                ...(_motivosCancelamentoIfood.map((motivo) => RadioListTile<String>(
+                ...(motivos.map((motivo) => RadioListTile<String>(
                       contentPadding: EdgeInsets.zero,
                       title: Text(motivo.descricao),
                       value: motivo.codigo,
@@ -682,6 +713,8 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             children: [
               if (_temPrevisaoEntrega(venda))
                 _linhaInfo(Icons.schedule, _labelPrevisaoEntrega(venda), _formatarPrevisaoEntrega(venda)),
+              if (venda.cliente.cpf.isNotEmpty) _linhaInfo(Icons.badge_outlined, 'CPF', venda.cliente.cpf),
+              if (venda.cliente.cnpj.isNotEmpty) _linhaInfo(Icons.badge_outlined, 'CNPJ', venda.cliente.cnpj),
               if (venda.cliente.celular.isNotEmpty)
                 _linhaComAcao(
                   icon: Icons.phone,
@@ -759,6 +792,38 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   currencyFormat,
                   cor: Colors.red,
                 ),
+              if (venda.desconto > 0 && venda.ehMarketplace && (venda.promocaoReembolsadaIfood ?? 0) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 12, bottom: 2),
+                  child: Text(
+                    'Custeado pela iFood: ${currencyFormat.format(venda.promocaoReembolsadaIfood)}',
+                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              if (venda.desconto > 0 && venda.ehMarketplace && (venda.custoPromocaoPropriaIfood ?? 0) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 12, bottom: 2),
+                  child: Text(
+                    'Custeado pela loja: ${currencyFormat.format(venda.custoPromocaoPropriaIfood)}',
+                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              if (venda.desconto > 0 && venda.ehMarketplace && (venda.custoPromocaoExterna ?? 0) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 12, bottom: 2),
+                  child: Text(
+                    'Custeado por patrocinador externo: ${currencyFormat.format(venda.custoPromocaoExterna)}',
+                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              if (venda.desconto > 0 && venda.ehMarketplace && (venda.custoPromocaoRede ?? 0) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 12, bottom: 2),
+                  child: Text(
+                    'Custeado pela rede de lojas: ${currencyFormat.format(venda.custoPromocaoRede)}',
+                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ),
               if (venda.saldoUsado > 0)
                 _linhaValor('Saldo utilizado', -venda.saldoUsado, currencyFormat, cor: Colors.red),
               if (temEntrega)
@@ -811,6 +876,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _linhaInfo(Icons.payment, 'Forma de Pagamento', _resumoFormaPagamento(venda)),
+              if (venda.bandeiraCartao != null) _linhaInfo(Icons.credit_card, 'Bandeira', venda.bandeiraCartao!),
               if (venda.valorParcelaCartao != null)
                 _linhaInfo(
                   Icons.credit_card,
