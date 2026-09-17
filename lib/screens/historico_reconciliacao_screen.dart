@@ -83,6 +83,58 @@ class _HistoricoReconciliacaoScreenState extends State<HistoricoReconciliacaoScr
     }
   }
 
+  /// Itens realmente baixados do estoque num lote — busca sob demanda pelos
+  /// `pedido_id`s gravados em `detalhes.pedido_ids_novos` (só existe pra
+  /// entradas gravadas depois da mudança que passou a guardar esses ids).
+  void _abrirItensBaixados(List<String> pedidoIds) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (ctx, scrollController) => FutureBuilder<List<Map<String, dynamic>>>(
+          future: _repository.buscarItensBaixados(pedidoIds),
+          builder: (context, snapshot) {
+            return Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Itens baixados do estoque', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: !snapshot.hasData
+                      ? snapshot.hasError
+                          ? const Center(child: Text('Não foi possível carregar os itens.'))
+                          : const Center(child: CircularProgressIndicator())
+                      : snapshot.data!.isEmpty
+                          ? const Center(child: Text('Nenhum item encontrado pra este lote.'))
+                          : ListView.separated(
+                              controller: scrollController,
+                              itemCount: snapshot.data!.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final item = snapshot.data![index];
+                                return ListTile(
+                                  title: Text(item['nome'] as String),
+                                  trailing: Text(
+                                    'Qtd. ${item['quantidade']}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                  ),
+                                );
+                              },
+                            ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   /// Lista de produto/item por trás de um card — mesmo formato pra "itens
   /// não catalogados" (baixa de estoque) e "produtos excluídos" (catálogo
   /// exportado), cada um com sua própria chave de nome/subtítulo.
@@ -160,10 +212,20 @@ class _HistoricoReconciliacaoScreenState extends State<HistoricoReconciliacaoScr
                           // Catálogo exportado: produtos que ficaram de fora (sem EAN
                           // válido ou sem preço).
                           final produtosExcluidos = item.detalhes['produtos_excluidos'] as List<dynamic>?;
+                          // Baixa de estoque: pedidos processados neste lote, pra
+                          // buscar os itens/quantidades sob demanda.
+                          final pedidoIdsNovos = (item.detalhes['pedido_ids_novos'] as List<dynamic>?)
+                              ?.map((e) => e.toString())
+                              .toList();
 
                           VoidCallback? onTap;
                           String? resumoExtra;
-                          if (itensNaoCatalogados != null && itensNaoCatalogados.isNotEmpty) {
+                          if (item.tipo == TipoReconciliacaoHistorico.estoque &&
+                              pedidoIdsNovos != null &&
+                              pedidoIdsNovos.isNotEmpty) {
+                            resumoExtra = 'Toque pra ver itens e quantidades baixados';
+                            onTap = () => _abrirItensBaixados(pedidoIdsNovos);
+                          } else if (itensNaoCatalogados != null && itensNaoCatalogados.isNotEmpty) {
                             resumoExtra = '${itensNaoCatalogados.length} item(ns) não catalogado(s) — toque pra ver';
                             onTap = () => _abrirLista(
                                   titulo: 'Itens não catalogados',
