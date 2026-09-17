@@ -29,7 +29,7 @@ class VendaRepository {
       'codigo_retirada_exibicao, link_confirmacao_entrega, agendado, entrega_prevista_inicio, entrega_prevista_fim, '
       'taxa_servico_cliente, campanha_marketplace, cupom_marketplace, politica_substituicao, entregador_tipo, '
       'taxa_comissao, taxa_gateway, incentivo_promocional_ifood, taxa_entrega_marketplace, '
-      'taxa_entrega_paga, incentivo_promocional_loja)';
+      'taxa_entrega_paga, incentivo_promocional_loja, incentivo_promocional_external, incentivo_promocional_chain)';
   // previsao_entrega_inicio/fim já vêm no '*' de pedidos (coluna própria,
   // não de marketplace_pedidos) — sem precisar listar explicitamente.
 
@@ -374,6 +374,8 @@ class VendaRepository {
       valorPago: (metadata['valorPago'] as num?)?.toDouble() ?? 0.0,
       troco: (metadata['troco'] as num?)?.toDouble() ?? 0.0,
       metodoPagamento: row['tipo_pagamento']?.toString() ?? '',
+      bandeiraCartao: row['bandeira_cartao']?.toString(),
+      codigoAutorizacaoCartao: row['codigo_autorizacao_cartao']?.toString(),
       pagamentosDetalhados: pagamentosDetalhados,
       totalItens: itens.fold<int>(0, (soma, i) => soma + i.quantidade),
       custoTotal: (row['custo_total'] as num?)?.toDouble() ?? 0.0,
@@ -420,6 +422,8 @@ class VendaRepository {
       taxaEntregaMarketplace: (marketplacePedidoRow?['taxa_entrega_marketplace'] as num?)?.toDouble(),
       taxaEntregaPagaMarketplace: (marketplacePedidoRow?['taxa_entrega_paga'] as num?)?.toDouble(),
       custoPromocaoPropriaIfood: (marketplacePedidoRow?['incentivo_promocional_loja'] as num?)?.toDouble(),
+      custoPromocaoExterna: (marketplacePedidoRow?['incentivo_promocional_external'] as num?)?.toDouble(),
+      custoPromocaoRede: (marketplacePedidoRow?['incentivo_promocional_chain'] as num?)?.toDouble(),
       taxaServicoCliente: (marketplacePedidoRow?['taxa_servico_cliente'] as num?)?.toDouble(),
       campanhaMarketplace: marketplacePedidoRow?['campanha_marketplace']?.toString(),
       cupomMarketplace: marketplacePedidoRow?['cupom_marketplace']?.toString(),

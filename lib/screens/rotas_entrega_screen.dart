@@ -372,9 +372,14 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
       // Avança o status de cada pedido pra "saiu para entrega" — reaproveita
       // o mesmo método já usado na Fila de Pedidos, não duplica a lógica de
       // estoque/notificação que vive na RPC por trás dele.
+      // Passa por "pronto" antes de "saiu para entrega", mesmo que os dois
+      // aconteçam em sequência rápida aqui: é o "pronto" que dispara o
+      // readyToPickup pro iFood, e ele precisa ocorrer antes do dispatch
+      // (senão o iFood nunca avisa o cliente que o pedido ficou pronto).
       for (final item in pedidos) {
         final venda = _buscarVenda(historico, item.pedidoId);
         if (venda != null && venda.status == StatusPedido.preparando) {
+          await historico.avancarStatusPedido(item.pedidoId, StatusPedido.pronto);
           await historico.avancarStatusPedido(item.pedidoId, StatusPedido.saiuParaEntrega);
         }
       }

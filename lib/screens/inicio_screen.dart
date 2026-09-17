@@ -352,6 +352,7 @@ class _InicioScreenState extends State<InicioScreen> {
     final vendas = context.watch<HistoricoVendasProvider>().vendas;
     final pendente = vendas.where((v) => v.status == StatusPedido.pendente).length;
     final preparando = vendas.where((v) => v.status == StatusPedido.preparando).length;
+    final pronto = vendas.where((v) => v.status == StatusPedido.pronto).length;
     final saiuEntrega = vendas.where((v) => v.status == StatusPedido.saiuParaEntrega).length;
 
     return Column(
@@ -373,6 +374,13 @@ class _InicioScreenState extends State<InicioScreen> {
               titulo: 'Em preparo',
               valor: '$preparando',
               corIcone: Colors.blue,
+              onTap: () => _abrir(const FilaPedidosScreen()),
+            ),
+            MetricCard(
+              icone: Icons.check_circle_outline,
+              titulo: 'Pronto',
+              valor: '$pronto',
+              corIcone: Colors.teal,
               onTap: () => _abrir(const FilaPedidosScreen()),
             ),
             MetricCard(

@@ -8,12 +8,13 @@ class StatusPedido {
   static const aguardandoPagamento = 'aguardando_pagamento';
   static const pendente = 'pendente';
   static const preparando = 'preparando';
+  static const pronto = 'pronto';
   static const saiuParaEntrega = 'saiu_para_entrega';
   static const entregue = 'entregue';
   static const cancelado = 'cancelado';
   static const aguardandoConciliacao = 'aguardando_conciliacao';
 
-  static const emAndamento = [pendente, preparando, saiuParaEntrega];
+  static const emAndamento = [pendente, preparando, pronto, saiuParaEntrega];
 
   static String rotulo(String status) {
     switch (status) {
@@ -23,6 +24,8 @@ class StatusPedido {
         return 'Pendente';
       case preparando:
         return 'Em preparo';
+      case pronto:
+        return 'Pronto';
       case saiuParaEntrega:
         return 'Saiu para entrega';
       case entregue:
@@ -54,6 +57,8 @@ class Venda {
   final double valorPago;         // quanto o cliente pagou
   final double troco;             // se pagamento em dinheiro
   final String metodoPagamento;   // forma de pagamento
+  final String? bandeiraCartao;   // pedidos.bandeira_cartao — ex: MASTERCARD, VISA; só em pagamento com cartão via marketplace
+  final String? codigoAutorizacaoCartao; // pedidos.codigo_autorizacao_cartao — campo cAut da NFe, só em pagamento com cartão via marketplace
 
   final int totalItens;           // quantidade total de unidades
   final List<ItemVenda> itens;    // lista de produtos da venda
@@ -102,6 +107,8 @@ class Venda {
   final double? taxaEntregaMarketplace; // marketplace_pedidos.taxa_entrega_marketplace — valor da entrega cobrado do cliente (repassado à loja, não é mais descontado do lucro — ver Venda.lucroLiquidoReal)
   final double? taxaEntregaPagaMarketplace; // marketplace_pedidos.taxa_entrega_paga — quanto o cliente REALMENTE pagou de entrega; 0 com taxaEntregaMarketplace>0 = frete grátis (ver Venda.freteGratisIfood)
   final double? custoPromocaoPropriaIfood; // marketplace_pedidos.incentivo_promocional_loja — quanto do desconto (normalmente o frete grátis) a própria loja bancou, não o iFood; informativo, não entra no cálculo de lucro (já embutido em valorTotal)
+  final double? custoPromocaoExterna; // marketplace_pedidos.incentivo_promocional_external — quanto do desconto foi custeado por um patrocinador externo (ex: marca do produto), sale.benefits.benefits[].sponsorships[] name=EXTERNAL
+  final double? custoPromocaoRede; // marketplace_pedidos.incentivo_promocional_chain — quanto do desconto foi custeado pela rede/grupo de lojas, sponsorships[] name=CHAIN
   final double? taxaServicoCliente; // taxa que a iFood cobra do cliente (receita da iFood, não da loja)
   final String? campanhaMarketplace; // nome da campanha/cupom aplicado (order.benefits[0].campaign.name)
   final String? cupomMarketplace; // id do cupom/campanha (order.benefits[0].campaign.id)
@@ -145,6 +152,8 @@ class Venda {
     required this.valorPago,
     required this.troco,
     required this.metodoPagamento,
+    this.bandeiraCartao,
+    this.codigoAutorizacaoCartao,
     required this.totalItens,
     required this.itens,
     required this.custoTotal,
@@ -189,6 +198,8 @@ class Venda {
     this.taxaEntregaMarketplace,
     this.taxaEntregaPagaMarketplace,
     this.custoPromocaoPropriaIfood,
+    this.custoPromocaoExterna,
+    this.custoPromocaoRede,
     this.taxaServicoCliente,
     this.campanhaMarketplace,
     this.cupomMarketplace,
@@ -226,6 +237,8 @@ class Venda {
     double? valorPago,
     double? troco,
     String? metodoPagamento,
+    String? bandeiraCartao,
+    String? codigoAutorizacaoCartao,
     int? totalItens,
     List<ItemVenda>? itens,
     double? custoTotal,
@@ -270,6 +283,8 @@ class Venda {
     double? taxaEntregaMarketplace,
     double? taxaEntregaPagaMarketplace,
     double? custoPromocaoPropriaIfood,
+    double? custoPromocaoExterna,
+    double? custoPromocaoRede,
     double? taxaServicoCliente,
     String? campanhaMarketplace,
     String? cupomMarketplace,
@@ -298,6 +313,8 @@ class Venda {
       valorPago: valorPago ?? this.valorPago,
       troco: troco ?? this.troco,
       metodoPagamento: metodoPagamento ?? this.metodoPagamento,
+      bandeiraCartao: bandeiraCartao ?? this.bandeiraCartao,
+      codigoAutorizacaoCartao: codigoAutorizacaoCartao ?? this.codigoAutorizacaoCartao,
       totalItens: totalItens ?? this.totalItens,
       itens: itens ?? this.itens,
       custoTotal: custoTotal ?? this.custoTotal,
@@ -342,6 +359,8 @@ class Venda {
       taxaEntregaMarketplace: taxaEntregaMarketplace ?? this.taxaEntregaMarketplace,
       taxaEntregaPagaMarketplace: taxaEntregaPagaMarketplace ?? this.taxaEntregaPagaMarketplace,
       custoPromocaoPropriaIfood: custoPromocaoPropriaIfood ?? this.custoPromocaoPropriaIfood,
+      custoPromocaoExterna: custoPromocaoExterna ?? this.custoPromocaoExterna,
+      custoPromocaoRede: custoPromocaoRede ?? this.custoPromocaoRede,
       taxaServicoCliente: taxaServicoCliente ?? this.taxaServicoCliente,
       campanhaMarketplace: campanhaMarketplace ?? this.campanhaMarketplace,
       cupomMarketplace: cupomMarketplace ?? this.cupomMarketplace,
@@ -515,11 +534,18 @@ class Venda {
   /// Próximo status no ciclo de vida (pula "saiu para entrega" quando o
   /// pedido é retirada/balcão, sem entrega). Retorna null se já estiver
   /// num estado final (entregue/cancelado).
+  ///
+  /// "pronto" existe como passo isolado (mesmo pra retirada) porque no
+  /// iFood ele dispara o `readyToPickup` que avisa o cliente que o pedido
+  /// está pronto — precisa ser um evento distinto de "entregue"/"saiu para
+  /// entrega", nunca disparado junto com eles.
   String? get proximoStatus {
     switch (status) {
       case StatusPedido.pendente:
         return StatusPedido.preparando;
       case StatusPedido.preparando:
+        return StatusPedido.pronto;
+      case StatusPedido.pronto:
         return temEntrega ? StatusPedido.saiuParaEntrega : StatusPedido.entregue;
       case StatusPedido.saiuParaEntrega:
         return StatusPedido.entregue;

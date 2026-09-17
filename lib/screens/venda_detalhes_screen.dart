@@ -679,6 +679,8 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        if (venda.ehMarketplace && venda.marketplacePedidoId != null && !venda.cancelada && !venda.finalizada)
+          _cardSeparacaoPedido(venda),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: Text(
@@ -1180,8 +1182,23 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               ),
             ),
           ],
-          if (venda.marketplacePedidoId != null) ...[
-            const Divider(height: 20),
+        ],
+      ),
+    );
+  }
+
+  /// Botão de separação — pedido do usuário pra ficar num lugar mais fácil
+  /// de achar: estava escondido no fim do card "Acompanhamento iFood", lá
+  /// na aba Pagamento, sem nenhuma relação óbvia com pagamento. Vive na aba
+  /// Itens agora (topo, antes da lista), que é conceitualmente onde faz
+  /// sentido — separar É mexer nos itens do pedido.
+  Widget _cardSeparacaoPedido(Venda venda) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: _card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             if (venda.politicaSubstituicao != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -1230,7 +1247,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               ],
             ),
           ],
-        ],
+        ),
       ),
     );
   }

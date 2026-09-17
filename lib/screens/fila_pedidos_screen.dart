@@ -291,6 +291,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         return Colors.orange;
       case StatusPedido.preparando:
         return Colors.blue;
+      case StatusPedido.pronto:
+        return Colors.teal;
       case StatusPedido.saiuParaEntrega:
         return Colors.purple;
       case StatusPedido.entregue:
