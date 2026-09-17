@@ -33,6 +33,7 @@ Widget? _telaRelacionada(String tipo) {
       return const DespesasScreen();
     case TipoNotificacao.avaliacaoRecebida:
     case TipoNotificacao.disputaRecebida:
+    case TipoNotificacao.disputaPrazoVencendo:
       return const AvaliacoesDisputasScreen();
     case TipoNotificacao.carrinhoAbandonado:
       return const CampanhasAtivacaoScreen();
@@ -68,6 +69,8 @@ Widget? _telaRelacionada(String tipo) {
       return (Icons.star_outline, Colors.blue);
     case TipoNotificacao.disputaRecebida:
       return (Icons.gavel_outlined, Colors.amber);
+    case TipoNotificacao.disputaPrazoVencendo:
+      return (Icons.timer_outlined, Colors.red);
     case TipoNotificacao.syncFalhou:
       return (Icons.sync_problem_outlined, Colors.red);
     case TipoNotificacao.custoAlterado:

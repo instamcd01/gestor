@@ -2,7 +2,8 @@
 /// `trigger_notificacao_estoque_baixo`, `job_notificacao_pedido_parado`,
 /// `job_notificacao_despesa_vencendo`, `trigger_notificacao_avaliacao_disputa_sync`,
 /// `notificar_pedidos_atrasados_entrega`, `notifica_hora_de_sair_para_entrega`,
-/// `notificar_carrinhos_abandonados`) e, pra `erroSistema`,
+/// `notificar_carrinhos_abandonados`, `notificar_disputas_proximas_do_prazo`
+/// — cron `*/5 * * * *`) e, pra `erroSistema`,
 /// `registrarErroSistema` no site (gestor-loja/src/lib/erros.ts) — insere
 /// direto na tabela via service role, sem RPC própria.
 /// São as únicas fontes que gravam nessa tabela.
@@ -14,6 +15,7 @@ class TipoNotificacao {
   static const despesaVencida = 'despesa_vencida';
   static const avaliacaoRecebida = 'avaliacao_recebida';
   static const disputaRecebida = 'disputa_recebida';
+  static const disputaPrazoVencendo = 'disputa_prazo_vencendo';
   static const syncFalhou = 'sync_falhou';
   static const custoAlterado = 'custo_alterado';
   static const novoPedido = 'novo_pedido';
@@ -87,7 +89,8 @@ const categoriasNotificacaoDisponiveis = [
   CategoriaNotificacao(
     chave: TipoNotificacao.disputaRecebida,
     titulo: 'Disputa recebida',
-    descricao: 'Quando o marketplace abre uma contestação sobre um pedido.',
+    descricao:
+        'Quando o marketplace abre uma contestação sobre um pedido, e de novo se faltar pouco pro prazo de resposta vencer.',
   ),
   CategoriaNotificacao(
     chave: TipoNotificacao.syncFalhou,
