@@ -109,13 +109,61 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
     'ADDITIONAL_TIME': 'Tempo extra',
   };
 
+  /// Rótulos dos códigos estruturados que a API da iFood aceita em `reason`
+  /// (rejeitar: `negotiationReasons`; aceitar: `acceptCancellationReasons`,
+  /// que varia por disputa — por isso o fallback humaniza qualquer código
+  /// desconhecido em vez de esconder a opção).
+  static const _rotulosMotivo = {
+    'HIGH_STORE_DEMAND': 'Loja em alta demanda',
+    'UNKNOWN_ISSUE': 'Motivo não especificado',
+    'CUSTOMER_SATISFACTION': 'Satisfação do cliente',
+    'INVENTORY_CHECK': 'Item indisponível / verificação de estoque',
+    'SYSTEM_ISSUE': 'Problema no sistema',
+    'STORE_SYSTEM_ISSUES': 'Problema no sistema da loja',
+    'WRONG_ORDER': 'Pedido incorreto',
+    'PRODUCT_QUALITY': 'Qualidade do produto',
+    'LATE_DELIVERY': 'Entrega atrasada',
+    'CUSTOMER_REQUEST': 'Solicitação do cliente',
+    'STORE_INTERNAL_DIFFICULTIES': 'Dificuldades internas da loja',
+    'LACK_OF_DRIVERS': 'Sem entregadores disponíveis',
+    'OTHER_REASONS': 'Outros motivos',
+    'OPERATIONAL_ISSUES': 'Problemas operacionais',
+    'ORDER_OUT_FOR_DELIVERY': 'Pedido já saiu para entrega',
+    'DRIVER_IS_ALREADY_AT_THE_ADDRESS': 'Entregador já está no endereço',
+  };
+
+  static const _motivosRejeitar = [
+    'INVENTORY_CHECK',
+    'WRONG_ORDER',
+    'PRODUCT_QUALITY',
+    'LATE_DELIVERY',
+    'SYSTEM_ISSUE',
+    'HIGH_STORE_DEMAND',
+    'CUSTOMER_SATISFACTION',
+    'CUSTOMER_REQUEST',
+    'UNKNOWN_ISSUE',
+  ];
+
+  String _rotuloMotivo(String codigo) =>
+      _rotulosMotivo[codigo] ?? codigo.replaceAll('_', ' ').toLowerCase();
+
+  static const _rotulosTimeoutAction = {
+    'ACCEPT_CANCELLATION': 'o cancelamento será ACEITO automaticamente',
+    'REJECT_CANCELLATION': 'o cancelamento será REJEITADO automaticamente',
+    'VOID': 'nenhuma ação automática vai acontecer',
+  };
+
   /// Contraproposta usando uma das alternativas que a própria iFood ofereceu
   /// (reembolso/benefício/tempo extra) — shape de `disputa.alternativas` não
   /// confirmado ao vivo, leitura defensiva com múltiplos nomes de campo.
+  /// Pra tempo extra, os minutos/motivos válidos vêm de dentro da própria
+  /// alternativa (`metadata.allowedsAdditionalTimeInMinutes`/`...Reasons`) —
+  /// nunca um valor livre, a API espera algo que a iFood já ofereceu.
   Future<void> _proporAlternativa(DisputaMarketplace disputa) async {
     Map<String, dynamic>? escolhida;
     final valorController = TextEditingController();
-    final minutosController = TextEditingController();
+    int? minutosEscolhidos;
+    String? motivoTempoExtra;
 
     final confirmado = await showDialog<bool>(
       context: context,
@@ -137,18 +185,56 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
                     title: Text(_rotulosAlternativa[tipo] ?? tipo),
                     value: id,
                     groupValue: (escolhida?['id'] ?? escolhida?['alternativeId'])?.toString(),
-                    onChanged: (_) => setDialogState(() => escolhida = alt),
+                    onChanged: (_) => setDialogState(() {
+                      escolhida = alt;
+                      minutosEscolhidos = null;
+                      motivoTempoExtra = null;
+                    }),
                   );
                 }),
                 if (escolhida != null) ...[
                   const SizedBox(height: 8),
-                  if ((escolhida!['type'] ?? escolhida!['tipo']) == 'ADDITIONAL_TIME')
-                    TextField(
-                      controller: minutosController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Minutos extras'),
-                    )
-                  else
+                  if ((escolhida!['type'] ?? escolhida!['tipo']) == 'ADDITIONAL_TIME') ...[
+                    Builder(builder: (context) {
+                      final meta = Map<String, dynamic>.from(
+                          (escolhida!['metadata'] as Map?) ?? const {});
+                      final minutosPermitidos =
+                          (meta['allowedsAdditionalTimeInMinutes'] as List?)?.map((e) => e as int).toList() ??
+                              const <int>[];
+                      final motivosPermitidos =
+                          (meta['allowedsAdditionalTimeReasons'] as List?)?.map((e) => e.toString()).toList() ??
+                              const <String>[];
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (minutosPermitidos.isNotEmpty)
+                            DropdownButtonFormField<int>(
+                              initialValue: minutosEscolhidos,
+                              decoration: const InputDecoration(labelText: 'Minutos extras'),
+                              items: minutosPermitidos
+                                  .map((m) => DropdownMenuItem(value: m, child: Text('$m minutos')))
+                                  .toList(),
+                              onChanged: (v) => setDialogState(() => minutosEscolhidos = v),
+                            )
+                          else
+                            const Text(
+                              'Essa disputa não informou opções de minutos — não dá pra propor tempo extra por aqui.',
+                              style: TextStyle(color: Colors.red, fontSize: 12),
+                            ),
+                          const SizedBox(height: 8),
+                          if (motivosPermitidos.isNotEmpty)
+                            DropdownButtonFormField<String>(
+                              initialValue: motivoTempoExtra,
+                              decoration: const InputDecoration(labelText: 'Motivo'),
+                              items: motivosPermitidos
+                                  .map((m) => DropdownMenuItem(value: m, child: Text(_rotuloMotivo(m))))
+                                  .toList(),
+                              onChanged: (v) => setDialogState(() => motivoTempoExtra = v),
+                            ),
+                        ],
+                      );
+                    }),
+                  ] else
                     TextField(
                       controller: valorController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -160,7 +246,13 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: escolhida == null ? null : () => Navigator.pop(ctx, true), child: const Text('Propor')),
+            FilledButton(
+              onPressed: escolhida == null ||
+                      ((escolhida!['type'] ?? escolhida!['tipo']) == 'ADDITIONAL_TIME' && minutosEscolhidos == null)
+                  ? null
+                  : () => Navigator.pop(ctx, true),
+              child: const Text('Propor'),
+            ),
           ],
         ),
       ),
@@ -176,7 +268,8 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
         alternativaIdExterno: id,
         tipo: tipo,
         valor: double.tryParse(valorController.text.replaceAll(',', '.')),
-        minutos: int.tryParse(minutosController.text),
+        minutos: minutosEscolhidos,
+        motivo: motivoTempoExtra,
       );
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alternativa proposta.')));
       await _carregar();
@@ -187,50 +280,105 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
     }
   }
 
+  /// Rejeitar exige um código de `negotiationReasons` (a API rejeita texto
+  /// livre com 400 INVALID_REASON — achado real lendo a doc oficial da
+  /// Plataforma de Negociação). Aceitar não exige nada, mas se a disputa
+  /// informou `acceptReasons` válidos pra ela, oferece escolher um (fica em
+  /// `reason`); o texto livre digitado sempre vai só pro `detailReason`.
   Future<void> _responderDisputa(DisputaMarketplace disputa, {required bool aceitar}) async {
-    String? motivo;
+    String? motivoCodigo;
+    String? motivoTexto;
+
     if (!aceitar) {
+      motivoCodigo = _motivosRejeitar.first;
       final controller = TextEditingController();
       final confirmado = await showDialog<bool>(
         context: context,
-        // Sem autofocus + sem fechar tocando fora: com o teclado aberto (via
-        // autofocus) e o diálogo fechando por barrier-dismiss no mesmo frame,
-        // bate num bug conhecido do framework do Flutter (assert
-        // `_dependents.isEmpty` ao desativar o Overlay/IME) — só os botões
-        // fecham o diálogo agora.
         barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Rejeitar disputa'),
-          content: TextField(
-            controller: controller,
-            maxLines: 3,
-            decoration: const InputDecoration(hintText: 'Motivo (opcional)'),
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Rejeitar disputa'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: motivoCodigo,
+                    decoration: const InputDecoration(labelText: 'Motivo (obrigatório pra iFood)'),
+                    items: _motivosRejeitar
+                        .map((m) => DropdownMenuItem(value: m, child: Text(_rotuloMotivo(m))))
+                        .toList(),
+                    onChanged: (v) => setDialogState(() => motivoCodigo = v),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    maxLines: 3,
+                    decoration: const InputDecoration(hintText: 'Observação interna (opcional)'),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Rejeitar')),
+            ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Rejeitar')),
-          ],
         ),
       );
       if (confirmado != true) return;
-      motivo = controller.text.trim().isEmpty ? null : controller.text.trim();
+      motivoTexto = controller.text.trim().isEmpty ? null : controller.text.trim();
     } else {
+      final controller = TextEditingController();
       final confirmado = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Aceitar disputa'),
-          content: Text(disputa.mensagem ?? 'Confirma aceitar essa contestação?'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Aceitar')),
-          ],
+        barrierDismissible: false,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Aceitar disputa'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(disputa.mensagem ?? 'Confirma aceitar essa contestação?'),
+                  if (disputa.acceptReasons.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: motivoCodigo,
+                      decoration: const InputDecoration(labelText: 'Motivo (opcional)'),
+                      items: disputa.acceptReasons
+                          .map((m) => DropdownMenuItem(value: m, child: Text(_rotuloMotivo(m))))
+                          .toList(),
+                      onChanged: (v) => setDialogState(() => motivoCodigo = v),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    maxLines: 3,
+                    maxLength: 250,
+                    decoration: const InputDecoration(hintText: 'Observação pra iFood (opcional)'),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Aceitar')),
+            ],
+          ),
         ),
       );
       if (confirmado != true) return;
+      motivoTexto = controller.text.trim().isEmpty ? null : controller.text.trim();
     }
 
     try {
-      await _disputaRepository.responder(disputa.id, aceitar: aceitar, motivo: motivo);
+      await _disputaRepository.responder(disputa.id, aceitar: aceitar, motivoCodigo: motivoCodigo, motivo: motivoTexto);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(aceitar ? 'Disputa aceita.' : 'Disputa rejeitada.')),
@@ -405,6 +553,19 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
             ),
             const SizedBox(height: 6),
             if (disputa.mensagem != null) Text(disputa.mensagem!),
+            if (disputa.itensContestados.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              ...disputa.itensContestados.map((raw) {
+                final item = Map<String, dynamic>.from(raw as Map);
+                final qtd = item['quantity'];
+                final motivo = item['reason']?.toString();
+                return Text(
+                  '• ${qtd != null ? '${qtd}x ' : ''}item contestado'
+                  '${motivo != null ? ' — $motivo' : ''}',
+                  style: const TextStyle(fontSize: 12),
+                );
+              }),
+            ],
             const SizedBox(height: 6),
             Text(
               disputa.prazoExpiracao != null
@@ -412,11 +573,18 @@ class _AvaliacoesDisputasScreenState extends State<AvaliacoesDisputasScreen> wit
                   : 'Recebida em ${dateFormat.format(disputa.createdAt)}',
               style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
+            if (disputa.pendente && !disputa.expirada && disputa.timeoutAction != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                'Se não responder a tempo: ${_rotulosTimeoutAction[disputa.timeoutAction] ?? disputa.timeoutAction}.',
+                style: const TextStyle(fontSize: 12, color: Colors.orange),
+              ),
+            ],
             if (disputa.status == 'erro' && disputa.erroResposta != null) ...[
               const SizedBox(height: 6),
               Text(disputa.erroResposta!, style: const TextStyle(fontSize: 12, color: Colors.red)),
             ],
-            if (disputa.pendente) ...[
+            if (disputa.pendente && !disputa.expirada) ...[
               const SizedBox(height: 10),
               Wrap(
                 alignment: WrapAlignment.end,

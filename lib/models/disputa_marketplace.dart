@@ -14,6 +14,11 @@ class DisputaMarketplace {
   final String? erroResposta;
   final DateTime createdAt;
   final List<dynamic> alternativas;
+  final String? acao;
+  final String? handshakeType;
+  final String? timeoutAction;
+  final List<String> acceptReasons;
+  final List<dynamic> itensContestados;
 
   DisputaMarketplace({
     required this.id,
@@ -27,6 +32,11 @@ class DisputaMarketplace {
     this.erroResposta,
     required this.createdAt,
     this.alternativas = const [],
+    this.acao,
+    this.handshakeType,
+    this.timeoutAction,
+    this.acceptReasons = const [],
+    this.itensContestados = const [],
   });
 
   bool get pendente => status == 'pendente';
@@ -36,6 +46,8 @@ class DisputaMarketplace {
   factory DisputaMarketplace.fromSupabase(Map<String, dynamic> row) {
     final marketplaceRow = row['marketplaces'] as Map<String, dynamic>?;
     final alternativasRaw = row['alternativas'];
+    final acceptReasonsRaw = row['accept_reasons'];
+    final itensRaw = row['itens_contestados'];
     return DisputaMarketplace(
       id: row['id'] as String,
       pedidoId: row['pedido_id'] as String,
@@ -48,6 +60,11 @@ class DisputaMarketplace {
       erroResposta: row['erro_resposta']?.toString(),
       createdAt: DateTime.tryParse(row['created_at']?.toString() ?? '')?.toLocal() ?? DateTime.now(),
       alternativas: alternativasRaw is List ? alternativasRaw : const [],
+      acao: row['acao']?.toString(),
+      handshakeType: row['handshake_type']?.toString(),
+      timeoutAction: row['timeout_action']?.toString(),
+      acceptReasons: acceptReasonsRaw is List ? acceptReasonsRaw.map((e) => e.toString()).toList() : const [],
+      itensContestados: itensRaw is List ? itensRaw : const [],
     );
   }
 }
