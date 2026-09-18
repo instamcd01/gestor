@@ -1382,12 +1382,21 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 venda.custoEntregaReal != null ||
                 venda.taxaMaquininha != null ||
                 venda.mercadoPagoTaxa != null ||
+                venda.valorEntrega > 0 ||
                 (venda.ehMarketplace && (venda.taxaComissaoMarketplace != null || venda.taxaGatewayMarketplace != null))) ...[
               const Divider(height: 20),
               if (venda.custoEmbalagem != null)
                 _linhaValor('Embalagem', -venda.custoEmbalagem!, currencyFormat, cor: corLaranja),
+              // Contraparte da linha "Entrega própria" (custo) logo abaixo —
+              // sem essa linha, o valor que o cliente pagou de entrega nunca
+              // aparecia em lugar nenhum do card Financeiro (só o custo
+              // aparecia, subtraindo, dando a impressão de que a receita da
+              // entrega tinha sumido — já está contada em `lucroTotal`/
+              // `lucro_bruto` via `valor_total`, mas invisível aqui até agora).
+              if (venda.valorEntrega > 0)
+                _linhaValor('Entrega cobrada do cliente', venda.valorEntrega, currencyFormat, cor: corVerde),
               if (venda.custoEntregaReal != null)
-                _linhaValor('Entrega própria', -venda.custoEntregaReal!, currencyFormat, cor: corLaranja),
+                _linhaValor('Entrega própria (custo)', -venda.custoEntregaReal!, currencyFormat, cor: corLaranja),
               if (venda.taxaMaquininha != null)
                 _linhaValor('Taxa maquininha', -venda.taxaMaquininha!, currencyFormat, cor: corLaranja),
               if (venda.mercadoPagoTaxa != null)
