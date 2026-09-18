@@ -90,7 +90,32 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
 
     _numeroFocusNode.addListener(_aoSairDoCampoNumero);
     _cepFocusNode.addListener(_aoSairDoCampoCep);
+    for (final c in [
+      _enderecoController,
+      _numeroController,
+      _bairroController,
+      _cidadeController,
+      _estadoController,
+    ]) {
+      c.addListener(_invalidarCoordenadasSalvas);
+    }
     _carregarCanais();
+  }
+
+  /// O endereço em texto mudou (digitação manual ou autopreenchimento por
+  /// CEP) — as coordenadas antigas não representam mais esse endereço.
+  /// Sem isso, `_salvarClienteEFechar` prefere lat/lng ao texto e continua
+  /// recalculando a rota pro pino antigo, mesmo depois do endereço
+  /// corrigido (bug real: cliente com endereço errado nunca recalculava
+  /// distância/zona de entrega certa, mesmo editando o texto).
+  void _invalidarCoordenadasSalvas() {
+    if (_autopreenchendoEndereco) return; // já tratado por quem preenche
+    if (_latitude != null || _longitude != null) {
+      setState(() {
+        _latitude = null;
+        _longitude = null;
+      });
+    }
   }
 
   void _aoSairDoCampoNumero() {
@@ -123,6 +148,10 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
         if (encontrado.bairro.isNotEmpty) _bairroController.text = encontrado.bairro;
         if (encontrado.cidade.isNotEmpty) _cidadeController.text = encontrado.cidade;
         if (encontrado.estado.isNotEmpty) _estadoController.text = encontrado.estado;
+        // CEP achou um endereço — as coordenadas salvas (se houver) eram de
+        // outro endereço e não valem mais pra calcular distância/zona.
+        _latitude = null;
+        _longitude = null;
       }
       _autopreenchendoEndereco = false;
     });

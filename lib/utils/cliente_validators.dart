@@ -24,7 +24,20 @@ class ClienteValidators {
   }
 
   /// Celular: obrigatório, precisa ter DDD + número (10 ou 11 dígitos).
+  ///
+  /// Exceção: cadastros do histórico Kyte ainda não promovidos guardam o
+  /// placeholder `kyte-sem-numero-N` em `celular` de propósito (ver
+  /// `Cliente.telefoneParaContato`/`ClienteRepository.promoverHistoricoKyte`
+  /// — nunca é um telefone de verdade). Sem essa exceção, esse validador
+  /// rejeitava o placeholder e travava o formulário de editar cliente
+  /// inteiro (endereço, nome, tudo) pra qualquer edição desses cadastros —
+  /// achado real 18/09, afetava 245 dos 246 clientes do histórico Kyte
+  /// ainda não promovidos, silenciosamente (sem nenhum erro visível fora
+  /// do campo de telefone).
   static String? celular(String? value) {
+    if (value != null && RegExp(r'^kyte-sem-numero-\d+$').hasMatch(value.trim())) {
+      return null;
+    }
     final digitos = (value ?? '').replaceAll(RegExp(r'[^0-9]'), '');
     if (digitos.isEmpty) return 'Por favor, insira o celular';
     if (digitos.length < 10 || digitos.length > 11) {
