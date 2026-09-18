@@ -1,12 +1,15 @@
 /// Sugestão de vínculo entre 2 cadastros de `clientes` que bateram por
-/// CPF/CNPJ (documento digitado, sem prova de posse — por isso nunca
-/// mescla sozinho, sempre passa por aqui) — ver
-/// `detectar_vinculo_por_documento` e plano "Identidade de Cliente
-/// Cross-Canal". Só staff (dono/gerente) vê esta tela; o cliente nunca
-/// sabe que essa fila existe.
+/// CPF/CNPJ (documento digitado, sem prova de posse), telefone (histórico
+/// Kyte) ou reautenticação (mesma pessoa, login novo por outro canal —
+/// telefone sozinho pode ser reciclado, por isso nunca mescla sozinho,
+/// sempre passa por aqui) — ver `detectar_vinculo_por_documento`,
+/// `detectar_vinculo_por_telefone_kyte`,
+/// `detectar_vinculo_por_reautenticacao_telefone` e plano "Identidade de
+/// Cliente Cross-Canal". Só staff (dono/gerente) vê esta tela; o cliente
+/// nunca sabe que essa fila existe.
 class VinculoCliente {
   final String id;
-  final String criterio; // 'cpf' | 'cnpj'
+  final String criterio; // 'cpf' | 'cnpj' | 'telefone' | 'reautenticacao'
   final DateTime criadoEm;
 
   final String clienteNovoId;
