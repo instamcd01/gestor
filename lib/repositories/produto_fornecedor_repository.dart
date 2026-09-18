@@ -16,6 +16,25 @@ class ProdutoFornecedorRepository {
     return (data as List).map((row) => ProdutoFornecedor.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 
+  /// Vínculos de vários produtos de uma vez, agrupados por `produto_id` —
+  /// evita 1 chamada por produto (ex: tela de Sugestão de Compra, que
+  /// antes fazia N chamadas sequenciais, uma por produto sugerido).
+  Future<Map<String, List<ProdutoFornecedor>>> listarPorProdutos(List<String> produtoIds) async {
+    if (produtoIds.isEmpty) return {};
+    final data = await supabase
+        .from('produto_fornecedores')
+        .select(_selectCompleto)
+        .inFilter('produto_id', produtoIds)
+        .order('principal', ascending: false);
+
+    final porProduto = <String, List<ProdutoFornecedor>>{};
+    for (final row in (data as List)) {
+      final vinculo = ProdutoFornecedor.fromSupabase(row as Map<String, dynamic>);
+      porProduto.putIfAbsent(vinculo.produtoId, () => []).add(vinculo);
+    }
+    return porProduto;
+  }
+
   /// Todos os vínculos de um fornecedor, com o nome/código do produto
   /// embutido — usado pela tela de desvincular em massa (não precisa
   /// carregar a lista de faixas de desconto aqui, é só listagem).

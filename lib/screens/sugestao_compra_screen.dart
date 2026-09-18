@@ -241,14 +241,12 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
       for (final p in context.read<ProdutoProvider>().produtos)
         if (p.id != null) p.id!: p.preco,
     };
-    final repository = ProdutoFornecedorRepository();
-    final todosVinculosPorProduto = <String, List<ProdutoFornecedor>>{};
-    for (final produtoId in sugestoes.map((s) => s.produtoId).toSet()) {
-      try {
-        todosVinculosPorProduto[produtoId] = await repository.listarPorProduto(produtoId);
-      } catch (_) {
-        // Sem vínculo detalhado, segue só com o custo que já veio da RPC.
-      }
+    var todosVinculosPorProduto = <String, List<ProdutoFornecedor>>{};
+    try {
+      todosVinculosPorProduto =
+          await ProdutoFornecedorRepository().listarPorProdutos(sugestoes.map((s) => s.produtoId).toSet().toList());
+    } catch (_) {
+      // Sem vínculo detalhado, segue só com o custo que já veio da RPC.
     }
 
     Map<String, ({double custoUnitario, String fornecedorNome, DateTime dataEntrada})> ultimosCustos = {};
@@ -817,6 +815,44 @@ class _GrupoFornecedorCard extends StatelessWidget {
     required this.onTornarPrincipal,
   });
 
+  /// Acima desse tamanho, `_LinhaItem` (que carrega alternativas/variação de
+  /// custo/faixa de desconto, altura variável) para de ser construído tudo
+  /// de uma vez dentro do `ExpansionTile` — um fornecedor com centenas de
+  /// itens travaria a UI no frame em que o card expande. Abaixo do limite,
+  /// mantém a lista solta de sempre (maioria dos fornecedores hoje).
+  static const _limiteListaSolta = 30;
+
+  /// Lista de itens do fornecedor — lazy (`ListView.builder`, altura
+  /// limitada e rolagem própria) quando passa do limite, senão a lista
+  /// solta de sempre (cresce junto com o `ExpansionTile`, sem scroll extra).
+  Widget _listaDeItens() {
+    if (grupo.itens.length <= _limiteListaSolta) {
+      return Column(
+        children: [
+          for (final item in grupo.itens)
+            _LinhaItem(
+              item: item,
+              onMudou: onMudou,
+              trocandoPrincipalPara: trocandoPrincipalPara,
+              onTornarPrincipal: onTornarPrincipal,
+            ),
+        ],
+      );
+    }
+    return SizedBox(
+      height: 420,
+      child: ListView.builder(
+        itemCount: grupo.itens.length,
+        itemBuilder: (context, index) => _LinhaItem(
+          item: grupo.itens[index],
+          onMudou: onMudou,
+          trocandoPrincipalPara: trocandoPrincipalPara,
+          onTornarPrincipal: onTornarPrincipal,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -835,13 +871,7 @@ class _GrupoFornecedorCard extends StatelessWidget {
         ),
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
-          for (final item in grupo.itens)
-            _LinhaItem(
-              item: item,
-              onMudou: onMudou,
-              trocandoPrincipalPara: trocandoPrincipalPara,
-              onTornarPrincipal: onTornarPrincipal,
-            ),
+          _listaDeItens(),
           TextButton.icon(
             onPressed: onAdicionarProduto,
             icon: const Icon(Icons.add, size: 18),
