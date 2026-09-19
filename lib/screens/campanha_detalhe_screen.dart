@@ -2,6 +2,7 @@ import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/campanha_ativacao.dart';
@@ -28,6 +29,23 @@ String _formatarTelefoneExibicao(String digitos) {
   if (resto.length == 8) return '+$ddi ($ddd) ${resto.substring(0, 4)}-${resto.substring(4)}';
   return '+$ddi $ddd $resto';
 }
+
+/// Cada informação opcional que pode aparecer no card de contato — visível
+/// por padrão (comportamento atual), o usuário desmarca o que não quer ver.
+/// Nome, chip de perfil e checkbox "Enviei" ficam sempre no card: são o
+/// mínimo pra identificar e operar a lista, não fazem sentido esconder.
+enum CampoCartaoContato {
+  telefone('Telefone e origem'),
+  valorReferencia('Valor gasto no histórico'),
+  notaInterna('Nota interna (produto/ciclo)'),
+  pedidosNaCampanha('Pedidos e valor desde que entrou na campanha'),
+  status('Status de ativação');
+
+  final String rotulo;
+  const CampoCartaoContato(this.rotulo);
+}
+
+const _chaveCamposCartaoContato = 'campanha_campos_cartao_contato';
 
 const _aliasesContatos = {
   'telefone': ['telefone', 'celular', 'whatsapp', 'contato', 'fone', 'número', 'numero'],
@@ -69,11 +87,75 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   // esperar um pull-to-refresh (o Future em si só resolve uma vez).
   List<ContatoCampanha>? _contatosCache;
 
+  // Quais campos opcionais aparecem no card de cada contato — preferência
+  // salva neste aparelho (SharedPreferences), vale pra qualquer campanha,
+  // não é um dado da campanha em si. Começa com tudo visível (igual ao
+  // comportamento antes dessa tela existir) até carregar o que foi salvo.
+  Set<CampoCartaoContato> _camposCartao = CampoCartaoContato.values.toSet();
+
   @override
   void initState() {
     super.initState();
     _mensagemPadraoAtual = widget.campanha.mensagemPadrao;
     _carregar();
+    _carregarCamposCartao();
+  }
+
+  Future<void> _carregarCamposCartao() async {
+    final prefs = await SharedPreferences.getInstance();
+    final salvos = prefs.getStringList(_chaveCamposCartaoContato);
+    if (salvos == null || !mounted) return;
+    final campos = <CampoCartaoContato>{};
+    for (final nome in salvos) {
+      try {
+        campos.add(CampoCartaoContato.values.byName(nome));
+      } catch (_) {
+        // Nome salvo de uma versão antiga do enum (campo removido/renomeado)
+        // — ignora em vez de quebrar o carregamento dos outros.
+      }
+    }
+    setState(() => _camposCartao = campos);
+  }
+
+  Future<void> _abrirConfigCartao() async {
+    var selecao = Set<CampoCartaoContato>.from(_camposCartao);
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Personalizar card do contato'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: CampoCartaoContato.values
+                  .map((campo) => CheckboxListTile(
+                        value: selecao.contains(campo),
+                        title: Text(campo.rotulo),
+                        contentPadding: EdgeInsets.zero,
+                        onChanged: (v) => setDialogState(() {
+                          if (v == true) {
+                            selecao.add(campo);
+                          } else {
+                            selecao.remove(campo);
+                          }
+                        }),
+                      ))
+                  .toList(),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Salvar')),
+          ],
+        ),
+      ),
+    );
+    if (confirmado != true || !mounted) return;
+
+    setState(() => _camposCartao = selecao);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_chaveCamposCartaoContato, selecao.map((c) => c.name).toList());
   }
 
   @override
@@ -465,6 +547,11 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
       appBar: AppBar(
         title: Text(widget.campanha.nome),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.tune),
+            tooltip: 'Personalizar card do contato',
+            onPressed: _abrirConfigCartao,
+          ),
           if (!arquivada)
             IconButton(
               icon: const Icon(Icons.filter_alt_outlined),
@@ -615,6 +702,7 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
                               key: ValueKey(c.contatoId),
                               c: c,
                               selecionado: c.contatoId == _contatoSelecionadoId,
+                              camposVisiveis: _camposCartao,
                               onSelecionar: () => _selecionarContato(c),
                               onMarcarEnviado: (enviado) => _marcarEnviado(c, enviado),
                             )),
@@ -928,12 +1016,14 @@ class _PainelMensagem extends StatelessWidget {
 class _CartaoContato extends StatefulWidget {
   final ContatoCampanha c;
   final bool selecionado;
+  final Set<CampoCartaoContato> camposVisiveis;
   final VoidCallback onSelecionar;
   final Future<void> Function(bool enviado) onMarcarEnviado;
   const _CartaoContato({
     super.key,
     required this.c,
     required this.selecionado,
+    required this.camposVisiveis,
     required this.onSelecionar,
     required this.onMarcarEnviado,
   });
@@ -1015,12 +1105,16 @@ class _CartaoContatoState extends State<_CartaoContato> {
                           ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${_formatarTelefoneExibicao(c.telefone)}${c.origem != null ? ' — ${c.origem}' : ''}',
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                    if (c.valorReferencia != null && c.valorReferencia! > 0)
+                    if (widget.camposVisiveis.contains(CampoCartaoContato.telefone)) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_formatarTelefoneExibicao(c.telefone)}${c.origem != null ? ' — ${c.origem}' : ''}',
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                    if (widget.camposVisiveis.contains(CampoCartaoContato.valorReferencia) &&
+                        c.valorReferencia != null &&
+                        c.valorReferencia! > 0)
                       Text(
                         'Gastou ${_formatarReais(c.valorReferencia!)} no histórico',
                         style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -1029,7 +1123,9 @@ class _CartaoContatoState extends State<_CartaoContato> {
                     // campanha) — nunca vai na mensagem, é só referência pra quem
                     // vai decidir se manda agora ou espera (ex: dias desde a
                     // última compra x ciclo previsto, na campanha de recompra).
-                    if (c.mensagemPersonalizada != null && c.mensagemPersonalizada!.isNotEmpty)
+                    if (widget.camposVisiveis.contains(CampoCartaoContato.notaInterna) &&
+                        c.mensagemPersonalizada != null &&
+                        c.mensagemPersonalizada!.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
@@ -1048,8 +1144,10 @@ class _CartaoContatoState extends State<_CartaoContato> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(status.$1, style: TextStyle(color: status.$2, fontSize: 12, fontWeight: FontWeight.bold)),
-                  if (c.qtdPedidos > 0) Text(_formatarReais(c.valorGasto), style: const TextStyle(fontSize: 12)),
+                  if (widget.camposVisiveis.contains(CampoCartaoContato.status))
+                    Text(status.$1, style: TextStyle(color: status.$2, fontSize: 12, fontWeight: FontWeight.bold)),
+                  if (widget.camposVisiveis.contains(CampoCartaoContato.pedidosNaCampanha) && c.qtdPedidos > 0)
+                    Text(_formatarReais(c.valorGasto), style: const TextStyle(fontSize: 12)),
                   const SizedBox(height: 4),
                   if (_atualizandoEnviado)
                     const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
