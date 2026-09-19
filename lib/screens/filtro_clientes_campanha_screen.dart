@@ -275,6 +275,10 @@ class _FiltroClientesCampanhaScreenState extends State<FiltroClientesCampanhaScr
                           DropdownMenuItem(value: 'ticket_medio', child: Text('Ticket médio')),
                           DropdownMenuItem(value: 'valor_total', child: Text('Valor total gasto')),
                           DropdownMenuItem(value: 'qtd_pedidos', child: Text('Quantidade de pedidos')),
+                          DropdownMenuItem(
+                            value: 'combinado',
+                            child: Text('Combinado (recência + valor + ticket + pedidos)'),
+                          ),
                         ],
                         onChanged: (v) => setState(() => _ordenarPor = v ?? 'recencia'),
                       ),
