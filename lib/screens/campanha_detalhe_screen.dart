@@ -193,7 +193,9 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   /// (achado real 12/09: usuário salvou como padrão com um contato
   /// selecionado e todo mundo passou a ver o produto DAQUELE contato).
   bool get _personalizaPorProduto =>
-      widget.campanha.origemSistema == 'prontos_recompra' || widget.campanha.origemSistema == 'segunda_chance_recompra';
+      widget.campanha.origemSistema == 'prontos_recompra' ||
+      widget.campanha.origemSistema == 'segunda_chance_recompra' ||
+      widget.campanha.origemSistema == 'reativacao_brinde';
 
   /// Troca de contato: se ainda não tem nada digitado, usa a sugestão
   /// completa (com o tom certo pro perfil). Se já tem um texto (editado ou
@@ -353,6 +355,9 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
           ? padrao.replaceAll('{produtos}', _fraseProdutos(produtosPendentes))
           : padrao;
       return '${_saudacao(nome)} $corpo';
+    }
+    if (widget.campanha.origemSistema == 'reativacao_brinde' && produtosPendentes.isNotEmpty) {
+      return _mensagemReativacaoBrinde(nome: nome, produtosBrinde: produtosPendentes);
     }
     if (_personalizaPorProduto && produtosPendentes.isNotEmpty) {
       return _mensagemProntosRecompra(nome: nome, produtos: produtosPendentes);
@@ -913,6 +918,42 @@ String _mensagemProntosRecompra({required String? nome, required List<String> pr
   return '${_saudacao(nome)} Aqui é da Delivery Pet 🐾 Notei que $listaProdutos do seu pet '
       '${plural ? 'devem' : 'deve'} estar acabando. Quer que eu repita seu último pedido do jeitinho que ficou '
       'da última vez?';
+}
+
+/// Validade do cupom TODEVOLTA nessa campanha — fixa aqui porque essa
+/// função já é especial-casada só pra essa campanha (`reativacao_brinde`,
+/// ver [_textoInicial]); se o prazo mudar, é só atualizar essa constante
+/// (não precisa reemitir o cupom pra mudar o texto).
+const _validadeCupomTodevolta = '26/09';
+
+/// Sugestão pra campanha "Volta com a gente — Brinde TODEVOLTA": quando dá
+/// pra saber a espécie do pet pelo histórico de compras (ver
+/// `filtrar_clientes_campanha`/população da campanha), manda 1 produto só —
+/// menos decisão pro cliente, mais chance de conversão (recomendação
+/// validada com pesquisa de marketing: 18/09). Sem sinal claro de espécie
+/// (ou espécie mista no histórico), `produtosBrinde` vem com os 2 nomes e
+/// cai na versão "escolha um dos dois".
+String _mensagemReativacaoBrinde({required String? nome, required List<String> produtosBrinde}) {
+  final saudacao = _saudacao(nome);
+  if (produtosBrinde.length == 1) {
+    return '$saudacao Tudo bem? 🐾\n\n'
+        'Faz um tempo que você não aparece por aqui, então a gente separou um *mimo* pra você na sua volta. 😊\n\n'
+        'No seu próximo pedido, *${produtosBrinde.first}* fica *por nossa conta* em compras a partir de *R\$99*.\n\n'
+        'É só adicionar ao carrinho e usar o cupom *TODEVOLTA*.\n\n'
+        '👉 deliverypetexpress.com.br\n\n'
+        '*Válido até $_validadeCupomTodevolta.*';
+  }
+  final opcoes = produtosBrinde.asMap().entries.map((e) {
+    const numeros = ['1️⃣', '2️⃣', '3️⃣'];
+    final numero = e.key < numeros.length ? numeros[e.key] : '${e.key + 1}.';
+    return '$numero ${e.value}';
+  }).join('\n');
+  return '$saudacao Tudo bem? 🐾\n\n'
+      'Faz um tempo que você não aparece por aqui, então a gente separou um *mimo* pra você na sua volta. 😊\n\n'
+      'Você pode escolher um desses dois:\n$opcoes\n\n'
+      'É só adicionar o escolhido ao carrinho e usar o cupom *TODEVOLTA* — fica *por nossa conta* em pedidos a partir de *R\$99*.\n\n'
+      '👉 deliverypetexpress.com.br\n\n'
+      '*Válido até $_validadeCupomTodevolta.*';
 }
 
 /// Painel fixo com a mensagem única (pedido do usuário: mais fácil ajustar
