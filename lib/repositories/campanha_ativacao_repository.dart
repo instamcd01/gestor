@@ -107,4 +107,75 @@ class CampanhaAtivacaoRepository {
         .from('campanha_contatos')
         .update({'enviado_em': enviado ? DateTime.now().toIso8601String() : null}).eq('id', contatoId);
   }
+
+  /// Prévia de clientes que batem com os critérios escolhidos na tela de
+  /// filtros reutilizável — não grava nada, só lista pra conferência antes
+  /// de confirmar. `prioridade_ordenacao` já vem calculada pelo banco a
+  /// partir de [ordenarPor]/[ordem].
+  Future<List<ClienteFiltradoCampanha>> filtrarClientes({
+    int? diasInatividadeMin,
+    int? diasInatividadeMax,
+    int? qtdPedidosMin,
+    int? qtdPedidosMax,
+    double? valorTotalMin,
+    double? valorTotalMax,
+    double? ticketMedioMin,
+    double? ticketMedioMax,
+    List<String>? canais,
+    List<String>? segmentos,
+    bool? aceitaMarketing,
+    List<String>? especies,
+    bool? jaUsouCupom,
+    String ordenarPor = 'recencia',
+    String ordem = 'desc',
+  }) async {
+    final data = await supabase.rpc('filtrar_clientes_campanha', params: {
+      'p_dias_inatividade_min': diasInatividadeMin,
+      'p_dias_inatividade_max': diasInatividadeMax,
+      'p_qtd_pedidos_min': qtdPedidosMin,
+      'p_qtd_pedidos_max': qtdPedidosMax,
+      'p_valor_total_min': valorTotalMin,
+      'p_valor_total_max': valorTotalMax,
+      'p_ticket_medio_min': ticketMedioMin,
+      'p_ticket_medio_max': ticketMedioMax,
+      'p_canais': canais,
+      'p_segmentos': segmentos,
+      'p_aceita_marketing': aceitaMarketing,
+      'p_especies': especies,
+      'p_ja_usou_cupom': jaUsouCupom,
+      'p_ordenar_por': ordenarPor,
+      'p_ordem': ordem,
+    });
+    return (data as List)
+        .map((row) => ClienteFiltradoCampanha.fromSupabase(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Confirma a prévia de [filtrarClientes] como contatos reais da
+  /// campanha — mesmo upsert por (campanha_id, telefone) da importação por
+  /// planilha, então reaplicar o mesmo filtro depois só atualiza a
+  /// prioridade/perfil em vez de duplicar.
+  Future<int> adicionarContatosFiltrados({
+    required String campanhaId,
+    required String empresaId,
+    required List<ClienteFiltradoCampanha> clientes,
+  }) async {
+    if (clientes.isEmpty) return 0;
+    await supabase.from('campanha_contatos').upsert(
+          clientes
+              .map((c) => {
+                    'campanha_id': campanhaId,
+                    'empresa_id': empresaId,
+                    'telefone': c.telefoneEfetivo,
+                    'nome_whatsapp': c.nome,
+                    'origem': c.canalOrigem,
+                    'valor_referencia': c.valorTotal,
+                    'perfil': c.segmento,
+                    'prioridade_ordenacao': c.prioridadeOrdenacao,
+                  })
+              .toList(),
+          onConflict: 'campanha_id,telefone',
+        );
+    return clientes.length;
+  }
 }

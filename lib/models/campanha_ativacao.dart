@@ -82,6 +82,55 @@ class MetricasCampanha {
   }
 }
 
+/// Uma linha de retorno de `filtrar_clientes_campanha` — cliente que bate
+/// com os critérios escolhidos na tela de filtros reutilizável, ainda não
+/// confirmado como contato da campanha (isso só acontece ao chamar
+/// `adicionarContatosFiltrados`).
+class ClienteFiltradoCampanha {
+  final String clienteId;
+  final String nome;
+  final String telefoneEfetivo;
+  final String? canalOrigem;
+  final String? segmento;
+  final int diasInatividade;
+  final int qtdPedidos;
+  final double valorTotal;
+  final double ticketMedio;
+
+  /// Posição relativa dentro do resultado já filtrado/ordenado (maior =
+  /// mais prioritário) — calculada no banco a partir do critério de
+  /// ordenação escolhido (`ordenar_por`/`ordem`), não recalculada aqui.
+  final int prioridadeOrdenacao;
+
+  ClienteFiltradoCampanha({
+    required this.clienteId,
+    required this.nome,
+    required this.telefoneEfetivo,
+    this.canalOrigem,
+    this.segmento,
+    required this.diasInatividade,
+    required this.qtdPedidos,
+    required this.valorTotal,
+    required this.ticketMedio,
+    required this.prioridadeOrdenacao,
+  });
+
+  factory ClienteFiltradoCampanha.fromSupabase(Map<String, dynamic> row) {
+    return ClienteFiltradoCampanha(
+      clienteId: row['cliente_id'] as String,
+      nome: row['nome'] as String,
+      telefoneEfetivo: row['telefone_efetivo'] as String,
+      canalOrigem: row['canal_origem'] as String?,
+      segmento: row['segmento'] as String?,
+      diasInatividade: (row['dias_inatividade'] as num?)?.toInt() ?? 0,
+      qtdPedidos: (row['qtd_pedidos'] as num?)?.toInt() ?? 0,
+      valorTotal: (row['valor_total'] as num?)?.toDouble() ?? 0,
+      ticketMedio: (row['ticket_medio'] as num?)?.toDouble() ?? 0,
+      prioridadeOrdenacao: (row['prioridade_ordenacao'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class ContatoCampanha {
   final String contatoId;
   final String telefone;

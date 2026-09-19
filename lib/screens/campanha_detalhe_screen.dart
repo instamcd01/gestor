@@ -12,6 +12,7 @@ import '../utils/produto_validators.dart';
 import '../utils/telefone_utils.dart';
 import '../widgets/aviso_banner.dart';
 import '../widgets/estado_erro_lista.dart';
+import 'filtro_clientes_campanha_screen.dart';
 
 String _formatarReais(double valor) => 'R\$ ${ProdutoValidators.formatarMoeda(valor)}';
 
@@ -405,6 +406,18 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     }
   }
 
+  Future<void> _abrirFiltroClientes() async {
+    final qtdAdicionados = await Navigator.of(context).push<int>(
+      MaterialPageRoute(builder: (_) => FiltroClientesCampanhaScreen(campanha: widget.campanha)),
+    );
+    if (qtdAdicionados == null || qtdAdicionados == 0 || !mounted) return;
+    await _recarregar();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$qtdAdicionados contato${qtdAdicionados == 1 ? '' : 's'} adicionados à campanha.')),
+    );
+  }
+
   Future<void> _arquivarCampanha() async {
     final confirmou = await showDialog<bool>(
       context: context,
@@ -452,6 +465,12 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
       appBar: AppBar(
         title: Text(widget.campanha.nome),
         actions: [
+          if (!arquivada)
+            IconButton(
+              icon: const Icon(Icons.filter_alt_outlined),
+              tooltip: 'Filtrar clientes',
+              onPressed: _abrirFiltroClientes,
+            ),
           if (arquivada)
             IconButton(
               icon: const Icon(Icons.unarchive_outlined),
