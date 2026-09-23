@@ -41,7 +41,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now());\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

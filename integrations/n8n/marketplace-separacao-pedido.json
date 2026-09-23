@@ -61,7 +61,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now());\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -298,7 +298,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now());\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -535,7 +535,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now());\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -711,7 +711,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { ean: $('Webhook Ação').item.json.body.ean_substituto, quantity: $('Webhook Ação').item.json.body.quantidade, prices: { unitValue: Math.round(($('Webhook Ação').item.json.body.preco_substituto || 0) * 100), grossValue: Math.round(($('Webhook Ação').item.json.body.preco_substituto || 0) * 100 * ($('Webhook Ação').item.json.body.quantidade || 1)) } } }}",
+        "jsonBody": "={{ { ean: $('Webhook Ação').item.json.body.ean_substituto, quantity: $('Webhook Ação').item.json.body.quantidade } }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",

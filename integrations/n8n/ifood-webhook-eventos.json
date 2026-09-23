@@ -188,7 +188,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now());\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -880,33 +880,11 @@
     },
     {
       "parameters": {
-        "operation": "insert",
-        "schema": {
-          "__rl": true,
-          "value": "public",
-          "mode": "list"
-        },
-        "table": {
-          "__rl": true,
-          "value": "itens_pedido",
-          "mode": "list"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "pedido_id": "={{$json.pedido_id}}",
-            "produto_id": "={{$json.produto_id}}",
-            "quantidade": "={{$json.quantidade}}",
-            "preco_unitario": "={{$json.preco_unitario}}",
-            "subtotal": "={{$json.subtotal}}",
-            "uniqueid_marketplace": "={{$json.uniqueid_marketplace}}",
-            "observacao_cliente": "={{$json.observacao_cliente}}",
-            "sugestoes_substituicao": "={{$json.sugestoes_substituicao}}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
+        "operation": "executeQuery",
+        "query": "select public.ifood_inserir_item_pedido($1::jsonb) as id;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json)] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
@@ -1525,6 +1503,148 @@
         }
       },
       "id": "rec-rpc-1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with ins as (\n  insert into public.ifood_eventos_recebidos (event_id, full_code, order_id)\n  select $1, $2, nullif($3, '') where $2 <> 'KEEPALIVE'\n  on conflict (event_id) do nothing\n  returning event_id\n)\nselect coalesce((select event_id from ins), case when $2 = 'KEEPALIVE' then $1 end) as event_id_novo;",
+        "options": {
+          "queryReplacement": "={{ [$json.id || '', $json.fullCode || '', $json.orderId || ''] }}"
+        }
+      },
+      "name": "Registrar id do evento (dedup)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        740,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "id": "dedup-1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dd1",
+              "leftValue": "={{$json.event_id_novo}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Evento novo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        960,
+        100
+      ],
+      "id": "dedup-2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Duplicata descartada acima; aqui so devolve o evento parseado pro fluxo.\nreturn [{ json: $('Parsear evento').first().json }];"
+      },
+      "name": "Seguir com evento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        100
+      ],
+      "id": "dedup-3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "sp1",
+              "leftValue": "={{$json.resultado}}",
+              "rightValue": "sem_pedido",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Pedido ainda não gravado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4460,
+        680
+      ],
+      "id": "retry-1"
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 15,
+        "unit": "seconds"
+      },
+      "name": "Esperar pedido ser gravado",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        4680,
+        680
+      ],
+      "id": "retry-2",
+      "webhookId": "a3c1f0de-5b7e-4d2a-9f61-2e8b7c4d9a10"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.ifood_aplicar_evento($1, $2, $3::jsonb) as resultado;",
+        "options": {
+          "queryReplacement": "={{ [$('Switch por tipo de evento').item.json.orderId || '', $('Switch por tipo de evento').item.json.fullCode || '', JSON.stringify($('Switch por tipo de evento').item.json.metadata || {})] }}"
+        }
+      },
+      "name": "Aplicar evento (2ª tentativa)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4900,
+        680
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "id": "retry-3"
     }
   ],
   "connections": {
@@ -1605,7 +1725,7 @@
       "main": [
         [
           {
-            "node": "Checar token em cache",
+            "node": "Registrar id do evento (dedup)",
             "type": "main",
             "index": 0
           }
@@ -2098,7 +2218,7 @@
       "main": [
         [
           {
-            "node": "Precisa reconciliar itens?",
+            "node": "Pedido ainda não gravado?",
             "type": "main",
             "index": 0
           }
@@ -2122,6 +2242,80 @@
         [
           {
             "node": "Reconciliar itens do pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar id do evento (dedup)": {
+      "main": [
+        [
+          {
+            "node": "Evento novo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evento novo?": {
+      "main": [
+        [
+          {
+            "node": "Seguir com evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Seguir com evento": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedido ainda não gravado?": {
+      "main": [
+        [
+          {
+            "node": "Esperar pedido ser gravado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Precisa reconciliar itens?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar pedido ser gravado": {
+      "main": [
+        [
+          {
+            "node": "Aplicar evento (2ª tentativa)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar evento (2ª tentativa)": {
+      "main": [
+        [
+          {
+            "node": "Precisa reconciliar itens?",
             "type": "main",
             "index": 0
           }

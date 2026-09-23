@@ -77,6 +77,8 @@ class CancelamentosIfoodRepository {
   /// doc deles é explícita: tratar como string livre, nunca validar contra
   /// uma lista fixa no app, porque a iFood pode adicionar/mudar códigos.
   /// Lança exceção se a chamada falhar — quem chama decide o fallback.
+  /// Lista VAZIA (sem exceção) = o iFood não oferece nenhum motivo pra esse
+  /// pedido, ou seja, não permite mais cancelar (ex: já concluído).
   Future<List<({String codigo, String descricao})>> buscarMotivosDisponiveis({
     required String empresaId,
     required String marketplacePedidoId,
@@ -99,8 +101,8 @@ class CancelamentosIfoodRepository {
     }
     final corpo = jsonDecode(resposta.body) as Map<String, dynamic>;
     final motivos = corpo['reasons'] as List?;
-    if (motivos == null || motivos.isEmpty) {
-      throw Exception('iFood não retornou motivos de cancelamento para esse pedido.');
+    if (motivos == null) {
+      throw Exception(corpo['erro']?.toString() ?? 'iFood não retornou motivos de cancelamento para esse pedido.');
     }
     return motivos
         .map((m) => (
