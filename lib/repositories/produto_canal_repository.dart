@@ -30,6 +30,29 @@ class ProdutoCanalRepository {
     );
   }
 
+  /// Só o PREÇO de um canal que já existe — não cria canal nem mexe em
+  /// `disponivel` (usado na revisão de preço: aplicar no iFood não deve
+  /// ligar um produto que estava desligado lá). O trigger
+  /// `trg_notificar_catalogo_produto_canal` envia a mudança pro marketplace.
+  /// Espelha em `produtos.preco_ifood` (campo legado, ainda lido na
+  /// exportação de planilha e regravado pela tela de edição) pra não ficar
+  /// divergente — só quando [espelharPrecoIfoodLegado].
+  Future<void> atualizarPreco({
+    required String produtoId,
+    required String marketplaceId,
+    required double preco,
+    bool espelharPrecoIfoodLegado = false,
+  }) async {
+    await supabase
+        .from('produto_canal')
+        .update({'preco': preco})
+        .eq('produto_id', produtoId)
+        .eq('marketplace_id', marketplaceId);
+    if (espelharPrecoIfoodLegado) {
+      await supabase.from('produtos').update({'preco_ifood': preco}).eq('id', produtoId);
+    }
+  }
+
   /// Upsert em massa (importação de planilha) — um só round-trip pra
   /// centenas/milhares de linhas em vez de uma chamada por produto.
   Future<void> salvarEmLote(

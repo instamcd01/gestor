@@ -653,6 +653,7 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
   _OrdemRevisao _ordem = _OrdemRevisao.margemPerdida;
   _ModoPreco _modo = _ModoPreco.sugestao;
   _Arredondamento _arredondamento = _Arredondamento.finalNove;
+  bool _aplicarNoIfood = true;
   Map<String, RevisaoPrecoContexto> _contexto = {};
   bool _carregandoContexto = true;
 
@@ -723,19 +724,55 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
     _carregarContexto();
   }
 
-  Future<void> _aplicar(Map<String, double> precoPorId, ProdutoProvider provider) async {
-    if (precoPorId.isEmpty) return;
+  String _linhaPreviaIfood(Produto p, double? novoIfood) {
+    if (novoIfood == null) return '';
+    final atual = _contexto[p.id]?.precoIfood;
+    return '\niFood ${atual != null ? _moedaRevisao(atual) : '—'} → ${_moedaRevisao(novoIfood)}';
+  }
+
+  String _textoTaxaIfood() {
+    final taxa = _contexto.values.map((c) => c.taxaIfoodPercentual).whereType<double>().firstOrNull;
+    if (taxa == null) return 'Sem taxa do iFood configurada (Custos Operacionais) — não dá pra calcular.';
+    return 'Mesmo líquido da loja depois de ${taxa.toStringAsFixed(1).replaceAll('.', ',')}% de taxas do iFood '
+        '(comissão + pagamento online).';
+  }
+
+  /// Preço do iFood que deixa o mesmo líquido que [precoSite] na loja,
+  /// arredondado do mesmo jeito. Null = sem canal iFood ou sem taxa vigente.
+  double? _precoIfoodPara(Produto p, double precoSite) {
+    final equivalente = _contexto[p.id]?.precoIfoodEquivalente(precoSite);
+    return equivalente == null ? null : _arredondar(equivalente, _arredondamento);
+  }
+
+  /// [precoSitePorId] e [precoIfoodPorId] são independentes: o botão do
+  /// cartão aplica só um dos dois; a barra em massa aplica os dois juntos.
+  /// Só mexe no preço do site — `aplicarPrecoRevisadoEmMassa` também tira o
+  /// produto da revisão; aplicar só no iFood deixa ele pendente.
+  Future<void> _aplicar(
+    ProdutoProvider provider, {
+    Map<String, double> precoSitePorId = const {},
+    Map<String, ({String marketplaceId, double preco})> precoIfoodPorId = const {},
+  }) async {
+    if (precoSitePorId.isEmpty && precoIfoodPorId.isEmpty) return;
     setState(() => _processando = true);
-    final falhas = await provider.aplicarPrecoRevisadoEmMassa(precoPorId);
+    final falhasSite =
+        precoSitePorId.isEmpty ? <String>[] : await provider.aplicarPrecoRevisadoEmMassa(precoSitePorId);
+    final falhasIfood =
+        precoIfoodPorId.isEmpty ? <String>[] : await provider.aplicarPrecoIfoodEmMassa(precoIfoodPorId);
     if (!mounted) return;
     setState(() {
       _processando = false;
-      _selecionados.removeAll(precoPorId.keys.where((id) => !falhas.contains(id)));
+      _selecionados.removeAll(precoSitePorId.keys.where((id) => !falhasSite.contains(id)));
     });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Preço aplicado em ${precoPorId.length - falhas.length} de ${precoPorId.length} produto(s)'
-          '${falhas.isNotEmpty ? ' (${falhas.length} falharam)' : ''}.'),
-    ));
+    final partes = [
+      if (precoSitePorId.isNotEmpty)
+        'loja em ${precoSitePorId.length - falhasSite.length} de ${precoSitePorId.length}'
+            '${falhasSite.isNotEmpty ? ' (${falhasSite.length} falharam)' : ''}',
+      if (precoIfoodPorId.isNotEmpty)
+        'iFood em ${precoIfoodPorId.length - falhasIfood.length} de ${precoIfoodPorId.length}'
+            '${falhasIfood.isNotEmpty ? ' (${falhasIfood.length} falharam)' : ''}',
+    ];
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preço aplicado: ${partes.join(' · ')}.')));
     _carregarContexto();
   }
 
@@ -752,13 +789,19 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
     }
     final selecionados = lista.where((p) => _selecionados.contains(p.id)).toList();
     final precoPorId = <String, double>{};
+    final precoIfoodPorId = <String, ({String marketplaceId, double preco})>{};
     final semCalculo = <Produto>[];
     for (final p in selecionados) {
       final novo = _precoNovo(p);
       if (novo == null) {
         semCalculo.add(p);
-      } else {
-        precoPorId[p.id!] = novo;
+        continue;
+      }
+      precoPorId[p.id!] = novo;
+      final ctx = _contexto[p.id];
+      final ifood = _aplicarNoIfood ? _precoIfoodPara(p, novo) : null;
+      if (ifood != null && ctx?.ifoodMarketplaceId != null) {
+        precoIfoodPorId[p.id!] = (marketplaceId: ctx!.ifoodMarketplaceId!, preco: ifood);
       }
     }
 
@@ -777,8 +820,9 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(p.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
                   subtitle: Text(
-                    '${_moedaRevisao(p.preco)} → ${_moedaRevisao(precoPorId[p.id]!)}'
-                    '  (markup ${(precoPorId[p.id]! / p.custo * 100 - 100).toStringAsFixed(0)}%)',
+                    'Loja ${_moedaRevisao(p.preco)} → ${_moedaRevisao(precoPorId[p.id]!)}'
+                    '  (markup ${(precoPorId[p.id]! / p.custo * 100 - 100).toStringAsFixed(0)}%)'
+                    '${_linhaPreviaIfood(p, precoIfoodPorId[p.id]?.preco)}',
                   ),
                 ),
               if (semCalculo.isNotEmpty) ...[
@@ -802,7 +846,9 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
         ],
       ),
     );
-    if (confirmado == true && mounted) await _aplicar(precoPorId, provider);
+    if (confirmado == true && mounted) {
+      await _aplicar(provider, precoSitePorId: precoPorId, precoIfoodPorId: precoIfoodPorId);
+    }
   }
 
   @override
@@ -922,13 +968,20 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
                   itemBuilder: (context, index) {
                     final produto = lista[index];
                     final id = produto.id!;
+                    final ctx = _contexto[id];
+                    final sugestaoSite = ctx?.precoSugerido(produto.custo) != null
+                        ? _arredondar(ctx!.precoSugerido(produto.custo)!, _arredondamento)
+                        : null;
+                    // iFood acompanha a sugestão da loja; sem sugestão (sem
+                    // histórico), acompanha o preço atual da loja.
+                    final sugestaoIfood = _precoIfoodPara(produto, sugestaoSite ?? produto.preco);
                     return _CartaoRevisaoPreco(
                       produto: produto,
-                      contexto: _contexto[id],
+                      contexto: ctx,
                       selecionado: _selecionados.contains(id),
-                      sugestaoArredondada: _contexto[id]?.precoSugerido(produto.custo) != null
-                          ? _arredondar(_contexto[id]!.precoSugerido(produto.custo)!, _arredondamento)
-                          : null,
+                      sugestaoArredondada: sugestaoSite,
+                      sugestaoIfood: sugestaoIfood,
+                      sugestaoIfoodBaseadaNaSugestao: sugestaoSite != null,
                       onSelecionar: (v) => setState(() {
                         if (v) {
                           _selecionados.add(id);
@@ -938,7 +991,11 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
                       }),
                       onAplicarSugestao: _processando
                           ? null
-                          : (preco) => _aplicar({id: preco}, produtoProvider),
+                          : (preco) => _aplicar(produtoProvider, precoSitePorId: {id: preco}),
+                      onAplicarIfood: _processando || ctx?.ifoodMarketplaceId == null
+                          ? null
+                          : (preco) => _aplicar(produtoProvider,
+                              precoIfoodPorId: {id: (marketplaceId: ctx!.ifoodMarketplaceId!, preco: preco)}),
                     );
                   },
                 ),
@@ -998,6 +1055,14 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
                 ),
               ],
             ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: _aplicarNoIfood,
+              onChanged: (v) => setState(() => _aplicarNoIfood = v),
+              title: const Text('Aplicar também no iFood'),
+              subtitle: Text(_textoTaxaIfood()),
+            ),
             Row(
               children: [
                 Expanded(
@@ -1029,16 +1094,22 @@ class _CartaoRevisaoPreco extends StatelessWidget {
   final RevisaoPrecoContexto? contexto;
   final bool selecionado;
   final double? sugestaoArredondada;
+  final double? sugestaoIfood;
+  final bool sugestaoIfoodBaseadaNaSugestao;
   final ValueChanged<bool> onSelecionar;
   final ValueChanged<double>? onAplicarSugestao;
+  final ValueChanged<double>? onAplicarIfood;
 
   const _CartaoRevisaoPreco({
     required this.produto,
     required this.contexto,
     required this.selecionado,
     required this.sugestaoArredondada,
+    required this.sugestaoIfood,
+    required this.sugestaoIfoodBaseadaNaSugestao,
     required this.onSelecionar,
     required this.onAplicarSugestao,
+    required this.onAplicarIfood,
   });
 
   @override
@@ -1053,7 +1124,14 @@ class _CartaoRevisaoPreco extends StatelessWidget {
     final markupAnterior = ctx?.markupAnterior;
     final markupCategoria = ctx?.markupCategoria;
     final precoIfood = ctx?.precoIfood;
-    final ifoodAbaixoDoCusto = precoIfood != null && precoIfood > 0 && precoIfood <= produto.custo;
+    // "Abaixo do custo" no iFood olha o LÍQUIDO (depois das taxas %), não o
+    // preço de vitrine — é o que de fato entra no caixa.
+    final liquidoIfood = precoIfood != null ? (ctx?.liquidoIfood(precoIfood) ?? precoIfood) : null;
+    final ifoodAbaixoDoCusto = liquidoIfood != null && precoIfood! > 0 && liquidoIfood <= produto.custo;
+    final markupLiquidoIfood =
+        liquidoIfood != null && produto.custo > 0 && ctx?.taxaIfoodPercentual != null
+            ? (liquidoIfood / produto.custo - 1) * 100
+            : null;
     final abaixoDoCusto = produto.preco <= produto.custo;
     final dataCusto = ctx?.custoAlteradoEm;
 
@@ -1118,7 +1196,9 @@ class _CartaoRevisaoPreco extends StatelessWidget {
                       TextSpan(style: estiloLinha, children: [
                         if (precoIfood != null)
                           TextSpan(
-                            text: 'iFood ${_moedaRevisao(precoIfood)}${ifoodAbaixoDoCusto ? ' (abaixo do custo!)' : ''} · ',
+                            text: 'iFood ${_moedaRevisao(precoIfood)}'
+                                '${markupLiquidoIfood != null ? ' (líquido ${_moedaRevisao(liquidoIfood!)}, markup ${markupLiquidoIfood.toStringAsFixed(0)}%)' : ''}'
+                                '${ifoodAbaixoDoCusto ? ' ABAIXO DO CUSTO' : ''} · ',
                             style: ifoodAbaixoDoCusto ? TextStyle(color: corAlerta, fontWeight: FontWeight.bold) : null,
                           ),
                         TextSpan(text: 'Vendas 60d: ${ctx?.vendas60d ?? '—'} · Estoque: ${produto.estoqueAtual}'),
@@ -1143,6 +1223,24 @@ class _CartaoRevisaoPreco extends StatelessWidget {
                         ],
                       ),
                     ],
+                    if (sugestaoIfood != null)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Sugestão iFood: ${_moedaRevisao(sugestaoIfood!)} '
+                              '(mesmo líquido ${sugestaoIfoodBaseadaNaSugestao ? 'da sugestão' : 'do preço atual'} da loja)',
+                              style: estiloLinha?.copyWith(color: colorScheme.tertiary, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          if (precoIfood == null || (sugestaoIfood! - precoIfood).abs() >= 0.01)
+                            TextButton(
+                              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                              onPressed: onAplicarIfood == null ? null : () => onAplicarIfood!(sugestaoIfood!),
+                              child: const Text('Aplicar iFood'),
+                            ),
+                        ],
+                      ),
                   ],
                 ),
               ),

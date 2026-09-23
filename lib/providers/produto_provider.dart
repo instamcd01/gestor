@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
+import '../repositories/produto_canal_repository.dart';
 import '../repositories/produto_repository.dart';
 import '../utils/variante_label_utils.dart';
 
@@ -208,6 +209,33 @@ class ProdutoProvider with ChangeNotifier {
         }
       } catch (e) {
         debugPrint('Erro ao aplicar preço revisado em massa ($entrada.key): $e');
+        falhas.add(entrada.key);
+      }
+    }));
+    notifyListeners();
+    return falhas;
+  }
+
+  /// Preço do iFood de vários produtos (revisão de preço) — só em canal que
+  /// já existe, sem mexer em disponibilidade (ver
+  /// `ProdutoCanalRepository.atualizarPreco`). Mantém `precoIfood` local em
+  /// dia, senão um "Salvar" na tela de edição regravaria o valor antigo no
+  /// campo legado. Retorna os ids que falharam.
+  Future<List<String>> aplicarPrecoIfoodEmMassa(Map<String, ({String marketplaceId, double preco})> porProduto) async {
+    final canalRepository = ProdutoCanalRepository();
+    final falhas = <String>[];
+    await Future.wait(porProduto.entries.map((entrada) async {
+      try {
+        await canalRepository.atualizarPreco(
+          produtoId: entrada.key,
+          marketplaceId: entrada.value.marketplaceId,
+          preco: entrada.value.preco,
+          espelharPrecoIfoodLegado: true,
+        );
+        final index = _produtos.indexWhere((p) => p.id == entrada.key);
+        if (index != -1) _produtos[index].precoIfood = entrada.value.preco;
+      } catch (e) {
+        debugPrint('Erro ao aplicar preço iFood (${entrada.key}): $e');
         falhas.add(entrada.key);
       }
     }));

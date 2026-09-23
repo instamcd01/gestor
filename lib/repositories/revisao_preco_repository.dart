@@ -17,6 +17,15 @@ class RevisaoPrecoContexto {
   /// Markup (% sobre o custo) mediano da categoria, catálogo ativo inteiro.
   final double? markupCategoria;
 
+  /// Canal iFood do produto (null = produto sem linha em `produto_canal`
+  /// pro iFood — nesse caso não há o que aplicar lá).
+  final String? ifoodMarketplaceId;
+
+  /// Comissão + taxa de pagamento online vigentes (`marketplace_taxas`) —
+  /// mesma fonte do lucro real dos pedidos (`calcular_comissao_marketplace`).
+  /// Mensalidade fixa fica de fora de propósito (vai como despesa mensal).
+  final double? taxaIfoodPercentual;
+
   const RevisaoPrecoContexto({
     required this.produtoId,
     this.custoAnterior,
@@ -26,6 +35,8 @@ class RevisaoPrecoContexto {
     this.precoIfood,
     required this.ifoodDisponivel,
     this.markupCategoria,
+    this.ifoodMarketplaceId,
+    this.taxaIfoodPercentual,
   });
 
   factory RevisaoPrecoContexto.fromSupabase(Map<String, dynamic> row) {
@@ -39,7 +50,26 @@ class RevisaoPrecoContexto {
       precoIfood: numero('preco_ifood'),
       ifoodDisponivel: row['ifood_disponivel'] as bool? ?? false,
       markupCategoria: numero('markup_categoria'),
+      ifoodMarketplaceId: row['ifood_marketplace_id'] as String?,
+      taxaIfoodPercentual: numero('taxa_ifood_percentual'),
     );
+  }
+
+  bool get podeAplicarIfood =>
+      ifoodMarketplaceId != null && taxaIfoodPercentual != null && taxaIfoodPercentual! < 100;
+
+  /// Preço no iFood que deixa o MESMO valor líquido que [precoSite] deixa na
+  /// loja, depois das taxas % do iFood: precoSite ÷ (1 − taxa).
+  double? precoIfoodEquivalente(double precoSite) {
+    if (!podeAplicarIfood || precoSite <= 0) return null;
+    return precoSite / (1 - taxaIfoodPercentual! / 100);
+  }
+
+  /// Quanto sobra de um preço do iFood depois das taxas %.
+  double? liquidoIfood(double precoNoIfood) {
+    final taxa = taxaIfoodPercentual;
+    if (taxa == null) return null;
+    return precoNoIfood * (1 - taxa / 100);
   }
 
   /// Markup (% sobre o custo) que o produto tinha antes da mudança de custo.
