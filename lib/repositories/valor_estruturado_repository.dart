@@ -73,6 +73,9 @@ class ValorEstruturadoRepository {
       final resultado = await supabase
           .from('valores_estruturados_variante')
           .select('campo, categoria, valor')
+          // Ordem estável obrigatória: sem ORDER BY o Postgres não garante a
+          // mesma sequência entre páginas (linhas podem repetir ou sumir).
+          .order('id', ascending: true)
           .range(inicio, inicio + tamanhoPagina - 1);
       linhas.addAll(List<Map<String, dynamic>>.from(resultado));
       if (resultado.length < tamanhoPagina) break;

@@ -40,6 +40,14 @@ class _CampoComSugestaoState extends State<CampoComSugestao> {
   @override
   Widget build(BuildContext context) {
     return RawAutocomplete<String>(
+      // O RawAutocomplete (Flutter 3.41, conferido no código-fonte) só roda o
+      // optionsBuilder quando o TEXTO do campo muda — ganhar foco só mostra/
+      // esconde a lista já calculada. Sem essa key, tocar no campo antes do
+      // vocabulário carregar (ou antes de escolher a categoria) congelava a
+      // lista vazia, e trocar de categoria mantinha as sugestões da anterior,
+      // até o usuário digitar algo. Key pelo conteúdo recria o estado
+      // interno quando as sugestões mudam, e o próximo toque recalcula.
+      key: ValueKey(Object.hashAll(widget.sugestoes)),
       textEditingController: widget.controller,
       focusNode: _focusNode,
       optionsBuilder: (value) {
