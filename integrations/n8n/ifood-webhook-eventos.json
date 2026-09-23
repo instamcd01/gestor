@@ -11,7 +11,7 @@
         -460
       ],
       "parameters": {
-        "content": "## Setup necessário antes de ativar\n\n1. Ativar este workflow **pela UI do n8n** (toggle no editor) — ativação via API não registra o webhook nesse servidor (confirmado por teste).\n2. Pegar a URL de produção do nó Webhook (aba Webhook do nó, ou: https://n8n.lukz.com.br/webhook/ifood-eventos) e cadastrar no Portal do Parceiro do iFood (aba de configuração de webhook do app), com HTTPS.\n3. **Verificar a validação de assinatura (nó Crypto + Consolidar verificação) com uma chamada real** — gerar um pedido de teste no Developer Portal do iFood e conferir se `assinatura_valida` fica `true`. Os detalhes de como o n8n expõe o raw body (opção rawBody do Webhook) não foram testados ao vivo nesta implementação.\n4. Este workflow substitui o `ifood-polling-ingestao` (que fica desativado como fallback). A lógica de processamento de pedido (cliente, itens, produto placeholder, pagamento) é idêntica à versão de polling — só a entrada mudou.",
+        "content": "## Setup necessário antes de ativar\n\n1. Ativar este workflow **pela UI do n8n** (toggle no editor) — ativação via API não registra o webhook nesse servidor (confirmado por teste).\n2. Pegar a URL de produção do nó Webhook (aba Webhook do nó, ou: https://n8n.lukz.com.br/webhook/ifood-eventos) e cadastrar no Portal do Parceiro do iFood (aba de configuração de webhook do app), com HTTPS.\n3. **Verificar a validação de assinatura (nó Crypto + Consolidar verificação) com uma chamada real** — gerar um pedido de teste no Developer Portal do iFood e conferir se `assinatura_valida` fica `true`. Os detalhes de como o n8n expõe o raw body (opção rawBody do Webhook) não foram testados ao vivo nesta implementação.\n4. Este workflow substitui o `ifood-polling-ingestao` (que fica desativado como fallback). A lógica de processamento de pedido (cliente, itens, produto placeholder, pagamento) é idêntica à versão de polling — só a entrada mudou.\n\n5. HANDSHAKE_DISPUTE (contestacao de cancelamento) agora e capturado: grava em marketplace_disputas (status=pendente). Resolver pedido_id ainda nao confirmado com evento real (nesting de metadata.disputeId/expiresAt/alternatives inferido da documentacao, nao observado ao vivo) -- conferir o payload real na primeira disputa que chegar, em eventos_sistema tipo_evento=ifood_disputa_recebida.",
         "height": 380,
         "width": 480
       }
@@ -20,7 +20,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "ifood-eventos",
-        "responseMode": "immediately",
+        "responseMode": "onReceived",
         "responseCode": 202,
         "options": {
           "rawBody": true
@@ -33,7 +33,8 @@
       "position": [
         -700,
         0
-      ]
+      ],
+      "webhookId": "5c5a237e-6e72-4754-a1af-bb340c37f007"
     },
     {
       "parameters": {
@@ -304,7 +305,7 @@
                 "conditions": [
                   {
                     "id": "sw1",
-                    "leftValue": "={{$json.code}}",
+                    "leftValue": "={{$json.fullCode}}",
                     "rightValue": "PLACED",
                     "operator": {
                       "type": "string",
@@ -327,8 +328,31 @@
                 "conditions": [
                   {
                     "id": "sw2",
-                    "leftValue": "={{$json.code}}",
+                    "leftValue": "={{$json.fullCode}}",
                     "rightValue": "CANCELLED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "sw3",
+                    "leftValue": "={{$json.fullCode}}",
+                    "rightValue": "HANDSHAKE_DISPUTE",
                     "operator": {
                       "type": "string",
                       "operation": "equals",
@@ -341,8 +365,9 @@
             }
           ]
         },
-        "fallbackOutput": "extra",
-        "options": {}
+        "options": {
+          "fallbackOutput": "extra"
+        }
       },
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
@@ -436,31 +461,7 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "=https://merchant-api.ifood.com.br/order/v1.0/orders/{{$('Switch por tipo de evento').item.json.orderId}}/virtual-bag",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$('Switch por tipo de evento').item.json.access_token}}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "id": "n16b",
-      "name": "Buscar virtual-bag",
-      "position": [
-        4700,
-        -140
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const ev = $('Switch por tipo de evento').item.json;\nconst order = $('Buscar detalhes do pedido').item.json;\n// virtual-bag é um endpoint oficial separado (GET /orders/{id}/virtual-bag),\n// mais completo pra pedidos de Mercado - traz email/data de nascimento do\n// cliente e sugestões de substituição por item que /orders/{id} não tem.\n// Confirmado com pedido real 2026-07-29 que os dois endpoints concordam\n// nos campos que já usávamos (benefícios, valores) - isso só complementa.\nconst vbag = $json;\nconst phone = order.customer?.phone?.number || '';\n// Endereço real vem aninhado em order.delivery.deliveryAddress, não em\n// order.deliveryAddress (esse caminho nunca existe na resposta da iFood).\nconst address = order.delivery?.deliveryAddress || {};\nconst doc = order.customer?.documentType === 'CPF' ? order.customer?.documentNumber : null;\nreturn [{\n  json: {\n    empresa_id: ev.empresa_id,\n    orderId: ev.orderId,\n    access_token: ev.access_token,\n    order,\n    vbag,\n    cliente: {\n      nome: order.customer?.name || 'Cliente iFood',\n      telefone: phone,\n      // customer.id é estável por cliente real (confirmado: pedidos com\n      // telefones mascarados diferentes compartilham o mesmo customer.id)\n      // - chave de casamento, não o telefone (que a iFood reaproveita entre\n      // pedidos/clientes diferentes).\n      idExternoIfood: order.customer?.id || null,\n      cpf: doc,\n      // email/data de nascimento só existem no virtual-bag, e mesmo lá a\n      // iFood diz que só vêm preenchidos \"em casos excepcionais\" por LGPD -\n      // normalmente ficam null, o que é esperado, não um erro de captura.\n      email: vbag.customer?.email || null,\n      dataNascimento: vbag.customer?.birthDate || null,\n      endereco: address.streetName || '',\n      numero: address.streetNumber || '',\n      bairro: address.neighborhood || '',\n      cidade: address.city || '',\n      estado: address.state || '',\n      cep: address.postalCode || '',\n      complemento: address.complement || null,\n      latitude: address.coordinates?.latitude ?? null,\n      longitude: address.coordinates?.longitude ?? null,\n    },\n  },\n}];"
+        "jsCode": "const ev = $('Switch por tipo de evento').item.json;\nconst order = $('Buscar detalhes do pedido').item.json;\n// virtual-bag é um endpoint oficial separado (GET /orders/{id}/virtual-bag),\n// mais completo pra pedidos de Mercado - traz email/data de nascimento do\n// cliente e sugestões de substituição por item que /orders/{id} não tem.\n// Confirmado com pedido real 2026-07-29 que os dois endpoints concordam\n// nos campos que já usávamos (benefícios, valores) - isso só complementa.\nconst vbag = $json;\nconst phone = order.customer?.phone?.number || '';\n// Endereço real vem aninhado em order.delivery.deliveryAddress, não em\n// order.deliveryAddress (esse caminho nunca existe na resposta da iFood).\nconst address = order.delivery?.deliveryAddress || {};\nconst documentType = order.customer?.documentType;\nconst documentNumber = order.customer?.documentNumber ?? null;\nconst doc = documentType === 'CPF' ? documentNumber : null;\nconst docCnpj = documentType === 'CNPJ' ? documentNumber : null;\nreturn [{\n  json: {\n    empresa_id: ev.empresa_id,\n    orderId: ev.orderId,\n    access_token: ev.access_token,\n    order,\n    vbag,\n    cliente: {\n      nome: order.customer?.name || 'Cliente iFood',\n      telefone: phone,\n      // customer.id é estável por cliente real (confirmado: pedidos com\n      // telefones mascarados diferentes compartilham o mesmo customer.id)\n      // - chave de casamento, não o telefone (que a iFood reaproveita entre\n      // pedidos/clientes diferentes).\n      idExternoIfood: order.customer?.id || null,\n      cpf: doc,\n      cnpj: docCnpj,\n      // email/data de nascimento só existem no virtual-bag, e mesmo lá a\n      // iFood diz que só vêm preenchidos \"em casos excepcionais\" por LGPD -\n      // normalmente ficam null, o que é esperado, não um erro de captura.\n      email: vbag.customer?.email || null,\n      dataNascimento: vbag.customer?.birthDate || null,\n      endereco: address.streetName || '',\n      numero: address.streetNumber || '',\n      bairro: address.neighborhood || '',\n      cidade: address.city || '',\n      estado: address.state || '',\n      cep: address.postalCode || '',\n      complemento: address.complement || null,\n      latitude: address.coordinates?.latitude ?? null,\n      longitude: address.coordinates?.longitude ?? null,\n    },\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -561,7 +562,8 @@
             "id_externo_ifood": "={{$('Preparar dados do cliente').item.json.cliente.idExternoIfood}}",
             "email": "={{$('Preparar dados do cliente').item.json.cliente.email}}",
             "data_nascimento": "={{$('Preparar dados do cliente').item.json.cliente.dataNascimento}}",
-            "canal_origem": "ifood"
+            "canal_origem": "ifood",
+            "cnpj": "={{$('Preparar dados do cliente').item.json.cliente.cnpj}}"
           },
           "matchingColumns": [],
           "schema": []
@@ -585,29 +587,6 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "update clientes set\n  nome = coalesce(nullif($2, ''), nome),\n  telefone = coalesce(nullif($3, ''), telefone),\n  endereco = coalesce(nullif($4, ''), endereco),\n  numero = coalesce(nullif($5, ''), numero),\n  bairro = coalesce(nullif($6, ''), bairro),\n  cidade = coalesce(nullif($7, ''), cidade),\n  estado = coalesce(nullif($8, ''), estado),\n  cep = coalesce(nullif($9, ''), cep),\n  complemento = coalesce($10, complemento),\n  latitude = coalesce($11, latitude),\n  longitude = coalesce($12, longitude),\n  cpf = coalesce($13, cpf),\n  email = coalesce(nullif($14, ''), email),\n  data_nascimento = coalesce($15::date, data_nascimento),\n  updated_at = now()\nwhere id = $1\nreturning id;",
-        "options": {
-          "queryReplacement": "={{ [$json.id, $('Preparar dados do cliente').item.json.cliente.nome, $('Preparar dados do cliente').item.json.cliente.telefone, $('Preparar dados do cliente').item.json.cliente.endereco, $('Preparar dados do cliente').item.json.cliente.numero, $('Preparar dados do cliente').item.json.cliente.bairro, $('Preparar dados do cliente').item.json.cliente.cidade, $('Preparar dados do cliente').item.json.cliente.estado, $('Preparar dados do cliente').item.json.cliente.cep, $('Preparar dados do cliente').item.json.cliente.complemento, $('Preparar dados do cliente').item.json.cliente.latitude, $('Preparar dados do cliente').item.json.cliente.longitude, $('Preparar dados do cliente').item.json.cliente.cpf, $('Preparar dados do cliente').item.json.cliente.email, $('Preparar dados do cliente').item.json.cliente.dataNascimento] }}"
-        }
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "id": "n20b",
-      "name": "Atualizar cliente existente",
-      "position": [
-        5300,
-        -240
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "GEzDAcb9DFtH5ozo",
-          "name": "Postgres cloud"
-        }
-      }
-    },
-    {
-      "parameters": {
         "jsCode": "const found = $('Buscar cliente existente').item.json;\nconst cliente_id = found.id || $json.id;\nreturn [{ json: { ...$('Preparar dados do cliente').item.json, cliente_id } }];"
       },
       "type": "n8n-nodes-base.code",
@@ -621,7 +600,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst items = ctx.order.items || [];\n// Sugestões de substituição só existem no virtual-bag (bag.items[].replacement.list),\n// casadas pelo mesmo uniqueId do item - a separação de pedido oferece isso\n// em vez de busca manual no catálogo inteiro.\nconst vbagItems = ctx.vbag?.bag?.items || [];\nreturn items.map(it => {\n  const vbagItem = vbagItems.find(vi => vi.uniqueId === it.uniqueId);\n  const sugestoes = vbagItem?.replacement?.list;\n  return {\n    json: {\n      empresa_id: ctx.empresa_id,\n      cliente_id: ctx.cliente_id,\n      orderId: ctx.orderId,\n      order: ctx.order,\n      vbag: ctx.vbag,\n      item_externo_id: String(it.id),\n      uniqueid_marketplace: it.uniqueId,\n      nome_item: it.name,\n      quantidade: it.quantity,\n      preco_unitario: (it.totalPrice ?? it.unitPrice ?? 0) / (it.quantity || 1),\n      subtotal: it.totalPrice ?? ((it.unitPrice || 0) * (it.quantity || 1)),\n      observacao_cliente: it.observations || null,\n      sugestoes_substituicao: sugestoes && sugestoes.length ? JSON.stringify(sugestoes) : null,\n    },\n  };\n});"
+        "jsCode": "const ctx = $json;\nconst items = ctx.order.items || [];\n// Sugestões de substituição só existem no virtual-bag (bag.items[].replacement.list),\n// casadas pelo mesmo uniqueId do item - a separação de pedido oferece isso\n// em vez de busca manual no catálogo inteiro.\nconst vbagItems = ctx.vbag?.bag?.items || [];\nreturn items.map(it => {\n  const vbagItem = vbagItems.find(vi => vi.uniqueId === it.uniqueId);\n  const sugestoes = vbagItem?.replacement?.list;\n  // Groceries: produto e identificado pelo virtual-bag (ean + product.plu, que e o\n  // nosso produto_id truncado em 20 chars pelo iFood), nao pelo items[].id de restaurante.\n  const pesoVariavel = vbagItem?.product?.isVariableWeight === true;\n  const pesoGramas = vbagItem?.weight?.value ?? null;\n  const obs = [it.observations || vbagItem?.note || null, pesoVariavel ? `Peso variavel iFood: ${pesoGramas} g` : null].filter(Boolean).join(' | ') || null;\n  return {\n    json: {\n      empresa_id: ctx.empresa_id,\n      cliente_id: ctx.cliente_id,\n      orderId: ctx.orderId,\n      order: ctx.order,\n      vbag: ctx.vbag,\n      item_externo_id: String(it.id),\n      uniqueid_marketplace: it.uniqueId,\n      nome_item: it.name,\n      quantidade: it.quantity,\n      preco_unitario: (it.totalPrice ?? it.unitPrice ?? 0) / (it.quantity || 1),\n      subtotal: it.totalPrice ?? ((it.unitPrice || 0) * (it.quantity || 1)),\n      observacao_cliente: obs,\n      ean: vbagItem?.ean || it.ean || '',\n      plu: vbagItem?.product?.plu || '',\n      peso_variavel: pesoVariavel,\n      peso_gramas: pesoGramas,\n      sugestoes_substituicao: sugestoes && sugestoes.length ? JSON.stringify(sugestoes) : null,\n    },\n  };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -635,9 +614,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "select (select produto_id from produto_canal where item_externo_id = $1 and marketplace_id = 'd4811153-e210-47b0-b910-ee0440914f60' limit 1) as produto_id;",
+        "query": "select coalesce(\n (select p.id from produtos p where p.empresa_id = $1::uuid and $3 ~ '^[0-9a-f-]{8,36}$' and p.id::text like $3 || '%' limit 1),\n (select p.id from produtos p join produto_canal pc on pc.produto_id = p.id and pc.marketplace_id = 'd4811153-e210-47b0-b910-ee0440914f60' where p.empresa_id = $1::uuid and $2 <> '' and p.codigo_barras = $2 order by p.ativo desc limit 1),\n (select p.id from produtos p where p.empresa_id = $1::uuid and $2 <> '' and p.codigo_barras = $2 order by p.ativo desc limit 1),\n (select pc.produto_id from produto_canal pc where pc.item_externo_id = $4 and pc.marketplace_id = 'd4811153-e210-47b0-b910-ee0440914f60' limit 1)\n) as produto_id;",
         "options": {
-          "queryReplacement": "={{$json.item_externo_id}}"
+          "queryReplacement": "={{ [$json.empresa_id, $json.ean || '', $json.plu || '', $json.item_externo_id || ''] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -793,7 +772,8 @@
     },
     {
       "parameters": {
-        "jsCode": "const direct = $('Resolver produto_id').item.json.produto_id;\nlet produtoId = direct;\nlet naoCatalogado = false;\nif (!produtoId) {\n  naoCatalogado = true;\n  const existing = $('Buscar placeholder existente').item.json.id;\n  produtoId = existing || $json.id;\n}\nreturn [{ json: { ...$('Explodir itens do pedido').item.json, produto_id: produtoId, item_nao_catalogado: naoCatalogado } }];"
+        "jsCode": "const direct = $('Resolver produto_id').item.json.produto_id;\nlet produtoId = direct;\nlet naoCatalogado = false;\nif (!produtoId) {\n  naoCatalogado = true;\n  const existing = $('Buscar placeholder existente').item.json.id;\n  produtoId = existing || $json.id;\n}\nreturn { json: { ...$('Explodir itens do pedido').item.json, produto_id: produtoId, item_nao_catalogado: naoCatalogado } };",
+        "mode": "runOnceForEachItem"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -806,7 +786,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const list = items.map(i => i.json);\nreturn [{\n  json: {\n    empresa_id: list[0]?.empresa_id,\n    cliente_id: list[0]?.cliente_id,\n    orderId: list[0]?.orderId,\n    order: list[0]?.order,\n    itens: list,\n    algum_nao_catalogado: list.some(i => i.item_nao_catalogado),\n  },\n}];"
+        "jsCode": "const list = items.map(i => i.json);\nreturn [{\n  json: {\n    empresa_id: list[0]?.empresa_id,\n    cliente_id: list[0]?.cliente_id,\n    orderId: list[0]?.orderId,\n    order: list[0]?.order,\n    vbag: list[0]?.vbag,\n    itens: list,\n    algum_nao_catalogado: list.some(i => i.item_nao_catalogado),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -819,7 +799,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\n// Múltiplos métodos de pagamento num só pedido (ex: parte prepago no app\n// + parte em dinheiro na entrega) nunca visto num pedido real ainda -\n// generalização defensiva, não confirmada contra payload real. Rótulo\n// concatena os tipos únicos em vez de só olhar methods[0].\nconst methods = order.payments?.methods || [];\nconst allPrepaid = methods.length > 0 && methods.every(m => m.type === 'PREPAID');\nconst anyOffline = methods.some(m => m.type === 'OFFLINE');\nconst tipoPagamento = methods.length === 0 ? 'Outros'\n  : allPrepaid ? 'iFood'\n  : [...new Set(methods.map(m => m.type === 'PREPAID' ? 'iFood' : (metodoMap[m.method] || 'Outros')))].join(' + ');\nconst statusPagamento = anyOffline ? 'pendente' : 'pago';\nconst cashMethod = methods.find(m => m.method === 'CASH');\nconst total = order.total || {};\n// Confirmado com pedido TAKEOUT real 2026-07-29: order.takeout tem forma\n// bem diferente de order.delivery (mode/location/takeoutDateTime, sem\n// pickupCode - o código de retirada do courier só existe em DELIVERY).\nconst isTakeout = order.orderType === 'TAKEOUT';\nconst pickupCodeEntrega = order.delivery?.pickupCode ?? null;\nconst dataHoraImediata = isTakeout ? (order.takeout?.takeoutDateTime ?? null) : (order.delivery?.deliveryDateTime ?? null);\n// deliveredBy já vinha no payload que já buscamos (order.delivery), nunca\n// era capturado - MERCHANT = a própria loja entrega, sem rastreio da\n// iFood; IFOOD = entregador da própria iFood, é quando o rastreio existe.\nconst entregadorTipo = order.delivery?.deliveredBy ?? null;\nlet observacoes = order.orderTiming === 'SCHEDULED' ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = cashMethod?.cash?.changeFor ?? null;\n// pending = valor real a cobrar fora do app da iFood - correto mesmo em\n// pagamento misto (prepago + dinheiro); só coincide com orderAmount\n// inteiro quando o pedido inteiro é pago em dinheiro (caso observado\n// até agora).\nconst valorPendente = order.payments?.pending ?? (total.orderAmount ?? 0);\nconst troco = changeFor != null ? Math.max(0, changeFor - valorPendente) : null;\nconst taxaServicoCliente = (order.additionalFees || []).reduce((acc, f) => acc + (f.value || 0), 0);\n// Cupom/campanha: order.benefits[] (confirmado com pedido real 2026-07-29,\n// campaign.id/name + sponsorshipValues por patrocinador IFOOD/MERCHANT/\n// EXTERNAL/CHAIN). Só o primeiro benefício vira campanha/cupom nomeados;\n// o array completo fica em metadata pra qualquer auditoria financeira.\nconst beneficios = order.benefits || [];\nconst primeiroBeneficio = beneficios[0] || null;\nconst campanhaMarketplace = primeiroBeneficio?.campaign?.name ?? null;\nconst cupomMarketplace = primeiroBeneficio?.campaign?.id ?? null;\n// Regra de substituição do pedido (order.picking.replacementOptions) -\n// relevante pra separação de pedido saber se pode oferecer substituto.\nconst politicaSubstituicao = order.picking?.replacementOptions ?? null;\nconst agendado = order.orderTiming === 'SCHEDULED';\nconst entregaPrevistaInicio = agendado ? (order.schedule?.deliveryDateTimeStart ?? null) : null;\nconst entregaPrevistaFim = agendado ? (order.schedule?.deliveryDateTimeEnd ?? null) : dataHoraImediata;\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.benefits ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n    tipo_entrega_marketplace: order.orderType ?? null,\n    telefone_localizador: order.customer?.phone?.localizer ?? null,\n    telefone_localizador_expira_em: order.customer?.phone?.localizerExpiration ?? null,\n    codigo_retirada_exibicao: pickupCodeEntrega,\n    agendado,\n    entrega_prevista_inicio: entregaPrevistaInicio,\n    entrega_prevista_fim: entregaPrevistaFim,\n    taxa_servico_cliente: taxaServicoCliente,\n    campanha_marketplace: campanhaMarketplace,\n    cupom_marketplace: cupomMarketplace,\n    politica_substituicao: politicaSubstituicao,\n    entregador_tipo: entregadorTipo,\n    marketplace_metadata: JSON.stringify(beneficios.length ? { beneficios } : {}),\n  },\n}];"
+        "jsCode": "const ctx = $json;\nconst order = ctx.order;\nconst metodoMap = { CREDIT: 'Cartão de Crédito', DEBIT: 'Cartão de Débito', PIX: 'Pix', CASH: 'Dinheiro' };\n// Múltiplos métodos de pagamento num só pedido (ex: parte prepago no app\n// + parte em dinheiro na entrega) nunca visto num pedido real ainda -\n// generalização defensiva, não confirmada contra payload real. Rótulo\n// concatena os tipos únicos em vez de só olhar methods[0].\nconst methods = order.payments?.methods || [];\nconst allPrepaid = methods.length > 0 && methods.every(m => m.type === 'PREPAID');\nconst anyOffline = methods.some(m => m.type === 'OFFLINE');\nconst tipoPagamento = methods.length === 0 ? 'Outros'\n  : allPrepaid ? 'iFood'\n  : [...new Set(methods.map(m => m.type === 'PREPAID' ? 'iFood' : (metodoMap[m.method] || 'Outros')))].join(' + ');\nconst statusPagamento = anyOffline ? 'pendente' : 'pago';\nconst cashMethod = methods.find(m => m.method === 'CASH');\n// Bandeira do cartão: nem todo método de pagamento tem card (Pix/dinheiro não têm) — pega o primeiro que tiver.\nconst bandeiraCartao = methods.find(m => m.card?.brand)?.card?.brand ?? null;\n// Código de autorização do cartão (campo cAut exigido na NFe quando o pagamento é cartão) — nem todo método tem transaction.\nconst codigoAutorizacaoCartao = methods.find(m => m.transaction?.authorizationCode)?.transaction?.authorizationCode ?? null;\nconst total = order.total || {};\n// Confirmado com pedido TAKEOUT real 2026-07-29: order.takeout tem forma\n// bem diferente de order.delivery (mode/location/takeoutDateTime, sem\n// pickupCode - o código de retirada do courier só existe em DELIVERY).\nconst isTakeout = order.orderType === 'TAKEOUT';\nconst pickupCodeEntrega = order.delivery?.pickupCode ?? null;\nconst dataHoraImediata = isTakeout ? (order.takeout?.takeoutDateTime ?? null) : (order.delivery?.deliveryDateTime ?? null);\n// deliveredBy já vinha no payload que já buscamos (order.delivery), nunca\n// era capturado - MERCHANT = a própria loja entrega, sem rastreio da\n// iFood; IFOOD = entregador da própria iFood, é quando o rastreio existe.\nconst entregadorTipo = order.delivery?.deliveredBy ?? null;\nlet observacoes = (order.orderTiming === 'SCHEDULED' || ['TIME_SLOT', 'SCHEDULED'].includes(ctx.vbag?.operationMode?.schedulingType)) ? 'Pedido agendado (iFood).' : '';\nif (ctx.algum_nao_catalogado) {\n  observacoes += ' Contém item não catalogado, revisar catálogo do iFood.';\n}\nconst changeFor = cashMethod?.cash?.changeFor ?? null;\n// pending = valor real a cobrar fora do app da iFood - correto mesmo em\n// pagamento misto (prepago + dinheiro); só coincide com orderAmount\n// inteiro quando o pedido inteiro é pago em dinheiro (caso observado\n// até agora).\nconst valorPendente = order.payments?.pending ?? (total.orderAmount ?? 0);\nconst troco = changeFor != null ? Math.max(0, changeFor - valorPendente) : null;\nconst taxaServicoCliente = (order.additionalFees || []).reduce((acc, f) => acc + (f.value || 0), 0);\n// Cupom/campanha: order.benefits[] (confirmado com pedido real 2026-07-29,\n// campaign.id/name + sponsorshipValues por patrocinador IFOOD/MERCHANT/\n// EXTERNAL/CHAIN). Só o primeiro benefício vira campanha/cupom nomeados;\n// o array completo fica em metadata pra qualquer auditoria financeira.\nconst beneficios = order.benefits || [];\nconst primeiroBeneficio = beneficios[0] || null;\nconst campanhaMarketplace = primeiroBeneficio?.campaign?.name ?? null;\nconst cupomMarketplace = primeiroBeneficio?.campaign?.id ?? null;\n// Regra de substituição do pedido (order.picking.replacementOptions) -\n// relevante pra separação de pedido saber se pode oferecer substituto.\n// Mercado/Groceries: agendamento e janela vem do virtual-bag\n// (operationMode.schedulingType = TIME_SLOT + deliveryTime/takeoutTime.window);\n// campos de restaurante (orderTiming/schedule) ficam como primeira opcao.\nconst vbag = ctx.vbag || {};\nconst opMode = vbag.operationMode || {};\nconst janela = isTakeout ? opMode.takeout?.takeoutTime?.window : opMode.delivery?.deliveryTime?.window;\nconst politicaSubstituicao = order.picking?.replacementOptions ?? vbag.bag?.replacementOptions?.mode ?? null;\nconst agendado = order.orderTiming === 'SCHEDULED' || ['TIME_SLOT', 'SCHEDULED'].includes(opMode.schedulingType);\nconst entregaPrevistaInicio = agendado ? (order.schedule?.deliveryDateTimeStart ?? janela?.from ?? null) : null;\nconst entregaPrevistaFim = agendado ? (order.schedule?.deliveryDateTimeEnd ?? janela?.to ?? null) : dataHoraImediata;\nreturn [{\n  json: {\n    ...ctx,\n    tipo_pagamento: tipoPagamento,\n    status_pagamento: statusPagamento,\n    valor_produtos: total.subTotal ?? 0,\n    valor_entrega: total.deliveryFee ?? 0,\n    desconto: total.benefits ?? 0,\n    valor_total: total.orderAmount ?? 0,\n    observacoes: observacoes.trim(),\n    numero_exibicao: order.displayId ?? null,\n    metadata: JSON.stringify(troco != null ? { troco } : {}),\n    tipo_entrega_marketplace: order.orderType ?? null,\n    bandeira_cartao: bandeiraCartao,\n    codigo_autorizacao_cartao: codigoAutorizacaoCartao,\n    telefone_localizador: order.customer?.phone?.localizer ?? null,\n    telefone_localizador_expira_em: order.customer?.phone?.localizerExpiration ?? null,\n    codigo_retirada_exibicao: pickupCodeEntrega,\n    agendado,\n    entrega_prevista_inicio: entregaPrevistaInicio,\n    entrega_prevista_fim: entregaPrevistaFim,\n    taxa_servico_cliente: taxaServicoCliente,\n    campanha_marketplace: campanhaMarketplace,\n    cupom_marketplace: cupomMarketplace,\n    politica_substituicao: politicaSubstituicao,\n    entregador_tipo: entregadorTipo,\n    marketplace_metadata: JSON.stringify(beneficios.length ? { beneficios } : {}),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -861,7 +841,9 @@
             "valor_total": "={{$json.valor_total}}",
             "observacoes": "={{$json.observacoes}}",
             "metadata": "={{$json.metadata}}",
-            "tipo_entrega_marketplace": "={{$json.tipo_entrega_marketplace}}"
+            "tipo_entrega_marketplace": "={{$json.tipo_entrega_marketplace}}",
+            "bandeira_cartao": "={{$json.bandeira_cartao}}",
+            "codigo_autorizacao_cartao": "={{$json.codigo_autorizacao_cartao}}"
           },
           "matchingColumns": [],
           "schema": []
@@ -1138,138 +1120,6 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "select\n  (select mp.pedido_id from marketplace_pedidos mp where mp.marketplace_order_id = $1 limit 1) as pedido_id,\n  (select p.status from pedidos p join marketplace_pedidos mp on mp.pedido_id = p.id where mp.marketplace_order_id = $1 limit 1) as status;",
-        "options": {
-          "queryReplacement": "={{$json.orderId}}"
-        }
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "id": "n42",
-      "name": "Buscar pedido pelo id do marketplace",
-      "position": [
-        4100,
-        220
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "GEzDAcb9DFtH5ozo",
-          "name": "Postgres cloud"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{$json.pedido_id}}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true,
-                "name": "filter.operator.notEmpty"
-              }
-            },
-            {
-              "id": "c2",
-              "leftValue": "={{$json.status}}",
-              "rightValue": "cancelado",
-              "operator": {
-                "type": "string",
-                "operation": "notEquals",
-                "name": "filter.operator.notEquals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "id": "n43",
-      "name": "Pedido encontrado e ativo?",
-      "position": [
-        4340,
-        220
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "select cancelar_pedido($1);",
-        "options": {
-          "queryReplacement": "={{$json.pedido_id}}"
-        }
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "id": "n44",
-      "name": "Cancelar pedido (RPC)",
-      "position": [
-        4580,
-        160
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "GEzDAcb9DFtH5ozo",
-          "name": "Postgres cloud"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "insert",
-        "schema": {
-          "__rl": true,
-          "value": "public",
-          "mode": "list"
-        },
-        "table": {
-          "__rl": true,
-          "value": "eventos_sistema",
-          "mode": "list"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "tipo_evento": "ifood_pedido_cancelado",
-            "tabela_origem": "pedidos",
-            "registro_id": "={{$('Buscar pedido pelo id do marketplace').item.json.pedido_id}}",
-            "dados": "={{ JSON.stringify({ orderId: $('Switch por tipo de evento').item.json.orderId }) }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "id": "n45",
-      "name": "Registrar evento cancelado",
-      "position": [
-        4820,
-        160
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "GEzDAcb9DFtH5ozo",
-          "name": "Postgres cloud"
-        }
-      }
-    },
-    {
-      "parameters": {
         "operation": "insert",
         "schema": {
           "__rl": true,
@@ -1343,7 +1193,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ev = $json;\nconst meta = ev.metadata || {};\nreturn [{\n  json: {\n    orderId: ev.orderId || meta.orderId,\n    empresa_id: ev.empresa_id,\n    disputa_id_externo: meta.disputeId || ev.disputeId || ev.id,\n    tipo: meta.handshakeType || meta.action || null,\n    mensagem: meta.message || null,\n    alternativas: meta.alternatives ? JSON.stringify(meta.alternatives) : null,\n    prazo_expiracao: meta.expiresAt || ev.expiresAt || null,\n  },\n}];"
+        "jsCode": "const ev = $json;\nconst meta = ev.metadata || {};\n// 'item'/'garnishItems' apareceram aninhados em meta.metadata em um exemplo\n// da doc e direto em meta em outro (inconsistencia real entre 2 paginas da\n// doc oficial da iFood, mesma classe de problema ja visto antes nessa\n// integracao) -- checa os dois lugares, nunca confirmado contra disputa real.\nconst metaAninhado = meta.metadata || {};\nconst item = meta.item || metaAninhado.item || null;\nconst garnish = meta.garnishItems || metaAninhado.garnishItems || null;\nconst itensContestados = [\n  ...(Array.isArray(item) ? item : item ? [item] : []),\n  ...(Array.isArray(garnish) ? garnish : []),\n];\n\nreturn [{\n  json: {\n    orderId: ev.orderId || meta.orderId,\n    empresa_id: ev.empresa_id,\n    // O id da disputa fica em metadata.id (confirmado na referencia oficial\n    // da Plataforma de Negociacao) -- NUNCA em metadata.disputeId (campo que\n    // nao existe). Usar o campo errado aqui faz toda resposta (accept/\n    // reject/alternative) chamar a URL errada e voltar 404.\n    disputa_id_externo: meta.id || null,\n    acao: meta.action || null,\n    handshake_type: meta.handshakeType || null,\n    tipo: meta.handshakeType || meta.action || null,\n    mensagem: meta.message || null,\n    alternativas: meta.alternatives ? JSON.stringify(meta.alternatives) : null,\n    prazo_expiracao: meta.expiresAt || ev.expiresAt || null,\n    timeout_action: meta.timeoutAction || null,\n    accept_reasons: meta.acceptCancellationReasons ? JSON.stringify(meta.acceptCancellationReasons) : null,\n    itens_contestados: itensContestados.length ? JSON.stringify(itensContestados) : null,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1415,9 +1265,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "insert into marketplace_disputas (pedido_id, marketplace_id, disputa_id_externo, tipo, mensagem, alternativas, prazo_expiracao)\nvalues ($1, 'd4811153-e210-47b0-b910-ee0440914f60', $2, $3, $4, $5::jsonb, $6::timestamptz)\non conflict (disputa_id_externo) do update set\n  mensagem = excluded.mensagem,\n  alternativas = excluded.alternativas,\n  prazo_expiracao = excluded.prazo_expiracao,\n  updated_at = now()\nreturning id, pedido_id;",
+        "query": "insert into marketplace_disputas (\n  pedido_id, marketplace_id, disputa_id_externo, tipo, mensagem, alternativas, prazo_expiracao,\n  acao, handshake_type, timeout_action, accept_reasons, itens_contestados\n)\nvalues ($1, 'd4811153-e210-47b0-b910-ee0440914f60', $2, $3, $4, $5::jsonb, $6::timestamptz, $7, $8, $9, $10::jsonb, $11::jsonb)\non conflict (disputa_id_externo) do update set\n  mensagem = excluded.mensagem,\n  alternativas = excluded.alternativas,\n  prazo_expiracao = excluded.prazo_expiracao,\n  acao = excluded.acao,\n  handshake_type = excluded.handshake_type,\n  timeout_action = excluded.timeout_action,\n  accept_reasons = excluded.accept_reasons,\n  itens_contestados = excluded.itens_contestados,\n  updated_at = now()\nreturning id, pedido_id;",
         "options": {
-          "queryReplacement": "={{ [$('Resolver pedido da disputa').item.json.pedido_id, $('Extrair dados da disputa').item.json.disputa_id_externo, $('Extrair dados da disputa').item.json.tipo, $('Extrair dados da disputa').item.json.mensagem, $('Extrair dados da disputa').item.json.alternativas, $('Extrair dados da disputa').item.json.prazo_expiracao] }}"
+          "queryReplacement": "={{ [$('Resolver pedido da disputa').item.json.pedido_id, $('Extrair dados da disputa').item.json.disputa_id_externo, $('Extrair dados da disputa').item.json.tipo, $('Extrair dados da disputa').item.json.mensagem, $('Extrair dados da disputa').item.json.alternativas, $('Extrair dados da disputa').item.json.prazo_expiracao, $('Extrair dados da disputa').item.json.acao, $('Extrair dados da disputa').item.json.handshake_type, $('Extrair dados da disputa').item.json.timeout_action, $('Extrair dados da disputa').item.json.accept_reasons, $('Extrair dados da disputa').item.json.itens_contestados] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -1515,6 +1365,166 @@
           "name": "Postgres cloud"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update clientes set\n  nome = coalesce(nullif($2, ''), nome),\n  telefone = coalesce(nullif($3, ''), telefone),\n  endereco = coalesce(nullif($4, ''), endereco),\n  numero = coalesce(nullif($5, ''), numero),\n  bairro = coalesce(nullif($6, ''), bairro),\n  cidade = coalesce(nullif($7, ''), cidade),\n  estado = coalesce(nullif($8, ''), estado),\n  cep = coalesce(nullif($9, ''), cep),\n  complemento = coalesce($10, complemento),\n  latitude = coalesce($11, latitude),\n  longitude = coalesce($12, longitude),\n  cpf = coalesce($13, cpf),\n  email = coalesce(nullif($14, ''), email),\n  data_nascimento = coalesce($15::date, data_nascimento),\n  updated_at = now()\nwhere id = $1\nreturning id;",
+        "options": {
+          "queryReplacement": "={{ [$json.id, $('Preparar dados do cliente').item.json.cliente.nome, $('Preparar dados do cliente').item.json.cliente.telefone, $('Preparar dados do cliente').item.json.cliente.endereco, $('Preparar dados do cliente').item.json.cliente.numero, $('Preparar dados do cliente').item.json.cliente.bairro, $('Preparar dados do cliente').item.json.cliente.cidade, $('Preparar dados do cliente').item.json.cliente.estado, $('Preparar dados do cliente').item.json.cliente.cep, $('Preparar dados do cliente').item.json.cliente.complemento, $('Preparar dados do cliente').item.json.cliente.latitude, $('Preparar dados do cliente').item.json.cliente.longitude, $('Preparar dados do cliente').item.json.cliente.cpf, $('Preparar dados do cliente').item.json.cliente.email, $('Preparar dados do cliente').item.json.cliente.dataNascimento] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "n20b",
+      "name": "Atualizar cliente existente",
+      "position": [
+        5300,
+        -240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/order/v1.0/orders/{{$('Switch por tipo de evento').item.json.orderId}}/virtual-bag",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Switch por tipo de evento').item.json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "n16b",
+      "name": "Buscar virtual-bag",
+      "position": [
+        4700,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.ifood_aplicar_evento($1, $2, $3::jsonb) as resultado;",
+        "options": {
+          "queryReplacement": "={{ [$('Switch por tipo de evento').item.json.orderId || '', $('Switch por tipo de evento').item.json.fullCode || '', JSON.stringify($('Switch por tipo de evento').item.json.metadata || {})] }}"
+        }
+      },
+      "name": "Aplicar evento no pedido",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4340,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "id": "aplic-evt-1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "rc1",
+              "leftValue": "={{ ['READY_FOR_INVOICE','ORDER_PATCHED'].includes($('Switch por tipo de evento').item.json.fullCode) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "rc2",
+              "leftValue": "={{$json.resultado}}",
+              "rightValue": "sem_pedido",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Precisa reconciliar itens?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4580,
+        480
+      ],
+      "id": "rec-if-1"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/order/v1.0/orders/{{$('Switch por tipo de evento').item.json.orderId}}/virtual-bag",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Switch por tipo de evento').item.json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Buscar virtual-bag (reconciliação)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        4820,
+        480
+      ],
+      "id": "rec-vbag-1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.ifood_reconciliar_itens($1, $2::jsonb, $3) as resultado;",
+        "options": {
+          "queryReplacement": "={{ [$('Switch por tipo de evento').item.json.orderId, JSON.stringify($json), $('Switch por tipo de evento').item.json.fullCode] }}"
+        }
+      },
+      "name": "Reconciliar itens do pedido",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        5060,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "id": "rec-rpc-1"
     }
   ],
   "connections": {
@@ -1675,14 +1685,21 @@
         ],
         [
           {
-            "node": "Buscar pedido pelo id do marketplace",
+            "node": "Registrar evento genérico",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Registrar evento genérico",
+            "node": "Extrair dados da disputa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É KEEPALIVE?",
             "type": "main",
             "index": 0
           }
@@ -1723,17 +1740,6 @@
         ]
       ]
     },
-    "Buscar virtual-bag": {
-      "main": [
-        [
-          {
-            "node": "Preparar dados do cliente",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Preparar dados do cliente": {
       "main": [
         [
@@ -1768,17 +1774,6 @@
         [
           {
             "node": "Inserir cliente",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Atualizar cliente existente": {
-      "main": [
-        [
-          {
-            "node": "Selecionar id do cliente",
             "type": "main",
             "index": 0
           }
@@ -2003,48 +1998,15 @@
         []
       ]
     },
-    "Buscar pedido pelo id do marketplace": {
-      "main": [
-        [
-          {
-            "node": "Pedido encontrado e ativo?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pedido encontrado e ativo?": {
-      "main": [
-        [
-          {
-            "node": "Cancelar pedido (RPC)",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
-    },
-    "Cancelar pedido (RPC)": {
-      "main": [
-        [
-          {
-            "node": "Registrar evento cancelado",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Registrar evento cancelado": {
-      "main": [
-        []
-      ]
-    },
     "Registrar evento genérico": {
       "main": [
-        []
+        [
+          {
+            "node": "Aplicar evento no pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "É KEEPALIVE?": {
@@ -2109,11 +2071,69 @@
           }
         ]
       ]
+    },
+    "Atualizar cliente existente": {
+      "main": [
+        [
+          {
+            "node": "Selecionar id do cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar virtual-bag": {
+      "main": [
+        [
+          {
+            "node": "Preparar dados do cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar evento no pedido": {
+      "main": [
+        [
+          {
+            "node": "Precisa reconciliar itens?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Precisa reconciliar itens?": {
+      "main": [
+        [
+          {
+            "node": "Buscar virtual-bag (reconciliação)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Buscar virtual-bag (reconciliação)": {
+      "main": [
+        [
+          {
+            "node": "Reconciliar itens do pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
+  "active": true,
   "pinData": {}
 }

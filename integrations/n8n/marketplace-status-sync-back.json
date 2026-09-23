@@ -246,19 +246,9 @@
                 },
                 "conditions": [
                   {
-                    "id": "st4a",
+                    "id": "st4",
                     "leftValue": "={{$('Webhook').item.json.body.status_novo}}",
-                    "rightValue": "entregue",
-                    "operator": {
-                      "type": "string",
-                      "operation": "equals",
-                      "name": "filter.operator.equals"
-                    }
-                  },
-                  {
-                    "id": "st4b",
-                    "leftValue": "={{ ['TAKEOUT','INDOOR'].includes($('Webhook').item.json.body.tipo_entrega_marketplace) }}",
-                    "rightValue": "true",
+                    "rightValue": "pronto",
                     "operator": {
                       "type": "string",
                       "operation": "equals",
@@ -283,74 +273,6 @@
         880,
         0
       ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://merchant-api.ifood.com.br/order/v1.0/orders/{{$('Webhook').item.json.body.marketplace_order_id}}/startPreparation",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$json.access_token}}"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "id": "b1",
-      "name": "Iniciar preparo no iFood",
-      "position": [
-        1120,
-        -240
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "insert",
-        "schema": {
-          "__rl": true,
-          "value": "public",
-          "mode": "list"
-        },
-        "table": {
-          "__rl": true,
-          "value": "eventos_sistema",
-          "mode": "list"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "tipo_evento": "ifood_status_sync_preparando",
-            "tabela_origem": "pedidos",
-            "registro_id": "={{$('Webhook').item.json.body.pedido_id}}",
-            "dados": "={{ JSON.stringify($('Webhook').item.json.body) }}"
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "id": "b2",
-      "name": "Log preparando",
-      "position": [
-        1360,
-        -240
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "GEzDAcb9DFtH5ozo",
-          "name": "Postgres cloud"
-        }
-      }
     },
     {
       "parameters": {
@@ -1295,7 +1217,7 @@
       "main": [
         [
           {
-            "node": "Iniciar preparo no iFood",
+            "node": "Log status sem acao iFood",
             "type": "main",
             "index": 0
           }
@@ -1324,17 +1246,6 @@
         [
           {
             "node": "Log status sem acao iFood",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Iniciar preparo no iFood": {
-      "main": [
-        [
-          {
-            "node": "Log preparando",
             "type": "main",
             "index": 0
           }

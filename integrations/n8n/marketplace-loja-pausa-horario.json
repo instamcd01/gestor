@@ -12,7 +12,7 @@
       "id": "note",
       "name": "LEIA-ME",
       "position": [
-        -300,
+        -304,
         -160
       ]
     },
@@ -20,8 +20,6 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "interrupcao-criar",
-        "responseMode": "onReceived",
-        "responseCode": 202,
         "options": {
           "rawBody": true
         }
@@ -32,8 +30,8 @@
       "webhookId": "interrupcao-criar-webhook",
       "name": "Webhook Criar",
       "position": [
-        -300,
-        100
+        -304,
+        112
       ]
     },
     {
@@ -50,7 +48,7 @@
       "name": "Buscar credenciais empresa",
       "position": [
         0,
-        100
+        112
       ],
       "credentials": {
         "postgres": {
@@ -69,7 +67,7 @@
       "name": "Checar token em cache",
       "position": [
         240,
-        100
+        112
       ]
     },
     {
@@ -103,7 +101,7 @@
       "name": "Token válido?",
       "position": [
         480,
-        100
+        112
       ]
     },
     {
@@ -136,7 +134,7 @@
       "name": "Obter token OAuth",
       "position": [
         480,
-        300
+        304
       ]
     },
     {
@@ -149,7 +147,7 @@
       "name": "Salvar token em cache",
       "position": [
         720,
-        300
+        304
       ]
     },
     {
@@ -160,7 +158,7 @@
       "name": "Token pronto",
       "position": [
         960,
-        100
+        112
       ]
     },
     {
@@ -179,7 +177,6 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ { description: $('Webhook Criar').item.json.body.motivo, start: $('Webhook Criar').item.json.body.inicio, end: $('Webhook Criar').item.json.body.fim } }}",
-        "onError": "continueErrorOutput",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -188,7 +185,7 @@
       "name": "Criar interrupção na iFood",
       "position": [
         960,
-        100
+        112
       ]
     },
     {
@@ -205,7 +202,7 @@
       "name": "Marcar interrupção ativa",
       "position": [
         1200,
-        -20
+        -16
       ],
       "credentials": {
         "postgres": {
@@ -228,7 +225,7 @@
       "name": "Marcar interrupção com erro",
       "position": [
         1200,
-        220
+        224
       ],
       "credentials": {
         "postgres": {
@@ -241,8 +238,6 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "interrupcao-cancelar",
-        "responseMode": "onReceived",
-        "responseCode": 202,
         "options": {
           "rawBody": true
         }
@@ -253,8 +248,8 @@
       "webhookId": "interrupcao-cancelar-webhook",
       "name": "Webhook Cancelar",
       "position": [
-        -300,
-        500
+        -304,
+        512
       ]
     },
     {
@@ -271,7 +266,7 @@
       "name": "Buscar credenciais empresa (cancelar)",
       "position": [
         0,
-        500
+        512
       ],
       "credentials": {
         "postgres": {
@@ -290,7 +285,7 @@
       "name": "Checar token em cache (cancelar)",
       "position": [
         240,
-        500
+        512
       ]
     },
     {
@@ -324,7 +319,7 @@
       "name": "Token válido? (cancelar)",
       "position": [
         480,
-        500
+        512
       ]
     },
     {
@@ -357,7 +352,7 @@
       "name": "Obter token OAuth (cancelar)",
       "position": [
         480,
-        700
+        704
       ]
     },
     {
@@ -370,7 +365,7 @@
       "name": "Salvar token em cache (cancelar)",
       "position": [
         720,
-        700
+        704
       ]
     },
     {
@@ -381,7 +376,7 @@
       "name": "Token pronto (cancelar)",
       "position": [
         960,
-        500
+        512
       ]
     },
     {
@@ -397,7 +392,6 @@
             }
           ]
         },
-        "onError": "continueErrorOutput",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -406,12 +400,11 @@
       "name": "Cancelar interrupção na iFood",
       "position": [
         960,
-        500
+        512
       ]
     },
     {
       "parameters": {
-        "operation": "insert",
         "schema": {
           "__rl": true,
           "value": "public",
@@ -441,7 +434,7 @@
       "name": "Log ifood_interrupcao_cancelada",
       "position": [
         1200,
-        420
+        432
       ],
       "credentials": {
         "postgres": {
@@ -464,7 +457,7 @@
       "name": "Reverter cancelamento (erro)",
       "position": [
         1200,
-        620
+        624
       ],
       "credentials": {
         "postgres": {
@@ -477,8 +470,6 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "horario-sync",
-        "responseMode": "onReceived",
-        "responseCode": 202,
         "options": {
           "rawBody": true
         }
@@ -489,8 +480,8 @@
       "webhookId": "horario-sync-webhook",
       "name": "Webhook Horário",
       "position": [
-        -300,
-        900
+        -304,
+        912
       ]
     },
     {
@@ -507,7 +498,7 @@
       "name": "Buscar credenciais empresa (horário)",
       "position": [
         0,
-        900
+        912
       ],
       "credentials": {
         "postgres": {
@@ -526,7 +517,7 @@
       "name": "Checar token em cache (horário)",
       "position": [
         240,
-        900
+        912
       ]
     },
     {
@@ -560,7 +551,7 @@
       "name": "Token válido? (horário)",
       "position": [
         480,
-        900
+        912
       ]
     },
     {
@@ -593,7 +584,7 @@
       "name": "Obter token OAuth (horário)",
       "position": [
         480,
-        1100
+        1104
       ]
     },
     {
@@ -606,7 +597,7 @@
       "name": "Salvar token em cache (horário)",
       "position": [
         720,
-        1100
+        1104
       ]
     },
     {
@@ -617,7 +608,7 @@
       "name": "Token pronto (horário)",
       "position": [
         960,
-        900
+        912
       ]
     },
     {
@@ -630,7 +621,7 @@
       "name": "Montar shifts",
       "position": [
         960,
-        900
+        912
       ]
     },
     {
@@ -649,7 +640,6 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ { shifts: $json.shifts } }}",
-        "onError": "continueErrorOutput",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -658,12 +648,11 @@
       "name": "Atualizar horário na iFood",
       "position": [
         1200,
-        900
+        912
       ]
     },
     {
       "parameters": {
-        "operation": "insert",
         "schema": {
           "__rl": true,
           "value": "public",
@@ -693,7 +682,7 @@
       "name": "Log ifood_horario_sync",
       "position": [
         1440,
-        820
+        832
       ],
       "credentials": {
         "postgres": {
@@ -704,7 +693,6 @@
     },
     {
       "parameters": {
-        "operation": "insert",
         "schema": {
           "__rl": true,
           "value": "public",
@@ -734,7 +722,7 @@
       "name": "Log ifood_horario_sync_erro",
       "position": [
         1440,
-        1020
+        1024
       ],
       "credentials": {
         "postgres": {
@@ -745,7 +733,7 @@
     },
     {
       "parameters": {
-        "content": "## Branch 99Food adicionada 2026-08-06\n\n3 fluxos, mesmo padrao das outras branches: gate 'É iFood?'/'É 99Food?' logo apos buscar credenciais (esse workflow tambem nao tinha NENHUMA checagem de marketplace antes).\n\nAlem disso corrigi um bug mais profundo: o trigger notificar_horario_marketplace() no banco era hardcoded pro marketplace_id do iFood -- nunca dispararia pra 99Food mesmo com esse branch pronto. Generalizado pra looping igual ao notificar_catalogo_marketplace().\n\nPausar: 99Food so tem 4 duracoes fixas (10/20/30min/ate o fim do dia), sem duracao livre como o iFood -- arredonda pra mais perto. pause_reason_code sempre 1006 ('Other') porque nao temos um seletor de motivo com os codigos da 99Food no app ainda (so texto livre) -- mesma limitacao ja documentada pro motivo de cancelamento de pedido.\n\nRetomar: 99Food nao tem um id de interrupcao pra deletar como o iFood -- e so 'voltar pra online' (setStatus store_status:1). id_externo fica com o valor fixo 'setStatus', so pra indicar que foi criado com sucesso.\n\nHorario: 99Food agrupa dias com o mesmo horario num unico bloco (bizDay:[1,2,3]), diferente do iFood que manda um shift por dia -- 'Montar biz_day_time 99Food' faz esse agrupamento.\n\nTodos os 3 fluxos: 99Food retorna sempre HTTP 200 mesmo em erro de negocio (errno != 0) -- por isso cada chamada tem um IF explicito checando errno, nao um onError/continueErrorOutput (mesmo bug ja encontrado e corrigido no workflow de disputas).",
+        "content": "## Branch 99Food adicionada 2026-08-06\n\n3 fluxos, mesmo padrao das outras branches: gate 'É iFood?'/'É 99Food?' logo apos buscar credenciais (esse workflow tambem nao tinha NENHUMA checagem de marketplace antes).\n\nAlem disso corrigi um bug mais profundo: o trigger notificar_horario_marketplace() no banco era hardcoded pro marketplace_id do iFood -- nunca dispararia pra 99Food mesmo com esse branch pronto. Generalizado pra looping igual ao notificar_catalogo_marketplace().\n\nPausar: 99Food so tem 4 duracoes fixas (10/20/30min/ate o fim do dia), sem duracao livre como o iFood -- arredonda pra mais perto. pause_reason_code sempre 1006 ('Other') porque nao temos um seletor de motivo com os codigos da 99Food no app ainda (so texto livre) -- mesma limitacao ja documentada pro motivo de cancelamento de pedido.\n\nRetomar: 99Food nao tem um id de interrupcao pra deletar como o iFood -- e so 'voltar pra online' (setStatus store_status:1). id_externo fica com o valor fixo 'setStatus', so pra indicar que foi criado com sucesso.\n\nHorario: 99Food agrupa dias com o mesmo horario num unico bloco (bizDay:[1,2,3]), diferente do iFood que manda um shift por dia -- 'Montar biz_day_time 99Food' faz esse agrupamento.\n\nTodos os 3 fluxos: 99Food retorna sempre HTTP 200 mesmo em erro de negocio (errno != 0) -- por isso cada chamada tem um IF explicito checando errno, nao um onError/continueErrorOutput (mesmo bug ja encontrado e corrigido no workflow de disputas).\n\n## Correcao 2026-09-18 -- Set Store Status usava campos que nao existem\n\nComparando contra a collection Postman oficial enviada pelo time de integracao da 99Food (nao a doc publica), o corpo real de /v1/shop/shop/setStatus e biz_status (1=Online, 2=Offline) + auto_switch -- 'store_status'/'pause_time'/'pause_reason_code' (usados desde 06/08) NAO EXISTEM nesse endpoint. Pausar/retomar provavelmente nunca funcionou de verdade contra a API real, so nunca foi pego porque nunca rodou contra pedido/loja real.\n\nCorrigido: 'Pausar loja na 99Food' e 'Retomar loja na 99Food' agora mandam biz_status/auto_switch fixos. O node 'Montar pause_time 99Food' ficou orfao (constroi pause_time que ninguem mais le) -- deixado no grafo sem remover pra nao mexer em conexoes, mas e dead code agora. auto_switch:2 (pausar) e auto_switch:3 (retomar) sao a leitura mais literal da doc, NAO confirmados contra API real -- vale perguntar pro time de integracao da 99Food a semantica exata antes de confiar 100%. Sem pause_time nesse endpoint, a auto-retomada apos N minutos depende 100% do nosso job de pausas_loja chamar 'retomar' de novo -- nao da mais pra delegar isso pra 99Food.\n",
         "height": 420,
         "width": 560
       },
@@ -754,8 +742,8 @@
       "id": "sticky99food",
       "name": "LEIA-ME 99Food",
       "position": [
-        0,
-        560
+        -976,
+        576
       ]
     },
     {
@@ -788,8 +776,8 @@
       "id": "g1 (pausar)",
       "name": "É iFood? (pausar)",
       "position": [
-        260,
-        500
+        272,
+        512
       ]
     },
     {
@@ -822,13 +810,12 @@
       "id": "g2 (pausar)",
       "name": "É 99Food? (pausar)",
       "position": [
-        500,
+        512,
         640
       ]
     },
     {
       "parameters": {
-        "operation": "insert",
         "schema": {
           "__rl": true,
           "value": "public",
@@ -856,8 +843,8 @@
       "id": "g3 (pausar)",
       "name": "Log marketplace nao suportado (pausar)",
       "position": [
-        500,
-        860
+        512,
+        864
       ],
       "credentials": {
         "postgres": {
@@ -875,7 +862,7 @@
       "id": "t1 (pausar)",
       "name": "Checar token 99Food em cache (pausar)",
       "position": [
-        740,
+        752,
         640
       ]
     },
@@ -915,7 +902,6 @@
     },
     {
       "parameters": {
-        "method": "GET",
         "url": "https://openapi.99food.com/v1/auth/authtoken/get",
         "sendQuery": true,
         "queryParameters": {
@@ -941,8 +927,8 @@
       "id": "t3 (pausar)",
       "name": "Obter token 99Food (pausar)",
       "position": [
-        1180,
-        760
+        1184,
+        768
       ]
     },
     {
@@ -954,8 +940,8 @@
       "id": "t4 (pausar)",
       "name": "Salvar token 99Food em cache (pausar)",
       "position": [
-        1420,
-        760
+        1424,
+        768
       ]
     },
     {
@@ -965,7 +951,7 @@
       "id": "t5 (pausar)",
       "name": "Token 99Food pronto (pausar)",
       "position": [
-        1660,
+        1664,
         640
       ]
     },
@@ -978,7 +964,7 @@
       "id": "pA1",
       "name": "Montar pause_time 99Food",
       "position": [
-        1900,
+        1904,
         640
       ]
     },
@@ -988,7 +974,7 @@
         "url": "https://openapi.99food.com/v1/shop/shop/setStatus",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { auth_token: $json.auth_token, store_status: 3, pause_time: $json.pause_time, pause_reason_code: $json.pause_reason_code } }}",
+        "jsonBody": "={{ { auth_token: $json.auth_token, biz_status: 2, auto_switch: 2 } }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -996,7 +982,7 @@
       "id": "pA2",
       "name": "Pausar loja na 99Food",
       "position": [
-        2140,
+        2144,
         640
       ]
     },
@@ -1030,7 +1016,7 @@
       "id": "pA3",
       "name": "Pausa 99Food teve sucesso?",
       "position": [
-        2380,
+        2384,
         640
       ]
     },
@@ -1047,8 +1033,8 @@
       "id": "pA4",
       "name": "Marcar interrupção ativa (99Food)",
       "position": [
-        2620,
-        540
+        2624,
+        544
       ],
       "credentials": {
         "postgres": {
@@ -1070,8 +1056,8 @@
       "id": "pA5",
       "name": "Marcar interrupção com erro (99Food)",
       "position": [
-        2620,
-        740
+        2624,
+        752
       ],
       "credentials": {
         "postgres": {
@@ -1110,7 +1096,7 @@
       "id": "g1 (retomar)",
       "name": "É iFood? (retomar)",
       "position": [
-        260,
+        272,
         960
       ]
     },
@@ -1144,13 +1130,12 @@
       "id": "g2 (retomar)",
       "name": "É 99Food? (retomar)",
       "position": [
-        500,
-        1100
+        512,
+        1104
       ]
     },
     {
       "parameters": {
-        "operation": "insert",
         "schema": {
           "__rl": true,
           "value": "public",
@@ -1178,8 +1163,8 @@
       "id": "g3 (retomar)",
       "name": "Log marketplace nao suportado (retomar)",
       "position": [
-        500,
-        1320
+        512,
+        1328
       ],
       "credentials": {
         "postgres": {
@@ -1197,8 +1182,8 @@
       "id": "t1 (retomar)",
       "name": "Checar token 99Food em cache (retomar)",
       "position": [
-        740,
-        1100
+        752,
+        1104
       ]
     },
     {
@@ -1232,12 +1217,11 @@
       "name": "Token 99Food válido? (retomar)",
       "position": [
         960,
-        1100
+        1104
       ]
     },
     {
       "parameters": {
-        "method": "GET",
         "url": "https://openapi.99food.com/v1/auth/authtoken/get",
         "sendQuery": true,
         "queryParameters": {
@@ -1263,8 +1247,8 @@
       "id": "t3 (retomar)",
       "name": "Obter token 99Food (retomar)",
       "position": [
-        1180,
-        1220
+        1184,
+        1232
       ]
     },
     {
@@ -1276,8 +1260,8 @@
       "id": "t4 (retomar)",
       "name": "Salvar token 99Food em cache (retomar)",
       "position": [
-        1420,
-        1220
+        1424,
+        1232
       ]
     },
     {
@@ -1287,8 +1271,8 @@
       "id": "t5 (retomar)",
       "name": "Token 99Food pronto (retomar)",
       "position": [
-        1660,
-        1100
+        1664,
+        1104
       ]
     },
     {
@@ -1297,7 +1281,7 @@
         "url": "https://openapi.99food.com/v1/shop/shop/setStatus",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { auth_token: $json.auth_token, store_status: 1 } }}",
+        "jsonBody": "={{ { auth_token: $json.auth_token, biz_status: 1, auto_switch: 3 } }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -1305,8 +1289,8 @@
       "id": "pB1",
       "name": "Retomar loja na 99Food",
       "position": [
-        1900,
-        1100
+        1904,
+        1104
       ]
     },
     {
@@ -1339,13 +1323,12 @@
       "id": "pB2",
       "name": "Retomada 99Food teve sucesso?",
       "position": [
-        2140,
-        1100
+        2144,
+        1104
       ]
     },
     {
       "parameters": {
-        "operation": "insert",
         "schema": {
           "__rl": true,
           "value": "public",
@@ -1374,8 +1357,8 @@
       "id": "pB3",
       "name": "Log retomada 99Food",
       "position": [
-        2380,
-        1000
+        2384,
+        1008
       ],
       "credentials": {
         "postgres": {
@@ -1397,7 +1380,7 @@
       "id": "pB4",
       "name": "Reverter cancelamento (erro) 99Food",
       "position": [
-        2380,
+        2384,
         1200
       ],
       "credentials": {
@@ -1437,8 +1420,8 @@
       "id": "g1 (horário)",
       "name": "É iFood? (horário)",
       "position": [
-        260,
-        1420
+        272,
+        1424
       ]
     },
     {
@@ -1471,13 +1454,12 @@
       "id": "g2 (horário)",
       "name": "É 99Food? (horário)",
       "position": [
-        500,
-        1560
+        512,
+        1568
       ]
     },
     {
       "parameters": {
-        "operation": "insert",
         "schema": {
           "__rl": true,
           "value": "public",
@@ -1505,8 +1487,8 @@
       "id": "g3 (horário)",
       "name": "Log marketplace nao suportado (horário)",
       "position": [
-        500,
-        1780
+        512,
+        1792
       ],
       "credentials": {
         "postgres": {
@@ -1524,8 +1506,8 @@
       "id": "t1 (horário)",
       "name": "Checar token 99Food em cache (horário)",
       "position": [
-        740,
-        1560
+        752,
+        1568
       ]
     },
     {
@@ -1559,12 +1541,11 @@
       "name": "Token 99Food válido? (horário)",
       "position": [
         960,
-        1560
+        1568
       ]
     },
     {
       "parameters": {
-        "method": "GET",
         "url": "https://openapi.99food.com/v1/auth/authtoken/get",
         "sendQuery": true,
         "queryParameters": {
@@ -1590,7 +1571,7 @@
       "id": "t3 (horário)",
       "name": "Obter token 99Food (horário)",
       "position": [
-        1180,
+        1184,
         1680
       ]
     },
@@ -1603,7 +1584,7 @@
       "id": "t4 (horário)",
       "name": "Salvar token 99Food em cache (horário)",
       "position": [
-        1420,
+        1424,
         1680
       ]
     },
@@ -1614,8 +1595,8 @@
       "id": "t5 (horário)",
       "name": "Token 99Food pronto (horário)",
       "position": [
-        1660,
-        1560
+        1664,
+        1568
       ]
     },
     {
@@ -1627,8 +1608,8 @@
       "id": "pC1",
       "name": "Montar biz_day_time 99Food",
       "position": [
-        1900,
-        1560
+        1904,
+        1568
       ]
     },
     {
@@ -1645,8 +1626,8 @@
       "id": "pC2",
       "name": "Atualizar horário na 99Food",
       "position": [
-        2140,
-        1560
+        2144,
+        1568
       ]
     },
     {
@@ -1679,13 +1660,12 @@
       "id": "pC3",
       "name": "Horário 99Food teve sucesso?",
       "position": [
-        2380,
-        1560
+        2384,
+        1568
       ]
     },
     {
       "parameters": {
-        "operation": "insert",
         "schema": {
           "__rl": true,
           "value": "public",
@@ -1713,8 +1693,8 @@
       "id": "pC4",
       "name": "Log horário 99Food",
       "position": [
-        2620,
-        1460
+        2624,
+        1472
       ],
       "credentials": {
         "postgres": {
@@ -1725,7 +1705,6 @@
     },
     {
       "parameters": {
-        "operation": "insert",
         "schema": {
           "__rl": true,
           "value": "public",
@@ -1753,13 +1732,567 @@
       "id": "pC5",
       "name": "Log erro horário 99Food",
       "position": [
-        2620,
-        1660
+        2624,
+        1664
       ],
       "credentials": {
         "postgres": {
           "id": "GEzDAcb9DFtH5ozo",
           "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "webhook-consultar-merchant",
+      "name": "Webhook Consultar",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -976,
+        2000
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "merchant-consultar",
+        "responseMode": "lastNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "webhookId": "b7e2f4a1-6c3d-4e8f-9a2b-1d5c7e9f0a3b"
+    },
+    {
+      "id": "buscar-credenciais-consultar",
+      "name": "Buscar credenciais empresa (consultar)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -760,
+        2000
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere empresa_id = $1 and marketplace_id = $2 and ativo = true\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.empresa_id, $json.body.marketplace_id] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "checar-token-consultar",
+      "name": "Checar token em cache (consultar)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        2000
+      ],
+      "parameters": {
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+      }
+    },
+    {
+      "id": "token-valido-consultar",
+      "name": "Token válido? (consultar)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -328,
+        2000
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tkc1",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "obter-token-consultar",
+      "name": "Obter token OAuth (consultar)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -328,
+        2160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://merchant-api.ifood.com.br/authentication/v1.0/oauth/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grantType",
+              "value": "client_credentials"
+            },
+            {
+              "name": "clientId",
+              "value": "={{$json.api_key}}"
+            },
+            {
+              "name": "clientSecret",
+              "value": "={{$json.api_secret}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "salvar-token-consultar",
+      "name": "Salvar token em cache (consultar)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        2160
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token em cache (consultar)').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+      }
+    },
+    {
+      "id": "token-pronto-consultar",
+      "name": "Token pronto (consultar)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        104,
+        2000
+      ]
+    },
+    {
+      "id": "e-listar-lojas",
+      "name": "É listar lojas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        1760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ll1",
+              "leftValue": "={{$('Webhook Consultar').item.json.body.tipo_consulta}}",
+              "rightValue": "listar_lojas",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e-detalhe-loja",
+      "name": "É detalhe loja?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        1840
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dl1",
+              "leftValue": "={{$('Webhook Consultar').item.json.body.tipo_consulta}}",
+              "rightValue": "detalhe_loja",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e-status-loja",
+      "name": "É status loja?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        1920
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "sl1",
+              "leftValue": "={{$('Webhook Consultar').item.json.body.tipo_consulta}}",
+              "rightValue": "status_loja",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e-interrupcoes",
+      "name": "É interrupções?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        920,
+        2000
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ic1",
+              "leftValue": "={{$('Webhook Consultar').item.json.body.tipo_consulta}}",
+              "rightValue": "interrupcoes",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "listar-lojas-ifood",
+      "name": "Listar Lojas na iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        1680
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://merchant-api.ifood.com.br/merchant/v1.0/merchants",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "detalhe-loja-ifood",
+      "name": "Detalhe Loja na iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        1760
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/merchant/v1.0/merchants/{{$('Buscar credenciais empresa (consultar)').item.json.id_loja_plataforma}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "status-loja-ifood",
+      "name": "Status Loja na iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        1840
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/merchant/v1.0/merchants/{{$('Buscar credenciais empresa (consultar)').item.json.id_loja_plataforma}}/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "listar-interrupcoes-ifood",
+      "name": "Listar Interrupções na iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        1920
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/merchant/v1.0/merchants/{{$('Buscar credenciais empresa (consultar)').item.json.id_loja_plataforma}}/interruptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "consultar-horarios-ifood",
+      "name": "Consultar Horários na iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        2080
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/merchant/v1.0/merchants/{{$('Buscar credenciais empresa (consultar)').item.json.id_loja_plataforma}}/opening-hours",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e-testar-get-generico",
+      "name": "É testar GET genérico?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        1840
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tg1",
+              "leftValue": "={{$('Webhook Consultar').item.json.body.tipo_consulta}}",
+              "rightValue": "testar_get",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "testar-get-generico-ifood",
+      "name": "Testar GET Genérico na iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1720,
+        1800
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br{{$('Webhook Consultar').item.json.body.path_teste}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "e-motivos-cancelamento",
+      "name": "É motivos cancelamento?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        2080
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "mc1",
+              "leftValue": "={{$('Webhook Consultar').item.json.body.tipo_consulta}}",
+              "rightValue": "motivos_cancelamento",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "buscar-order-id-pedido",
+      "name": "Buscar order id do pedido",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1720,
+        2040
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select marketplace_order_id\nfrom marketplace_pedidos\nwhere id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Consultar').item.json.body.marketplace_pedido_id] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "motivos-cancelamento-ifood",
+      "name": "Motivos de Cancelamento na iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        2040
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/order/v1.0/orders/{{$json.marketplace_order_id}}/cancellationReasons",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Token pronto (consultar)').item.json.access_token}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": false
+            }
+          }
         }
       }
     }
@@ -2479,6 +3012,209 @@
         [
           {
             "node": "Log erro horário 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Consultar": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais empresa (consultar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais empresa (consultar)": {
+      "main": [
+        [
+          {
+            "node": "Checar token em cache (consultar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token em cache (consultar)": {
+      "main": [
+        [
+          {
+            "node": "Token válido? (consultar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token válido? (consultar)": {
+      "main": [
+        [
+          {
+            "node": "Token pronto (consultar)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token OAuth (consultar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token OAuth (consultar)": {
+      "main": [
+        [
+          {
+            "node": "Salvar token em cache (consultar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token em cache (consultar)": {
+      "main": [
+        [
+          {
+            "node": "Token pronto (consultar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token pronto (consultar)": {
+      "main": [
+        [
+          {
+            "node": "É listar lojas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É listar lojas?": {
+      "main": [
+        [
+          {
+            "node": "Listar Lojas na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É detalhe loja?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É detalhe loja?": {
+      "main": [
+        [
+          {
+            "node": "Detalhe Loja na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É status loja?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É status loja?": {
+      "main": [
+        [
+          {
+            "node": "Status Loja na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É interrupções?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É interrupções?": {
+      "main": [
+        [
+          {
+            "node": "Listar Interrupções na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É testar GET genérico?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É testar GET genérico?": {
+      "main": [
+        [
+          {
+            "node": "Testar GET Genérico na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É motivos cancelamento?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É motivos cancelamento?": {
+      "main": [
+        [
+          {
+            "node": "Buscar order id do pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Consultar Horários na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar order id do pedido": {
+      "main": [
+        [
+          {
+            "node": "Motivos de Cancelamento na iFood",
             "type": "main",
             "index": 0
           }
