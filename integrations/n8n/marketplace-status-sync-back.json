@@ -231,6 +231,16 @@
                       "operation": "equals",
                       "name": "filter.operator.equals"
                     }
+                  },
+                  {
+                    "id": "st3b",
+                    "leftValue": "={{$('Webhook').item.json.body.motivo_cancelamento_codigo}}",
+                    "rightValue": "cancelado_so_no_gestor",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals",
+                      "name": "filter.operator.notEquals"
+                    }
                   }
                 ],
                 "combinator": "and"

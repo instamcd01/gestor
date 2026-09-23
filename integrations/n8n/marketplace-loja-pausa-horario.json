@@ -2295,6 +2295,19 @@
           }
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// A API devolve 1 item por motivo ({cancelCodeId, description}); o webhook\n// responde so o ultimo node, entao agrega tudo num objeto so pro app.\n// Lista vazia (204 do iFood) = nenhuma politica de cancelamento disponivel\n// pra esse pedido (ex: ja concluido) - diferente de erro.\nconst itens = $input.all().map(i => i.json || {});\nconst reasons = itens\n  .filter(r => r.cancelCodeId != null || (r.code != null && r.description != null && !r.message))\n  .map(r => ({ code: String(r.cancelCodeId ?? r.code), description: r.description ?? '' }));\nconst erro = itens.find(r => r.message || r.error);\nif (!reasons.length && erro) {\n  return [{ json: { reasons: null, erro: String(erro.message || erro.error?.message || erro.error) } }];\n}\nreturn [{ json: { reasons } }];"
+      },
+      "name": "Formatar motivos de cancelamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        2040
+      ],
+      "id": "fmt-motivos-1"
     }
   ],
   "connections": {
@@ -3215,6 +3228,17 @@
         [
           {
             "node": "Motivos de Cancelamento na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Motivos de Cancelamento na iFood": {
+      "main": [
+        [
+          {
+            "node": "Formatar motivos de cancelamento",
             "type": "main",
             "index": 0
           }
