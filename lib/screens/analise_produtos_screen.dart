@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -6,6 +7,7 @@ import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/revisao_preco_repository.dart';
 import '../utils/busca_utils.dart';
 import '../utils/produto_validators.dart';
 import '../utils/variante_label_utils.dart';
@@ -47,7 +49,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
     final produtoProvider = context.watch<ProdutoProvider>();
     final semImagem = produtoProvider.produtos.where((p) => p.imagemUrl.isEmpty).length;
     final comSugestao = produtoProvider.totalProdutosComSugestaoVariante;
-    final revisarPreco = produtoProvider.produtos.where((p) => p.revisarPreco).length;
+    final revisarPreco = produtoProvider.produtos.where((p) => p.revisarPreco && !_ehPlaceholderInterno(p)).length;
     final eanDuplicado = _gruposEanDuplicado(produtoProvider.produtos).length;
 
     return Scaffold(
@@ -591,6 +593,48 @@ class _AbaVariantesState extends State<_AbaVariantes> {
 /// ---------------------------------------------------------------------
 /// Aba 3: Revisar preço
 /// ---------------------------------------------------------------------
+
+/// Placeholders internos de marketplace (sku `__IFOOD_NAO_CATALOGADO__`,
+/// `__99FOOD_NAO_CATALOGADO__`) — custo 0, não são produto de verdade, não
+/// fazem sentido na revisão de preço.
+bool _ehPlaceholderInterno(Produto p) {
+  final sku = p.sku ?? '';
+  return sku.startsWith('__') && sku.endsWith('_NAO_CATALOGADO__');
+}
+
+enum _ModoPreco { sugestao, markup, categoria }
+
+enum _Arredondamento { nenhum, finalNove, noventa }
+
+enum _FiltroDirecaoCusto { todos, subiu, caiu }
+
+enum _OrdemRevisao { margemPerdida, maisVendidos, nome }
+
+/// Arredonda PRA CIMA — nunca abaixo do preço calculado (senão arredondar
+/// comeria parte da margem que a conta pediu). "Final 9" (padrão) sobe no
+/// máximo 10 centavos (3,35 → 3,39); ",90" pode subir quase R$ 1, o que em
+/// produto barato distorce a sugestão (achado testando: Pedigree com custo
+/// que CAIU, sugestão 3,35 virava 3,90, acima do preço atual 3,49).
+double _arredondar(double preco, _Arredondamento modo) {
+  double centavos(double v) => (v * 100).roundToDouble() / 100;
+  switch (modo) {
+    case _Arredondamento.nenhum:
+      return centavos(preco);
+    case _Arredondamento.finalNove:
+      var candidato = (preco * 10 + 0.0001).floorToDouble() / 10 + 0.09;
+      if (candidato + 0.0001 < preco) candidato += 0.10;
+      return centavos(candidato);
+    case _Arredondamento.noventa:
+      var candidato = preco.floorToDouble() + 0.90;
+      if (candidato + 0.0001 < preco) candidato += 1;
+      return centavos(candidato);
+  }
+}
+
+String _pct(double valor) => '${valor >= 0 ? '+' : ''}${valor.toStringAsFixed(1).replaceAll('.', ',')}%';
+
+String _moedaRevisao(double valor) => 'R\$ ${valor.toStringAsFixed(2).replaceAll('.', ',')}';
+
 class _AbaRevisarPreco extends StatefulWidget {
   const _AbaRevisarPreco();
 
@@ -601,14 +645,71 @@ class _AbaRevisarPreco extends StatefulWidget {
 class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
   final Set<String> _selecionados = {};
   final _markupController = TextEditingController();
+  final _repository = RevisaoPrecoRepository();
   bool _processando = false;
   String _busca = '';
   String? _filtroCategoria;
+  _FiltroDirecaoCusto _filtroDirecao = _FiltroDirecaoCusto.todos;
+  _OrdemRevisao _ordem = _OrdemRevisao.margemPerdida;
+  _ModoPreco _modo = _ModoPreco.sugestao;
+  _Arredondamento _arredondamento = _Arredondamento.finalNove;
+  Map<String, RevisaoPrecoContexto> _contexto = {};
+  bool _carregandoContexto = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarContexto();
+  }
 
   @override
   void dispose() {
     _markupController.dispose();
     super.dispose();
+  }
+
+  Future<void> _carregarContexto() async {
+    try {
+      final contexto = await _repository.carregar();
+      if (mounted) setState(() => _contexto = contexto);
+    } catch (e) {
+      debugPrint('Erro ao carregar contexto de revisão de preço: $e');
+    } finally {
+      if (mounted) setState(() => _carregandoContexto = false);
+    }
+  }
+
+  double? _markupAtual(Produto p) => p.custo > 0 && p.preco > 0 ? (p.preco / p.custo - 1) * 100 : null;
+
+  /// Pontos percentuais de markup perdidos desde a mudança de custo — chave
+  /// da ordenação padrão (pior primeiro). Custo que caiu dá valor negativo.
+  double _margemPerdida(Produto p) {
+    final antes = _contexto[p.id]?.markupAnterior;
+    final agora = _markupAtual(p);
+    if (antes == null || agora == null) return 0;
+    return antes - agora;
+  }
+
+  /// Preço novo pelo modo escolhido na barra — null quando não dá pra
+  /// calcular (sem histórico, sem custo, markup inválido): esse produto é
+  /// pulado e aparece como "sem cálculo" na prévia, nunca vira preço 0.
+  double? _precoNovo(Produto p) {
+    if (p.custo <= 0) return null;
+    double? bruto;
+    switch (_modo) {
+      case _ModoPreco.sugestao:
+        bruto = _contexto[p.id]?.precoSugerido(p.custo);
+      case _ModoPreco.markup:
+        final markup = ProdutoValidators.parseNumero(_markupController.text);
+        if (markup == null || markup < 0) return null;
+        bruto = p.custo * (1 + markup / 100);
+      case _ModoPreco.categoria:
+        final markup = _contexto[p.id]?.markupCategoria;
+        if (markup == null) return null;
+        bruto = p.custo * (1 + markup / 100);
+    }
+    if (bruto == null || bruto <= 0) return null;
+    return _arredondar(bruto, _arredondamento);
   }
 
   Future<void> _marcarComoRevisado(ProdutoProvider provider) async {
@@ -619,48 +720,123 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
       _processando = false;
       _selecionados.clear();
     });
+    _carregarContexto();
   }
 
-  Future<void> _aplicarMarkup(List<Produto> lista, ProdutoProvider provider) async {
-    final markup = ProdutoValidators.parseNumero(_markupController.text);
-    if (markup == null || markup >= 100) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Informe um markup válido (menor que 100%).')));
-      return;
-    }
-    final precoPorId = <String, double>{};
-    for (final produto in lista.where((p) => _selecionados.contains(p.id))) {
-      final novoPreco = produto.custo / (1 - markup / 100);
-      if (novoPreco > 0) precoPorId[produto.id!] = novoPreco;
-    }
+  Future<void> _aplicar(Map<String, double> precoPorId, ProdutoProvider provider) async {
     if (precoPorId.isEmpty) return;
     setState(() => _processando = true);
     final falhas = await provider.aplicarPrecoRevisadoEmMassa(precoPorId);
     if (!mounted) return;
     setState(() {
       _processando = false;
-      _selecionados.clear();
+      _selecionados.removeAll(precoPorId.keys.where((id) => !falhas.contains(id)));
     });
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Preço aplicado em ${precoPorId.length - falhas.length} de ${precoPorId.length} produtos'
+      content: Text('Preço aplicado em ${precoPorId.length - falhas.length} de ${precoPorId.length} produto(s)'
           '${falhas.isNotEmpty ? ' (${falhas.length} falharam)' : ''}.'),
     ));
+    _carregarContexto();
+  }
+
+  /// Prévia obrigatória antes de aplicar em massa: de → para de cada
+  /// selecionado, e quem ficou sem cálculo (não é alterado).
+  Future<void> _previaEAplicar(List<Produto> lista, ProdutoProvider provider) async {
+    if (_modo == _ModoPreco.markup) {
+      final markup = ProdutoValidators.parseNumero(_markupController.text);
+      if (markup == null || markup < 0) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Informe um markup válido (ex: 45 = preço 45% acima do custo).')));
+        return;
+      }
+    }
+    final selecionados = lista.where((p) => _selecionados.contains(p.id)).toList();
+    final precoPorId = <String, double>{};
+    final semCalculo = <Produto>[];
+    for (final p in selecionados) {
+      final novo = _precoNovo(p);
+      if (novo == null) {
+        semCalculo.add(p);
+      } else {
+        precoPorId[p.id!] = novo;
+      }
+    }
+
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Aplicar preço em ${precoPorId.length} produto(s)?'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final p in selecionados.where((p) => precoPorId.containsKey(p.id)))
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(p.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    '${_moedaRevisao(p.preco)} → ${_moedaRevisao(precoPorId[p.id]!)}'
+                    '  (markup ${(precoPorId[p.id]! / p.custo * 100 - 100).toStringAsFixed(0)}%)',
+                  ),
+                ),
+              if (semCalculo.isNotEmpty) ...[
+                const Divider(),
+                Text(
+                  '${semCalculo.length} sem cálculo possível (sem custo, sem histórico ou sem dado da categoria) — '
+                  'não serão alterados: ${semCalculo.map((p) => p.nome).take(3).join('; ')}'
+                  '${semCalculo.length > 3 ? '…' : ''}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: precoPorId.isEmpty ? null : () => Navigator.pop(context, true),
+            child: const Text('Aplicar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmado == true && mounted) await _aplicar(precoPorId, provider);
   }
 
   @override
   Widget build(BuildContext context) {
     final produtoProvider = context.watch<ProdutoProvider>();
-    final pendentes = produtoProvider.produtos.where((p) => p.revisarPreco).toList();
+    final pendentes =
+        produtoProvider.produtos.where((p) => p.revisarPreco && !_ehPlaceholderInterno(p)).toList();
     final contagemPorCategoria = <String, int>{};
     for (final p in pendentes) {
       final cat = p.categoria.isNotEmpty ? p.categoria : 'Sem categoria';
       contagemPorCategoria[cat] = (contagemPorCategoria[cat] ?? 0) + 1;
     }
+
+    bool direcaoConfere(Produto p) {
+      if (_filtroDirecao == _FiltroDirecaoCusto.todos) return true;
+      final anterior = _contexto[p.id]?.custoAnterior;
+      if (anterior == null) return false;
+      return _filtroDirecao == _FiltroDirecaoCusto.subiu ? p.custo > anterior : p.custo < anterior;
+    }
+
     final lista = pendentes
         .where((p) => contemTodasPalavras(p.nome, _busca))
         .where((p) => _filtroCategoria == null ||
             (p.categoria.isNotEmpty ? p.categoria : 'Sem categoria') == _filtroCategoria)
+        .where(direcaoConfere)
         .toList();
+    switch (_ordem) {
+      case _OrdemRevisao.margemPerdida:
+        lista.sort((a, b) => _margemPerdida(b).compareTo(_margemPerdida(a)));
+      case _OrdemRevisao.maisVendidos:
+        lista.sort((a, b) => (_contexto[b.id]?.vendas60d ?? 0).compareTo(_contexto[a.id]?.vendas60d ?? 0));
+      case _OrdemRevisao.nome:
+        lista.sort((a, b) => a.nome.compareTo(b.nome));
+    }
     final idsValidos = lista.map((p) => p.id).whereType<String>().toSet();
     _selecionados.removeWhere((id) => !idsValidos.contains(id));
 
@@ -683,6 +859,38 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
               onChanged: (v) => setState(() => _filtroCategoria = v),
             ),
           ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                for (final (filtro, rotulo) in [
+                  (_FiltroDirecaoCusto.todos, 'Todos'),
+                  (_FiltroDirecaoCusto.subiu, 'Custo subiu'),
+                  (_FiltroDirecaoCusto.caiu, 'Custo caiu'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(rotulo),
+                      selected: _filtroDirecao == filtro,
+                      onSelected: (_) => setState(() => _filtroDirecao = filtro),
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                DropdownButton<_OrdemRevisao>(
+                  value: _ordem,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: _OrdemRevisao.margemPerdida, child: Text('Mais margem perdida')),
+                    DropdownMenuItem(value: _OrdemRevisao.maisVendidos, child: Text('Mais vendidos (60d)')),
+                    DropdownMenuItem(value: _OrdemRevisao.nome, child: Text('Nome')),
+                  ],
+                  onChanged: (v) => setState(() => _ordem = v ?? _ordem),
+                ),
+              ],
+            ),
+          ),
         ],
         if (lista.isNotEmpty)
           Padding(
@@ -695,6 +903,10 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
                 ),
                 if (_selecionados.isNotEmpty)
                   TextButton(onPressed: () => setState(_selecionados.clear), child: const Text('Limpar seleção')),
+                if (_carregandoContexto) ...[
+                  const Spacer(),
+                  const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                ],
               ],
             ),
           ),
@@ -705,71 +917,239 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
                       ? 'Nenhum produto pendente de revisão de preço'
                       : 'Nenhum produto encontrado com esse filtro'))
               : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 160),
+                  padding: const EdgeInsets.only(bottom: 260),
                   itemCount: lista.length,
                   itemBuilder: (context, index) {
                     final produto = lista[index];
                     final id = produto.id!;
-                    return CheckboxListTile(
-                      value: _selecionados.contains(id),
-                      onChanged: (v) => setState(() {
-                        if (v == true) {
+                    return _CartaoRevisaoPreco(
+                      produto: produto,
+                      contexto: _contexto[id],
+                      selecionado: _selecionados.contains(id),
+                      sugestaoArredondada: _contexto[id]?.precoSugerido(produto.custo) != null
+                          ? _arredondar(_contexto[id]!.precoSugerido(produto.custo)!, _arredondamento)
+                          : null,
+                      onSelecionar: (v) => setState(() {
+                        if (v) {
                           _selecionados.add(id);
                         } else {
                           _selecionados.remove(id);
                         }
                       }),
-                      title: Text(produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(
-                        'Custo: R\$ ${produto.custo.toStringAsFixed(2)} • Preço atual: R\$ ${produto.preco.toStringAsFixed(2)}',
-                      ),
+                      onAplicarSugestao: _processando
+                          ? null
+                          : (preco) => _aplicar({id: preco}, produtoProvider),
                     );
                   },
                 ),
         ),
-        if (_selecionados.isNotEmpty)
-          SafeArea(
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, -2))],
+        if (_selecionados.isNotEmpty) _barraAcoes(lista, produtoProvider),
+      ],
+    );
+  }
+
+  Widget _barraAcoes(List<Produto> lista, ProdutoProvider produtoProvider) {
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHigh,
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, -2))],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('${_selecionados.length} selecionado(s)', style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 8),
+            SegmentedButton<_ModoPreco>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: _ModoPreco.sugestao, label: Text('Margem anterior')),
+                ButtonSegment(value: _ModoPreco.markup, label: Text('Markup %')),
+                ButtonSegment(value: _ModoPreco.categoria, label: Text('Da categoria')),
+              ],
+              selected: {_modo},
+              onSelectionChanged: (s) => setState(() => _modo = s.first),
+            ),
+            if (_modo == _ModoPreco.markup) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _markupController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Markup (%) sobre o custo',
+                  helperText: 'Preço = custo + %. Ex: 45 → custo R\$ 10,00 vira R\$ 14,50.',
+                ),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('${_selecionados.length} selecionado(s)', style: Theme.of(context).textTheme.labelLarge),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('Manter preço atual (marcar como revisado)'),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('Arredondar: '),
+                DropdownButton<_Arredondamento>(
+                  value: _arredondamento,
+                  items: const [
+                    DropdownMenuItem(value: _Arredondamento.finalNove, child: Text('pra cima, final 9 (4,59)')),
+                    DropdownMenuItem(value: _Arredondamento.noventa, child: Text('pra cima em ,90 (4,90)')),
+                    DropdownMenuItem(value: _Arredondamento.nenhum, child: Text('não arredondar')),
+                  ],
+                  onChanged: (v) => setState(() => _arredondamento = v ?? _arredondamento),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
                     onPressed: _processando ? null : () => _marcarComoRevisado(produtoProvider),
+                    child: const Text('Manter preço atual'),
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _markupController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'Markup (%) sobre o custo'),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _processando ? null : () => _previaEAplicar(lista, produtoProvider),
+                    child: _processando
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Ver prévia e aplicar'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CartaoRevisaoPreco extends StatelessWidget {
+  final Produto produto;
+  final RevisaoPrecoContexto? contexto;
+  final bool selecionado;
+  final double? sugestaoArredondada;
+  final ValueChanged<bool> onSelecionar;
+  final ValueChanged<double>? onAplicarSugestao;
+
+  const _CartaoRevisaoPreco({
+    required this.produto,
+    required this.contexto,
+    required this.selecionado,
+    required this.sugestaoArredondada,
+    required this.onSelecionar,
+    required this.onAplicarSugestao,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final estiloLinha = Theme.of(context).textTheme.bodySmall;
+    final ctx = contexto;
+    final custoAnterior = ctx?.custoAnterior;
+    final variacaoCusto = custoAnterior != null && custoAnterior > 0 ? (produto.custo / custoAnterior - 1) * 100 : null;
+    final subiu = variacaoCusto != null && variacaoCusto > 0;
+    final markupAtual = produto.custo > 0 && produto.preco > 0 ? (produto.preco / produto.custo - 1) * 100 : null;
+    final markupAnterior = ctx?.markupAnterior;
+    final markupCategoria = ctx?.markupCategoria;
+    final precoIfood = ctx?.precoIfood;
+    final ifoodAbaixoDoCusto = precoIfood != null && precoIfood > 0 && precoIfood <= produto.custo;
+    final abaixoDoCusto = produto.preco <= produto.custo;
+    final dataCusto = ctx?.custoAlteradoEm;
+
+    final corAlerta = colorScheme.error;
+    final corMarkup = markupAtual == null
+        ? null
+        : (markupAnterior != null && markupAtual < markupAnterior - 0.5)
+            ? corAlerta
+            : null;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: InkWell(
+        onTap: () => onSelecionar(!selecionado),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(value: selecionado, onChanged: (v) => onSelecionar(v ?? false)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(produto.nome,
+                              maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _processando ? null : () => _aplicarMarkup(lista, produtoProvider),
-                        child: _processando
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('Aplicar'),
+                        if (variacaoCusto != null)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Text(
+                              '${subiu ? '▲' : '▼'} custo ${_pct(variacaoCusto)}',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: subiu ? corAlerta : Colors.green.shade700),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      custoAnterior != null
+                          ? 'Custo ${_moedaRevisao(custoAnterior)} → ${_moedaRevisao(produto.custo)}'
+                              '${dataCusto != null ? '  (em ${DateFormat('dd/MM').format(dataCusto.toLocal())})' : ''}'
+                          : 'Custo ${_moedaRevisao(produto.custo)} (sem histórico da mudança)',
+                      style: estiloLinha,
+                    ),
+                    Text.rich(
+                      TextSpan(style: estiloLinha, children: [
+                        TextSpan(text: 'Preço ${_moedaRevisao(produto.preco)}'),
+                        if (abaixoDoCusto)
+                          TextSpan(text: '  ABAIXO DO CUSTO', style: TextStyle(color: corAlerta, fontWeight: FontWeight.bold)),
+                        if (markupAtual != null)
+                          TextSpan(text: ' · Markup ${markupAtual.toStringAsFixed(0)}%', style: TextStyle(color: corMarkup)),
+                        if (markupAnterior != null) TextSpan(text: ' (antes ${markupAnterior.toStringAsFixed(0)}%)'),
+                        if (markupCategoria != null) TextSpan(text: ' · categoria ${markupCategoria.toStringAsFixed(0)}%'),
+                      ]),
+                    ),
+                    Text.rich(
+                      TextSpan(style: estiloLinha, children: [
+                        if (precoIfood != null)
+                          TextSpan(
+                            text: 'iFood ${_moedaRevisao(precoIfood)}${ifoodAbaixoDoCusto ? ' (abaixo do custo!)' : ''} · ',
+                            style: ifoodAbaixoDoCusto ? TextStyle(color: corAlerta, fontWeight: FontWeight.bold) : null,
+                          ),
+                        TextSpan(text: 'Vendas 60d: ${ctx?.vendas60d ?? '—'} · Estoque: ${produto.estoqueAtual}'),
+                      ]),
+                    ),
+                    if (sugestaoArredondada != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Sugestão: ${_moedaRevisao(sugestaoArredondada!)} (mantém a margem anterior)',
+                              style: estiloLinha?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          if ((sugestaoArredondada! - produto.preco).abs() >= 0.01)
+                            TextButton(
+                              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                              onPressed: onAplicarSugestao == null ? null : () => onAplicarSugestao!(sugestaoArredondada!),
+                              child: const Text('Aplicar'),
+                            ),
+                        ],
                       ),
                     ],
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
-      ],
+        ),
+      ),
     );
   }
 }
