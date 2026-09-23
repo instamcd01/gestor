@@ -40,6 +40,8 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
   bool _processando = false;
   List<Produto> _catalogo = [];
 
+  bool get _ehIfood => widget.venda.canalVenda == 'ifood';
+
   @override
   void initState() {
     super.initState();
@@ -241,7 +243,9 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: InputDecoration(
             labelText: 'Nova quantidade',
-            helperText: 'Só dá pra reduzir (pedido original: ${item.quantidade}x) — pra pedir mais, use "Adicionar item".',
+            helperText: _ehIfood
+                ? 'Só dá pra reduzir (pedido original: ${item.quantidade}x) — o iFood não aceita aumentar nem adicionar itens.'
+                : 'Só dá pra reduzir (pedido original: ${item.quantidade}x) — pra pedir mais, use "Adicionar item".',
             helperMaxLines: 2,
           ),
           autofocus: true,
@@ -258,7 +262,11 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
     if (novaQuantidade == null || novaQuantidade <= 0) return;
     if (novaQuantidade > item.quantidade && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('A iFood não permite aumentar a quantidade aqui — use "Adicionar item" pra isso.')),
+        SnackBar(
+          content: Text(_ehIfood
+              ? 'O iFood não permite aumentar a quantidade de um item na separação.'
+              : 'Não dá pra aumentar a quantidade aqui — use "Adicionar item" pra isso.'),
+        ),
       );
       return;
     }
@@ -435,12 +443,16 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                 ..._acoesAdicionar.map(_itemAdicionadoCard),
                 if (_status == 'separando') ...[
                   const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: _processando ? null : _adicionarItem,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Adicionar item ao pedido'),
-                    style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
-                  ),
+                  // Picking do iFood só aceita adicionar item em pedido White
+                  // Label (doc + resposta real ITEM_ADD_NOT_ALLOWED, 17/09);
+                  // no marketplace iFood o botão só gerava erro.
+                  if (!_ehIfood)
+                    OutlinedButton.icon(
+                      onPressed: _processando ? null : _adicionarItem,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Adicionar item ao pedido'),
+                      style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
+                    ),
                   const SizedBox(height: 8),
                   FilledButton(
                     onPressed: _processando ? null : _finalizar,

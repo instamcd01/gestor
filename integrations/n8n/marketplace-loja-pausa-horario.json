@@ -639,7 +639,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { shifts: $json.shifts } }}",
+        "jsonBody": "={{ { storeId: $('Buscar credenciais empresa (horário)').item.json.id_loja_plataforma, shifts: $json.shifts } }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",

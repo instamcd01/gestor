@@ -179,7 +179,6 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={}",
-        "onError": "continueErrorOutput",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -189,7 +188,8 @@
       "position": [
         960,
         100
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -416,7 +416,6 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={}",
-        "onError": "continueErrorOutput",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -426,7 +425,8 @@
       "position": [
         960,
         500
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -445,7 +445,7 @@
           "mappingMode": "defineBelow",
           "value": {
             "tipo_evento": "ifood_separacao_finalizada",
-            "dados": "={{ JSON.stringify($('Webhook Finalizar').item.json.body) }}"
+            "dados": "={{ JSON.stringify({ webhook: $('Webhook Finalizar').item.json.body, pedido_confirmado: $json }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -684,7 +684,6 @@
             }
           ]
         },
-        "onError": "continueErrorOutput",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -694,7 +693,8 @@
       "position": [
         1200,
         800
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -712,7 +712,6 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ { ean: $('Webhook Ação').item.json.body.ean_substituto, quantity: $('Webhook Ação').item.json.body.quantidade, prices: { unitValue: Math.round(($('Webhook Ação').item.json.body.preco_substituto || 0) * 100), grossValue: Math.round(($('Webhook Ação').item.json.body.preco_substituto || 0) * 100 * ($('Webhook Ação').item.json.body.quantidade || 1)) } } }}",
-        "onError": "continueErrorOutput",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -722,7 +721,8 @@
       "position": [
         1200,
         1000
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1450,6 +1450,270 @@
           "name": "Postgres cloud"
         }
       }
+    },
+    {
+      "id": "e-adicionar",
+      "name": "É adicionar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ad1",
+              "leftValue": "={{$('Webhook Ação').item.json.body.tipo_acao}}",
+              "rightValue": "adicionar",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e-modificar",
+      "name": "É modificar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1800,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "md1",
+              "leftValue": "={{$('Webhook Ação').item.json.body.tipo_acao}}",
+              "rightValue": "modificar",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "adicionar-item-ifood",
+      "name": "Adicionar item na iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://merchant-api.ifood.com.br/picking/v1.0/orders/{{$('Webhook Ação').item.json.body.marketplace_order_id}}/items",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ean: $('Webhook Ação').item.json.body.ean_substituto, quantity: $('Webhook Ação').item.json.body.quantidade } }}",
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "marcar-aplicada-adicao",
+      "name": "Marcar ação aplicada (adição)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1820,
+        380
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = 'aplicada' where id = $1;",
+        "options": {
+          "queryReplacement": "={{$('Webhook Ação').item.json.body.acao_id}}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "marcar-erro-adicao",
+      "name": "Marcar erro (adição)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1820,
+        460
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = 'erro', erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Ação').item.json.body.acao_id, $('Adicionar item na iFood').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "modificar-item-ifood",
+      "name": "Modificar item na iFood",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        500
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://merchant-api.ifood.com.br/picking/v1.0/orders/{{$('Webhook Ação').item.json.body.marketplace_order_id}}/items/{{$('Webhook Ação').item.json.body.uniqueid_marketplace}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { quantity: $('Webhook Ação').item.json.body.quantidade } }}",
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "marcar-aplicada-modificacao",
+      "name": "Marcar ação aplicada (modificação)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2020,
+        480
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = 'aplicada' where id = $1;",
+        "options": {
+          "queryReplacement": "={{$('Webhook Ação').item.json.body.acao_id}}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "marcar-erro-modificacao",
+      "name": "Marcar erro (modificação)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2020,
+        560
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_separacao_acoes set status = 'erro', erro = $2 where id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Ação').item.json.body.acao_id, $('Modificar item na iFood').item.json.error?.message || 'erro desconhecido'] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "consultar-pedido-pos-separacao",
+      "name": "Consultar pedido pós-separação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        -260
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://merchant-api.ifood.com.br/order/v1.0/orders/{{$('Webhook Finalizar').item.json.body.marketplace_order_id}}/virtual-bag",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$('Token pronto finalizar').item.json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "salvar-confirmacao-pos-separacao",
+      "name": "Salvar confirmação pós-separação",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1000,
+        420
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_pedidos\nset itens_confirmados_ifood = $1::jsonb, separacao_confirmada_em = now()\nwhere id = $2;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify(($json.bag?.items || []).filter(i => !i.unavailable)), $('Webhook Finalizar').item.json.body.marketplace_pedido_id] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
     }
   ],
   "connections": {
@@ -1643,7 +1907,7 @@
       "main": [
         [
           {
-            "node": "Log ifood_separacao_finalizada",
+            "node": "Consultar pedido pós-separação",
             "type": "main",
             "index": 0
           }
@@ -1752,7 +2016,7 @@
         ],
         [
           {
-            "node": "Substituir item na iFood",
+            "node": "É adicionar?",
             "type": "main",
             "index": 0
           }
@@ -1999,6 +2263,100 @@
         [
           {
             "node": "Marcar erro 99Food (ação)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É adicionar?": {
+      "main": [
+        [
+          {
+            "node": "Adicionar item na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "É modificar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "É modificar?": {
+      "main": [
+        [
+          {
+            "node": "Modificar item na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Substituir item na iFood",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adicionar item na iFood": {
+      "main": [
+        [
+          {
+            "node": "Marcar ação aplicada (adição)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar erro (adição)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modificar item na iFood": {
+      "main": [
+        [
+          {
+            "node": "Marcar ação aplicada (modificação)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Marcar erro (modificação)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar pedido pós-separação": {
+      "main": [
+        [
+          {
+            "node": "Salvar confirmação pós-separação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar confirmação pós-separação": {
+      "main": [
+        [
+          {
+            "node": "Log ifood_separacao_finalizada",
             "type": "main",
             "index": 0
           }

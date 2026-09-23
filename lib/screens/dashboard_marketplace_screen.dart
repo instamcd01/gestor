@@ -11,6 +11,10 @@ const _rotulosStatusMarketplace = {
   'PLACED': 'Recebido',
   'CONFIRMED': 'Confirmado',
   'PREPARATION_STARTED': 'Em preparo',
+  // Fluxo de Mercado (Groceries): separação no lugar de preparo.
+  'SEPARATION_STARTED': 'Em separação',
+  'SEPARATION_ENDED': 'Separação concluída',
+  'READY_FOR_INVOICE': 'Pronto p/ nota fiscal',
   'READY_TO_PICKUP': 'Pronto p/ retirada',
   'DISPATCHED': 'Saiu p/ entrega',
   'CONCLUDED': 'Concluído',
