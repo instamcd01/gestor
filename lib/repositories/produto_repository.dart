@@ -218,6 +218,33 @@ class ProdutoRepository {
     return null;
   }
 
+  /// Liga dois produtos já existentes como embalagem fechada (pai) + unidade
+  /// fracionada (filho) — mesmo vínculo do "Fracionar em unidade menor", sem
+  /// criar produto novo. Tudo numa transação no banco (RPC
+  /// `vincular_fracionamento_existente`): valida, liga, alinha custo/preço do
+  /// filho e grava [estoqueFilho] (contagem real informada pelo usuário) —
+  /// o estoque do pai é recalculado pelo trigger a partir dele.
+  Future<void> vincularFracionamentoExistente({
+    required String paiId,
+    required String filhoId,
+    required int fator,
+    required int estoqueFilho,
+    double? margemAlvo,
+  }) async {
+    await supabase.rpc('vincular_fracionamento_existente', params: {
+      'p_pai_id': paiId,
+      'p_filho_id': filhoId,
+      'p_fator': fator,
+      'p_estoque_filho': estoqueFilho,
+      'p_margem_alvo': margemAlvo,
+    });
+  }
+
+  Future<List<Produto>> buscarPorIds(List<String> ids) async {
+    final data = await supabase.from('produtos').select(_selectComEstoque).inFilter('id', ids);
+    return (data as List).map((row) => Produto.fromSupabase(row as Map<String, dynamic>)).toList();
+  }
+
   Future<void> marcarPrecoRevisado(String produtoId) async {
     await supabase.from('produtos').update({'revisar_preco': false}).eq('id', produtoId);
   }

@@ -1077,6 +1077,9 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                 onAbrirProduto: (outro) => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: outro)),
                 ),
+                onRecarregarProduto: (recarregado) => Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: recarregado)),
+                ),
               ),
               const SizedBox(height: 16.0),
 

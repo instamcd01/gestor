@@ -103,6 +103,31 @@ class ProdutoProvider with ChangeNotifier {
     }
   }
 
+  /// Ver `ProdutoRepository.vincularFracionamentoExistente`. Recarrega os
+  /// dois produtos do banco depois — estoque, custo e preço mudam por
+  /// trigger/RPC, não dá pra deduzir localmente.
+  Future<void> vincularFracionamentoExistente({
+    required String paiId,
+    required String filhoId,
+    required int fator,
+    required int estoqueFilho,
+    double? margemAlvo,
+  }) async {
+    await _repository.vincularFracionamentoExistente(
+      paiId: paiId,
+      filhoId: filhoId,
+      fator: fator,
+      estoqueFilho: estoqueFilho,
+      margemAlvo: margemAlvo,
+    );
+    final atualizados = await _repository.buscarPorIds([paiId, filhoId]);
+    for (final produto in atualizados) {
+      final index = _produtos.indexWhere((p) => p.id == produto.id);
+      if (index != -1) _produtos[index] = produto;
+    }
+    notifyListeners();
+  }
+
   Produto? getProdutoPorId(String id) {
     try {
       return _produtos.firstWhere((p) => p.id == id);

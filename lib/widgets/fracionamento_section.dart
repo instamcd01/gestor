@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../models/produto.dart';
 import '../providers/auth_provider.dart';
@@ -25,11 +26,18 @@ class FracionamentoSection extends StatelessWidget {
   final ValueChanged<Produto> onAbrirProduto;
   final TextEditingController margemAlvoFracionadoController;
 
+  /// Reabre a tela ATUAL com o produto recarregado — usado depois de vincular
+  /// a um produto existente, porque estoque/custo/preço deste produto mudam
+  /// no banco e os campos de texto da tela ficariam com o valor antigo (um
+  /// "Salvar Alterações" em seguida sobrescreveria o estoque recém-calculado).
+  final ValueChanged<Produto> onRecarregarProduto;
+
   const FracionamentoSection({
     super.key,
     required this.produtoAtual,
     required this.onAbrirProduto,
     required this.margemAlvoFracionadoController,
+    required this.onRecarregarProduto,
   });
 
   @override
@@ -112,16 +120,102 @@ class FracionamentoSection extends StatelessWidget {
       children: [
         Text(
           'Se este produto é vendido também em unidades menores (ex: abrir um pacote de 10kg pra vender '
-          'em pacotes de 1kg), crie o produto fracionado aqui — o estoque dos dois fica vinculado.',
+          'em pacotes de 1kg), crie o produto fracionado aqui — o estoque dos dois fica vinculado. '
+          'Se os dois produtos já estão cadastrados (ex: caixa com 20 e o sachê avulso), use "Vincular".',
           style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.call_split),
-          label: const Text('Fracionar em unidade menor'),
-          onPressed: () => _abrirDialogoFracionar(context),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              icon: const Icon(Icons.call_split),
+              label: const Text('Fracionar em unidade menor'),
+              onPressed: () => _abrirDialogoFracionar(context),
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.link),
+              label: const Text('Vincular unidade já cadastrada'),
+              onPressed: () => _vincularExistente(context, produtos, esteEhOPai: true),
+            ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.inventory_2_outlined),
+              label: const Text('Vincular à embalagem já cadastrada'),
+              onPressed: () => _vincularExistente(context, produtos, esteEhOPai: false),
+            ),
+          ],
         ),
       ],
     );
+  }
+
+  /// Liga este produto a outro JÁ CADASTRADO — [esteEhOPai] true: este é a
+  /// embalagem fechada e o usuário escolhe a unidade; false: este é a
+  /// unidade e escolhe a embalagem. Mesmo vínculo do "Fracionar" (ver
+  /// `ProdutoRepository.vincularFracionamentoExistente`), só sem criar
+  /// produto novo.
+  Future<void> _vincularExistente(BuildContext context, List<Produto> produtos, {required bool esteEhOPai}) async {
+    // Mesmas regras que o banco valida (1 embalagem : 1 unidade, sem kit,
+    // sem quem já participa de outro fracionamento) — filtradas aqui pra
+    // não oferecer uma opção que só daria erro depois.
+    final idsQueSaoPai = produtos.map((p) => p.fracionadoDeId).whereType<String>().toSet();
+    final candidatos = produtos
+        .where((p) =>
+            p.id != null &&
+            p.id != produtoAtual.id &&
+            !p.ehKit &&
+            p.fracionadoDeId == null &&
+            !idsQueSaoPai.contains(p.id))
+        .toList();
+    // Mesma família de variantes primeiro (caso comum: caixa e sachê já
+    // agrupados como variantes um do outro), depois alfabético.
+    final familiaAtual = produtoAtual.produtoPaiId ?? produtoAtual.id;
+    bool mesmaFamilia(Produto p) => (p.produtoPaiId ?? p.id) == familiaAtual;
+    candidatos.sort((a, b) {
+      final fa = mesmaFamilia(a) ? 0 : 1;
+      final fb = mesmaFamilia(b) ? 0 : 1;
+      return fa != fb ? fa - fb : a.nome.compareTo(b.nome);
+    });
+
+    final outro = await showModalBottomSheet<Produto>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => BuscaProdutoSheet(produtos: candidatos, permiteCadastrarNovo: false),
+    );
+    if (outro == null || !context.mounted) return;
+
+    final pai = esteEhOPai ? produtoAtual : outro;
+    final filho = esteEhOPai ? outro : produtoAtual;
+
+    final confirmado = await showDialog<_ConfiguracaoVinculo>(
+      context: context,
+      builder: (_) => _DialogoVincularExistente(pai: pai, filho: filho),
+    );
+    if (confirmado == null || !context.mounted) return;
+
+    final provider = context.read<ProdutoProvider>();
+    try {
+      await provider.vincularFracionamentoExistente(
+        paiId: pai.id!,
+        filhoId: filho.id!,
+        fator: confirmado.fator,
+        estoqueFilho: confirmado.estoqueFilho,
+        margemAlvo: confirmado.margemAlvo,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Vinculado: 1 "${pai.nome}" = ${confirmado.fator} "${filho.nome}".')),
+      );
+      final recarregado = provider.getProdutoPorId(produtoAtual.id!);
+      if (recarregado != null) onRecarregarProduto(recarregado);
+    } catch (e) {
+      if (context.mounted) {
+        // Mensagem da RPC já vem pronta pra exibir (ex: "já tem uma unidade
+        // fracionada vinculada").
+        final mensagem = e is PostgrestException ? e.message : e.toString();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao vincular: $mensagem')));
+      }
+    }
   }
 
   Future<void> _abrirDialogoFracionar(BuildContext context) async {
@@ -351,6 +445,188 @@ class _DialogoConfirmarTrocaPaiState extends State<_DialogoConfirmarTrocaPai> {
           },
           child: const Text('Confirmar troca'),
         ),
+      ],
+    );
+  }
+}
+
+class _ConfiguracaoVinculo {
+  final int fator;
+  final int estoqueFilho;
+  final double? margemAlvo;
+
+  const _ConfiguracaoVinculo({required this.fator, required this.estoqueFilho, this.margemAlvo});
+}
+
+/// Sugere o fator (quantas unidades = 1 embalagem) pra vincular dois produtos
+/// já existentes. Primeiro pelo número escrito na embalagem ("Caixa com 20",
+/// "Caixa 20und", "Display 12 unidades") — o caso comum (sachê, petisco) é
+/// por QUANTIDADE, e peso não serve (achado real: caixa 1,7kg ÷ sachê 90g =
+/// 18,9, porque o peso bruto inclui embalagem). Peso só como 2ª tentativa,
+/// pro granel (saco 10kg → pacote 1kg), onde não há número de unidades.
+int? sugerirFatorVinculo(Produto pai, Produto filho) {
+  final padroes = [
+    RegExp(r'\bcom\s+(\d{1,4})\b', caseSensitive: false),
+    RegExp(r'\b(\d{1,4})\s*(?:und|unid|unidades|un|sach[eê]s?|pe[cç]as|x)\b', caseSensitive: false),
+  ];
+  for (final texto in [pai.apresentacao, pai.varianteLabel, pai.nome]) {
+    if (texto == null || texto.isEmpty) continue;
+    for (final padrao in padroes) {
+      final numero = int.tryParse(padrao.firstMatch(texto)?.group(1) ?? '');
+      if (numero != null && numero > 1) return numero;
+    }
+  }
+  if (filho.peso != null && filho.peso! > 0) {
+    return calcularFatorFracionamento(
+      eixo: EixoFracionamento.peso,
+      pai: pai,
+      pesoNovoTexto: filho.peso.toString(),
+    );
+  }
+  return null;
+}
+
+/// Diálogo do "Vincular" — só o que muda num vínculo entre produtos que já
+/// existem: fator, estoque REAL da unidade (obrigatório — o estoque da
+/// embalagem passa a ser calculado a partir dele, então nunca é deduzido
+/// sozinho, ver feedback_nao_inferir_quantidade_fisica_real) e margem alvo
+/// opcional. Nome, EAN, preço e rótulo o produto já tem.
+class _DialogoVincularExistente extends StatefulWidget {
+  final Produto pai;
+  final Produto filho;
+
+  const _DialogoVincularExistente({required this.pai, required this.filho});
+
+  @override
+  State<_DialogoVincularExistente> createState() => _DialogoVincularExistenteState();
+}
+
+class _DialogoVincularExistenteState extends State<_DialogoVincularExistente> {
+  late final int? _fatorSugerido = sugerirFatorVinculo(widget.pai, widget.filho);
+  late final _fatorController = TextEditingController(text: _fatorSugerido?.toString() ?? '');
+  final _estoqueController = TextEditingController();
+  final _margemController = TextEditingController();
+  String? _erro;
+
+  @override
+  void dispose() {
+    _fatorController.dispose();
+    _estoqueController.dispose();
+    _margemController.dispose();
+    super.dispose();
+  }
+
+  int? get _fator {
+    final fator = int.tryParse(_fatorController.text.trim());
+    return fator != null && fator > 1 ? fator : null;
+  }
+
+  double? get _margem => double.tryParse(_margemController.text.trim().replaceAll(',', '.'));
+
+  void _confirmar() {
+    final fator = _fator;
+    final estoque = int.tryParse(_estoqueController.text.trim());
+    if (fator == null) {
+      setState(() => _erro = 'Informe quantas unidades vêm em 1 embalagem (número inteiro maior que 1).');
+      return;
+    }
+    if (estoque == null || estoque < 0) {
+      setState(() => _erro = 'Informe quantas unidades existem hoje na loja, contando as das embalagens fechadas.');
+      return;
+    }
+    if (_margemController.text.trim().isNotEmpty && (_margem == null || _margem! < 0)) {
+      setState(() => _erro = 'Margem alvo inválida — use só números (ex: 40).');
+      return;
+    }
+    Navigator.of(context).pop(_ConfiguracaoVinculo(fator: fator, estoqueFilho: estoque, margemAlvo: _margem));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pai = widget.pai;
+    final filho = widget.filho;
+    final fator = _fator;
+    final moeda = ProdutoValidators.formatarMoeda;
+    final estiloAjuda = TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant);
+
+    String? resumoCusto;
+    if (fator != null) {
+      final custoNovo = pai.custo / fator;
+      final margem = _margem;
+      resumoCusto = 'Custo da unidade: R\$ ${moeda(filho.custo)} → R\$ ${moeda(custoNovo)} (embalagem ÷ $fator). ';
+      if (margem != null) {
+        resumoCusto += 'Preço passa a ser calculado: R\$ ${moeda(custoNovo * (1 + margem / 100))}.';
+      } else if (custoNovo > 0) {
+        final margemAtual = (filho.preco / custoNovo - 1) * 100;
+        resumoCusto += 'Preço atual R\$ ${moeda(filho.preco)} continua (≈ ${margemAtual.toStringAsFixed(0)}% sobre o custo novo).';
+      }
+    }
+
+    return AlertDialog(
+      title: const Text('Vincular produtos já cadastrados'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Embalagem: ${pai.nome}', style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Unidade: ${filho.nome}', style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _fatorController,
+              keyboardType: TextInputType.number,
+              onChanged: (_) => setState(() => _erro = null),
+              decoration: InputDecoration(
+                labelText: 'Quantas unidades vêm em 1 embalagem?',
+                helperText: _fatorSugerido != null
+                    ? 'Sugerido pelo cadastro da embalagem — confira.'
+                    : 'Não deu pra sugerir sozinho — digite.',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _estoqueController,
+              keyboardType: TextInputType.number,
+              onChanged: (_) => setState(() => _erro = null),
+              decoration: InputDecoration(
+                labelText: 'Estoque real da unidade hoje',
+                helperText: 'Conte tudo em unidades: embalagens fechadas × ${fator ?? "?"} + avulsas.\n'
+                    'No sistema hoje: embalagem = ${pai.estoqueAtual}, unidade = ${filho.estoqueAtual}.',
+                helperMaxLines: 3,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _margemController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => setState(() => _erro = null),
+              decoration: const InputDecoration(
+                labelText: 'Margem alvo sobre custo (%, opcional)',
+                helperText: 'Preenchida, o preço da unidade se recalcula sozinho quando o custo da embalagem mudar.',
+                helperMaxLines: 2,
+              ),
+            ),
+            if (resumoCusto != null) ...[
+              const SizedBox(height: 12),
+              Text(resumoCusto, style: estiloAjuda),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              'Depois de vincular, o estoque da embalagem é calculado a partir da unidade, vender a embalagem '
+              'desconta ${fator ?? "N"} unidades, e a entrada de nota da embalagem soma nas unidades.',
+              style: estiloAjuda,
+            ),
+            if (_erro != null) ...[
+              const SizedBox(height: 8),
+              Text(_erro!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+        FilledButton(onPressed: _confirmar, child: const Text('Vincular')),
       ],
     );
   }
