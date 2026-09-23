@@ -3,7 +3,8 @@
 /// `job_notificacao_despesa_vencendo`, `trigger_notificacao_avaliacao_disputa_sync`,
 /// `notificar_pedidos_atrasados_entrega`, `notifica_hora_de_sair_para_entrega`,
 /// `notificar_carrinhos_abandonados`, `notificar_disputas_proximas_do_prazo`
-/// — cron `*/5 * * * *`) e, pra `erroSistema`,
+/// — cron `*/5 * * * *`, `trigger_notificacao_nfe_pendente` em
+/// `nfe_cache_distribuicao`) e, pra `erroSistema`,
 /// `registrarErroSistema` no site (gestor-loja/src/lib/erros.ts) — insere
 /// direto na tabela via service role, sem RPC própria.
 /// São as únicas fontes que gravam nessa tabela.
@@ -24,6 +25,7 @@ class TipoNotificacao {
   static const carrinhoAbandonado = 'carrinho_abandonado';
   static const clienteAtivoNoSite = 'cliente_ativo_no_site';
   static const erroSistema = 'erro_sistema';
+  static const nfePendente = 'nfe_pendente';
 }
 
 /// Chaves de preferência de alerta (som/vibração) por categoria — não ligam/
@@ -96,6 +98,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.syncFalhou,
     titulo: 'Falha ao sincronizar produto',
     descricao: 'Quando um produto falha ao sincronizar com o marketplace.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.nfePendente,
+    titulo: 'Nota fiscal pendente de entrada',
+    descricao: 'Quando a Sefaz entrega uma NF-e de fornecedor que ainda não teve entrada no estoque.',
   ),
   CategoriaNotificacao(
     chave: TipoNotificacao.custoAlterado,

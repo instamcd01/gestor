@@ -12,6 +12,7 @@ import 'cliente_screen.dart';
 import 'despesas_screen.dart';
 import 'editar_produto_screen.dart';
 import 'fila_pedidos_screen.dart';
+import 'importar_nota_fiscal_screen.dart';
 import 'produtos_screen.dart';
 
 /// Pra onde a notificação leva quando tocada — por `tipo`, não por
@@ -39,6 +40,8 @@ Widget? _telaRelacionada(String tipo) {
       return const CampanhasAtivacaoScreen();
     case TipoNotificacao.clienteAtivoNoSite:
       return ClientesScreen();
+    case TipoNotificacao.nfePendente:
+      return const ImportarNotaFiscalScreen();
     case TipoNotificacao.erroSistema:
       // Sem tela própria — a mensagem já vem com a rota do site onde o
       // erro aconteceu; investigar é olhar o código, não navegar no app.
@@ -81,6 +84,8 @@ Widget? _telaRelacionada(String tipo) {
       return (Icons.person_search_outlined, Colors.blue);
     case TipoNotificacao.erroSistema:
       return (Icons.error_outline, Colors.red);
+    case TipoNotificacao.nfePendente:
+      return (Icons.receipt_long_outlined, Colors.blue);
     default:
       return (Icons.notifications_outlined, colorScheme.primary);
   }
