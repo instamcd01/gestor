@@ -10,7 +10,9 @@ final _diaHora = DateFormat('dd/MM HH:mm');
 
 /// Texto pra repassar ao entregador (WhatsApp) — nome, endereço, o que
 /// cobrar e até que horas sair. O trecho do pagamento vai em negrito do
-/// WhatsApp (`*...*`), porque é o que não pode passar despercebido.
+/// WhatsApp (`*...*`), porque é o que não pode passar despercebido; o nome
+/// do cliente também, pra achar rápido. Uma linha em branco entre cada
+/// dado (pedido do usuário — lido no celular, no meio da rua).
 String mensagemEntregador(Venda venda, {DateTime? agora}) {
   final momento = agora ?? DateTime.now();
   final cliente = venda.cliente;
@@ -18,7 +20,7 @@ String mensagemEntregador(Venda venda, {DateTime? agora}) {
 
   final linhas = <String>[
     if (numero != null) 'Pedido #$numero',
-    'Cliente: ${cliente.nome}',
+    'Cliente: *${cliente.nome.trim()}*',
     if (cliente.enderecoExibicao.isNotEmpty) 'Endereço: ${cliente.enderecoExibicao}',
     // Mesma regra do "abrir no mapa" da tela: coordenada exata (marcada no
     // mapa no cadastro) quando existe, senão o texto do endereço.
@@ -26,14 +28,13 @@ String mensagemEntregador(Venda venda, {DateTime? agora}) {
       'Mapa: https://www.google.com/maps/search/?api=1&query=${cliente.latitude},${cliente.longitude}'
     else if (cliente.enderecoCompleto.isNotEmpty)
       'Mapa: https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(cliente.enderecoCompleto)}',
-    '',
     ..._linhasPagamento(venda),
   ];
 
   final horario = _linhaHorario(venda, momento);
-  if (horario != null) linhas.addAll(['', horario]);
+  if (horario != null) linhas.add(horario);
 
-  return linhas.join('\n');
+  return linhas.join('\n\n');
 }
 
 List<String> _linhasPagamento(Venda venda) {
