@@ -724,6 +724,49 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
     _carregarContexto();
   }
 
+  /// Ajuste fino de 1 produto: digita preço (ou markup) da loja e do iFood
+  /// com a conta ao vivo. Salvar sempre tira o produto da revisão — com
+  /// preço da loja novo via `aplicarPrecoRevisadoEmMassa`, sem mudança nele
+  /// via `marcarPrecoRevisadoEmMassa` (mantém o preço, dá como revisado).
+  Future<void> _editarManual(Produto p, ProdutoProvider provider, {double? sugestaoSite, double? sugestaoIfood}) async {
+    final ctx = _contexto[p.id];
+    final resultado = await showDialog<({double loja, double? ifood})>(
+      context: context,
+      builder: (_) => _DialogoEditarPrecoRevisao(
+        produto: p,
+        contexto: ctx,
+        precoLojaInicial: sugestaoSite ?? p.preco,
+        precoIfoodInicial: sugestaoIfood ?? ctx?.precoIfood,
+      ),
+    );
+    if (resultado == null || !mounted) return;
+
+    final id = p.id!;
+    final lojaMudou = (resultado.loja - p.preco).abs() >= 0.01;
+    final novoIfood = resultado.ifood;
+    final ifoodMudou = novoIfood != null &&
+        ctx?.ifoodMarketplaceId != null &&
+        (ctx?.precoIfood == null || (novoIfood - ctx!.precoIfood!).abs() >= 0.01);
+
+    if (lojaMudou || ifoodMudou) {
+      await _aplicar(
+        provider,
+        precoSitePorId: lojaMudou ? {id: resultado.loja} : const {},
+        precoIfoodPorId: ifoodMudou ? {id: (marketplaceId: ctx!.ifoodMarketplaceId!, preco: novoIfood)} : const {},
+      );
+    }
+    if (!lojaMudou && mounted) {
+      await provider.marcarPrecoRevisadoEmMassa([id]);
+      if (!mounted) return;
+      setState(() => _selecionados.remove(id));
+      if (!ifoodMudou) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Preço mantido — produto marcado como revisado.')));
+      }
+      _carregarContexto();
+    }
+  }
+
   String _linhaPreviaIfood(Produto p, double? novoIfood) {
     if (novoIfood == null) return '';
     final atual = _contexto[p.id]?.precoIfood;
@@ -992,6 +1035,10 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
                       onAplicarSugestao: _processando
                           ? null
                           : (preco) => _aplicar(produtoProvider, precoSitePorId: {id: preco}),
+                      onEditar: _processando
+                          ? null
+                          : () => _editarManual(produto, produtoProvider,
+                              sugestaoSite: sugestaoSite, sugestaoIfood: sugestaoIfood),
                       onAplicarIfood: _processando || ctx?.ifoodMarketplaceId == null
                           ? null
                           : (preco) => _aplicar(produtoProvider,
@@ -1099,6 +1146,7 @@ class _CartaoRevisaoPreco extends StatelessWidget {
   final ValueChanged<bool> onSelecionar;
   final ValueChanged<double>? onAplicarSugestao;
   final ValueChanged<double>? onAplicarIfood;
+  final VoidCallback? onEditar;
 
   const _CartaoRevisaoPreco({
     required this.produto,
@@ -1110,6 +1158,7 @@ class _CartaoRevisaoPreco extends StatelessWidget {
     required this.onSelecionar,
     required this.onAplicarSugestao,
     required this.onAplicarIfood,
+    required this.onEditar,
   });
 
   @override
@@ -1241,6 +1290,15 @@ class _CartaoRevisaoPreco extends StatelessWidget {
                             ),
                         ],
                       ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                        icon: const Icon(Icons.edit_outlined, size: 16),
+                        label: const Text('Editar preço'),
+                        onPressed: onEditar,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1248,6 +1306,235 @@ class _CartaoRevisaoPreco extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Edição manual de preço na revisão — nos dois sentidos, igual
+/// `CalculadoraPrecoMarkup` da tela de produto: digitar o preço recalcula o
+/// markup, digitar o markup recalcula o preço. No iFood o markup é sobre o
+/// LÍQUIDO (preço − taxas % vigentes), que é o que entra no caixa.
+class _DialogoEditarPrecoRevisao extends StatefulWidget {
+  final Produto produto;
+  final RevisaoPrecoContexto? contexto;
+  final double precoLojaInicial;
+  final double? precoIfoodInicial;
+
+  const _DialogoEditarPrecoRevisao({
+    required this.produto,
+    required this.contexto,
+    required this.precoLojaInicial,
+    required this.precoIfoodInicial,
+  });
+
+  @override
+  State<_DialogoEditarPrecoRevisao> createState() => _DialogoEditarPrecoRevisaoState();
+}
+
+class _DialogoEditarPrecoRevisaoState extends State<_DialogoEditarPrecoRevisao> {
+  late final _precoLoja = TextEditingController(text: ProdutoValidators.formatarMoeda(widget.precoLojaInicial));
+  final _markupLoja = TextEditingController();
+  late final _precoIfood = TextEditingController(text: ProdutoValidators.formatarMoeda(widget.precoIfoodInicial));
+  final _markupIfood = TextEditingController();
+  String? _erro;
+
+  double get _custo => widget.produto.custo;
+  double? get _taxaIfood => widget.contexto?.taxaIfoodPercentual;
+  bool get _temIfood => widget.contexto?.ifoodMarketplaceId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _preencherMarkupLoja();
+    _preencherMarkupIfood();
+  }
+
+  @override
+  void dispose() {
+    _precoLoja.dispose();
+    _markupLoja.dispose();
+    _precoIfood.dispose();
+    _markupIfood.dispose();
+    super.dispose();
+  }
+
+  // Os campos recíprocos são escritos só a partir de `onChanged` (que o
+  // Flutter chama apenas quando o USUÁRIO digita, nunca por `controller.text
+  // = ...`), então preço ⇄ markup não entram em loop.
+
+  double _liquidoIfood(double preco) => preco * (1 - (_taxaIfood ?? 0) / 100);
+
+  String _formatarPct(double valor) => valor.toStringAsFixed(1).replaceAll('.', ',');
+
+  void _preencherMarkupLoja() {
+    final preco = ProdutoValidators.parseNumero(_precoLoja.text);
+    _markupLoja.text = preco != null && _custo > 0 ? _formatarPct((preco / _custo - 1) * 100) : '';
+  }
+
+  void _preencherMarkupIfood() {
+    final preco = ProdutoValidators.parseNumero(_precoIfood.text);
+    _markupIfood.text = preco != null && _custo > 0 ? _formatarPct((_liquidoIfood(preco) / _custo - 1) * 100) : '';
+  }
+
+  void _aoMudarMarkupLoja(String texto) {
+    final markup = ProdutoValidators.parseNumero(texto);
+    setState(() {
+      if (markup != null && _custo > 0) _precoLoja.text = ProdutoValidators.formatarMoeda(_custo * (1 + markup / 100));
+    });
+  }
+
+  void _aoMudarMarkupIfood(String texto) {
+    final markup = ProdutoValidators.parseNumero(texto);
+    final taxa = _taxaIfood ?? 0;
+    setState(() {
+      if (markup != null && _custo > 0 && taxa < 100) {
+        _precoIfood.text = ProdutoValidators.formatarMoeda(_custo * (1 + markup / 100) / (1 - taxa / 100));
+      }
+    });
+  }
+
+  /// Atalho: iFood com o mesmo líquido do preço da loja digitado.
+  void _igualarIfoodALoja() {
+    final loja = ProdutoValidators.parseNumero(_precoLoja.text);
+    final equivalente = loja != null ? widget.contexto?.precoIfoodEquivalente(loja) : null;
+    if (equivalente == null) return;
+    setState(() {
+      _precoIfood.text = ProdutoValidators.formatarMoeda(equivalente);
+      _preencherMarkupIfood();
+    });
+  }
+
+  void _salvar() {
+    final loja = ProdutoValidators.parseNumero(_precoLoja.text);
+    if (loja == null || loja <= 0) {
+      setState(() => _erro = 'Informe o preço da loja.');
+      return;
+    }
+    double? ifood;
+    if (_temIfood && _precoIfood.text.trim().isNotEmpty) {
+      ifood = ProdutoValidators.parseNumero(_precoIfood.text);
+      if (ifood == null || ifood <= 0) {
+        setState(() => _erro = 'Preço do iFood inválido.');
+        return;
+      }
+    }
+    double centavos(double v) => (v * 100).roundToDouble() / 100;
+    Navigator.of(context).pop((loja: centavos(loja), ifood: ifood == null ? null : centavos(ifood)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final estiloAjuda = TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final corAlerta = Theme.of(context).colorScheme.error;
+    final loja = ProdutoValidators.parseNumero(_precoLoja.text);
+    final ifood = ProdutoValidators.parseNumero(_precoIfood.text);
+    final markupAnterior = widget.contexto?.markupAnterior;
+    final markupCategoria = widget.contexto?.markupCategoria;
+    final taxa = _taxaIfood;
+
+    Widget linhaResumo(String texto, {bool alerta = false}) =>
+        Text(texto, style: alerta ? estiloAjuda.copyWith(color: corAlerta, fontWeight: FontWeight.bold) : estiloAjuda);
+
+    String textoIfood(double preco) {
+      final liquido = _liquidoIfood(preco);
+      final abaixo = liquido <= _custo ? '  ABAIXO DO CUSTO' : '';
+      if (taxa == null) return 'Sem taxa do iFood configurada — markup sem descontar taxas.$abaixo';
+      return 'Líquido ${_moedaRevisao(liquido)} (−${_formatarPct(taxa)}% taxas) · '
+          'lucro ${_moedaRevisao(liquido - _custo)}$abaixo';
+    }
+
+    return AlertDialog(
+      title: const Text('Editar preço'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.produto.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(
+              'Custo ${_moedaRevisao(_custo)}'
+              '${markupAnterior != null ? ' · markup antes ${markupAnterior.toStringAsFixed(0)}%' : ''}'
+              '${markupCategoria != null ? ' · categoria ${markupCategoria.toStringAsFixed(0)}%' : ''}',
+              style: estiloAjuda,
+            ),
+            const SizedBox(height: 12),
+            const Text('Loja', style: TextStyle(fontWeight: FontWeight.w600)),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _precoLoja,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Preço (R\$)'),
+                    onChanged: (_) => setState(_preencherMarkupLoja),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _markupLoja,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                    decoration: const InputDecoration(labelText: 'Markup (%)'),
+                    onChanged: _aoMudarMarkupLoja,
+                  ),
+                ),
+              ],
+            ),
+            if (loja != null)
+              linhaResumo(
+                'Lucro por unidade: ${_moedaRevisao(loja - _custo)}${loja <= _custo ? '  ABAIXO DO CUSTO' : ''}',
+                alerta: loja <= _custo,
+              ),
+            if (_temIfood) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Expanded(child: Text('iFood', style: TextStyle(fontWeight: FontWeight.w600))),
+                  if (taxa != null)
+                    TextButton(
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      onPressed: _igualarIfoodALoja,
+                      child: const Text('Mesmo líquido da loja'),
+                    ),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _precoIfood,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(labelText: 'Preço (R\$)'),
+                      onChanged: (_) => setState(_preencherMarkupIfood),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _markupIfood,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                      decoration: const InputDecoration(labelText: 'Markup líquido (%)'),
+                      onChanged: _aoMudarMarkupIfood,
+                    ),
+                  ),
+                ],
+              ),
+              if (ifood != null) linhaResumo(textoIfood(ifood), alerta: _liquidoIfood(ifood) <= _custo),
+            ],
+            const SizedBox(height: 12),
+            Text('Salvar grava os preços e tira o produto da revisão.', style: estiloAjuda),
+            if (_erro != null) ...[
+              const SizedBox(height: 8),
+              Text(_erro!, style: TextStyle(color: corAlerta)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+        FilledButton(onPressed: _salvar, child: const Text('Salvar')),
+      ],
     );
   }
 }
