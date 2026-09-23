@@ -12,6 +12,7 @@ import '../providers/historico_vendas_provider.dart';
 import '../repositories/cancelamentos_ifood_repository.dart';
 import '../repositories/venda_repository.dart';
 import '../utils/canal_venda_utils.dart';
+import '../utils/mensagem_entregador.dart';
 import '../utils/telefone_utils.dart';
 import 'alterar_forma_pagamento_screen.dart';
 import 'recibo_screen.dart';
@@ -544,6 +545,12 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       appBar: AppBar(
         title: Text('Venda - ${venda.cliente.nome}'),
         actions: [
+          if (venda.temEntrega && !cancelada)
+            IconButton(
+              icon: const Icon(Icons.delivery_dining),
+              tooltip: 'Copiar dados pro entregador',
+              onPressed: () => copiarMensagemEntregador(context, venda),
+            ),
           IconButton(
             icon: const Icon(Icons.receipt_long),
             tooltip: 'Ver recibo',
