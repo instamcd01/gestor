@@ -1714,6 +1714,29 @@
           "name": "Postgres cloud"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.ifood_reconciliar_itens($1, $2::jsonb, 'SEPARACAO_FINALIZADA') as resultado;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook Finalizar').item.json.body.marketplace_order_id, JSON.stringify($('Consultar pedido pós-separação').item.json)] }}"
+        }
+      },
+      "name": "Reconciliar itens (pós-separação)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1440,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "id": "rec-pos-sep-1"
     }
   ],
   "connections": {
@@ -2357,6 +2380,17 @@
         [
           {
             "node": "Log ifood_separacao_finalizada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log ifood_separacao_finalizada": {
+      "main": [
+        [
+          {
+            "node": "Reconciliar itens (pós-separação)",
             "type": "main",
             "index": 0
           }
