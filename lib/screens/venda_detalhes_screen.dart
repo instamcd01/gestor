@@ -117,9 +117,6 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
 
   String _formatarPrevisaoEntrega(Venda venda) {
     final formato = DateFormat('dd/MM HH:mm');
-  /// Códigos copiados da resposta real da API pra loja de Mercado (23/09) —
-  /// a lista 501-512 da doc é de restaurante e o iFood recusa
-  /// (ORDER_MOMENT_INCOMPATIBLE_WITH_CANCEL_CODE).
     final fim = _previsaoFim(venda)!;
     if (_ehAgendado(venda)) {
       final inicio = _previsaoInicio(venda);
@@ -132,21 +129,18 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     if (venda.modalidade == 'economica') return 'Até ${DateFormat('dd/MM').format(fim)}';
     return '~${formato.format(fim)}';
   }
-  /// Código gravado quando o iFood não permite mais cancelar e o lojista
-  /// cancela só no gestor — o Status Sync Back (n8n) não chama o iFood.
-  static const _codigoCanceladoSoNoGestor = 'cancelado_so_no_gestor';
-
 
   void _verRecibo() {
     Navigator.push(context, MaterialPageRoute(builder: (_) => ReciboScreen(venda: _venda)));
   }
 
   /// Motivos usados só se a consulta ao vivo (`_escolherMotivoCancelamentoIfood`)
-  /// Consulta OK com lista vazia = iFood não permite mais cancelar; aí só
-  /// oferece cancelar localmente, avisando que o iFood não será informado.
   /// falhar — a iFood pede explicitamente pra nunca validar contra uma lista
   /// fixa (podem mudar/adicionar códigos), então isso é só uma rede de
   /// segurança pra não travar o cancelamento se a API estiver fora do ar.
+  /// Códigos copiados da resposta real da API pra loja de Mercado (23/09) —
+  /// a lista 501-512 da doc é de restaurante e o iFood recusa
+  /// (ORDER_MOMENT_INCOMPATIBLE_WITH_CANCEL_CODE).
   static const _motivosCancelamentoIfoodFallback = [
     (codigo: '801', descricao: 'Problemas de sistema na loja'),
     (codigo: '503', descricao: 'Item indisponível/desatualizado'),
@@ -159,18 +153,45 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     (codigo: '818', descricao: 'O valor da taxa de entrega está errado'),
   ];
 
+  /// Código gravado quando o iFood não permite mais cancelar e o lojista
+  /// cancela só no gestor — o Status Sync Back (n8n) não chama o iFood.
+  static const _codigoCanceladoSoNoGestor = 'cancelado_so_no_gestor';
+
   /// Pra pedidos de marketplace (iFood), pede o motivo do cancelamento —
   /// consulta os códigos válidos PRA ESSE PEDIDO ao vivo na API (via n8n,
   /// já que o app não tem as credenciais), em vez de uma lista fixa: a doc
   /// da iFood é explícita que os códigos podem mudar e não devem ser
   /// hardcoded. Cai pra `_motivosCancelamentoIfoodFallback` só se a consulta
   /// falhar (API fora do ar, timeout etc.) — não pode travar o cancelamento.
+  /// Consulta OK com lista vazia = iFood não permite mais cancelar; aí só
+  /// oferece cancelar localmente, avisando que o iFood não será informado.
   Future<({String codigo, String descricao})?> _escolherMotivoCancelamentoIfood() async {
     final empresaId = context.read<AuthProvider>().empresaId;
     final marketplacePedidoId = _venda.marketplacePedidoId;
 
     List<({String codigo, String descricao})> motivos = _motivosCancelamentoIfoodFallback;
     bool usandoFallback = true;
+    if (empresaId != null && marketplacePedidoId != null) {
+      if (!mounted) return null;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+      try {
+        motivos = await CancelamentosIfoodRepository().buscarMotivosDisponiveis(
+          empresaId: empresaId,
+          marketplacePedidoId: marketplacePedidoId,
+        );
+        usandoFallback = false;
+      } catch (_) {
+        // Mantém o fallback — ver comentário acima.
+      } finally {
+        if (mounted) Navigator.pop(context);
+      }
+    }
+    if (!mounted) return null;
+
     // Consulta funcionou mas veio vazia: o iFood não aceita mais cancelamento
     // desse pedido (ex: já concluído). Oferecer a lista padrão aqui só gerava
     // um cancelamento local que o iFood recusava.
@@ -197,27 +218,6 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       if (soNoGestor != true) return null;
       return (codigo: _codigoCanceladoSoNoGestor, descricao: 'Cancelado só no gestor (iFood não permitia mais cancelar)');
     }
-
-    if (empresaId != null && marketplacePedidoId != null) {
-      if (!mounted) return null;
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const Center(child: CircularProgressIndicator()),
-      );
-      try {
-        motivos = await CancelamentosIfoodRepository().buscarMotivosDisponiveis(
-          empresaId: empresaId,
-          marketplacePedidoId: marketplacePedidoId,
-        );
-        usandoFallback = false;
-      } catch (_) {
-        // Mantém o fallback — ver comentário acima.
-      } finally {
-        if (mounted) Navigator.pop(context);
-      }
-    }
-    if (!mounted) return null;
 
     var selecionado = motivos.first;
     return showDialog<({String codigo, String descricao})>(
