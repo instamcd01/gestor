@@ -10,6 +10,12 @@ class ItemEntrada {
   final String eanNfe;
   final String descricaoNfe;
   final String? ncm;
+  /// Código interno do produto no fornecedor (`cProd` da NF-e) — só existe
+  /// na prévia de importação (não é persistido em `itens_entrada`), usado
+  /// pra casar/ensinar o vínculo em `produto_fornecedores.codigo_produto_fornecedor`
+  /// quando o EAN falta ou não identifica o produto certo (ex: fardo que
+  /// vem com o EAN da unidade).
+  final String? codigoFornecedor;
   final double quantidade;
   final double custoUnitario;
   final double valorTotal;
@@ -23,6 +29,7 @@ class ItemEntrada {
     required this.eanNfe,
     required this.descricaoNfe,
     this.ncm,
+    this.codigoFornecedor,
     required this.quantidade,
     required this.custoUnitario,
     required this.valorTotal,
@@ -54,6 +61,7 @@ class ItemEntrada {
       eanNfe: eanNfe,
       descricaoNfe: descricaoNfe,
       ncm: ncm,
+      codigoFornecedor: codigoFornecedor,
       quantidade: quantidade ?? this.quantidade,
       custoUnitario: custoUnitario ?? this.custoUnitario,
       valorTotal: valorTotal ?? this.valorTotal,

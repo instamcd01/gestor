@@ -155,6 +155,7 @@ class NfeXmlParser {
       eanNfe: ean,
       descricaoNfe: _texto(prod, 'xProd') ?? '',
       ncm: _texto(prod, 'NCM'),
+      codigoFornecedor: _texto(prod, 'cProd'),
       quantidade: quantidade,
       custoUnitario: custoUnitario,
       valorTotal: valorTotalComEncargos,

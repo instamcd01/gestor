@@ -95,6 +95,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   NfeImportada? _nfe;
   List<ItemEntrada> _itensResolvidos = [];
   Fornecedor? _fornecedorExistente;
+  Map<String, String> _produtoIdPorCodigoFornecedor = {};
   final Map<int, TextEditingController> _validadeControllers = {};
   final Map<int, TextEditingController> _quantidadeControllers = {};
   final Map<int, TextEditingController> _custoControllers = {};
@@ -193,6 +194,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       eanNfe: base.eanNfe,
       descricaoNfe: base.descricaoNfe,
       ncm: base.ncm,
+      codigoFornecedor: base.codigoFornecedor,
       quantidade: base.quantidade,
       custoUnitario: base.custoUnitario * fator,
       valorTotal: base.valorTotal * fator,
@@ -221,10 +223,15 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     });
   }
 
-  /// Tenta casar por EAN só os itens ainda pendentes — usada tanto no
-  /// carregamento inicial quanto depois de cadastrar um produto novo a
-  /// partir de um item pendente (não mexe nos que já foram vinculados).
+  /// Tenta casar só os itens ainda pendentes — usada tanto no carregamento
+  /// inicial quanto depois de cadastrar um produto novo a partir de um item
+  /// pendente (não mexe nos que já foram vinculados). Código do fornecedor
+  /// (`cProd`, já ensinado numa nota anterior) vem ANTES do EAN: é o único
+  /// jeito de distinguir fardo de unidade quando o fornecedor fatura o fardo
+  /// com o EAN da unidade (achado real 25/09, Gatozin 5x4kg), e de casar
+  /// item que vem sem EAN nenhum na nota.
   void _recasarPendentes(List<Produto> produtos) {
+    final idsValidos = {for (final p in produtos) if (p.id != null) p.id!};
     final produtoIdPorEan = <String, String>{
       for (final p in produtos)
         if (p.id != null && p.codigoBarras.isNotEmpty) p.codigoBarras: p.id!,
@@ -233,10 +240,31 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     setState(() {
       _itensResolvidos = _itensResolvidos.map((item) {
         if (item.casado) return item;
-        final produtoId = item.eanNfe.isNotEmpty ? produtoIdPorEan[item.eanNfe] : null;
+        final codigo = item.codigoFornecedor?.trim() ?? '';
+        final porCodigo = codigo.isNotEmpty ? _produtoIdPorCodigoFornecedor[codigo] : null;
+        final produtoId = (porCodigo != null && idsValidos.contains(porCodigo))
+            ? porCodigo
+            : (item.eanNfe.isNotEmpty ? produtoIdPorEan[item.eanNfe] : null);
         return produtoId != null ? item.copyWith(produtoId: produtoId, produtoIdDefinir: true) : item;
       }).toList();
     });
+  }
+
+  /// Vínculos "código do fornecedor → produto" já ensinados pra esse
+  /// fornecedor (mesma coluna usada pela leitura de cotação em PDF, ver
+  /// `ConferenciaEspelhoScreen`). Falha aqui não trava a importação — só
+  /// cai pro casamento por EAN de sempre.
+  Future<Map<String, String>> _carregarCodigosFornecedor(String? fornecedorId) async {
+    if (fornecedorId == null) return {};
+    try {
+      final vinculos = await ProdutoFornecedorRepository().listarPorFornecedor(fornecedorId);
+      return {
+        for (final v in vinculos)
+          if ((v.codigoProdutoFornecedor ?? '').trim().isNotEmpty) v.codigoProdutoFornecedor!.trim(): v.produtoId,
+      };
+    } catch (_) {
+      return {};
+    }
   }
 
   Future<void> _selecionarArquivo() async {
@@ -332,6 +360,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         }
       }
       final fator = fornecedorExistente?.fatorCusto ?? 1.0;
+      final codigosFornecedor = await _carregarCodigosFornecedor(fornecedorExistente?.id);
 
       if (!mounted) return;
       _limparControllers();
@@ -340,6 +369,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         _nfe = nfe;
         _itensResolvidos = [for (final item in nfe.itens) _comFator(item, item, fator)];
         _fornecedorExistente = fornecedorExistente;
+        _produtoIdPorCodigoFornecedor = codigosFornecedor;
         _processando = false;
       });
       _recasarPendentes(produtoProvider.produtos);
@@ -368,9 +398,22 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     );
     if (escolhido == null || !mounted) return;
 
+    // Outro produto já usando esse EAN (ex: a unidade, quando o item da nota
+    // é o fardo faturado com o EAN dela) — copiar o código pro escolhido
+    // deixaria os dois com o mesmo EAN (confunde leitor no caixa e o iFood).
+    Produto? outroComEan;
+    if (item.eanNfe.isNotEmpty) {
+      for (final p in produtoProvider.produtos) {
+        if (p.id != escolhido.id && p.codigoBarras == item.eanNfe) {
+          outroComEan = p;
+          break;
+        }
+      }
+    }
+    if (!mounted) return;
     final atualizarCodigo = await showDialog<bool>(
       context: context,
-      builder: (ctx) => _DivergenciaDialog(item: item, produto: escolhido),
+      builder: (ctx) => _DivergenciaDialog(item: item, produto: escolhido, outroProdutoComEan: outroComEan),
     );
     if (atualizarCodigo == null || !mounted) return;
 
@@ -553,6 +596,25 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             fornecedorId: fornecedorId,
             empresaId: empresaId,
             custoUnitario: item.custoUnitario,
+          );
+        }
+
+        // Ensina "código do fornecedor → produto" com o vínculo que o
+        // usuário confirmou nesta nota (automático ou manual) — a próxima
+        // nota desse fornecedor casa sozinha, mesmo sem EAN ou com o EAN da
+        // unidade num fardo. Só grava quando mudou; `vincularCodigoFornecedor`
+        // também tira o código de outro produto que estivesse com ele (é
+        // assim que um vínculo errado se corrige: trocando na próxima nota).
+        for (final item in _itensResolvidos) {
+          final codigo = item.codigoFornecedor?.trim() ?? '';
+          if (!item.casado || codigo.isEmpty) continue;
+          if (_produtoIdPorCodigoFornecedor[codigo] == item.produtoId) continue;
+          await produtoFornecedorRepo.vincularCodigoFornecedor(
+            produtoId: item.produtoId!,
+            fornecedorId: fornecedorId,
+            empresaId: empresaId,
+            codigo: codigo,
+            custoUnitarioFallback: item.custoUnitario,
           );
         }
       }
@@ -983,7 +1045,10 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 30, top: 2),
               child: Text(
-                item.eanNfe.isEmpty ? 'sem código de barras na nota' : 'EAN ${item.eanNfe}',
+                [
+                  item.eanNfe.isEmpty ? 'sem código de barras na nota' : 'EAN ${item.eanNfe}',
+                  if ((item.codigoFornecedor ?? '').isNotEmpty) 'cód. fornecedor ${item.codigoFornecedor}',
+                ].join(' · '),
                 style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12.5),
               ),
             ),
@@ -1143,15 +1208,21 @@ class _BuscarProdutoDialogState extends State<_BuscarProdutoDialog> {
 class _DivergenciaDialog extends StatefulWidget {
   final ItemEntrada item;
   final Produto produto;
+  final Produto? outroProdutoComEan;
 
-  const _DivergenciaDialog({required this.item, required this.produto});
+  const _DivergenciaDialog({required this.item, required this.produto, this.outroProdutoComEan});
 
   @override
   State<_DivergenciaDialog> createState() => _DivergenciaDialogState();
 }
 
 class _DivergenciaDialogState extends State<_DivergenciaDialog> {
-  late bool _atualizarCodigo = widget.item.eanNfe.isNotEmpty;
+  // Com código do fornecedor na nota, o vínculo já fica lembrado por ele —
+  // não precisa mexer no EAN do cadastro. Nem quando outro produto já usa
+  // esse EAN (duplicaria). O usuário ainda pode marcar se quiser.
+  late bool _atualizarCodigo = widget.item.eanNfe.isNotEmpty &&
+      widget.outroProdutoComEan == null &&
+      (widget.item.codigoFornecedor ?? '').isEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -1166,13 +1237,27 @@ class _DivergenciaDialogState extends State<_DivergenciaDialog> {
           const SizedBox(height: 12),
           Text('Cadastro: ${widget.produto.nome}'),
           Text('EAN cadastrado: ${widget.produto.codigoBarras.isEmpty ? "sem código" : widget.produto.codigoBarras}'),
+          if ((widget.item.codigoFornecedor ?? '').isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'A próxima nota desse fornecedor já casa sozinha pelo código ${widget.item.codigoFornecedor}.',
+              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
+          ],
+          if (widget.outroProdutoComEan != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Esse EAN já está em "${widget.outroProdutoComEan!.nome}" — atualizar deixaria os dois produtos com o mesmo código de barras.',
+              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.error),
+            ),
+          ],
           if (widget.item.eanNfe.isNotEmpty) ...[
             const SizedBox(height: 12),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
               title: const Text('Atualizar código de barras do produto cadastrado'),
-              subtitle: const Text('Assim a próxima nota com esse item casa sozinha'),
+              subtitle: const Text('Troca o código de barras do cadastro pelo da nota'),
               value: _atualizarCodigo,
               onChanged: (v) => setState(() => _atualizarCodigo = v ?? false),
             ),
