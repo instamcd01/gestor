@@ -107,8 +107,8 @@ class _EntregaEconomicaSectionState extends State<EntregaEconomicaSection> {
         ),
         Text(
           'Modalidade extra, mais barata e mais lenta que a entrega por faixa, oferecida no site e no '
-          'WhatsApp. O valor abaixo é o padrão; bairros com valor próprio ficam em "Valor por bairro". '
-          'Deixe os dois campos em branco pra não oferecer nos bairros fora da lista.',
+          'WhatsApp SÓ pros bairros cadastrados em "Valor por bairro". O valor sugerido já vem '
+          'preenchido ao adicionar um bairro; o prazo vale pra todos.',
           style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant),
         ),
         const SizedBox(height: 8),
@@ -127,7 +127,7 @@ class _EntregaEconomicaSectionState extends State<EntregaEconomicaSection> {
                       Expanded(
                         child: TextFormField(
                           controller: _valorController,
-                          decoration: const InputDecoration(labelText: 'Valor padrão (R\$)', prefixText: 'R\$ '),
+                          decoration: const InputDecoration(labelText: 'Valor sugerido (R\$)', prefixText: 'R\$ '),
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           inputFormatters: [MoedaInputFormatter()],
                         ),
@@ -148,10 +148,10 @@ class _EntregaEconomicaSectionState extends State<EntregaEconomicaSection> {
                     alignment: Alignment.centerRight,
                     child: FilledButton(
                       onPressed: _salvando ? null : _salvar,
-                      child: Text(_salvando ? 'Salvando...' : 'Salvar valor padrão'),
+                      child: Text(_salvando ? 'Salvando...' : 'Salvar valor sugerido e prazo'),
                     ),
                   ),
-                  const FreteEconomicoBairrosSection(),
+                  FreteEconomicoBairrosSection(valorSugerido: ClienteValidators.parseNumero(_valorController.text)),
                 ],
               ),
             ),

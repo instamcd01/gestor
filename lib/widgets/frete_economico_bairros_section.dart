@@ -7,11 +7,14 @@ import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 
 /// Lista de valores da entrega econômica por bairro (dentro da seção
-/// "Entrega econômica" do Catálogo Online). Cada alteração salva na hora —
-/// não depende do "Salvar" da tela. Bairro fora da lista usa o valor
-/// padrão configurado logo acima.
+/// "Entrega Econômica" de Opções de Entrega). Cada alteração salva na hora —
+/// não depende de outro "Salvar". Bairro fora da lista NÃO tem entrega
+/// econômica (regra `valor_frete_economico`, desde 26/09).
 class FreteEconomicoBairrosSection extends StatefulWidget {
-  const FreteEconomicoBairrosSection({super.key});
+  /// Valor que já vem preenchido ao adicionar um bairro novo.
+  final double? valorSugerido;
+
+  const FreteEconomicoBairrosSection({super.key, this.valorSugerido});
 
   @override
   State<FreteEconomicoBairrosSection> createState() => _FreteEconomicoBairrosSectionState();
@@ -53,7 +56,7 @@ class _FreteEconomicoBairrosSectionState extends State<FreteEconomicoBairrosSect
   Future<void> _editar([FreteEconomicoBairro? existente]) async {
     final resultado = await showDialog<FreteEconomicoBairro>(
       context: context,
-      builder: (_) => _DialogBairro(existente: existente, sugestoes: _sugestoes),
+      builder: (_) => _DialogBairro(existente: existente, sugestoes: _sugestoes, valorSugerido: widget.valorSugerido),
     );
     if (resultado == null || !mounted) return;
     final empresaId = context.read<AuthProvider>().empresaId;
@@ -75,7 +78,7 @@ class _FreteEconomicoBairrosSectionState extends State<FreteEconomicoBairrosSect
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Remover bairro?'),
-        content: Text('${item.bairro} volta a usar o valor padrão da entrega econômica.'),
+        content: Text('${item.bairro} deixa de ter entrega econômica.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remover')),
@@ -102,7 +105,7 @@ class _FreteEconomicoBairrosSectionState extends State<FreteEconomicoBairrosSect
         Text('Valor por bairro', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 4),
         Text(
-          'Bairro que não estiver aqui usa o valor padrão acima. Alterações nesta lista '
+          'A entrega econômica só aparece pros bairros desta lista. Alterações aqui '
           'são salvas na hora e valem pro site e pro WhatsApp.',
           style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant),
         ),
@@ -143,8 +146,9 @@ class _FreteEconomicoBairrosSectionState extends State<FreteEconomicoBairrosSect
 class _DialogBairro extends StatefulWidget {
   final FreteEconomicoBairro? existente;
   final List<String> sugestoes;
+  final double? valorSugerido;
 
-  const _DialogBairro({this.existente, required this.sugestoes});
+  const _DialogBairro({this.existente, required this.sugestoes, this.valorSugerido});
 
   @override
   State<_DialogBairro> createState() => _DialogBairroState();
@@ -153,7 +157,9 @@ class _DialogBairro extends StatefulWidget {
 class _DialogBairroState extends State<_DialogBairro> {
   late String _bairro = widget.existente?.bairro ?? '';
   late final _valorController = TextEditingController(
-    text: widget.existente?.valor != null ? ClienteValidators.formatarMoeda(widget.existente!.valor) : '',
+    text: ClienteValidators.formatarMoeda(
+      widget.existente != null ? widget.existente!.valor : widget.valorSugerido,
+    ),
   );
   late bool _atende = widget.existente?.atende ?? true;
   String? _erro;
