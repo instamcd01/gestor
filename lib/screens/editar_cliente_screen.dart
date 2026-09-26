@@ -343,7 +343,21 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
       estimativaEntrega: _estimativaEntrega,
       latitude: _latitude,
       longitude: _longitude,
+      pontoAjustadoCliente: _pontoAindaDoCliente(),
     );
+  }
+
+  /// O selo "ponto marcado pelo cliente no mapa" só continua valendo se a
+  /// equipe não mexeu no local — endereço, número, bairro ou pino alterados
+  /// aqui passam a ser responsabilidade de quem editou.
+  bool _pontoAindaDoCliente() {
+    final original = widget.clienteSelecionado;
+    if (!original.pontoAjustadoCliente) return false;
+    return original.latitude == _latitude &&
+        original.longitude == _longitude &&
+        original.endereco.trim() == _enderecoController.text.trim() &&
+        original.numero.trim() == _numeroController.text.trim() &&
+        original.bairro.trim() == _bairroController.text.trim();
   }
 
   /// Persiste a lista de pets atual sem sair da tela — usado quando o

@@ -168,11 +168,17 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
                 tooltip: 'Enviar e-mail',
                 onPressed: () => _enviarEmail(cliente.email),
               ),
-            if (cliente.enderecoCompleto.isNotEmpty)
+            if (cliente.enderecoCompleto.isNotEmpty || cliente.latitude != null)
               IconButton(
                 icon: const Icon(Icons.location_on, color: Colors.red),
                 tooltip: 'Abrir no mapa',
-                onPressed: () => _abrirMapa(cliente.enderecoCompleto),
+                // Pino exato quando existe (principalmente se o cliente
+                // ajustou no mapa) — o texto pode apontar pra outro ponto.
+                onPressed: () => _abrirMapa(
+                  cliente.latitude != null && cliente.longitude != null
+                      ? '${cliente.latitude},${cliente.longitude}'
+                      : cliente.enderecoCompleto,
+                ),
               ),
           ],
         ),
@@ -189,6 +195,15 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
             ] else
               _buildClienteInfo('CPF', cliente.cpf),
             _buildClienteInfo('Endereço', cliente.enderecoCompleto),
+            if (cliente.pontoAjustadoCliente)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Chip(
+                  avatar: const Icon(Icons.push_pin, size: 18),
+                  label: const Text('Ponto marcado pelo cliente no mapa — siga o pino'),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
             _buildClienteInfo('Complemento', cliente.complemento),
             _buildClienteInfo('Distância',
                 cliente.rangeDistancia != null ? '${cliente.rangeDistancia!.toStringAsFixed(2)} km' : 'Não informado'),

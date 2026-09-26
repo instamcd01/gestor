@@ -28,6 +28,10 @@ String mensagemEntregador(Venda venda, {DateTime? agora}) {
       'Mapa: https://www.google.com/maps/search/?api=1&query=${cliente.latitude},${cliente.longitude}'
     else if (cliente.enderecoCompleto.isNotEmpty)
       'Mapa: https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(cliente.enderecoCompleto)}',
+    // Cliente marcou o ponto no mapa do site: o número digitado pode estar
+    // impreciso (rua longa), o pino é a referência.
+    if (cliente.pontoAjustadoCliente && cliente.latitude != null && cliente.longitude != null)
+      '📍 *Ponto marcado pelo cliente no mapa — siga o link do mapa*',
     ..._linhasPagamento(venda),
   ];
 

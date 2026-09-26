@@ -10,6 +10,7 @@ import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/aviso_banner.dart';
 import '../widgets/form_section.dart';
+import '../widgets/frete_economico_bairros_section.dart';
 
 /// Aba "Catálogo" de `CatalogoOnlineHubScreen`. O site em si ainda não
 /// existe — vai ser um projeto separado depois — mas os dados ficam
@@ -311,7 +312,9 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                         Text(
                           'Modalidade extra, mais barata e mais lenta que a entrega por zona '
                           '(Configurações > Opções de Entrega) — vale pra qualquer endereço dentro '
-                          'da área de entrega. Deixe os dois campos em branco pra não oferecer essa opção.',
+                          'da área de entrega. O valor abaixo é o padrão; bairros com valor próprio ficam na lista '
+                          '"Valor por bairro". Deixe os dois campos em branco pra não oferecer essa opção '
+                          'nos bairros fora da lista.',
                           style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                         ),
                         const SizedBox(height: 8),
@@ -337,6 +340,7 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                             ),
                           ],
                         ),
+                        const FreteEconomicoBairrosSection(),
                       ],
                     ),
                     const SizedBox(height: 16),

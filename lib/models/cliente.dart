@@ -91,6 +91,12 @@ class Cliente {
   /// pra esse cliente em vez de `celular`.
   final String? telefoneKyte;
 
+  /// Ponto de entrega marcado pelo PRÓPRIO cliente no mapa do site (tela
+  /// "Ajustar local no mapa") — o pino é a referência pra entrega, o número
+  /// digitado pode estar impreciso. Volta pra false quando a equipe altera
+  /// o endereço/ponto pelo app (ver EditarClienteScreen).
+  final bool pontoAjustadoCliente;
+
   Cliente({
     this.idCliente,
     required this.nome,
@@ -138,6 +144,7 @@ class Cliente {
     this.authUserId,
     this.pessoaId,
     this.telefoneKyte,
+    this.pontoAjustadoCliente = false,
   });
 
   List<String> get especies => pets.map((p) => p.especie).toSet().toList();
@@ -190,6 +197,7 @@ class Cliente {
       authUserId: authUserId,
       pessoaId: pessoaId,
       telefoneKyte: telefoneKyte,
+      pontoAjustadoCliente: pontoAjustadoCliente,
     );
   }
 
@@ -289,6 +297,7 @@ class Cliente {
       authUserId: row['auth_user_id'] as String?,
       pessoaId: row['pessoa_id'] as String?,
       telefoneKyte: row['telefone_kyte'] as String?,
+      pontoAjustadoCliente: row['ponto_ajustado_cliente'] as bool? ?? false,
     );
   }
 
@@ -312,6 +321,7 @@ class Cliente {
       'razao_social': razaoSocial,
       'latitude': latitude,
       'longitude': longitude,
+      'ponto_ajustado_cliente': pontoAjustadoCliente,
       'saldo': saldo,
       'canal_origem': canalOrigem,
       // Bug real corrigido: opt-in nunca deve defaultar pra true quando
