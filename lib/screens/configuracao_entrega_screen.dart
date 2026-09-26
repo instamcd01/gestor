@@ -7,6 +7,7 @@ import '../providers/zona_entrega_provider.dart';
 import '../services/distancia_service.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
+import '../widgets/entrega_economica_section.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'dados_loja_screen.dart';
 
@@ -189,6 +190,8 @@ class _ConfiguracaoEntregaScreenState extends State<ConfiguracaoEntregaScreen> {
                     ),
                   ),
                 )),
+          const SizedBox(height: 24),
+          const EntregaEconomicaSection(),
           const SizedBox(height: 80),
         ],
       ),

@@ -10,7 +10,7 @@ import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/aviso_banner.dart';
 import '../widgets/form_section.dart';
-import '../widgets/frete_economico_bairros_section.dart';
+import 'configuracao_entrega_screen.dart';
 
 /// Aba "Catálogo" de `CatalogoOnlineHubScreen`. O site em si ainda não
 /// existe — vai ser um projeto separado depois — mas os dados ficam
@@ -33,8 +33,6 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
   final _facebookController = TextEditingController();
   final _infoExtraController = TextEditingController();
   final _retiradaPrazoMinController = TextEditingController();
-  final _freteEconomicoValorController = TextEditingController();
-  final _freteEconomicoPrazoDiasController = TextEditingController();
   final _taxaServicoValorController = TextEditingController();
 
   bool _catalogoAtivo = false;
@@ -62,8 +60,6 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
     _facebookController.dispose();
     _infoExtraController.dispose();
     _retiradaPrazoMinController.dispose();
-    _freteEconomicoValorController.dispose();
-    _freteEconomicoPrazoDiasController.dispose();
     _taxaServicoValorController.dispose();
     super.dispose();
   }
@@ -80,7 +76,6 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
           .from('empresas')
           .select('catalogo_slug, catalogo_ativo, aceita_pedidos_online, aceita_retirada, '
               'mostrar_estoque_baixo, catalogo_modelo, retirada_prazo_min, '
-              'frete_economico_valor, frete_economico_prazo_dias, '
               'taxa_servico_tipo, taxa_servico_valor, '
               'whatsapp_catalogo, instagram, facebook, catalogo_info_extra, '
               'preco_ancora_marketplace_ativo')
@@ -93,9 +88,6 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
       _facebookController.text = data['facebook']?.toString() ?? '';
       _infoExtraController.text = data['catalogo_info_extra']?.toString() ?? '';
       _retiradaPrazoMinController.text = data['retirada_prazo_min']?.toString() ?? '';
-      _freteEconomicoValorController.text =
-          ClienteValidators.formatarMoeda((data['frete_economico_valor'] as num?)?.toDouble());
-      _freteEconomicoPrazoDiasController.text = data['frete_economico_prazo_dias']?.toString() ?? '';
       _taxaServicoTipo = data['taxa_servico_tipo']?.toString() ?? 'percentual';
       _taxaServicoValorController.text =
           ClienteValidators.formatarMoeda((data['taxa_servico_valor'] as num?)?.toDouble());
@@ -133,26 +125,8 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
     return semAcento.replaceAll(RegExp(r'\s+'), '-').replaceAll(RegExp(r'[^a-z0-9\-]'), '');
   }
 
-  /// null = os dois em branco (modalidade econômica desligada, permitido)
-  /// ou os dois preenchidos. Senão, exige os dois.
-  String? _validarFreteEconomico() {
-    final valorTexto = _freteEconomicoValorController.text.trim();
-    final prazoTexto = _freteEconomicoPrazoDiasController.text.trim();
-    if (valorTexto.isEmpty && prazoTexto.isEmpty) return null;
-    if (valorTexto.isEmpty || prazoTexto.isEmpty) {
-      return 'Informe valor e prazo do frete econômico, ou deixe os dois em branco';
-    }
-    return null;
-  }
-
   Future<void> _salvar() async {
     if (!_formKey.currentState!.validate()) return;
-
-    final erroFreteEconomico = _validarFreteEconomico();
-    if (erroFreteEconomico != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erroFreteEconomico)));
-      return;
-    }
 
     final empresaId = context.read<AuthProvider>().empresaId;
     if (empresaId == null) return;
@@ -172,8 +146,6 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
         'facebook': _facebookController.text.trim(),
         'catalogo_info_extra': _infoExtraController.text.trim(),
         'retirada_prazo_min': int.tryParse(_retiradaPrazoMinController.text.trim()),
-        'frete_economico_valor': ClienteValidators.parseNumero(_freteEconomicoValorController.text),
-        'frete_economico_prazo_dias': int.tryParse(_freteEconomicoPrazoDiasController.text.trim()),
         'taxa_servico_tipo':
             ClienteValidators.parseNumero(_taxaServicoValorController.text) == null ? null : _taxaServicoTipo,
         'taxa_servico_valor': ClienteValidators.parseNumero(_taxaServicoValorController.text),
@@ -306,42 +278,19 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    FormSection(
-                      titulo: 'Entrega econômica (site)',
-                      children: [
-                        Text(
-                          'Modalidade extra, mais barata e mais lenta que a entrega por zona '
-                          '(Configurações > Opções de Entrega) — vale pra qualquer endereço dentro '
-                          'da área de entrega. O valor abaixo é o padrão; bairros com valor próprio ficam na lista '
-                          '"Valor por bairro". Deixe os dois campos em branco pra não oferecer essa opção '
-                          'nos bairros fora da lista.',
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    // Entrega econômica (valor padrão, prazo e valor por bairro)
+                    // mudou pra Configurações > Opções de Entrega em 26/09.
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.local_shipping_outlined),
+                        title: const Text('Entrega econômica'),
+                        subtitle: const Text('Agora fica em Configurações > Opções de Entrega'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ConfiguracaoEntregaScreen()),
                         ),
-                        const SizedBox(height: 8),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: _freteEconomicoValorController,
-                                decoration: const InputDecoration(labelText: 'Valor (R\$)', prefixText: 'R\$ '),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                inputFormatters: [MoedaInputFormatter()],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextFormField(
-                                controller: _freteEconomicoPrazoDiasController,
-                                decoration: const InputDecoration(labelText: 'Prazo (dias úteis)'),
-                                keyboardType: TextInputType.number,
-                                inputFormatters: [InteiroInputFormatter()],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const FreteEconomicoBairrosSection(),
-                      ],
+                      ),
                     ),
                     const SizedBox(height: 16),
                     FormSection(
