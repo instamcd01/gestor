@@ -163,7 +163,7 @@ class _ClientesScreenState extends State<ClientesScreen> with SingleTickerProvid
 
   Widget _buildAbaClientes(BuildContext context, AuthProvider auth) {
     final clientProvider = Provider.of<ClientProvider>(context);
-    final clientesFiltrados = clientProvider.clientes;
+    final clientesFiltrados = clientProvider.clientesFiltrados;
     final colorScheme = Theme.of(context).colorScheme;
     // Reforça na UI o que já é bloqueado no banco (trigger) — vendedor não
     // exclui cliente.

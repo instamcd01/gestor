@@ -146,11 +146,13 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
     setState(() => _promovendoKyteId = cliente.idCliente);
     try {
       await ClienteRepository().promoverHistoricoKyte(cliente.idCliente!);
+      // Relê do banco — nunca cair de volta no objeto `cliente` do histórico
+      // Kyte (telefone placeholder + canal_origem kyte_historico): editar em
+      // cima dele desfazia a promoção (achado real 26/09).
+      final promovido = await ClienteRepository().buscarPorId(cliente.idCliente!);
+      if (promovido == null) throw Exception('cadastro não encontrado depois de liberar');
       await _carregarClientes();
       if (!mounted) return;
-      final promovido = Provider.of<ClientProvider>(context, listen: false)
-          .clientes
-          .firstWhere((c) => c.idCliente == cliente.idCliente, orElse: () => cliente);
       setState(() {
         _buscaClienteController.clear();
         _clientesFiltrados = [];
@@ -240,18 +242,26 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
   Future<void> _editarEnderecoClienteSelecionado() async {
     final cliente = _clienteSelecionado;
     if (cliente == null) return;
-    await Navigator.push(
+    final salvou = await Navigator.push<Cliente>(
       context,
       MaterialPageRoute(builder: (_) => EditarClienteScreen(clienteSelecionado: cliente)),
     );
-    if (!mounted) return;
-    // EditarClienteScreen já recalcula e salva a distância ao salvar — pega
-    // a versão atualizada do provider (não a `cliente` capturada acima,
-    // que ficou parada no que era antes de editar).
-    final atualizado = Provider.of<ClientProvider>(context, listen: false)
-        .clientes
-        .firstWhere((c) => c.idCliente == cliente.idCliente, orElse: () => cliente);
-    await _selecionarCliente(atualizado);
+    if (!mounted || salvou == null) return; // voltou sem salvar
+    // Relê do banco (EditarClienteScreen já recalculou e salvou distância).
+    // Antes procurava numa lista em memória com fallback silencioso pro
+    // `cliente` antigo — a edição salvava no banco mas a venda continuava
+    // mostrando o cadastro velho (bug recorrente, 26/09).
+    try {
+      final atualizado = await ClienteRepository().buscarPorId(cliente.idCliente!);
+      if (!mounted) return;
+      if (atualizado == null) throw Exception('cadastro não encontrado');
+      await _selecionarCliente(atualizado);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Salvo, mas não consegui recarregar o cliente: $e')),
+      );
+    }
   }
 
   void _resolverZona() {

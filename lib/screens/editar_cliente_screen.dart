@@ -8,6 +8,7 @@ import '../models/cliente.dart';
 import '../models/pet.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
+import '../utils/telefone_utils.dart';
 import '../services/cep_service.dart';
 import '../services/distancia_service.dart';
 import '../utils/cliente_validators.dart';
@@ -57,6 +58,10 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
   int? _estimativaEntrega;
   double? _latitude;
   double? _longitude;
+  // CEP que estava no formulário quando o pino atual foi definido — sair
+  // do campo CEP sem mudar ele não pode apagar o pino.
+  String? _cepDasCoordenadas;
+  final Map<TextEditingController, String> _textoAnterior = {};
 
   List<String> _canais = [];
   bool _canaisCarregados = false;
@@ -67,7 +72,7 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     super.initState();
     final cliente = widget.clienteSelecionado;
     _nomeController = TextEditingController(text: cliente.nome);
-    _celularController = TextEditingController(text: cliente.celular);
+    _celularController = TextEditingController(text: _celularParaEdicao(cliente.celular));
     _enderecoController = TextEditingController(text: cliente.endereco);
     _numeroController = TextEditingController(text: cliente.numero);
     _bairroController = TextEditingController(text: cliente.bairro);
@@ -90,15 +95,19 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
 
     _numeroFocusNode.addListener(_aoSairDoCampoNumero);
     _cepFocusNode.addListener(_aoSairDoCampoCep);
+    // Número fica de fora de propósito (mesmo critério do site,
+    // CAMPOS_LOCALIZACAO em capturar-endereco.tsx): corrigir o número
+    // depois de marcar no mapa é o caso mais comum e não muda o local.
     for (final c in [
       _enderecoController,
-      _numeroController,
       _bairroController,
       _cidadeController,
       _estadoController,
     ]) {
-      c.addListener(_invalidarCoordenadasSalvas);
+      _textoAnterior[c] = c.text;
+      c.addListener(() => _invalidarCoordenadasSalvas(c));
     }
+    if (_latitude != null && _longitude != null) _cepDasCoordenadas = cliente.cep.trim();
     _carregarCanais();
   }
 
@@ -108,7 +117,15 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
   /// recalculando a rota pro pino antigo, mesmo depois do endereço
   /// corrigido (bug real: cliente com endereço errado nunca recalculava
   /// distância/zona de entrega certa, mesmo editando o texto).
-  void _invalidarCoordenadasSalvas() {
+  ///
+  /// Compara o TEXTO com o anterior: o listener de TextEditingController
+  /// também dispara em mudança de seleção/cursor (só tocar no campo), e
+  /// antes isso apagava o pino escolhido no mapa sem o usuário perceber
+  /// (achado real 26/09 — "escolhi no mapa e não salvou").
+  void _invalidarCoordenadasSalvas(TextEditingController controller) {
+    final anterior = _textoAnterior[controller];
+    _textoAnterior[controller] = controller.text;
+    if (anterior == controller.text) return; // só cursor/seleção mudou
     if (_autopreenchendoEndereco) return; // já tratado por quem preenche
     if (_latitude != null || _longitude != null) {
       setState(() {
@@ -137,6 +154,9 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
   Future<void> _autopreencherPorCep() async {
     final cep = _cepController.text.trim();
     if (ClienteValidators.cep(cep) != null) return;
+    // Mesmo CEP do pino atual (ex: só entrou e saiu do campo, ou é o CEP
+    // que o próprio mapa preencheu) — nada mudou, não apaga o pino.
+    if (_latitude != null && _longitude != null && cep == _cepDasCoordenadas) return;
 
     setState(() => _autopreenchendoEndereco = true);
     final encontrado = await CepService.buscarPorCep(cep);
@@ -200,6 +220,7 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
       if ((encontrado?.cidade ?? '').isNotEmpty) _cidadeController.text = encontrado!.cidade!;
       if ((encontrado?.estado ?? '').isNotEmpty) _estadoController.text = encontrado!.estado!;
       if ((encontrado?.cep ?? '').isNotEmpty) _cepController.text = encontrado!.cep!;
+      _cepDasCoordenadas = _cepController.text.trim();
       _autopreenchendoEndereco = false;
     });
   }
@@ -255,7 +276,10 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
       _canaisCarregados = true;
 
       final cliente = widget.clienteSelecionado;
-      if (_canais.contains(cliente.canalOrigem)) {
+      if (cliente.canalOrigem == canalKyteHistorico) {
+        // Fica sem seleção — _montarClienteAtualizado preserva o valor
+        // original (esse campo não é editável pra cadastro do histórico).
+      } else if (_canais.contains(cliente.canalOrigem)) {
         _canalSelecionado = cliente.canalOrigem;
       } else if ((cliente.canalOrigem ?? '').isNotEmpty) {
         _canalSelecionado = 'Outro canal';
@@ -264,21 +288,49 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     });
   }
 
+  /// O campo usa máscara de 11 dígitos (TelefoneInputFormatter), mas parte
+  /// dos telefones está gravada com DDI ("5521999999999") — mostrado cru,
+  /// qualquer tecla no campo fazia a máscara cortar errado ("(55) 21999-
+  /// 9999"). Mostra já no formato da máscara, sem o 55.
+  static String _celularParaEdicao(String celular) {
+    final d = normalizarTelefoneBr(celular);
+    if (d.length == 11) return '(${d.substring(0, 2)}) ${d.substring(2, 7)}-${d.substring(7)}';
+    if (d.length == 10) return '(${d.substring(0, 2)}) ${d.substring(2, 6)}-${d.substring(6)}';
+    return celular; // placeholder Kyte ou formato inesperado — não mexe
+  }
+
+  /// Número não mudou → mantém exatamente o valor que já estava gravado
+  /// (não troca "5521..." por "(21) ..." só por abrir e salvar a tela).
+  String _celularParaSalvar() {
+    final original = widget.clienteSelecionado.celular;
+    final digitado = _celularController.text.trim();
+    if (normalizarTelefoneBr(digitado) == normalizarTelefoneBr(original)) return original;
+    return digitado;
+  }
+
   /// Monta o Cliente atualizado com os dados do formulário + a lista de
   /// pets atual (que pode já ter sido mexida sem o usuário ter apertado
   /// "Salvar" ainda — ex: acabou de adicionar um pet).
   Cliente _montarClienteAtualizado() {
     String canalOrigem;
-    if (_canalSelecionado == 'Outro canal') {
+    if (widget.clienteSelecionado.canalOrigem == canalKyteHistorico) {
+      // Entrar/sair do Histórico Kyte só pela RPC de promoção — editar
+      // o cadastro nunca muda isso, nem pra um lado nem pro outro.
+      canalOrigem = canalKyteHistorico;
+    } else if (_canalSelecionado == 'Outro canal') {
       canalOrigem = _outroCanalController.text.trim();
     } else {
       canalOrigem = _canalSelecionado ?? '';
+    }
+    if (canalOrigem == canalKyteHistorico &&
+        widget.clienteSelecionado.canalOrigem != canalKyteHistorico) {
+      canalOrigem = widget.clienteSelecionado.canalOrigem ?? '';
     }
 
     return Cliente(
       idCliente: widget.clienteSelecionado.idCliente,
       nome: _nomeController.text.trim(),
-      celular: _celularController.text.trim(),
+      celular: _celularParaSalvar(),
       email: _emailController.text.trim(),
       endereco: _enderecoController.text.trim(),
       numero: _numeroController.text.trim(),

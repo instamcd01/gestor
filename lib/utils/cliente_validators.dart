@@ -1,3 +1,5 @@
+import 'telefone_utils.dart';
+
 /// Regras de validação e parsing dos campos de cliente/pet — mesmo
 /// espírito de `produto_validators.dart`: formata e valida no próprio
 /// campo em vez de só reclamar depois de salvar.
@@ -38,7 +40,11 @@ class ClienteValidators {
     if (value != null && RegExp(r'^kyte-sem-numero-\d+$').hasMatch(value.trim())) {
       return null;
     }
-    final digitos = (value ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    // normalizarTelefoneBr tira o DDI 55 — telefone gravado como
+    // "5521999999999" (formato do login do site e da RPC de promover
+    // cadastro Kyte) tem 13 dígitos e travava o formulário inteiro com
+    // "Celular inválido" (17 clientes em 26/09).
+    final digitos = normalizarTelefoneBr(value ?? '');
     if (digitos.isEmpty) return 'Por favor, insira o celular';
     if (digitos.length < 10 || digitos.length > 11) {
       return 'Celular inválido — inclua o DDD';

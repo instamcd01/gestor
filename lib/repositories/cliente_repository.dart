@@ -1,6 +1,7 @@
 import '../config/supabase_config.dart';
 import '../models/cliente.dart';
 import '../models/pet.dart';
+import '../providers/cliente_provider.dart' show canalKyteHistorico;
 import '../utils/telefone_utils.dart';
 
 /// Camada de acesso a dados de clientes e seus pets. O isolamento por
@@ -128,6 +129,15 @@ class ClienteRepository {
     final saldoAnterior = (anterior['saldo'] as num?)?.toDouble() ?? 0.0;
 
     final payload = cliente.toSupabaseMap()..remove('saldo');
+    // Entrar/sair do Histórico Kyte é só pela RPC promover_cliente_kyte_
+    // historico. Sem isso, salvar a partir de um objeto desatualizado (ainda
+    // com canal kyte_historico + telefone placeholder) desfazia a promoção
+    // no banco — achado real 26/09 (Fabiana). Não mandar os campos mantém
+    // o que já está gravado, seja qual for o lado.
+    if (payload['canal_origem'] == canalKyteHistorico) payload.remove('canal_origem');
+    if (RegExp(r'^kyte-sem-numero-\d+$').hasMatch((payload['telefone'] as String? ?? '').trim())) {
+      payload.remove('telefone');
+    }
     await supabase.from('clientes').update(payload).eq('id', cliente.idCliente!);
 
     final delta = cliente.saldo - saldoAnterior;

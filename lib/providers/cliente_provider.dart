@@ -8,13 +8,41 @@ class ClientProvider with ChangeNotifier {
   final ClienteRepository _repository = ClienteRepository();
 
   List<Cliente> _clientes = [];
-  List<Cliente> _clientesFiltrados = [];
+  String _termoPesquisa = '';
   Cliente? _clienteSelecionado;
   String? _empresaId;
   bool _carregando = false;
   String? _erro;
 
-  List<Cliente> get clientes => _clientesFiltrados.isEmpty ? _clientes : _clientesFiltrados;
+  /// Lista COMPLETA e sempre atual — é a que qualquer tela deve usar pra
+  /// achar "a versão mais recente do cliente X". Antes esse getter devolvia
+  /// uma cópia filtrada congelada (`pesquisarClientes('')` fazia
+  /// `List.from(_clientes)`) que nunca recebia cliente novo/editado/
+  /// promovido — a tela de venda achava o cliente antigo e parecia que a
+  /// edição "não salvava" (achado real 26/09, bug recorrente).
+  List<Cliente> get clientes => _clientes;
+
+  /// Só pra exibição na tela de Clientes — calculado na hora a partir de
+  /// `_clientes`, nunca guardado, então nunca fica desatualizado.
+  List<Cliente> get clientesFiltrados {
+    if (_termoPesquisa.isEmpty) return _clientes;
+    return _clientes.where((cliente) {
+      // Todos os campos buscáveis viram um único texto — assim uma busca com
+      // várias palavras pode bater em campos diferentes (ex: "joao 999"
+      // encontrando pelo nome + parte do celular), não só um campo por vez.
+      final textoCompleto = [
+        cliente.nome,
+        cliente.celular,
+        cliente.email,
+        cliente.enderecoCompleto,
+        cliente.complemento,
+        cliente.cpf,
+        cliente.especies.join(' '),
+        cliente.observacao,
+      ].join(' ');
+      return contemTodasPalavras(textoCompleto, _termoPesquisa);
+    }).toList();
+  }
   Cliente? get clienteSelecionado => _clienteSelecionado;
   bool get carregando => _carregando;
   String? get erro => _erro;
@@ -68,13 +96,11 @@ class ClientProvider with ChangeNotifier {
     }
     try {
       await _repository.atualizar(clienteAtualizado);
-      final index = _clientes.indexWhere((c) => c.idCliente == clienteAtualizado.idCliente);
-      if (index != -1) {
-        _clientes[index] = clienteAtualizado;
-      } else {
-        _clientes.add(clienteAtualizado);
-      }
-      notifyListeners();
+      // Relê do banco em vez de confiar no objeto montado pela tela — ele
+      // não carrega campos que a tela não edita (authUserId, pessoaId,
+      // telefoneKyte, totais) e a cópia local ficava diferente do banco.
+      final salvo = await _repository.buscarPorId(clienteAtualizado.idCliente!) ?? clienteAtualizado;
+      substituirLocal(salvo);
     } catch (e) {
       debugPrint('Erro ao atualizar cliente: $e');
       rethrow;
@@ -104,27 +130,7 @@ class ClientProvider with ChangeNotifier {
   }
 
   void pesquisarClientes(String texto) {
-    if (texto.isEmpty) {
-      _clientesFiltrados = List.from(_clientes);
-    } else {
-      // Todos os campos buscáveis viram um único texto — assim uma busca com
-      // várias palavras pode bater em campos diferentes (ex: "joao 999"
-      // encontrando pelo nome + parte do celular), não só um campo por vez.
-      _clientesFiltrados = _clientes.where((cliente) {
-        final textoCompleto = [
-          cliente.nome,
-          cliente.celular,
-          cliente.email,
-          cliente.enderecoCompleto,
-          cliente.complemento,
-          cliente.cpf,
-          cliente.especies.join(' '),
-          cliente.observacao,
-        ].join(' ');
-        return contemTodasPalavras(textoCompleto, texto);
-      }).toList();
-    }
-
+    _termoPesquisa = texto;
     notifyListeners();
   }
 
@@ -140,6 +146,26 @@ class ClientProvider with ChangeNotifier {
     final index = _clientes.indexWhere((c) => c.idCliente == clienteId);
     if (index != -1) {
       _clienteSelecionado = _clientes[index];
+    }
+    notifyListeners();
+  }
+
+  /// Coloca/atualiza um cliente já salvo na lista em memória (sem ida ao
+  /// servidor) — usado depois de editar/promover, pra lista nunca ficar
+  /// atrás do banco.
+  void substituirLocal(Cliente cliente) {
+    final index = _clientes.indexWhere((c) => c.idCliente == cliente.idCliente);
+    // Mesmo critério de `ClienteRepository.listar()`: histórico Kyte não
+    // promovido não entra na lista normal.
+    if (cliente.canalOrigem == 'kyte_historico') {
+      if (index != -1) _clientes.removeAt(index);
+    } else if (index != -1) {
+      _clientes[index] = cliente;
+    } else {
+      _clientes.add(cliente);
+    }
+    if (_clienteSelecionado?.idCliente == cliente.idCliente) {
+      _clienteSelecionado = cliente;
     }
     notifyListeners();
   }
@@ -161,12 +187,21 @@ class ClientProvider with ChangeNotifier {
   }
 }
 
+const canalKyteHistorico = 'kyte_historico';
+
 /// Canais de origem do cliente (WhatsApp, Instagram, iFood, etc.), agora
 /// vindos do Supabase (tabela `canais_origem`, editável por empresa).
 Future<List<String>> carregarCanaisOrigem() async {
   try {
     final data = await supabase.from('canais_origem').select('nome').order('nome', ascending: true);
-    final canais = (data as List).map((row) => row['nome'] as String).toList();
+    final canais = (data as List)
+        .map((row) => row['nome'] as String)
+        // Marcador interno de cadastro consultivo, não um canal de verdade —
+        // escolher isso no formulário devolvia um cliente já promovido pro
+        // Histórico Kyte (entrou na tabela por engano em 11/09, via "Outro
+        // canal"). Só a RPC promover_cliente_kyte_historico mexe nisso.
+        .where((c) => c != canalKyteHistorico)
+        .toList();
     return canais.isNotEmpty ? canais : ['WhatsApp', 'Instagram', 'Ifood', 'Outro canal'];
   } catch (e) {
     debugPrint('Erro ao carregar canais: $e');
@@ -175,6 +210,7 @@ Future<List<String>> carregarCanaisOrigem() async {
 }
 
 Future<void> adicionarCanalOrigem(String canal, String empresaId) async {
+  if (canal == canalKyteHistorico) return;
   try {
     await supabase.from('canais_origem').upsert(
       {'nome': canal, 'empresa_id': empresaId},
