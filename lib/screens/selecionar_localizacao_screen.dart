@@ -1,14 +1,22 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart' as osm;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart' as ll;
 
 /// Tela pra escolher a localização exata de um cliente no mapa — usada
 /// quando o endereço por texto é ambíguo (ruas com nome repetido/numérico,
 /// tipo "Rua 7", que existem em vários bairros da mesma cidade). O usuário
 /// arrasta o pino ou busca um endereço, e a tela devolve as coordenadas
 /// exatas escolhidas.
+///
+/// No desktop (Windows/macOS/Linux) usa flutter_map + OpenStreetMap:
+/// google_maps_flutter só tem implementação pra Android/iOS/web e a tela
+/// não abria no app Windows (achado real 26/09). Mesmo mapa do site.
 class SelecionarLocalizacaoScreen extends StatefulWidget {
   final LatLng? posicaoInicial;
   final String? enderecoInicial;
@@ -25,6 +33,8 @@ class _SelecionarLocalizacaoScreenState extends State<SelecionarLocalizacaoScree
 
   final _buscaController = TextEditingController();
   GoogleMapController? _mapController;
+  final _osmController = osm.MapController();
+  static final bool _usarMapaOsm = !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
   LatLng _posicaoSelecionada = _posicaoPadrao;
   bool _carregandoBusca = false;
   bool _localizando = true;
@@ -47,7 +57,7 @@ class _SelecionarLocalizacaoScreenState extends State<SelecionarLocalizacaoScree
       final encontrado = await _geocodificarEndereco(widget.enderecoInicial!);
       if (encontrado != null && mounted) {
         setState(() => _posicaoSelecionada = encontrado);
-        _mapController?.moveCamera(CameraUpdate.newLatLng(encontrado));
+        _moverCamera(encontrado);
       }
     }
     if (mounted) setState(() => _localizando = false);
@@ -95,13 +105,62 @@ class _SelecionarLocalizacaoScreenState extends State<SelecionarLocalizacaoScree
       _posicaoSelecionada = encontrado;
       _alterado = true;
     });
-    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(encontrado, 17));
+    _moverCamera(encontrado, zoom: 17);
   }
 
   @override
   void dispose() {
     _buscaController.dispose();
     super.dispose();
+  }
+
+  void _moverCamera(LatLng posicao, {double? zoom}) {
+    if (_usarMapaOsm) {
+      // Antes do primeiro frame do mapa o controller ainda não existe —
+      // nesse caso o initialCenter (vindo de _posicaoSelecionada) já cobre.
+      try {
+        _osmController.move(ll.LatLng(posicao.latitude, posicao.longitude), zoom ?? _osmController.camera.zoom);
+      } catch (_) {}
+      return;
+    }
+    _mapController?.animateCamera(
+      zoom != null ? CameraUpdate.newLatLngZoom(posicao, zoom) : CameraUpdate.newLatLng(posicao),
+    );
+  }
+
+  void _marcar(LatLng posicao) => setState(() {
+        _posicaoSelecionada = posicao;
+        _alterado = true;
+      });
+
+  Widget _buildMapaOsm() {
+    final ponto = ll.LatLng(_posicaoSelecionada.latitude, _posicaoSelecionada.longitude);
+    return osm.FlutterMap(
+      mapController: _osmController,
+      options: osm.MapOptions(
+        initialCenter: ponto,
+        initialZoom: 16,
+        onTap: (_, p) => _marcar(LatLng(p.latitude, p.longitude)),
+      ),
+      children: [
+        osm.TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.gestor',
+        ),
+        osm.MarkerLayer(
+          markers: [
+            osm.Marker(
+              point: ponto,
+              width: 40,
+              height: 40,
+              alignment: Alignment.topCenter,
+              child: Icon(Icons.location_on, size: 40, color: Theme.of(context).colorScheme.primary),
+            ),
+          ],
+        ),
+        const osm.SimpleAttributionWidget(source: Text('OpenStreetMap')),
+      ],
+    );
   }
 
   void _confirmar() => Navigator.pop(context, _posicaoSelecionada);
@@ -149,25 +208,22 @@ class _SelecionarLocalizacaoScreenState extends State<SelecionarLocalizacaoScree
             ? const Center(child: CircularProgressIndicator())
             : Stack(
                 children: [
-                  GoogleMap(
-                    initialCameraPosition: CameraPosition(target: _posicaoSelecionada, zoom: 16),
-                    onMapCreated: (controller) => _mapController = controller,
-                    onTap: (posicao) => setState(() {
-                      _posicaoSelecionada = posicao;
-                      _alterado = true;
-                    }),
-                    markers: {
-                      Marker(
-                        markerId: const MarkerId('local-selecionado'),
-                        position: _posicaoSelecionada,
-                        draggable: true,
-                        onDragEnd: (posicao) => setState(() {
-                          _posicaoSelecionada = posicao;
-                          _alterado = true;
-                        }),
-                      ),
-                    },
-                  ),
+                  if (_usarMapaOsm)
+                    _buildMapaOsm()
+                  else
+                    GoogleMap(
+                      initialCameraPosition: CameraPosition(target: _posicaoSelecionada, zoom: 16),
+                      onMapCreated: (controller) => _mapController = controller,
+                      onTap: _marcar,
+                      markers: {
+                        Marker(
+                          markerId: const MarkerId('local-selecionado'),
+                          position: _posicaoSelecionada,
+                          draggable: true,
+                          onDragEnd: _marcar,
+                        ),
+                      },
+                    ),
                   Positioned(
                     top: 12,
                     left: 12,
@@ -219,7 +275,9 @@ class _SelecionarLocalizacaoScreenState extends State<SelecionarLocalizacaoScree
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      'Toque no mapa ou arraste o pino até o ponto certo.',
+                                      _usarMapaOsm
+                                          ? 'Clique no mapa no ponto certo (roda do mouse dá zoom).'
+                                          : 'Toque no mapa ou arraste o pino até o ponto certo.',
                                       style: TextStyle(
                                           fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                                     ),
