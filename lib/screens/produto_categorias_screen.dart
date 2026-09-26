@@ -277,6 +277,9 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
         actions: [
           TextButton(
             onPressed: _salvarEVoltar,
+            // Sem isso o texto sai na cor da marca sobre a AppBar da mesma
+            // cor (appBarTheme usa colorScheme.primary) — botão invisível.
+            style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onPrimary),
             child: Text("Salvar"),
           )
         ],

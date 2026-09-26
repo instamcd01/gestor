@@ -392,6 +392,22 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
                       ),
                     ],
                   ),
+                  if (_latitude != null && _longitude != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          Icon(Icons.location_on, size: 16, color: Theme.of(context).colorScheme.primary),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Ponto marcado no mapa — toque em Salvar pra gravar no cadastro.',
+                              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   Row(
                     children: [
                       Expanded(

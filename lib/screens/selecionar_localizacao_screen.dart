@@ -28,6 +28,8 @@ class _SelecionarLocalizacaoScreenState extends State<SelecionarLocalizacaoScree
   LatLng _posicaoSelecionada = _posicaoPadrao;
   bool _carregandoBusca = false;
   bool _localizando = true;
+  // Mexeu no pino e ainda não confirmou — voltar sem confirmar descarta.
+  bool _alterado = false;
 
   @override
   void initState() {
@@ -89,7 +91,10 @@ class _SelecionarLocalizacaoScreenState extends State<SelecionarLocalizacaoScree
       return;
     }
 
-    setState(() => _posicaoSelecionada = encontrado);
+    setState(() {
+      _posicaoSelecionada = encontrado;
+      _alterado = true;
+    });
     _mapController?.animateCamera(CameraUpdate.newLatLngZoom(encontrado, 17));
   }
 
@@ -99,91 +104,143 @@ class _SelecionarLocalizacaoScreenState extends State<SelecionarLocalizacaoScree
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Selecionar Localização'),
+  void _confirmar() => Navigator.pop(context, _posicaoSelecionada);
+
+  /// Voltar depois de mexer no pino, sem confirmar, perdia a escolha em
+  /// silêncio — e o "Confirmar" antigo (TextButton na AppBar) ficava
+  /// invisível, cor da marca sobre a AppBar da mesma cor (achado real
+  /// 26/09: "escolhi no mapa e não salvou").
+  Future<void> _aoTentarVoltar() async {
+    final acao = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Usar essa localização?'),
+        content: const Text('Você mudou o ponto no mapa e ainda não confirmou.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, _posicaoSelecionada),
-            child: const Text('Confirmar'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, 'descartar'), child: const Text('Descartar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, 'confirmar'), child: const Text('Usar localização')),
         ],
       ),
-      body: _localizando
-          ? const Center(child: CircularProgressIndicator())
-          : Stack(
-              children: [
-                GoogleMap(
-                  initialCameraPosition: CameraPosition(target: _posicaoSelecionada, zoom: 16),
-                  onMapCreated: (controller) => _mapController = controller,
-                  onTap: (posicao) => setState(() => _posicaoSelecionada = posicao),
-                  markers: {
-                    Marker(
-                      markerId: const MarkerId('local-selecionado'),
-                      position: _posicaoSelecionada,
-                      draggable: true,
-                      onDragEnd: (posicao) => setState(() => _posicaoSelecionada = posicao),
-                    ),
-                  },
-                ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  right: 12,
-                  child: Material(
-                    elevation: 3,
-                    borderRadius: BorderRadius.circular(8),
-                    child: TextField(
-                      controller: _buscaController,
-                      decoration: InputDecoration(
-                        hintText: 'Buscar endereço no mapa',
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: _carregandoBusca
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                              )
-                            : IconButton(
-                                icon: const Icon(Icons.arrow_forward),
-                                onPressed: _buscarEIrParaEndereco,
-                              ),
-                      ),
-                      onSubmitted: (_) => _buscarEIrParaEndereco(),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  bottom: 16,
-                  left: 16,
-                  right: 16,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline, size: 18, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Toque no mapa ou arraste o pino até o ponto certo.',
-                              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+    );
+    if (!mounted) return;
+    if (acao == 'confirmar') _confirmar();
+    if (acao == 'descartar') Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_alterado,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _aoTentarVoltar();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Selecionar Localização'),
+          actions: [
+            IconButton(
+              tooltip: 'Confirmar localização',
+              onPressed: _confirmar,
+              icon: const Icon(Icons.check),
             ),
+          ],
+        ),
+        body: _localizando
+            ? const Center(child: CircularProgressIndicator())
+            : Stack(
+                children: [
+                  GoogleMap(
+                    initialCameraPosition: CameraPosition(target: _posicaoSelecionada, zoom: 16),
+                    onMapCreated: (controller) => _mapController = controller,
+                    onTap: (posicao) => setState(() {
+                      _posicaoSelecionada = posicao;
+                      _alterado = true;
+                    }),
+                    markers: {
+                      Marker(
+                        markerId: const MarkerId('local-selecionado'),
+                        position: _posicaoSelecionada,
+                        draggable: true,
+                        onDragEnd: (posicao) => setState(() {
+                          _posicaoSelecionada = posicao;
+                          _alterado = true;
+                        }),
+                      ),
+                    },
+                  ),
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    right: 12,
+                    child: Material(
+                      elevation: 3,
+                      borderRadius: BorderRadius.circular(8),
+                      child: TextField(
+                        controller: _buscaController,
+                        decoration: InputDecoration(
+                          hintText: 'Buscar endereço no mapa',
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _carregandoBusca
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                )
+                              : IconButton(
+                                  icon: const Icon(Icons.arrow_forward),
+                                  onPressed: _buscarEIrParaEndereco,
+                                ),
+                        ),
+                        onSubmitted: (_) => _buscarEIrParaEndereco(),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 16,
+                    left: 16,
+                    right: 16,
+                    child: SafeArea(
+                      top: false,
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.info_outline, size: 18, color: Colors.grey),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Toque no mapa ou arraste o pino até o ponto certo.',
+                                      style: TextStyle(
+                                          fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              FilledButton.icon(
+                                onPressed: _confirmar,
+                                icon: const Icon(Icons.check),
+                                label: const Text('Confirmar localização'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

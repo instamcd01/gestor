@@ -226,7 +226,13 @@ class _FabricanteScreenState extends State<FabricanteScreen> {
         title: const Text('Fabricantes'),
         actions: [
           if (widget.fabricanteSelecionado != null)
-            TextButton(onPressed: _salvarEVoltar, child: const Text('Salvar')),
+            TextButton(
+              onPressed: _salvarEVoltar,
+              // Sem isso o texto sai na cor da marca sobre a AppBar da mesma
+              // cor (appBarTheme usa colorScheme.primary) — botão invisível.
+              style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onPrimary),
+              child: const Text('Salvar'),
+            ),
         ],
       ),
       body: Column(
