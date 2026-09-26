@@ -114,6 +114,30 @@ class ClienteRepository {
     await supabase.rpc('promover_cliente_kyte_historico', params: {'p_cliente_id': clienteId});
   }
 
+  /// Payload do UPDATE genérico de `atualizar()` — separado (e puro) pra
+  /// poder ser testado sem banco.
+  ///
+  /// `saldo` nunca vai (movimentação passa por registrar_movimentacao_saldo).
+  ///
+  /// Entrar/sair do Histórico Kyte é só pela RPC promover_cliente_kyte_
+  /// historico. Quando o objeto ainda diz `kyte_historico` (cadastro não
+  /// promovido, OU um objeto desatualizado de antes da promoção — achado
+  /// real 26/09, Fabiana), não manda `canal_origem` nem `telefone`: o banco
+  /// mantém o que já tem. Isso preserva o desenho do consultivo Kyte
+  /// (`telefone` = placeholder único, número real só em `telefone_kyte`,
+  /// pra entrar_ou_criar_cliente nunca casar login com ele) e impede que
+  /// uma tela velha desfaça uma promoção já feita.
+  static Map<String, dynamic> payloadAtualizacao(Cliente cliente) {
+    final payload = cliente.toSupabaseMap()..remove('saldo');
+    final telefone = (payload['telefone'] as String? ?? '').trim();
+    if (payload['canal_origem'] == canalKyteHistorico ||
+        RegExp(r'^kyte-sem-numero-\d+$').hasMatch(telefone)) {
+      payload.remove('canal_origem');
+      payload.remove('telefone');
+    }
+    return payload;
+  }
+
   Future<void> atualizar(Cliente cliente) async {
     if (cliente.idCliente == null) {
       throw ArgumentError('Cliente sem id não pode ser atualizado');
@@ -128,16 +152,7 @@ class ClienteRepository {
         .single();
     final saldoAnterior = (anterior['saldo'] as num?)?.toDouble() ?? 0.0;
 
-    final payload = cliente.toSupabaseMap()..remove('saldo');
-    // Entrar/sair do Histórico Kyte é só pela RPC promover_cliente_kyte_
-    // historico. Sem isso, salvar a partir de um objeto desatualizado (ainda
-    // com canal kyte_historico + telefone placeholder) desfazia a promoção
-    // no banco — achado real 26/09 (Fabiana). Não mandar os campos mantém
-    // o que já está gravado, seja qual for o lado.
-    if (payload['canal_origem'] == canalKyteHistorico) payload.remove('canal_origem');
-    if (RegExp(r'^kyte-sem-numero-\d+$').hasMatch((payload['telefone'] as String? ?? '').trim())) {
-      payload.remove('telefone');
-    }
+    final payload = payloadAtualizacao(cliente);
     await supabase.from('clientes').update(payload).eq('id', cliente.idCliente!);
 
     final delta = cliente.saldo - saldoAnterior;

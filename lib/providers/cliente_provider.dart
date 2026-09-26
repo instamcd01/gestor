@@ -84,6 +84,12 @@ class ClientProvider with ChangeNotifier {
     }
   }
 
+  @visibleForTesting
+  void definirClientesParaTeste(List<Cliente> clientes) {
+    _clientes = clientes;
+    notifyListeners();
+  }
+
   /// Mantido pelo nome antigo por compatibilidade com telas existentes.
   Future<void> carregarClientesDoFirestore() async {
     await carregarClientes();

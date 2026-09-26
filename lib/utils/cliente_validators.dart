@@ -52,6 +52,42 @@ class ClienteValidators {
     return null;
   }
 
+  /// O campo de celular usa máscara de 11 dígitos (TelefoneInputFormatter),
+  /// mas parte dos telefones está gravada com DDI ("5521999999999") —
+  /// mostrado cru, qualquer tecla no campo fazia a máscara cortar errado
+  /// ("(55) 21999-9999"). Mostra no formato da máscara, sem o 55.
+  static String celularParaEdicao(String celular) {
+    if (_placeholderKyte.hasMatch(celular.trim())) return celular;
+    final d = normalizarTelefoneBr(celular);
+    if (d.length == 11) return '(${d.substring(0, 2)}) ${d.substring(2, 7)}-${d.substring(7)}';
+    if (d.length == 10) return '(${d.substring(0, 2)}) ${d.substring(2, 6)}-${d.substring(6)}';
+    return celular; // formato inesperado — não mexe
+  }
+
+  /// Valor de `clientes.telefone` a gravar depois de editar.
+  ///
+  /// - Número não mudou → devolve o ORIGINAL exato (formato incluso).
+  /// - Mudou e o original estava no formato "55"+dígitos → grava no mesmo
+  ///   formato. Esse formato não é acaso: `finalizar_pedido_whatsapp`/
+  ///   `adicionar_ao_carrinho_whatsapp` acham o cliente por
+  ///   `telefone = p_telefone` EXATO, e o WhatsApp manda "5521...". É o
+  ///   formato que `promover_cliente_kyte_historico` e o login do site
+  ///   gravam. Gravar "(21) ..." aí fazia o WhatsApp deixar de achar o
+  ///   cliente.
+  /// - Senão mantém o que foi digitado (padrão do cadastro manual do app).
+  static String celularParaSalvar({required String original, required String digitado}) {
+    final digitadoLimpo = digitado.trim();
+    if (normalizarTelefoneBr(digitadoLimpo) == normalizarTelefoneBr(original)) return original;
+    final originalDigitos = original.replaceAll(RegExp(r'[^0-9]'), '');
+    final originalFormatoDdi = original.trim() == originalDigitos &&
+        originalDigitos.startsWith('55') &&
+        (originalDigitos.length == 12 || originalDigitos.length == 13);
+    if (originalFormatoDdi) return normalizarTelefoneParaAuth(digitadoLimpo);
+    return digitadoLimpo;
+  }
+
+  static final _placeholderKyte = RegExp(r'^kyte-sem-numero-\d+$');
+
   /// E-mail: opcional, mas se preenchido precisa ter um formato válido.
   static String? email(String? value) {
     if (value == null || value.trim().isEmpty) return null;

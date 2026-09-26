@@ -8,7 +8,6 @@ import '../models/cliente.dart';
 import '../models/pet.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
-import '../utils/telefone_utils.dart';
 import '../services/cep_service.dart';
 import '../services/distancia_service.dart';
 import '../utils/cliente_validators.dart';
@@ -72,7 +71,7 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     super.initState();
     final cliente = widget.clienteSelecionado;
     _nomeController = TextEditingController(text: cliente.nome);
-    _celularController = TextEditingController(text: _celularParaEdicao(cliente.celular));
+    _celularController = TextEditingController(text: ClienteValidators.celularParaEdicao(cliente.celular));
     _enderecoController = TextEditingController(text: cliente.endereco);
     _numeroController = TextEditingController(text: cliente.numero);
     _bairroController = TextEditingController(text: cliente.bairro);
@@ -288,26 +287,6 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     });
   }
 
-  /// O campo usa máscara de 11 dígitos (TelefoneInputFormatter), mas parte
-  /// dos telefones está gravada com DDI ("5521999999999") — mostrado cru,
-  /// qualquer tecla no campo fazia a máscara cortar errado ("(55) 21999-
-  /// 9999"). Mostra já no formato da máscara, sem o 55.
-  static String _celularParaEdicao(String celular) {
-    final d = normalizarTelefoneBr(celular);
-    if (d.length == 11) return '(${d.substring(0, 2)}) ${d.substring(2, 7)}-${d.substring(7)}';
-    if (d.length == 10) return '(${d.substring(0, 2)}) ${d.substring(2, 6)}-${d.substring(6)}';
-    return celular; // placeholder Kyte ou formato inesperado — não mexe
-  }
-
-  /// Número não mudou → mantém exatamente o valor que já estava gravado
-  /// (não troca "5521..." por "(21) ..." só por abrir e salvar a tela).
-  String _celularParaSalvar() {
-    final original = widget.clienteSelecionado.celular;
-    final digitado = _celularController.text.trim();
-    if (normalizarTelefoneBr(digitado) == normalizarTelefoneBr(original)) return original;
-    return digitado;
-  }
-
   /// Monta o Cliente atualizado com os dados do formulário + a lista de
   /// pets atual (que pode já ter sido mexida sem o usuário ter apertado
   /// "Salvar" ainda — ex: acabou de adicionar um pet).
@@ -330,7 +309,10 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
     return Cliente(
       idCliente: widget.clienteSelecionado.idCliente,
       nome: _nomeController.text.trim(),
-      celular: _celularParaSalvar(),
+      celular: ClienteValidators.celularParaSalvar(
+        original: widget.clienteSelecionado.celular,
+        digitado: _celularController.text,
+      ),
       email: _emailController.text.trim(),
       endereco: _enderecoController.text.trim(),
       numero: _numeroController.text.trim(),
@@ -486,13 +468,29 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
               titulo: 'Dados do cliente',
               children: [
                 _buildTextField('Nome', _nomeController, validator: ClienteValidators.nome),
-                _buildTextField(
-                  'Celular',
-                  _celularController,
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: [TelefoneInputFormatter()],
-                  validator: ClienteValidators.celular,
-                ),
+                if (widget.clienteSelecionado.canalOrigem == canalKyteHistorico)
+                  // Cadastro consultivo do Kyte: `telefone` é um placeholder
+                  // de propósito (login do site nunca pode casar com ele) e
+                  // o número real mora em `telefone_kyte`. Trocar o número
+                  // aqui não é salvo (ver ClienteRepository.payloadAtualizacao)
+                  // — o caminho certo é "Usar este cadastro".
+                  TextFormField(
+                    initialValue: widget.clienteSelecionado.telefoneKyte ?? 'sem telefone',
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Celular (Histórico Kyte)',
+                      helperText: 'Pra usar/alterar o número, toque em "Usar este cadastro" na ficha do cliente.',
+                      helperMaxLines: 2,
+                    ),
+                  )
+                else
+                  _buildTextField(
+                    'Celular',
+                    _celularController,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [TelefoneInputFormatter()],
+                    validator: ClienteValidators.celular,
+                  ),
                 _buildTextField('Email', _emailController,
                     keyboardType: TextInputType.emailAddress, validator: ClienteValidators.email),
                 _buildTextField(
