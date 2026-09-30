@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -96,6 +97,11 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   List<ItemEntrada> _itensResolvidos = [];
   Fornecedor? _fornecedorExistente;
   Map<String, String> _produtoIdPorCodigoFornecedor = {};
+  // Embalagem já ensinada por código do fornecedor (ex.: caixa com 12) e a
+  // vigente por item desta nota — 1 (ausente) = sem conversão.
+  Map<String, int> _embalagemPorCodigoFornecedor = {};
+  final Map<int, int> _embalagemPorItem = {};
+  final Map<int, TextEditingController> _embalagemControllers = {};
   final Map<int, TextEditingController> _validadeControllers = {};
   final Map<int, TextEditingController> _quantidadeControllers = {};
   final Map<int, TextEditingController> _custoControllers = {};
@@ -152,12 +158,19 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   }
 
   void _limparControllers() {
-    for (final c in [..._validadeControllers.values, ..._quantidadeControllers.values, ..._custoControllers.values]) {
+    for (final c in [
+      ..._validadeControllers.values,
+      ..._quantidadeControllers.values,
+      ..._custoControllers.values,
+      ..._embalagemControllers.values,
+    ]) {
       c.dispose();
     }
     _validadeControllers.clear();
     _quantidadeControllers.clear();
     _custoControllers.clear();
+    _embalagemControllers.clear();
+    _embalagemPorItem.clear();
     _itensComValorManual.clear();
   }
 
@@ -175,6 +188,13 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     );
   }
 
+  TextEditingController _controllerEmbalagem(int index) {
+    return _embalagemControllers.putIfAbsent(
+      index,
+      () => TextEditingController(text: '${_embalagemPorItem[index] ?? 1}'),
+    );
+  }
+
   TextEditingController _controllerCusto(int index) {
     return _custoControllers.putIfAbsent(
       index,
@@ -187,7 +207,10 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   /// produtoId vinculado, lote/validade digitados) e o fator de custo
   /// vigente — assim reaplicar um novo fator nunca perde vínculo/validade
   /// já preenchidos, e nunca acumula arredondamento de fator sobre fator.
-  ItemEntrada _comFator(ItemEntrada base, ItemEntrada atual, double fator) {
+  /// [embalagem] converte a unidade faturada pela nota (ex.: caixa com 12)
+  /// na unidade vendida: quantidade × embalagem, custo ÷ embalagem — o
+  /// valor total da linha não muda.
+  ItemEntrada _comFator(ItemEntrada base, ItemEntrada atual, double fator, {int embalagem = 1}) {
     return ItemEntrada(
       id: atual.id,
       produtoId: atual.produtoId,
@@ -195,8 +218,8 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       descricaoNfe: base.descricaoNfe,
       ncm: base.ncm,
       codigoFornecedor: base.codigoFornecedor,
-      quantidade: base.quantidade,
-      custoUnitario: base.custoUnitario * fator,
+      quantidade: base.quantidade * embalagem,
+      custoUnitario: base.custoUnitario * fator / embalagem,
       valorTotal: base.valorTotal * fator,
       numeroLote: atual.numeroLote,
       dataFabricacao: atual.dataFabricacao,
@@ -217,7 +240,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     setState(() {
       for (var i = 0; i < _itensResolvidos.length; i++) {
         if (_itensComValorManual.contains(i)) continue;
-        _itensResolvidos[i] = _comFator(nfe.itens[i], _itensResolvidos[i], novoFator);
+        _itensResolvidos[i] = _comFator(nfe.itens[i], _itensResolvidos[i], novoFator, embalagem: _embalagemPorItem[i] ?? 1);
         _custoControllers[i]?.text = ProdutoValidators.formatarMoeda(_itensResolvidos[i].custoUnitario);
       }
     });
@@ -254,16 +277,23 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   /// fornecedor (mesma coluna usada pela leitura de cotação em PDF, ver
   /// `ConferenciaEspelhoScreen`). Falha aqui não trava a importação — só
   /// cai pro casamento por EAN de sempre.
-  Future<Map<String, String>> _carregarCodigosFornecedor(String? fornecedorId) async {
-    if (fornecedorId == null) return {};
+  Future<({Map<String, String> produtos, Map<String, int> embalagens})> _carregarCodigosFornecedor(
+    String? fornecedorId,
+  ) async {
+    const vazio = (produtos: <String, String>{}, embalagens: <String, int>{});
+    if (fornecedorId == null) return vazio;
     try {
       final vinculos = await ProdutoFornecedorRepository().listarPorFornecedor(fornecedorId);
-      return {
-        for (final v in vinculos)
-          if ((v.codigoProdutoFornecedor ?? '').trim().isNotEmpty) v.codigoProdutoFornecedor!.trim(): v.produtoId,
-      };
+      final comCodigo = vinculos.where((v) => (v.codigoProdutoFornecedor ?? '').trim().isNotEmpty);
+      return (
+        produtos: {for (final v in comCodigo) v.codigoProdutoFornecedor!.trim(): v.produtoId},
+        embalagens: {
+          for (final v in comCodigo)
+            if ((v.unidadesPorEmbalagem ?? 1) > 1) v.codigoProdutoFornecedor!.trim(): v.unidadesPorEmbalagem!,
+        },
+      );
     } catch (_) {
-      return {};
+      return vazio;
     }
   }
 
@@ -367,9 +397,17 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       _fatorController.text = _formatarFator(fator);
       setState(() {
         _nfe = nfe;
-        _itensResolvidos = [for (final item in nfe.itens) _comFator(item, item, fator)];
         _fornecedorExistente = fornecedorExistente;
-        _produtoIdPorCodigoFornecedor = codigosFornecedor;
+        _produtoIdPorCodigoFornecedor = codigosFornecedor.produtos;
+        _embalagemPorCodigoFornecedor = codigosFornecedor.embalagens;
+        for (var i = 0; i < nfe.itens.length; i++) {
+          final embalagem = _embalagemPorCodigoFornecedor[nfe.itens[i].codigoFornecedor?.trim() ?? ''];
+          if (embalagem != null) _embalagemPorItem[i] = embalagem;
+        }
+        _itensResolvidos = [
+          for (var i = 0; i < nfe.itens.length; i++)
+            _comFator(nfe.itens[i], nfe.itens[i], fator, embalagem: _embalagemPorItem[i] ?? 1),
+        ];
         _processando = false;
       });
       _recasarPendentes(produtoProvider.produtos);
@@ -466,6 +504,25 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     // parciais não mexem no item (nem apagam uma validade já preenchida).
     if (data == null) return;
     _itensResolvidos[index] = item.copyWith(dataValidade: data, dataValidadeDefinir: true);
+  }
+
+  /// Usuário informou quantas unidades vêm em 1 unidade da nota (ex.: nota
+  /// fatura a caixa, loja vende o sachê) — recalcula quantidade/custo a
+  /// partir do valor original da nota (descarta edição manual anterior
+  /// desse item, que era justamente o contorno pra isso) e, ao confirmar a
+  /// importação, grava no vínculo pra próxima nota já vir convertida.
+  void _definirEmbalagem(int index, String texto) {
+    final nfe = _nfe;
+    final unidades = int.tryParse(texto.trim());
+    if (nfe == null || unidades == null || unidades < 1) return;
+    final fator = ProdutoValidators.parseNumero(_fatorController.text) ?? 1.0;
+    setState(() {
+      _embalagemPorItem[index] = unidades;
+      _itensComValorManual.remove(index);
+      _itensResolvidos[index] = _comFator(nfe.itens[index], _itensResolvidos[index], fator, embalagem: unidades);
+      _quantidadeControllers[index]?.text = _formatarQuantidade(_itensResolvidos[index].quantidade);
+      _custoControllers[index]?.text = ProdutoValidators.formatarMoeda(_itensResolvidos[index].custoUnitario);
+    });
   }
 
   /// Recalcula `valorTotal` como quantidade × custo sempre que um dos dois
@@ -615,6 +672,24 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             empresaId: empresaId,
             codigo: codigo,
             custoUnitarioFallback: item.custoUnitario,
+          );
+        }
+
+        // Embalagem (caixa → unidade) só vale casada pelo código do
+        // fornecedor: é ele que identifica "essa linha da nota é a caixa".
+        for (var i = 0; i < _itensResolvidos.length; i++) {
+          final item = _itensResolvidos[i];
+          final codigo = item.codigoFornecedor?.trim() ?? '';
+          if (!item.casado || codigo.isEmpty) continue;
+          final embalagem = _embalagemPorItem[i] ?? 1;
+          final jaEnsinada = _produtoIdPorCodigoFornecedor[codigo] == item.produtoId
+              ? (_embalagemPorCodigoFornecedor[codigo] ?? 1)
+              : 1;
+          if (embalagem == jaEnsinada) continue;
+          await produtoFornecedorRepo.definirUnidadesPorEmbalagem(
+            produtoId: item.produtoId!,
+            fornecedorId: fornecedorId,
+            unidades: embalagem,
           );
         }
       }
@@ -1073,6 +1148,15 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                           style: TextStyle(color: colorScheme.error, fontSize: 12.5)))
                   : const SizedBox.shrink(),
             ),
+            if ((_embalagemPorItem[index] ?? 1) > 1 && _nfe != null) ...[
+              const SizedBox(height: 10),
+              AvisoBanner(
+                texto: 'Nota fatura ${_formatarQuantidade(_nfe!.itens[index].quantidade)} embalagem(ns) com '
+                    '${_embalagemPorItem[index]} un. cada → entram ${_formatarQuantidade(item.quantidade)} un. '
+                    'a ${_moeda.format(item.custoUnitario)} cada.',
+                tipo: TipoAviso.info,
+              ),
+            ],
             if (avisoCusto != null) ...[
               const SizedBox(height: 10),
               AvisoBanner(texto: avisoCusto.texto, tipo: avisoCusto.tipo),
@@ -1123,6 +1207,21 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     inputFormatters: [MoedaInputFormatter()],
                     onChanged: (_) => _digitarQuantidadeOuCusto(index),
+                  ),
+                ),
+                SizedBox(
+                  width: 90,
+                  child: TextFormField(
+                    controller: _controllerEmbalagem(index),
+                    decoration: const InputDecoration(
+                      labelText: 'Un./emb.',
+                      helperText: 'cx com N',
+                      isDense: true,
+                    ),
+                    style: const TextStyle(fontSize: 13),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: (texto) => _definirEmbalagem(index, texto),
                   ),
                 ),
                 SizedBox(

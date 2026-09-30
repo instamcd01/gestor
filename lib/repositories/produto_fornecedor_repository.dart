@@ -183,6 +183,128 @@ class ProdutoFornecedorRepository {
     );
   }
 
+  /// Vincula o código interno do fornecedor a um produto já cadastrado —
+  /// atualiza o vínculo existente entre eles se já houver um (sem mexer no
+  /// custo já cadastrado, que continua sendo mantido manualmente), ou cria
+  /// um vínculo novo usando [custoUnitarioFallback] (o preço lido do PDF)
+  /// como ponto de partida quando esse produto ainda nunca foi vinculado a
+  /// esse fornecedor. Usado pra "ensinar" a leitura automática de PDF de
+  /// cotação (ver `parseCotacaoTargetSistemasTabela`): da próxima vez que a
+  /// mesma cotação desse fornecedor vier, o item já casa sozinho pelo
+  /// código, sem precisar vincular nada de novo.
+  ///
+  /// Libera esse código de qualquer OUTRO produto do mesmo fornecedor que
+  /// já estivesse com ele antes de gravar aqui — sem isso, corrigir um
+  /// vínculo feito errado (ex: escolheu o produto errado na busca) deixaria
+  /// os dois produtos "donos" do mesmo código, e o próximo PDF lido casaria
+  /// com um dos dois de forma imprevisível. Corrigir um vínculo errado é só
+  /// vincular esse mesmo código de novo, agora no produto certo.
+  Future<ProdutoFornecedor> vincularCodigoFornecedor({
+    required String produtoId,
+    required String fornecedorId,
+    required String empresaId,
+    required String codigo,
+    required double custoUnitarioFallback,
+  }) async {
+    await supabase
+        .from('produto_fornecedores')
+        .update({'codigo_produto_fornecedor': null})
+        .eq('fornecedor_id', fornecedorId)
+        .eq('codigo_produto_fornecedor', codigo)
+        .neq('produto_id', produtoId);
+
+    final existentes = await listarPorProduto(produtoId);
+    final match = existentes.where((v) => v.fornecedorId == fornecedorId).toList();
+    if (match.isNotEmpty) {
+      final vinculo = match.first;
+      await supabase.from('produto_fornecedores').update({'codigo_produto_fornecedor': codigo}).eq('id', vinculo.id!);
+      return await _buscarPorId(vinculo.id!);
+    }
+    return await criar(
+      ProdutoFornecedor(
+        produtoId: produtoId,
+        fornecedorId: fornecedorId,
+        custoUnitario: custoUnitarioFallback,
+        codigoProdutoFornecedor: codigo,
+        principal: existentes.isEmpty,
+      ),
+      empresaId: empresaId,
+    );
+  }
+
+  /// Grava quantas unidades vêm em 1 unidade faturada na NF-e desse
+  /// fornecedor (ex.: caixa com 12) — ensinado na importação de NF-e, pra
+  /// próxima nota já converter caixa→unidade sozinha. 1 ou menos = sem
+  /// conversão (grava null). Só atualiza vínculo já existente: na
+  /// importação ele sempre acabou de ser criado/atualizado antes disso.
+  Future<void> definirUnidadesPorEmbalagem({
+    required String produtoId,
+    required String fornecedorId,
+    required int unidades,
+  }) async {
+    await supabase
+        .from('produto_fornecedores')
+        .update({'unidades_por_embalagem': unidades > 1 ? unidades : null})
+        .eq('produto_id', produtoId)
+        .eq('fornecedor_id', fornecedorId);
+  }
+
+  /// Move um vínculo inteiro (custo, código do fornecedor, faixas de
+  /// desconto) pra outro produto — usado quando o vínculo foi feito no
+  /// produto errado (ex: veio de uma cotação lida automaticamente e o
+  /// usuário escolheu o produto errado na busca, ver
+  /// `ConferenciaEspelhoScreen._vincularExistente`). Não dá só pra fazer
+  /// update do `produto_id`: a constraint única é (produto_id,
+  /// fornecedor_id), então se o produto novo já comprar desse fornecedor,
+  /// o vínculo antigo é fundido no que já existe (o código do fornecedor
+  /// prevalece, mas o custo/faixas do vínculo já existente no destino são
+  /// mantidos — presumidamente mais atualizados) em vez de duplicar.
+  Future<ProdutoFornecedor> trocarProdutoDoVinculo({
+    required ProdutoFornecedor vinculoAtual,
+    required String novoProdutoId,
+    required String empresaId,
+  }) async {
+    if (vinculoAtual.produtoId == novoProdutoId) return vinculoAtual;
+
+    final existentesNovo = await listarPorProduto(novoProdutoId);
+    final jaTinha = existentesNovo.where((v) => v.fornecedorId == vinculoAtual.fornecedorId).toList();
+
+    final ProdutoFornecedor resultado;
+    if (jaTinha.isNotEmpty) {
+      final destino = jaTinha.first;
+      resultado = await atualizar(ProdutoFornecedor(
+        id: destino.id,
+        produtoId: destino.produtoId,
+        fornecedorId: destino.fornecedorId,
+        custoUnitario: destino.custoUnitario,
+        codigoProdutoFornecedor: vinculoAtual.codigoProdutoFornecedor ?? destino.codigoProdutoFornecedor,
+        multiploCompra: destino.multiploCompra,
+        unidadesPorEmbalagem: vinculoAtual.unidadesPorEmbalagem ?? destino.unidadesPorEmbalagem,
+        principal: destino.principal,
+        ativo: destino.ativo,
+        faixasDesconto: destino.faixasDesconto,
+      ));
+    } else {
+      resultado = await criar(
+        ProdutoFornecedor(
+          produtoId: novoProdutoId,
+          fornecedorId: vinculoAtual.fornecedorId,
+          custoUnitario: vinculoAtual.custoUnitario,
+          codigoProdutoFornecedor: vinculoAtual.codigoProdutoFornecedor,
+          multiploCompra: vinculoAtual.multiploCompra,
+          unidadesPorEmbalagem: vinculoAtual.unidadesPorEmbalagem,
+          // Não herda "principal" — decidir isso é do produto de destino,
+          // não queremos desmarcar sem querer o principal certo dele.
+          faixasDesconto: vinculoAtual.faixasDesconto,
+        ),
+        empresaId: empresaId,
+      );
+    }
+
+    await excluir(vinculoAtual.id!);
+    return resultado;
+  }
+
   Future<ProdutoFornecedor> _buscarPorId(String id) async {
     final row = await supabase.from('produto_fornecedores').select(_selectCompleto).eq('id', id).single();
     return ProdutoFornecedor.fromSupabase(row);

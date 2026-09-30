@@ -48,6 +48,12 @@ class ProdutoFornecedor {
   final double custoUnitario;
   final String? codigoProdutoFornecedor;
   final int? multiploCompra;
+
+  /// Quantas unidades do produto vêm em 1 unidade faturada na NF-e desse
+  /// fornecedor (ex.: caixa com 12 sachês faturada como 1). Null = sem
+  /// conversão. A importação de NF-e multiplica a quantidade e divide o
+  /// custo por esse número quando o item casa pelo código do fornecedor.
+  final int? unidadesPorEmbalagem;
   final bool principal;
   final bool ativo;
   final List<FaixaDescontoProdutoFornecedor> faixasDesconto;
@@ -62,6 +68,7 @@ class ProdutoFornecedor {
     required this.custoUnitario,
     this.codigoProdutoFornecedor,
     this.multiploCompra,
+    this.unidadesPorEmbalagem,
     this.principal = false,
     this.ativo = true,
     this.faixasDesconto = const [],
@@ -116,6 +123,7 @@ class ProdutoFornecedor {
       custoUnitario: (row['custo_unitario'] as num?)?.toDouble() ?? 0.0,
       codigoProdutoFornecedor: row['codigo_produto_fornecedor']?.toString(),
       multiploCompra: (row['multiplo_compra'] as num?)?.toInt(),
+      unidadesPorEmbalagem: (row['unidades_por_embalagem'] as num?)?.toInt(),
       principal: row['principal'] as bool? ?? false,
       ativo: row['ativo'] as bool? ?? true,
       faixasDesconto: faixasRows
@@ -132,6 +140,9 @@ class ProdutoFornecedor {
       'custo_unitario': custoUnitario,
       'codigo_produto_fornecedor': codigoProdutoFornecedor,
       'multiplo_compra': multiploCompra,
+      // Só grava quando informado: telas que editam o vínculo sem conhecer
+      // esse campo não podem apagar a embalagem ensinada na entrada de NF-e.
+      if (unidadesPorEmbalagem != null) 'unidades_por_embalagem': unidadesPorEmbalagem,
       'principal': principal,
       'ativo': ativo,
     };
