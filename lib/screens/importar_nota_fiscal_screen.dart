@@ -1213,11 +1213,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                   width: 90,
                   child: TextFormField(
                     controller: _controllerEmbalagem(index),
-                    decoration: const InputDecoration(
-                      labelText: 'Un./emb.',
-                      helperText: 'cx com N',
-                      isDense: true,
-                    ),
+                    decoration: const InputDecoration(labelText: 'Un. por cx', isDense: true),
                     style: const TextStyle(fontSize: 13),
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
