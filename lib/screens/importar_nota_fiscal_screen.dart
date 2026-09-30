@@ -115,6 +115,39 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
 
   bool get _temPreVia => _nfe != null;
 
+  /// Nota de bonificação (compre 1 ganhe 1, brinde): itens entram no
+  /// estoque sem custo — o valor da nota é só fiscal, não é pago.
+  bool get _ehBonificacao => _nfe?.bonificacao ?? false;
+
+  /// Custo médio de cada produto depois de somar as unidades grátis desta
+  /// nota ao estoque que já existe: (estoque × custo atual) ÷ (estoque +
+  /// unidades grátis). Produto sem estoque pago (≤ 0) fica de fora — não
+  /// tem de onde tirar a média; normalmente é porque a nota de compra
+  /// ainda não foi importada. Agrupa por produto (mesma linha repetida na
+  /// nota soma as quantidades antes da conta, senão a média seria feita 2x).
+  ({Map<String, double> medios, Set<String> semEstoquePago}) _custosMediosBonificacao(
+    Map<String, Produto> produtos,
+  ) {
+    final gratisPorProduto = <String, double>{};
+    for (final item in _itensResolvidos) {
+      if (!item.casado || item.quantidade <= 0) continue;
+      gratisPorProduto[item.produtoId!] = (gratisPorProduto[item.produtoId!] ?? 0) + item.quantidade;
+    }
+    final medios = <String, double>{};
+    final semEstoquePago = <String>{};
+    gratisPorProduto.forEach((produtoId, gratis) {
+      final produto = produtos[produtoId];
+      if (produto == null) return;
+      final estoque = produto.estoqueAtual;
+      if (estoque <= 0) {
+        semEstoquePago.add(produtoId);
+        return;
+      }
+      medios[produtoId] = ((estoque * produto.custo) / (estoque + gratis) * 100).round() / 100;
+    });
+    return (medios: medios, semEstoquePago: semEstoquePago);
+  }
+
   Map<String, Produto> get _produtosPorId => {
         for (final p in context.read<ProdutoProvider>().produtos)
           if (p.id != null) p.id!: p,
@@ -219,8 +252,8 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       ncm: base.ncm,
       codigoFornecedor: base.codigoFornecedor,
       quantidade: base.quantidade * embalagem,
-      custoUnitario: base.custoUnitario * fator / embalagem,
-      valorTotal: base.valorTotal * fator,
+      custoUnitario: _ehBonificacao ? 0 : base.custoUnitario * fator / embalagem,
+      valorTotal: _ehBonificacao ? 0 : base.valorTotal * fator,
       numeroLote: atual.numeroLote,
       dataFabricacao: atual.dataFabricacao,
       dataValidade: atual.dataValidade,
@@ -556,6 +589,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       final produto = produtos[i.produtoId];
       return produto != null && _custosDivergem(produto.custo, i.custoUnitario);
     }).toList();
+    final bonificacao = _ehBonificacao ? _custosMediosBonificacao(produtos) : null;
 
     // Vínculo produto↔fornecedor: busca de uma vez quais produtos casados já
     // têm vínculo com ESSE fornecedor, pra avisar quais serão criados agora
@@ -584,6 +618,32 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                   Text('$pendentes pendente(s) NÃO vão afetar o estoque.', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
                 if (novosVinculos > 0)
                   Text('$novosVinculos produto(s) serão vinculados a "${_fornecedorExistente?.nome ?? nfe.fornecedorDetectado.nome}" pela 1ª vez.'),
+                if (bonificacao != null) ...[
+                  const SizedBox(height: 8),
+                  const Text('Nota de bonificação — os itens entram sem custo.', style: TextStyle(fontWeight: FontWeight.w600)),
+                  if (bonificacao.medios.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text('${bonificacao.medios.length} produto(s) terão o custo recalculado pela média:'),
+                    for (final entrada in bonificacao.medios.entries)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text(
+                          '• ${produtos[entrada.key]?.nome ?? entrada.key} — ${_moeda.format(produtos[entrada.key]?.custo ?? 0)} → ${_moeda.format(entrada.value)}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                  ],
+                  if (bonificacao.semEstoquePago.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '${bonificacao.semEstoquePago.length} produto(s) sem estoque pago — o custo NÃO será recalculado '
+                      '(importe a nota de compra antes, se houver):',
+                      style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+                    ),
+                    for (final id in bonificacao.semEstoquePago)
+                      Text('• ${produtos[id]?.nome ?? id}', style: const TextStyle(fontSize: 13)),
+                  ],
+                ],
                 if (itensComCustoDivergente.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('${itensComCustoDivergente.length} produto(s) terão o custo atualizado:', style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -632,12 +692,24 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       // Custo não informado pela nota (<=0) nunca sobrescreve o cadastro —
       // evita zerar o custo real por causa de nota mal preenchida. Só
       // atualiza quando realmente mudou, pra não gerar histórico à toa.
-      for (final item in _itensResolvidos) {
-        if (!item.casado || item.custoUnitario <= 0) continue;
-        final produto = produtos[item.produtoId];
-        if (produto == null || !_custosDivergem(produto.custo, item.custoUnitario)) continue;
-        produto.custo = item.custoUnitario;
-        await context.read<ProdutoProvider>().atualizarProduto(produto);
+      if (_ehBonificacao) {
+        // Bonificação: custo da nota é só fiscal — o custo do produto vira
+        // a média entre o estoque pago e as unidades grátis.
+        final medios = _custosMediosBonificacao(produtos).medios;
+        for (final entrada in medios.entries) {
+          final produto = produtos[entrada.key];
+          if (produto == null || !_custosDivergem(produto.custo, entrada.value)) continue;
+          produto.custo = entrada.value;
+          await context.read<ProdutoProvider>().atualizarProduto(produto);
+        }
+      } else {
+        for (final item in _itensResolvidos) {
+          if (!item.casado || item.custoUnitario <= 0) continue;
+          final produto = produtos[item.produtoId];
+          if (produto == null || !_custosDivergem(produto.custo, item.custoUnitario)) continue;
+          produto.custo = item.custoUnitario;
+          await context.read<ProdutoProvider>().atualizarProduto(produto);
+        }
       }
 
       // Toda NF-e importada já traz produto+fornecedor+custo casados — usa
@@ -671,7 +743,9 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             fornecedorId: fornecedorId,
             empresaId: empresaId,
             codigo: codigo,
-            custoUnitarioFallback: item.custoUnitario,
+            // Bonificação vem com custo 0 — vínculo novo nasce com o custo
+            // do cadastro, não zerado (a sugestão de compra usa esse custo).
+            custoUnitarioFallback: item.custoUnitario > 0 ? item.custoUnitario : (produtos[item.produtoId]?.custo ?? 0),
           );
         }
 
@@ -964,6 +1038,13 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                       : 'Fornecedor: ${nfe.fornecedorDetectado.nome} (novo, será cadastrado)',
                 ),
                 const SizedBox(height: 12),
+                if (_ehBonificacao)
+                  const AvisoBanner(
+                    texto: 'Nota de bonificação: os itens entram no estoque sem custo e nenhum boleto é criado. '
+                        'O custo de cada produto vira a média com o estoque já pago — importe antes a nota de compra, se houver.',
+                    tipo: TipoAviso.info,
+                  )
+                else
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -1078,7 +1159,23 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     ({String texto, TipoAviso tipo})? avisoCusto;
-    if (produtoCasado != null) {
+    if (produtoCasado != null && _ehBonificacao) {
+      final bonificacao = _custosMediosBonificacao(_produtosPorId);
+      final medio = bonificacao.medios[produtoCasado.id];
+      final valorFiscal = _nfe!.itens[index].valorTotal;
+      avisoCusto = medio != null
+          ? (
+              texto: 'Grátis (valor fiscal ${_moeda.format(valorFiscal)}, não pago). '
+                  'Custo médio: ${_moeda.format(produtoCasado.custo)} → ${_moeda.format(medio)} '
+                  '(${produtoCasado.estoqueAtual} un. pagas no estoque).',
+              tipo: TipoAviso.info,
+            )
+          : (
+              texto: 'Grátis, mas não há estoque pago desse produto — o custo fica ${_moeda.format(produtoCasado.custo)}. '
+                  'Se existe nota de compra dele, importe-a antes desta.',
+              tipo: TipoAviso.alerta,
+            );
+    } else if (produtoCasado != null) {
       if (item.custoUnitario <= 0) {
         avisoCusto = (
           texto: 'Custo não informado pela nota — mantém ${_moeda.format(produtoCasado.custo)} do cadastro.',
@@ -1202,6 +1299,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                   width: 110,
                   child: TextFormField(
                     controller: _controllerCusto(index),
+                    enabled: !_ehBonificacao,
                     decoration: const InputDecoration(labelText: 'Custo unit.', isDense: true),
                     style: const TextStyle(fontSize: 13),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),

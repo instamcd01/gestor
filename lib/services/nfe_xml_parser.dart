@@ -18,6 +18,11 @@ class NfeImportada {
   final List<ItemEntrada> itens;
   final List<ParcelaEntrada> parcelas;
 
+  /// Nota de bonificação/brinde (CFOP 5910/6910 ou natureza da operação
+  /// "bonificação") — o valor dos itens é só fiscal, a loja não paga nada:
+  /// os itens entram no estoque sem custo (ver `ImportarNotaFiscalScreen`).
+  final bool bonificacao;
+
   NfeImportada({
     required this.chaveAcesso,
     this.numero,
@@ -28,6 +33,7 @@ class NfeImportada {
     required this.valorTotalNota,
     required this.itens,
     required this.parcelas,
+    this.bonificacao = false,
   });
 }
 
@@ -66,6 +72,16 @@ class NfeXmlParser {
     final valorTotalProdutos = double.tryParse(icmsTot != null ? (_texto(icmsTot, 'vProd') ?? '0') : '0') ?? 0.0;
     final valorTotalNota = double.tryParse(icmsTot != null ? (_texto(icmsTot, 'vNF') ?? '0') : '0') ?? 0.0;
 
+    // Bonificação: natureza da operação diz, ou todos os itens saem com
+    // CFOP de bonificação/brinde (5910 dentro do estado, 6910 fora).
+    final natOp = ide != null ? (_texto(ide, 'natOp') ?? '') : '';
+    final cfops = infNFe
+        .findElements('det')
+        .map((det) => _texto(_primeiroFilho(det, 'prod'), 'CFOP') ?? '')
+        .toList();
+    final bonificacao = natOp.toUpperCase().contains('BONIFICA') ||
+        (cfops.isNotEmpty && cfops.every((c) => c == '5910' || c == '6910'));
+
     final cobr = _primeiroFilho(infNFe, 'cobr');
     final parcelas = cobr != null ? _parseParcelas(cobr) : <ParcelaEntrada>[];
 
@@ -79,6 +95,7 @@ class NfeXmlParser {
       valorTotalNota: valorTotalNota,
       itens: itens,
       parcelas: parcelas,
+      bonificacao: bonificacao,
     );
   }
 
