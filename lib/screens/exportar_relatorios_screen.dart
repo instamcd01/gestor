@@ -69,6 +69,9 @@ class _ExportarRelatoriosScreenState extends State<ExportarRelatoriosScreen> {
       _periodo = novoPeriodo;
       _filtroRotulo = rotulo;
     });
+    // Período antes da janela já carregada (padrão: desde o mês passado)
+    // busca as vendas que faltam — senão o total sairia menor em silêncio.
+    if (mounted) context.read<HistoricoVendasProvider>().garantirPeriodo(novoPeriodo.start);
   }
 
   Future<void> _exportarESalvar(Excel workbook, String nomeArquivo, String textoCompartilhar) async {
@@ -90,7 +93,7 @@ class _ExportarRelatoriosScreenState extends State<ExportarRelatoriosScreen> {
     setState(() => _exportando = true);
     try {
       final provider = context.read<HistoricoVendasProvider>();
-      await provider.carregarVendas();
+      if (!await provider.garantirPeriodo(_periodo.start)) await provider.carregarVendas();
       if (!mounted) return;
 
       final vendas = provider.vendas.where((v) => _dentroDoPeriodo(v.dataVenda)).toList()

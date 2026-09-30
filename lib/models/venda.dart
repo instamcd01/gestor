@@ -50,6 +50,7 @@ class Venda {
   final double desconto;          // desconto aplicado
   final String? cupomId;          // cupons.id quando o desconto veio de um cupom (não de desconto manual)
   final double saldoUsado;
+  final double petcashUsado;      // metadata.petcashAplicado — separado do saldoUsado (saldo comum), mesma origem (cashback), teto/validade próprios
   final double valorEntrega;      // frete efetivo
   final String entregaSelecionada; // faixa de entrega ex: '0-2km'
 
@@ -146,6 +147,7 @@ class Venda {
     required this.desconto,
     this.cupomId,
     required this.saldoUsado,
+    this.petcashUsado = 0,
     required this.valorEntrega,
     required this.entregaSelecionada,
     required this.valorTotal,
@@ -231,6 +233,7 @@ class Venda {
     double? desconto,
     String? cupomId,
     double? saldoUsado,
+    double? petcashUsado,
     double? valorEntrega,
     String? entregaSelecionada,
     double? valorTotal,
@@ -307,6 +310,7 @@ class Venda {
       desconto: desconto ?? this.desconto,
       cupomId: cupomId ?? this.cupomId,
       saldoUsado: saldoUsado ?? this.saldoUsado,
+      petcashUsado: petcashUsado ?? this.petcashUsado,
       valorEntrega: valorEntrega ?? this.valorEntrega,
       entregaSelecionada: entregaSelecionada ?? this.entregaSelecionada,
       valorTotal: valorTotal ?? this.valorTotal,

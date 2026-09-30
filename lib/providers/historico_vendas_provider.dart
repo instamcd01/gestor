@@ -11,7 +11,21 @@ class HistoricoVendasProvider with ChangeNotifier {
   String? _erro;
   String? _empresaId;
 
+  /// Início da janela de vendas já carregada (null = histórico inteiro).
+  /// Padrão: início do mês anterior — cobre hoje/semana/mês atual/mês
+  /// passado, os períodos padrão das telas. Tela que precisa de período
+  /// mais antigo chama [garantirPeriodo]; pedidos em andamento vêm sempre,
+  /// de qualquer data (ver `VendaRepository.listar`).
+  DateTime? _carregadoDesde = _inicioPadrao();
+
+  static DateTime _inicioPadrao() {
+    final hoje = DateTime.now();
+    return DateTime(hoje.year, hoje.month - 1, 1);
+  }
+
   List<Venda> get vendas => _vendas;
+  DateTime? get carregadoDesde => _carregadoDesde;
+  bool get carregouTudo => _carregadoDesde == null;
   bool get carregando => _carregando;
   String? get erro => _erro;
 
@@ -63,7 +77,7 @@ class HistoricoVendasProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      final vendasCarregadas = await _repository.listar();
+      final vendasCarregadas = await _repository.listar(desde: _carregadoDesde);
       _vendas
         ..clear()
         ..addAll(vendasCarregadas);
@@ -74,6 +88,24 @@ class HistoricoVendasProvider with ChangeNotifier {
       _carregando = false;
       notifyListeners();
     }
+  }
+
+  /// Garante que as vendas a partir de [inicio] estão carregadas — só vai
+  /// ao banco se o período começa antes da janela atual (a janela só
+  /// cresce; voltar pra um período curto não recarrega nada). [inicio]
+  /// null = histórico inteiro. Devolve true se recarregou.
+  Future<bool> garantirPeriodo(DateTime? inicio) async {
+    final atual = _carregadoDesde;
+    if (atual == null) return false;
+    if (inicio != null) {
+      final dia = DateTime(inicio.year, inicio.month, inicio.day);
+      if (!dia.isBefore(atual)) return false;
+      _carregadoDesde = dia;
+    } else {
+      _carregadoDesde = null;
+    }
+    await carregarVendas();
+    return true;
   }
 
   /// Mantido pelo nome antigo por compatibilidade com telas existentes.

@@ -205,6 +205,7 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
                         currencyFormat,
                       );
                     }),
+                    _rodapeJanelaCarregada(context, historicoProvider),
                   ],
                 ),
               ),
@@ -359,6 +360,42 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
     );
   }
 
+  /// A lista só traz, por padrão, as vendas desde o início do mês passado
+  /// (mais pedidos em andamento de qualquer data) — carregar tudo de uma
+  /// vez são milhares de pedidos. Rodapé deixa claro o corte e busca mais.
+  Widget _rodapeJanelaCarregada(BuildContext context, HistoricoVendasProvider provider) {
+    final desde = provider.carregadoDesde;
+    if (desde == null) return const SizedBox(height: 16);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      child: Column(
+        children: [
+          Text(
+            'Mostrando vendas desde ${DateFormat('dd/MM/yyyy').format(desde)}',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton(
+                onPressed: provider.carregando
+                    ? null
+                    : () => provider.garantirPeriodo(DateTime(desde.year, desde.month - 3, 1)),
+                child: const Text('Mais 3 meses'),
+              ),
+              OutlinedButton(
+                onPressed: provider.carregando ? null : () => provider.garantirPeriodo(null),
+                child: const Text('Histórico completo'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   void _mostrarFiltros(BuildContext context, List<Venda> todasVendas) {
     final metodos = _metodosPagamentoDisponiveis(todasVendas);
     DateTimeRange? periodoTemp = _filtroPeriodo;
@@ -491,6 +528,10 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
                               _filtroPeriodo = periodoTemp;
                               _filtroPagamento = pagamentoTemp;
                             });
+                            // Período antes da janela carregada busca o que falta.
+                            if (periodoTemp != null) {
+                              this.context.read<HistoricoVendasProvider>().garantirPeriodo(periodoTemp!.start);
+                            }
                             Navigator.pop(context);
                           },
                           child: const Text('Aplicar Filtros'),

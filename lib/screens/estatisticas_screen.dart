@@ -140,6 +140,9 @@ class _EstatisticasScreenState extends State<EstatisticasScreen> {
       _periodo = novoPeriodo;
       _filtroRotulo = rotulo;
     });
+    // Período antes da janela já carregada (padrão: desde o mês passado)
+    // busca as vendas que faltam — senão o total sairia menor em silêncio.
+    if (mounted) context.read<HistoricoVendasProvider>().garantirPeriodo(novoPeriodo.start);
   }
 
   @override

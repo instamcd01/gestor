@@ -33,16 +33,37 @@ class VendaRepository {
   // previsao_entrega_inicio/fim já vêm no '*' de pedidos (coluna própria,
   // não de marketplace_pedidos) — sem precisar listar explicitamente.
 
-  Future<List<Venda>> listar() async {
-    final data = await supabase
-        .from('pedidos')
-        .select(_selectComItensECliente)
-        .isFilter('deleted_at', null)
-        .order('created_at', ascending: false);
+  /// Pedidos criados a partir de [desde] (null = todos) MAIS qualquer pedido
+  /// ainda em andamento ou aguardando pagamento, de qualquer data — a Fila
+  /// de Pedidos nunca pode perder um pedido aberto só porque é antigo.
+  ///
+  /// Paginado explicitamente: o Supabase corta em 1000 linhas por consulta
+  /// (achado real 30/09 — com 4.500+ pedidos, só os 1000 mais recentes
+  /// chegavam, desde 28/06, e toda tela de período antigo ficava truncada
+  /// em silêncio).
+  Future<List<Venda>> listar({DateTime? desde}) async {
+    const tamanhoPagina = 1000;
+    final abertos = [...StatusPedido.emAndamento, StatusPedido.aguardandoPagamento].join(',');
+    final linhas = <Map<String, dynamic>>[];
+    var pagina = 0;
+    while (true) {
+      final inicio = pagina * tamanhoPagina;
+      var consulta = supabase.from('pedidos').select(_selectComItensECliente).isFilter('deleted_at', null);
+      if (desde != null) {
+        consulta = consulta.or('created_at.gte.${desde.toUtc().toIso8601String()},status.in.($abertos)');
+      }
+      final resultado = await consulta
+          .order('created_at', ascending: false)
+          // Desempate estável entre páginas (pedidos reconciliados do iFood
+          // compartilham o mesmo created_at do dia).
+          .order('id', ascending: true)
+          .range(inicio, inicio + tamanhoPagina - 1);
+      linhas.addAll(List<Map<String, dynamic>>.from(resultado));
+      if (resultado.length < tamanhoPagina) break;
+      pagina++;
+    }
 
-    return (data as List)
-        .map((row) => _vendaFromRow(row as Map<String, dynamic>))
-        .toList();
+    return linhas.map(_vendaFromRow).toList();
   }
 
   /// Histórico de compras de um cliente específico (usado na aba "Compras"
@@ -368,6 +389,7 @@ class VendaRepository {
       subtotal: (row['valor_produtos'] as num?)?.toDouble() ?? 0.0,
       desconto: (row['desconto'] as num?)?.toDouble() ?? 0.0,
       saldoUsado: (metadata['saldoUsado'] as num?)?.toDouble() ?? 0.0,
+      petcashUsado: (metadata['petcashAplicado'] as num?)?.toDouble() ?? 0.0,
       valorEntrega: (row['valor_entrega'] as num?)?.toDouble() ?? 0.0,
       entregaSelecionada: metadata['entregaSelecionada']?.toString() ?? '',
       valorTotal: (row['valor_total'] as num?)?.toDouble() ?? 0.0,
