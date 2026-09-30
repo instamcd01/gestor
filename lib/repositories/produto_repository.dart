@@ -49,15 +49,31 @@ class ProdutoRepository {
     // real calculado, não "0 quebrado" — é assim que cupom "Produtos
     // específicos" e o alerta de estoque baixo passam a enxergar kit,
     // sem precisar de nenhum código novo nessas duas telas.
-    final data = await supabase
-        .from('produtos')
-        .select(_selectComEstoque)
-        .isFilter('deleted_at', null)
-        .order('nome', ascending: true);
+    //
+    // Paginado explicitamente: o Supabase corta em 1000 linhas por consulta,
+    // e o catálogo passou disso (achado real 30/09, 1.009 produtos — os
+    // últimos em ordem alfabética, ex: Vetmax, sumiam da lista e de toda
+    // tela que usa o ProdutoProvider, inclusive o casamento da NF-e).
+    const tamanhoPagina = 1000;
+    final linhas = <Map<String, dynamic>>[];
+    var pagina = 0;
+    while (true) {
+      final inicio = pagina * tamanhoPagina;
+      final resultado = await supabase
+          .from('produtos')
+          .select(_selectComEstoque)
+          .isFilter('deleted_at', null)
+          .order('nome', ascending: true)
+          // Desempate estável: nome repetido sem isso pode repetir ou sumir
+          // entre uma página e outra.
+          .order('id', ascending: true)
+          .range(inicio, inicio + tamanhoPagina - 1);
+      linhas.addAll(List<Map<String, dynamic>>.from(resultado));
+      if (resultado.length < tamanhoPagina) break;
+      pagina++;
+    }
 
-    return (data as List)
-        .map((row) => Produto.fromSupabase(row as Map<String, dynamic>))
-        .toList();
+    return linhas.map(Produto.fromSupabase).toList();
   }
 
   /// Cria o produto e já garante uma linha de estoque associada
