@@ -3,10 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/estoque_parado.dart';
 import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/produto_repository.dart';
 import '../repositories/revisao_preco_repository.dart';
 import '../utils/busca_utils.dart';
 import '../utils/produto_validators.dart';
@@ -35,7 +37,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 8, vsync: this);
   }
 
   @override
@@ -78,6 +80,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
             const Tab(text: 'Ciclo de recompra'),
             const Tab(text: 'Catálogo'),
             Tab(text: 'EAN duplicado ($eanDuplicado)'),
+            const Tab(text: 'Estoque parado'),
             const Tab(text: 'Estratégia'),
           ],
         ),
@@ -91,6 +94,7 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
           _AbaCicloRecompra(),
           _AbaCatalogo(),
           _AbaEanDuplicado(),
+          _AbaEstoqueParado(),
           _AbaEstrategia(),
         ],
       ),
@@ -2705,6 +2709,449 @@ class _CardAbcXyzState extends State<_CardAbcXyz> {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// ---------------------------------------------------------------------
+/// Aba: Estoque parado — produtos com estoque e sem venda há mais de 90
+/// dias (RPC `produtos_estoque_parado`), ordenados pelo dinheiro parado.
+/// Ações: promoção em % (nunca abaixo do custo), destaque no site e
+/// contagem física por produto (vai pro histórico de estoque como
+/// "contagem") — a contagem vem primeiro porque parte desse saldo pode nem
+/// existir na prateleira (caso real da Golden 3kg, 01/10).
+/// ---------------------------------------------------------------------
+class _AbaEstoqueParado extends StatefulWidget {
+  const _AbaEstoqueParado();
+
+  @override
+  State<_AbaEstoqueParado> createState() => _AbaEstoqueParadoState();
+}
+
+class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
+  static final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+  static final _data = DateFormat('dd/MM/yy');
+
+  List<EstoqueParado>? _itens;
+  String? _erro;
+  final Set<String> _selecionados = {};
+  String _busca = '';
+  String? _filtroFaixa;
+  String? _filtroCategoria;
+  bool _processando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    setState(() => _erro = null);
+    try {
+      final itens = await ProdutoRepository().listarEstoqueParado();
+      if (!mounted) return;
+      setState(() => _itens = itens);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _erro = 'Erro ao carregar estoque parado: $e');
+    }
+  }
+
+  /// Promoção = preço × (1 − %), arredondado, com piso no custo. Produto
+  /// cujo preço já está no custo (ou sem preço) fica de fora.
+  static Map<String, double> _calcularPromocao(List<Produto> produtos, double percentual) {
+    final resultado = <String, double>{};
+    for (final p in produtos) {
+      if (p.id == null || p.preco <= 0) continue;
+      final comDesconto = double.parse((p.preco * (1 - percentual / 100)).toStringAsFixed(2));
+      final promocional = p.custo > 0 && comDesconto < p.custo ? p.custo : comDesconto;
+      if (promocional >= p.preco) continue;
+      resultado[p.id!] = promocional;
+    }
+    return resultado;
+  }
+
+  Future<void> _aplicarPromocao(List<Produto> selecionados, ProdutoProvider provider) async {
+    final percentual = await showDialog<double>(
+      context: context,
+      builder: (_) => _DialogoPromocaoEstoqueParado(produtos: selecionados, calcular: _calcularPromocao),
+    );
+    if (percentual == null || !mounted) return;
+    final promocoes = _calcularPromocao(selecionados, percentual);
+    setState(() => _processando = true);
+    final falhas = await provider.aplicarPrecoPromocionalEmMassa(promocoes);
+    if (!mounted) return;
+    setState(() {
+      _processando = false;
+      _selecionados.removeAll(promocoes.keys.where((id) => !falhas.contains(id)));
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(falhas.isEmpty
+          ? 'Promoção aplicada em ${promocoes.length} produto(s).'
+          : 'Promoção aplicada em ${promocoes.length - falhas.length}; ${falhas.length} falharam.'),
+    ));
+  }
+
+  Future<void> _removerPromocao(List<Produto> selecionados, ProdutoProvider provider) async {
+    final comPromocao = <String, double?>{
+      for (final p in selecionados)
+        if (p.id != null && p.precoPromocional != null) p.id!: null,
+    };
+    if (comPromocao.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Nenhum dos selecionados está em promoção.')));
+      return;
+    }
+    setState(() => _processando = true);
+    final falhas = await provider.aplicarPrecoPromocionalEmMassa(comPromocao);
+    if (!mounted) return;
+    setState(() => _processando = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Promoção removida de ${comPromocao.length - falhas.length} produto(s).'),
+    ));
+  }
+
+  Future<void> _destacar(bool destacar, ProdutoProvider provider) async {
+    setState(() => _processando = true);
+    await provider.atualizarDestaqueEmMassa(_selecionados.toList(), destacar);
+    if (!mounted) return;
+    setState(() => _processando = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(destacar ? 'Produtos destacados no site.' : 'Destaque removido.'),
+    ));
+  }
+
+  Future<void> _contagemFisica(Produto produto, EstoqueParado item, ProdutoProvider provider) async {
+    final contado = await showDialog<int>(
+      context: context,
+      builder: (_) => _DialogoContagemFisica(nome: produto.nome, quantidadeSistema: item.quantidade),
+    );
+    if (contado == null || !mounted) return;
+    try {
+      await provider.ajustarEstoque(
+        produtoId: item.produtoId,
+        quantidadeNova: contado,
+        motivo: 'contagem',
+        quantidadeEsperada: item.quantidade,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(contado == item.quantidade
+            ? 'Contagem confere com o sistema (${item.quantidade}).'
+            : 'Estoque ajustado de ${item.quantidade} para $contado (registrado no histórico).'),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível ajustar: $e')));
+    }
+    await _carregar();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final produtoProvider = context.watch<ProdutoProvider>();
+    if (_erro != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(_erro!, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            OutlinedButton(onPressed: _carregar, child: const Text('Tentar de novo')),
+          ]),
+        ),
+      );
+    }
+    final itens = _itens;
+    if (itens == null) return const Center(child: CircularProgressIndicator());
+
+    final porId = {for (final p in produtoProvider.produtos) if (p.id != null) p.id!: p};
+    final pares = [
+      for (final item in itens)
+        if (porId[item.produtoId] != null) (item: item, produto: porId[item.produtoId]!),
+    ];
+    final contagemPorFaixa = <String, int>{};
+    final contagemPorCategoria = <String, int>{};
+    for (final par in pares) {
+      contagemPorFaixa[par.item.faixa] = (contagemPorFaixa[par.item.faixa] ?? 0) + 1;
+      final cat = par.produto.categoria.isNotEmpty ? par.produto.categoria : 'Sem categoria';
+      contagemPorCategoria[cat] = (contagemPorCategoria[cat] ?? 0) + 1;
+    }
+    final lista = pares
+        .where((par) => contemTodasPalavras(par.produto.nome, _busca))
+        .where((par) => _filtroFaixa == null || par.item.faixa == _filtroFaixa)
+        .where((par) =>
+            _filtroCategoria == null ||
+            (par.produto.categoria.isNotEmpty ? par.produto.categoria : 'Sem categoria') == _filtroCategoria)
+        .toList();
+    final idsValidos = lista.map((par) => par.item.produtoId).toSet();
+    _selecionados.removeWhere((id) => !idsValidos.contains(id));
+    final capitalTotal = lista.fold<double>(0, (soma, par) => soma + par.item.capital);
+    final selecionados = [
+      for (final par in lista)
+        if (_selecionados.contains(par.item.produtoId)) par.produto,
+    ];
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  const Icon(Icons.inventory_2_outlined),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '${lista.length} produto(s) sem venda há mais de 90 dias\n'
+                      '${_moeda.format(capitalTotal)} parados (a preço de custo)',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: TextField(
+            decoration: const InputDecoration(hintText: 'Buscar por nome', prefixIcon: Icon(Icons.search)),
+            onChanged: (v) => setState(() => _busca = v),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              _FiltroPorValor(
+                label: 'Tempo parado',
+                valor: _filtroFaixa,
+                contagemPorValor: contagemPorFaixa,
+                onChanged: (v) => setState(() => _filtroFaixa = v),
+              ),
+              _FiltroPorValor(
+                label: 'Categoria',
+                valor: _filtroCategoria,
+                contagemPorValor: contagemPorCategoria,
+                onChanged: (v) => setState(() => _filtroCategoria = v),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            children: [
+              TextButton(
+                onPressed: () => setState(() => _selecionados.addAll(idsValidos)),
+                child: const Text('Selecionar todos'),
+              ),
+              if (_selecionados.isNotEmpty)
+                TextButton(onPressed: () => setState(_selecionados.clear), child: const Text('Limpar seleção')),
+            ],
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _carregar,
+            child: lista.isEmpty
+                ? ListView(children: const [
+                    SizedBox(height: 80),
+                    Center(child: Text('Nenhum produto parado com esse filtro')),
+                  ])
+                : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    itemCount: lista.length,
+                    itemBuilder: (context, index) {
+                      final par = lista[index];
+                      final item = par.item;
+                      final produto = par.produto;
+                      final ultimaVenda = item.ultimaVenda == null
+                          ? 'Sem venda no histórico'
+                          : 'Última venda ${_data.format(item.ultimaVenda!)} (${item.diasSemVenda} dias)';
+                      final emPromocao = produto.precoPromocional != null && produto.precoPromocional! < produto.preco;
+                      final precos = emPromocao
+                          ? 'Promoção ${_moeda.format(produto.precoPromocional)} (de ${_moeda.format(produto.preco)})'
+                          : 'Preço ${_moeda.format(produto.preco)} • custo ${_moeda.format(produto.custo)}';
+                      return CheckboxListTile(
+                        value: _selecionados.contains(item.produtoId),
+                        onChanged: (v) => setState(() {
+                          if (v == true) {
+                            _selecionados.add(item.produtoId);
+                          } else {
+                            _selecionados.remove(item.produtoId);
+                          }
+                        }),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: Text(produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(
+                          '${item.quantidade} un. • ${_moeda.format(item.capital)} parados\n'
+                          '$ultimaVenda\n'
+                          '$precos${produto.destacar ? ' • destaque' : ''}',
+                        ),
+                        isThreeLine: true,
+                        secondary: IconButton(
+                          tooltip: 'Contagem física',
+                          icon: const Icon(Icons.fact_check_outlined),
+                          onPressed: () => _contagemFisica(produto, item, produtoProvider),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ),
+        _BarraSelecao(
+          quantidade: _selecionados.length,
+          acoes: [
+            FilledButton.icon(
+              onPressed: _processando ? null : () => _aplicarPromocao(selecionados, produtoProvider),
+              icon: const Icon(Icons.sell_outlined),
+              label: const Text('Promoção %'),
+            ),
+            OutlinedButton(
+              onPressed: _processando ? null : () => _removerPromocao(selecionados, produtoProvider),
+              child: const Text('Remover promoção'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _processando ? null : () => _destacar(true, produtoProvider),
+              icon: const Icon(Icons.star_outline),
+              label: const Text('Destacar no site'),
+            ),
+            OutlinedButton(
+              onPressed: _processando ? null : () => _destacar(false, produtoProvider),
+              child: const Text('Tirar destaque'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Pede o % de desconto e mostra a prévia (quantos ficam no piso do custo,
+/// quantos ficam de fora) antes de aplicar. Retorna o % confirmado.
+class _DialogoPromocaoEstoqueParado extends StatefulWidget {
+  final List<Produto> produtos;
+  final Map<String, double> Function(List<Produto>, double) calcular;
+
+  const _DialogoPromocaoEstoqueParado({required this.produtos, required this.calcular});
+
+  @override
+  State<_DialogoPromocaoEstoqueParado> createState() => _DialogoPromocaoEstoqueParadoState();
+}
+
+class _DialogoPromocaoEstoqueParadoState extends State<_DialogoPromocaoEstoqueParado> {
+  final _controller = TextEditingController(text: '10');
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double? get _percentual {
+    final v = double.tryParse(_controller.text.replaceAll(',', '.'));
+    return v != null && v > 0 && v < 100 ? v : null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final percentual = _percentual;
+    final promocoes = percentual == null ? <String, double>{} : widget.calcular(widget.produtos, percentual);
+    final noCusto = widget.produtos.where((p) => p.id != null && p.custo > 0 && promocoes[p.id] == p.custo).length;
+    final deFora = widget.produtos.length - promocoes.length;
+
+    return AlertDialog(
+      title: const Text('Promoção nos selecionados'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _controller,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Desconto', suffixText: '%'),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          Text('${promocoes.length} produto(s) entram em promoção no site.'),
+          if (noCusto > 0) Text('$noCusto ficam no preço de custo (o desconto passaria do custo).'),
+          if (deFora > 0) Text('$deFora ficam de fora (preço já no custo ou sem preço).'),
+          const SizedBox(height: 8),
+          Text(
+            'O preço normal não muda — só o promocional, que aparece riscado no site.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: percentual == null || promocoes.isEmpty ? null : () => Navigator.pop(context, percentual),
+          child: const Text('Aplicar'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Quantidade contada na prateleira — vai pro `ajustar_estoque` com motivo
+/// "contagem". Quando confere com o sistema a RPC não grava nada (só
+/// divergência vira movimentação no histórico).
+class _DialogoContagemFisica extends StatefulWidget {
+  final String nome;
+  final int quantidadeSistema;
+
+  const _DialogoContagemFisica({required this.nome, required this.quantidadeSistema});
+
+  @override
+  State<_DialogoContagemFisica> createState() => _DialogoContagemFisicaState();
+}
+
+class _DialogoContagemFisicaState extends State<_DialogoContagemFisica> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final contado = int.tryParse(_controller.text.trim());
+    return AlertDialog(
+      title: const Text('Contagem física'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(widget.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text('No sistema: ${widget.quantidadeSistema}'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Quantidade na prateleira'),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: contado == null || contado < 0 ? null : () => Navigator.pop(context, contado),
+          child: const Text('Confirmar'),
+        ),
+      ],
     );
   }
 }

@@ -327,6 +327,19 @@ class ProdutoProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Ver `ProdutoRepository.aplicarPrecoPromocionalEmMassa`. Retorna os ids
+  /// que falharam; os demais já ficam com o novo promocional na lista local.
+  Future<List<String>> aplicarPrecoPromocionalEmMassa(Map<String, double?> promocionalPorId) async {
+    final falhas = await _repository.aplicarPrecoPromocionalEmMassa(promocionalPorId);
+    for (final entrada in promocionalPorId.entries) {
+      if (falhas.contains(entrada.key)) continue;
+      final index = _produtos.indexWhere((p) => p.id == entrada.key);
+      if (index != -1) _produtos[index].precoPromocional = entrada.value;
+    }
+    notifyListeners();
+    return falhas;
+  }
+
   Future<void> atualizarDestaqueEmMassa(List<String> ids, bool destacar) async {
     if (ids.isEmpty) return;
     await _repository.atualizarDestaqueEmMassa(ids, destacar);

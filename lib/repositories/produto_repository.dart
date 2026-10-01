@@ -1,4 +1,5 @@
 import '../config/supabase_config.dart';
+import '../models/estoque_parado.dart';
 import '../models/movimentacao_estoque.dart';
 import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
@@ -371,6 +372,28 @@ class ProdutoRepository {
   Future<void> atualizarAtivoEmMassa(List<String> produtoIds, bool ativo) async {
     if (produtoIds.isEmpty) return;
     await supabase.from('produtos').update({'ativo': ativo}).inFilter('id', produtoIds);
+  }
+
+  /// Produtos com estoque sem venda há mais de [dias] — ver RPC
+  /// `produtos_estoque_parado` (granel conta junto, kits ficam fora).
+  Future<List<EstoqueParado>> listarEstoqueParado({int dias = 90}) async {
+    final data = await supabase.rpc('produtos_estoque_parado', params: {'p_dias': dias});
+    return (data as List).map((r) => EstoqueParado.fromSupabase(r as Map<String, dynamic>)).toList();
+  }
+
+  /// Preço promocional por produto (null remove a promoção) — valor
+  /// diferente pra cada um, então um UPDATE estreito por produto, em
+  /// paralelo. Retorna os ids que falharam.
+  Future<List<String>> aplicarPrecoPromocionalEmMassa(Map<String, double?> promocionalPorId) async {
+    final falhas = <String>[];
+    await Future.wait(promocionalPorId.entries.map((entrada) async {
+      try {
+        await supabase.from('produtos').update({'preco_promocional': entrada.value}).eq('id', entrada.key);
+      } catch (_) {
+        falhas.add(entrada.key);
+      }
+    }));
+    return falhas;
   }
 
   Future<void> atualizarDestaqueEmMassa(List<String> produtoIds, bool destacar) async {
