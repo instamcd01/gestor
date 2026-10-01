@@ -320,6 +320,19 @@ class _PedidoCompraDetalheScreenState extends State<PedidoCompraDetalheScreen> {
                     _ResumoConferencia(pedido: pedido),
                   if (pedido.status == StatusPedidoCompra.confirmado) ...[
                     const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _irParaConferencia,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Vendedor ajustou? Reconferir espelho'),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Use se pediu ajuste ao fornecedor e ele já corrigiu — revise os itens e salve de novo antes de importar a NF-e.',
+                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     ElevatedButton.icon(
                       onPressed: _irParaImportarNfe,
                       icon: const Icon(Icons.upload_file_outlined),

@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/fornecedor.dart';
+import '../models/produto.dart';
 import '../models/produto_fornecedor.dart';
+import '../providers/auth_provider.dart';
+import '../providers/produto_provider.dart';
 import '../repositories/produto_fornecedor_repository.dart';
 import '../utils/busca_utils.dart';
+import '../widgets/busca_produto_sheet.dart';
 import 'vincular_produtos_fornecedor_screen.dart';
 
 /// Lista todos os produtos vinculados a um fornecedor (`produto_fornecedores`)
@@ -81,6 +86,43 @@ class _VinculosFornecedorScreenState extends State<VinculosFornecedorScreen> {
             contemTodasPalavras(v.produtoNome ?? '', termo) ||
             (v.produtoCodigoBarras ?? '').toLowerCase().contains(termo.toLowerCase()))
         .toList();
+  }
+
+  /// Troca o produto vinculado sem apagar custo/código/faixas de desconto
+  /// já cadastrados (ver `ProdutoFornecedorRepository.trocarProdutoDoVinculo`)
+  /// — pedido explícito do usuário depois de vincular um código de
+  /// fornecedor no produto errado (achado real 22/09) e não ter como
+  /// corrigir sem sair da tela de Conferência.
+  Future<void> _trocarProduto(ProdutoFornecedor vinculo) async {
+    final produtos = context.read<ProdutoProvider>().produtos.where((p) => p.ativo && p.id != null).toList()
+      ..sort((a, b) => a.nome.compareTo(b.nome));
+    final novoProduto = await showModalBottomSheet<Produto>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => BuscaProdutoSheet(produtos: produtos),
+    );
+    if (novoProduto == null || novoProduto.id == null || novoProduto.id == vinculo.produtoId || !mounted) return;
+
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+
+    try {
+      await _repository.trocarProdutoDoVinculo(
+        vinculoAtual: vinculo,
+        novoProdutoId: novoProduto.id!,
+        empresaId: empresaId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao trocar produto: $e')));
+      return;
+    }
+    if (!mounted) return;
+    await _carregar();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Vínculo movido de "${vinculo.produtoNome}" pra "${novoProduto.nome}".')),
+    );
   }
 
   Future<void> _desvincularSelecionados() async {
@@ -184,7 +226,13 @@ class _VinculosFornecedorScreenState extends State<VinculosFornecedorScreen> {
                                   title: Text(vinculo.produtoNome ?? '(produto removido)'),
                                   subtitle: Text(
                                     'R\$ ${vinculo.custoUnitario.toStringAsFixed(2)}'
-                                    '${vinculo.principal ? ' • principal' : ''}',
+                                    '${vinculo.principal ? ' • principal' : ''}'
+                                    '${(vinculo.codigoProdutoFornecedor?.isNotEmpty ?? false) ? ' • cód. ${vinculo.codigoProdutoFornecedor}' : ''}',
+                                  ),
+                                  secondary: IconButton(
+                                    icon: const Icon(Icons.swap_horiz),
+                                    tooltip: 'Trocar o produto vinculado',
+                                    onPressed: () => _trocarProduto(vinculo),
                                   ),
                                 );
                               },

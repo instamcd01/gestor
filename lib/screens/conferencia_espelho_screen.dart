@@ -293,24 +293,6 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     setState(() => _carregando = true);
     try {
       final pedido = await _repository.buscarPorId(widget.pedidoId);
-
-      // Vínculo produto-fornecedor (com faixas de desconto) de cada item,
-      // pra mostrar "peça mais Nun e economize R$X" igual já existe na
-      // Sugestão de Compra — antes essa dica só aparecia lá, não aqui, que
-      // é justamente onde a negociação com o fornecedor acontece de verdade.
-      final produtoFornecedorRepo = ProdutoFornecedorRepository();
-      final produtoIds = {for (final i in pedido.itens) i.produtoSubstitutoId ?? i.produtoId};
-      final vinculos = <String, ProdutoFornecedor>{};
-      for (final produtoId in produtoIds) {
-        final lista = await produtoFornecedorRepo.listarPorProduto(produtoId);
-        for (final v in lista) {
-          if (v.fornecedorId == pedido.fornecedor.id) {
-            vinculos[produtoId] = v;
-            break;
-          }
-        }
-      }
-
       if (!mounted) return;
       setState(() {
         _pedido = pedido;
@@ -318,16 +300,105 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         _anexos
           ..clear()
           ..addAll(pedido.anexosEspelho);
-        _vinculosPorProdutoId
-          ..clear()
-          ..addAll(vinculos);
         _carregando = false;
       });
+      await _recarregarVinculos();
     } catch (e) {
       if (!mounted) return;
       setState(() => _carregando = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao carregar pedido: $e')));
     }
+  }
+
+  /// Vínculo produto-fornecedor (com faixas de desconto) de cada item, pra
+  /// mostrar "peça mais Nun e economize R$X" igual já existe na Sugestão de
+  /// Compra, o código do fornecedor vinculado e o botão de trocar produto
+  /// (ver `_trocarVinculo`) — separado de `_carregar` pra poder recarregar
+  /// só isso depois de trocar um vínculo, sem perder edições em andamento
+  /// nos itens (`_itens` não é tocado aqui).
+  Future<void> _recarregarVinculos() async {
+    final pedido = _pedido;
+    if (pedido == null) return;
+    final produtoFornecedorRepo = ProdutoFornecedorRepository();
+    final produtoIds = {for (final i in _itens) i.produtoSubstitutoId ?? i.original.produtoId};
+    final vinculos = <String, ProdutoFornecedor>{};
+    for (final produtoId in produtoIds) {
+      final lista = await produtoFornecedorRepo.listarPorProduto(produtoId);
+      for (final v in lista) {
+        if (v.fornecedorId == pedido.fornecedor.id) {
+          vinculos[produtoId] = v;
+          break;
+        }
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _vinculosPorProdutoId
+        ..clear()
+        ..addAll(vinculos);
+    });
+  }
+
+  /// Move o vínculo desse fornecedor pra outro produto (ver
+  /// `ProdutoFornecedorRepository.trocarProdutoDoVinculo`) — mesma ação que
+  /// existe em "Produtos de {fornecedor}", trazida pra cá porque é aqui que
+  /// se percebe o vínculo errado na prática (achado real 22/09). Não
+  /// recalcula sozinho o que já foi confirmado a partir de uma leitura de
+  /// PDF anterior errada — se for o caso, reenviar o PDF depois de trocar
+  /// resolve, porque o casamento automático já vai usar o vínculo certo.
+  Future<void> _trocarVinculo(_ItemConferencia item, ProdutoFornecedor vinculo) async {
+    final pedido = _pedido;
+    if (pedido == null || vinculo.id == null || !mounted) return;
+
+    final produtos = context.read<ProdutoProvider>().produtos.where((p) => p.ativo && p.id != null).toList()
+      ..sort((a, b) => a.nome.compareTo(b.nome));
+    final novoProduto = await showModalBottomSheet<Produto>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => BuscaProdutoSheet(produtos: produtos),
+    );
+    if (novoProduto == null || novoProduto.id == null || novoProduto.id == vinculo.produtoId || !mounted) return;
+
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Trocar produto vinculado'),
+        content: Text(
+          'Mover o vínculo com ${pedido.fornecedor.nome}'
+          '${(vinculo.codigoProdutoFornecedor?.isNotEmpty ?? false) ? ' (código ${vinculo.codigoProdutoFornecedor})' : ''}'
+          ' de "${vinculo.produtoNome ?? item.original.produtoNome}" pra "${novoProduto.nome}"?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Trocar')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    try {
+      final empresaId = context.read<AuthProvider>().empresaId!;
+      await ProdutoFornecedorRepository().trocarProdutoDoVinculo(
+        vinculoAtual: vinculo,
+        novoProdutoId: novoProduto.id!,
+        empresaId: empresaId,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao trocar produto: $e')));
+      return;
+    }
+    if (!mounted) return;
+
+    await _recarregarVinculos();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 6),
+      content: Text(
+        'Vínculo movido pra "${novoProduto.nome}". Se a quantidade/custo confirmados desse item vieram desse '
+        'vínculo errado, reenvie o PDF (aba Anexos) pra recalcular certo.',
+      ),
+    ));
   }
 
   Future<void> _adicionarFotos() async {
@@ -425,10 +496,13 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
   }
 
   Future<void> _tentarConferirAutomaticamente(Uint8List bytes) async {
+    final pedido = _pedido;
+    if (pedido == null) return;
+
     List<ItemCotacaoExtraido> itensLidos;
     try {
       final texto = extrairTextoPdf(bytes);
-      itensLidos = parseCotacaoTargetSistemas(texto);
+      itensLidos = parseCotacaoPdf(texto);
     } catch (e) {
       debugPrint('Não deu pra ler o PDF automaticamente: $e');
       _avisarFormatoNaoReconhecido();
@@ -448,18 +522,50 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
       return null;
     }
 
-    final eansRestantes = {for (final i in itensLidos) i.codigoBarras: i};
+    // Código interno do fornecedor -> produto, só pra ESTE fornecedor (o
+    // mesmo código "137" pode significar coisas diferentes em fornecedores
+    // diferentes) — casamento só funciona pra vínculo já ensinado uma vez
+    // (ver `_vincularExistente`), formato sem EAN nenhum (ver
+    // `parseCotacaoTargetSistemasTabela`).
+    Map<String, String> produtoIdPorCodigoFornecedor = {};
+    try {
+      final vinculos = await ProdutoFornecedorRepository().listarPorFornecedor(pedido.fornecedor.id!);
+      produtoIdPorCodigoFornecedor = {
+        for (final v in vinculos)
+          if ((v.codigoProdutoFornecedor ?? '').trim().isNotEmpty) v.codigoProdutoFornecedor!.trim(): v.produtoId,
+      };
+    } catch (_) {
+      // Sem os vínculos desse fornecedor, segue só com casamento por EAN.
+    }
+    final codigoFornecedorPorProdutoId = {
+      for (final entry in produtoIdPorCodigoFornecedor.entries) entry.value: entry.key,
+    };
+    if (!mounted) return;
+
+    final eansRestantes = {
+      for (final i in itensLidos)
+        if ((i.codigoBarras ?? '').isNotEmpty) i.codigoBarras!: i,
+    };
+    final codigosRestantes = {
+      for (final i in itensLidos)
+        if ((i.codigoFornecedor ?? '').isNotEmpty) i.codigoFornecedor!: i,
+    };
     var atualizados = 0;
     var adicionados = 0;
 
     setState(() {
       for (final item in _itens) {
-        // Casa pelo EAN do produto REAL deste item — o substituto, se
+        // Casa pelo EAN (ou, na falta dele, pelo código do fornecedor já
+        // vinculado antes) do produto REAL deste item — o substituto, se
         // houver (fornecedor mandou outro produto no lugar), senão o
         // produto originalmente pedido.
         final produtoId = item.produtoSubstitutoId ?? item.original.produtoId;
         final ean = produtosPorId[produtoId]?.codigoBarras;
-        final lido = ean == null ? null : eansRestantes.remove(ean);
+        var lido = (ean != null && ean.isNotEmpty) ? eansRestantes.remove(ean) : null;
+        if (lido == null) {
+          final codigo = codigoFornecedorPorProdutoId[produtoId];
+          if (codigo != null) lido = codigosRestantes.remove(codigo);
+        }
         if (lido == null) {
           item.foraDaCotacaoLida = true;
           continue;
@@ -475,14 +581,18 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         item.dispose();
       }
       _naoCadastrados.clear();
-      for (final lido in eansRestantes.values) {
-        final produto = produtoPorEan(lido.codigoBarras);
+      for (final lido in [...eansRestantes.values, ...codigosRestantes.values]) {
+        final ean = lido.codigoBarras;
+        final produto = (ean != null && ean.isNotEmpty) ? produtoPorEan(ean) : null;
         if (produto == null || produto.id == null) {
-          // Fornecedor mandou esse item na cotação, mas não existe produto
-          // com esse EAN no catálogo — antes disso ficava só contado num
-          // número na notificação, sem dizer QUAL produto era. Agora entra
-          // numa lista própria (ver seção "Produtos da cotação sem
-          // cadastro" na tela) pra decidir se cadastra ou ignora.
+          // Fornecedor mandou esse item na cotação, mas não deu pra achar o
+          // produto correspondente no catálogo (sem EAN igual, ou tem só um
+          // código de fornecedor que ainda não foi vinculado a nada) —
+          // antes disso ficava só contado num número na notificação, sem
+          // dizer QUAL produto era. Agora entra numa lista própria (ver
+          // seção "Produtos da cotação sem cadastro" na tela) pra decidir
+          // se vincula a um produto já existente, cadastra um novo, ou
+          // ignora.
           _naoCadastrados.add(_ItemNaoCadastrado(lido));
           continue;
         }
@@ -512,6 +622,101 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
     ));
   }
 
+  /// Vincula o item lido (sem EAN, só código do fornecedor — formato de PDF
+  /// em tabela, ver `parseCotacaoTargetSistemasTabela`) a um produto JÁ
+  /// existente no catálogo, gravando o código pra próxima cotação desse
+  /// fornecedor já casar sozinha (ver
+  /// `ProdutoFornecedorRepository.vincularCodigoFornecedor`) — diferente de
+  /// "Cadastrar", que cria um produto novo do zero.
+  Future<void> _vincularExistente(_ItemNaoCadastrado item) async {
+    final pedido = _pedido;
+    final codigo = item.lido.codigoFornecedor;
+    if (pedido == null || codigo == null || !mounted) return;
+
+    final produtos = context.read<ProdutoProvider>().produtos.where((p) => p.ativo && p.id != null).toList()
+      ..sort((a, b) => a.nome.compareTo(b.nome));
+    final produto = await showModalBottomSheet<Produto>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => BuscaProdutoSheet(produtos: produtos),
+    );
+    if (produto == null || produto.id == null || !mounted) return;
+
+    // Confirmação antes de gravar — numa lista grande é fácil tocar no
+    // produto errado sem querer (achado real 22/09), e depois de gravado
+    // corrigir exige ir em Editar Produto > Fornecedores apagar o código.
+    // Um passo a mais aqui evita a maior parte desses casos.
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar vínculo'),
+        content: Text(
+          'Vincular o código "$codigo" (${item.lido.nome}) da ${pedido.fornecedor.nome} ao produto:\n\n${produto.nome}\n\n'
+          'Da próxima vez, esse item já vai casar sozinho.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Vincular')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    try {
+      final empresaId = context.read<AuthProvider>().empresaId!;
+      await ProdutoFornecedorRepository().vincularCodigoFornecedor(
+        produtoId: produto.id!,
+        fornecedorId: pedido.fornecedor.id!,
+        empresaId: empresaId,
+        codigo: codigo,
+        custoUnitarioFallback: item.lido.custoUnitario,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao vincular código: $e')));
+      return;
+    }
+    if (!mounted) return;
+
+    final lido = item.lido;
+    setState(() {
+      _naoCadastrados.remove(item);
+      item.dispose();
+
+      // O produto vinculado pode já estar na lista (um item do pedido
+      // original que tinha ficado em "não vieram no PDF" por falta desse
+      // código) — nesse caso é o MESMO item, só que agora casado; atualiza
+      // ele em vez de duplicar (bug real 22/09: virava um item novo em
+      // "vieram sem ter sido pedidos", com o pedido original continuando
+      // órfão do lado de "não vieram no PDF").
+      final existente = _itens.where((i) => (i.produtoSubstitutoId ?? i.original.produtoId) == produto.id).firstOrNull;
+      if (existente != null) {
+        existente.foraDaCotacaoLida = false;
+        existente.confirmadoController.text = lido.quantidade.toString();
+        existente.custoController.text = ProdutoValidators.formatarMoeda(lido.custoUnitario);
+        if (existente.divergente) existente.acaoMensagem = AcaoMensagemFornecedor.reportarDivergencia;
+        return;
+      }
+
+      _itens.add(_ItemConferencia(ItemPedidoCompra(
+        produtoId: produto.id!,
+        produtoNome: produto.nome,
+        quantidadePedida: 0,
+        quantidadeConfirmada: lido.quantidade,
+        custoUnitario: produto.custo,
+        custoConfirmado: lido.custoUnitario,
+        origem: OrigemItemPedidoCompra.conferencia,
+      ))
+        ..confirmadoController.text = lido.quantidade.toString()
+        ..custoController.text = ProdutoValidators.formatarMoeda(lido.custoUnitario));
+    });
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Código "$codigo" da ${pedido.fornecedor.nome} vinculado a ${produto.nome} — a próxima cotação já casa sozinha.'),
+    ));
+  }
+
   /// Abre o cadastro de produto já com nome/EAN/custo vindos da cotação —
   /// pro caso de "Produtos da cotação sem cadastro" (o fornecedor vendeu
   /// algo que o catálogo ainda não conhece). Ao salvar, o produto criado já
@@ -524,7 +729,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
         retornarProdutoCriado: true,
         produtoInicial: Produto(
           nome: lido.nome,
-          codigoBarras: lido.codigoBarras,
+          codigoBarras: lido.codigoBarras ?? '',
           custo: lido.custoUnitario,
           preco: lido.custoUnitario,
           descricao: '',
@@ -536,6 +741,30 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
       ),
     ));
     if (produtoCriado == null || produtoCriado.id == null || !mounted) return;
+
+    // Produto acabou de nascer sabendo o código desse fornecedor (formato
+    // sem EAN, ver `parseCotacaoTargetSistemasTabela`) — grava de uma vez,
+    // senão nasceria sem vínculo e cairia em "sem cadastro" de novo na
+    // próxima cotação, mesmo já existindo no catálogo.
+    final pedido = _pedido;
+    final codigo = lido.codigoFornecedor;
+    if (pedido != null && codigo != null) {
+      try {
+        final empresaId = context.read<AuthProvider>().empresaId!;
+        await ProdutoFornecedorRepository().vincularCodigoFornecedor(
+          produtoId: produtoCriado.id!,
+          fornecedorId: pedido.fornecedor.id!,
+          empresaId: empresaId,
+          codigo: codigo,
+          custoUnitarioFallback: lido.custoUnitario,
+        );
+      } catch (_) {
+        // Produto já foi criado com sucesso — falha em gravar o vínculo não
+        // deve impedir de seguir a conferência, só perde o "ensino" pra
+        // próxima vez (usuário ainda pode vincular manualmente depois).
+      }
+    }
+    if (!mounted) return;
 
     setState(() {
       _naoCadastrados.remove(item);
@@ -869,6 +1098,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
               onMarcarSubstituto: () => _marcarSubstituto(item),
               vinculo: _vinculosPorProdutoId[item.produtoSubstitutoId ?? item.original.produtoId],
               onRegistrarFaixaDesconto: () => _registrarFaixaDesconto(item),
+              onTrocarVinculo: (vinculo) => _trocarVinculo(item, vinculo),
             ),
         ],
       ),
@@ -975,7 +1205,7 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                       leading: Container(width: 10, height: 10, decoration: BoxDecoration(color: colorScheme.primary, shape: BoxShape.circle)),
                       title: Text('Produtos da cotação sem cadastro (${_naoCadastrados.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: const Text(
-                        'O fornecedor cotou esses itens, mas nenhum produto no catálogo tem esse código de barras.',
+                        'O fornecedor cotou esses itens, mas não deu pra casar sozinho com o catálogo — sem EAN, ou com um código de fornecedor que ainda não foi vinculado a nenhum produto.',
                         style: TextStyle(fontSize: 12),
                       ),
                       childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -990,7 +1220,11 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                                 children: [
                                   Text(item.lido.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
                                   Text(
-                                    'EAN: ${item.lido.codigoBarras} • ${item.lido.quantidade}un a R\$ ${item.lido.custoUnitario.toStringAsFixed(2)}',
+                                    // Formato com EAN identifica o produto pelo código de barras; formato
+                                    // em tabela (ex: Alfa Vet) só traz o código interno do PRÓPRIO
+                                    // fornecedor — nunca os dois ao mesmo tempo, ver [ItemCotacaoExtraido].
+                                    '${(item.lido.codigoBarras?.isNotEmpty ?? false) ? 'EAN: ${item.lido.codigoBarras}' : 'Cód. fornecedor: ${item.lido.codigoFornecedor}'}'
+                                    ' • ${item.lido.quantidade}un a R\$ ${item.lido.custoUnitario.toStringAsFixed(2)}',
                                     style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                                   ),
                                   const SizedBox(height: 6),
@@ -1000,18 +1234,31 @@ class _ConferenciaEspelhoScreenState extends State<ConferenciaEspelhoScreen> {
                                     quantidadeDesejadaController: item.quantidadeDesejadaController,
                                   ),
                                   const SizedBox(height: 6),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
+                                  // Wrap em vez de Row: com os 3 botões (Ignorar/Vincular/Cadastrar) uma
+                                  // Row estourava a largura em tela de celular e escondia o botão do
+                                  // meio sem aviso nenhum (achado real 22/09) — Wrap quebra linha.
+                                  Wrap(
+                                    alignment: WrapAlignment.end,
+                                    spacing: 4,
+                                    runSpacing: 4,
                                     children: [
                                       TextButton.icon(
                                         onPressed: () => _ignorarNaoCadastrado(item),
                                         icon: const Icon(Icons.close, size: 18),
                                         label: const Text('Ignorar'),
                                       ),
-                                      const SizedBox(width: 4),
+                                      // Só faz sentido "vincular a produto existente" quando o item veio
+                                      // com código de fornecedor (provavelmente já é um produto do
+                                      // catálogo, só falta ensinar o código) — com EAN, já teria casado
+                                      // sozinho se o produto existisse, então aqui só resta cadastrar novo.
+                                      if (item.lido.codigoFornecedor != null)
+                                        OutlinedButton(
+                                          onPressed: () => _vincularExistente(item),
+                                          child: const Text('Vincular a produto existente'),
+                                        ),
                                       FilledButton.tonal(
                                         onPressed: () => _cadastrarProdutoNaoCatalogado(item),
-                                        child: const Text('Cadastrar'),
+                                        child: const Text('Cadastrar novo'),
                                       ),
                                     ],
                                   ),
@@ -1137,11 +1384,16 @@ class _LinhaConferencia extends StatefulWidget {
   final ProdutoFornecedor? vinculo;
   final VoidCallback onRegistrarFaixaDesconto;
 
+  /// Move o vínculo (custo/código/faixas) pra outro produto — só faz
+  /// sentido quando [vinculo] existe (não dá pra trocar o que não existe).
+  final void Function(ProdutoFornecedor vinculo) onTrocarVinculo;
+
   const _LinhaConferencia({
     required this.item,
     required this.onMarcarSubstituto,
     required this.vinculo,
     required this.onRegistrarFaixaDesconto,
+    required this.onTrocarVinculo,
   });
 
   @override
@@ -1229,6 +1481,7 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
               ],
             ),
             if (widget.vinculo != null) _dicaFaixaDesconto(widget.vinculo!, item),
+            if (widget.vinculo != null) _linhaVinculoFornecedor(widget.vinculo!),
             const SizedBox(height: 6),
             item.produtoSubstitutoNome != null
                 ? Chip(
@@ -1254,6 +1507,43 @@ class _LinhaConferenciaState extends State<_LinhaConferencia> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Mostra qual código desse fornecedor está vinculado a este produto (se
+  /// houver) e deixa trocar pra outro produto direto daqui — sem isso, um
+  /// vínculo feito errado ao ler um PDF de cotação (ver
+  /// `_ConferenciaEspelhoScreenState._vincularExistente`) só dava pra
+  /// corrigir saindo pra "Produtos de {fornecedor}" (achado real 22/09).
+  Widget _linhaVinculoFornecedor(ProdutoFornecedor vinculo) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final codigo = vinculo.codigoProdutoFornecedor;
+    // Sem código é justamente o caso mais comum em "Não vieram no PDF" — é
+    // o motivo do item não ter casado sozinho (achado real 22/09: antes essa
+    // linha ficava escondida bem aqui, onde mais faria falta aparecer).
+    final temCodigo = codigo != null && codigo.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              temCodigo ? 'Código no fornecedor: $codigo' : 'Sem código vinculado a esse fornecedor ainda',
+              style: TextStyle(
+                fontSize: 11,
+                color: temCodigo ? colorScheme.onSurfaceVariant : colorScheme.error,
+                fontStyle: temCodigo ? FontStyle.normal : FontStyle.italic,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () => widget.onTrocarVinculo(vinculo),
+            icon: const Icon(Icons.swap_horiz, size: 14),
+            label: const Text('Trocar produto', style: TextStyle(fontSize: 11)),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 28)),
+          ),
+        ],
       ),
     );
   }

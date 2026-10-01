@@ -108,6 +108,28 @@ class _VincularProdutosFornecedorScreenState extends State<VincularProdutosForne
     });
   }
 
+  /// Seleciona (ou limpa a seleção de) todos os produtos que passam no
+  /// filtro/busca atual — sem isso, uma busca que retorna vários produtos
+  /// (ex: todos de um mesmo fabricante) obrigava marcar um por um.
+  void _alternarSelecaoTodos(List<Produto> candidatos) {
+    final todosMarcados = candidatos.isNotEmpty && candidatos.every((p) => _selecionados.contains(p.id));
+    setState(() {
+      for (final produto in candidatos) {
+        if (todosMarcados) {
+          _selecionados.remove(produto.id);
+          _configs.remove(produto.id)?.dispose();
+        } else if (!_selecionados.contains(produto.id)) {
+          _selecionados.add(produto.id!);
+          final config = _ConfigVinculo();
+          if (produto.custo > 0) {
+            config.custoController.text = produto.custo.toStringAsFixed(2).replaceAll('.', ',');
+          }
+          _configs[produto.id!] = config;
+        }
+      }
+    });
+  }
+
   Future<void> _vincularTodos(List<Produto> produtos) async {
     var temErro = false;
     setState(() {
@@ -281,6 +303,27 @@ class _VincularProdutosFornecedorScreenState extends State<VincularProdutosForne
             },
           ),
         ),
+        if (!_carregandoVinculos && candidatos.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+            child: Row(
+              children: [
+                Text(
+                  '${candidatos.length} produto(s) encontrado(s)',
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+                const Spacer(),
+                Builder(builder: (context) {
+                  final todosMarcados = candidatos.every((p) => _selecionados.contains(p.id));
+                  return TextButton.icon(
+                    onPressed: () => _alternarSelecaoTodos(candidatos),
+                    icon: Icon(todosMarcados ? Icons.deselect : Icons.select_all, size: 18),
+                    label: Text(todosMarcados ? 'Limpar seleção' : 'Selecionar todos'),
+                  );
+                }),
+              ],
+            ),
+          ),
         const SizedBox(height: 8),
         Expanded(
           child: _carregandoVinculos

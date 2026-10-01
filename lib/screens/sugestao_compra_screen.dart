@@ -479,6 +479,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
       ),
       body: Column(
         children: [
+          const _CardCrescimento(),
           const _CardSazonalidade(),
           _FiltrosAnalise(
             diasAnalise: _diasAnalise,
@@ -577,6 +578,83 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// Tendência de vendas da LOJA (regressão linear sobre as últimas 12
+/// semanas, `indice_crescimento_loja`) — ao contrário da sazonalidade
+/// abaixo, ESSA já ajusta a quantidade sugerida sozinha (multiplicador
+/// travado entre 0,7x e 1,5x, só quando há confiança suficiente de dado).
+/// Esse card existe só pra deixar visível quando/quanto isso está
+/// acontecendo, já que a quantidade sugerida sozinha não conta essa
+/// história. Só aparece quando o sinal é confiável e relevante (>=5%) —
+/// testado com dado real em 22/09 (loja em queda de ~24,5% sobre a média
+/// das últimas 12 semanas, não crescimento).
+class _CardCrescimento extends StatefulWidget {
+  const _CardCrescimento();
+
+  @override
+  State<_CardCrescimento> createState() => _CardCrescimentoState();
+}
+
+class _CardCrescimentoState extends State<_CardCrescimento> {
+  bool _carregando = true;
+  double? _variacaoPct;
+  double? _multiplicador;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    try {
+      final resultado = await Supabase.instance.client
+          .rpc('indice_crescimento_loja', params: {'p_empresa_id': empresaId, 'p_dias_analise': 30});
+      if (!mounted) return;
+      final linha = (resultado as List).cast<Map<String, dynamic>>().firstOrNull;
+      final confiavel = linha?['confiavel'] as bool? ?? false;
+      final variacao = (linha?['variacao_pct'] as num?)?.toDouble();
+      setState(() {
+        // Só relevante o suficiente pra mostrar: sinal confiável e >=5% de
+        // variação (abaixo disso é ruído semanal normal, não tendência).
+        _variacaoPct = (confiavel && variacao != null && variacao.abs() >= 5) ? variacao : null;
+        _multiplicador = (linha?['multiplicador'] as num?)?.toDouble();
+        _carregando = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _carregando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final variacao = _variacaoPct;
+    if (_carregando || variacao == null) return const SizedBox.shrink();
+
+    final subindo = variacao > 0;
+    final multiplicador = _multiplicador ?? 1.0;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      color: (subindo ? Colors.green : Colors.orange).withValues(alpha: 0.12),
+      child: ListTile(
+        leading: Icon(
+          subindo ? Icons.trending_up : Icons.trending_down,
+          color: subindo ? Colors.green.shade700 : Colors.orange.shade800,
+        ),
+        title: Text(subindo ? 'Loja em tendência de crescimento' : 'Loja em tendência de queda'),
+        subtitle: Text(
+          'Vendas ${subindo ? 'subindo' : 'caindo'} ${variacao.abs().toStringAsFixed(1)}% em relação à média '
+          'das últimas 12 semanas (regressão sobre a série semanal) — quantidades já ajustadas em '
+          '${multiplicador.toStringAsFixed(2)}x automaticamente nesta sugestão.',
+          style: const TextStyle(fontSize: 12),
+        ),
       ),
     );
   }
