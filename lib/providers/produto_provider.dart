@@ -104,6 +104,31 @@ class ProdutoProvider with ChangeNotifier {
     }
   }
 
+  /// Ver `ProdutoRepository.ajustarEstoque`. Recarrega o produto do banco
+  /// depois (granel/kit podem ter mudado junto, por trigger).
+  Future<int> ajustarEstoque({
+    required String produtoId,
+    required int quantidadeNova,
+    required String motivo,
+    String? observacao,
+    int? quantidadeEsperada,
+  }) async {
+    final saldo = await _repository.ajustarEstoque(
+      produtoId: produtoId,
+      quantidadeNova: quantidadeNova,
+      motivo: motivo,
+      observacao: observacao,
+      quantidadeEsperada: quantidadeEsperada,
+    );
+    final atualizados = await _repository.buscarPorIds([produtoId]);
+    for (final produto in atualizados) {
+      final index = _produtos.indexWhere((p) => p.id == produto.id);
+      if (index != -1) _produtos[index] = produto;
+    }
+    notifyListeners();
+    return saldo;
+  }
+
   /// Ver `ProdutoRepository.vincularFracionamentoExistente`. Recarrega os
   /// dois produtos do banco depois — estoque, custo e preço mudam por
   /// trigger/RPC, não dá pra deduzir localmente.

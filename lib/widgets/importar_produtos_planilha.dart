@@ -35,7 +35,12 @@ class _LinhaImportada {
   final int numeroLinha;
   final Produto produto;
   final bool atualizacao;
-  _LinhaImportada({required this.numeroLinha, required this.produto, required this.atualizacao});
+
+  /// Saldo informado na planilha (null = célula vazia/ilegível). Em produto
+  /// existente, só esse valor mexe no estoque — via `ajustar_estoque`, com
+  /// motivo "importação de planilha" no histórico.
+  final int? estoqueDaPlanilha;
+  _LinhaImportada({required this.numeroLinha, required this.produto, required this.atualizacao, this.estoqueDaPlanilha});
 }
 
 /// Aliases de cabeçalho reconhecidos pra planilha de produtos — a planilha
@@ -247,10 +252,8 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
           final produto = Produto(
             id: existente?.id,
             // Sem isso, ProdutoRepository.atualizar() pula o UPDATE da
-            // tabela `estoque` inteiro (ela só roda `if (estoqueId != null)`)
-            // — a planilha atualizava nome/preço normalmente, mas a
-            // quantidade em estoque nunca mudava de verdade, mesmo o app
-            // reportando sucesso na importação.
+            // tabela `estoque` (estoque mínimo). O saldo em si vai separado,
+            // por `estoqueDaPlanilha` + ajustar_estoque.
             estoqueId: existente?.estoqueId,
             sku: skuExterno,
             // Produto com nome travado (nomeManualOverride) nunca aceita o
@@ -318,7 +321,12 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
           );
 
           if (avisoValor) linhasComValorInvalido.add(numeroLinha);
-          linhas.add(_LinhaImportada(numeroLinha: numeroLinha, produto: produto, atualizacao: existente != null));
+          linhas.add(_LinhaImportada(
+            numeroLinha: numeroLinha,
+            produto: produto,
+            atualizacao: existente != null,
+            estoqueDaPlanilha: valor('estoque_atual')?.round(),
+          ));
 
           // "> 0", não só "!= null": um 0 literal aqui não é "sem preço no
           // iFood", vira um preço de verdade sincronizado pro canal real
@@ -481,6 +489,16 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
       var atualizados = 0;
       for (final l in atualizacoesLista) {
         await ProdutoRepository().atualizar(l.produto);
+        final estoquePlanilha = l.estoqueDaPlanilha;
+        if (estoquePlanilha != null && estoquePlanilha >= 0 && l.produto.id != null) {
+          // Sem quantidade esperada de propósito: a planilha é uma contagem
+          // absoluta escolhida pelo usuário. A RPC ignora se já for igual.
+          await ProdutoRepository().ajustarEstoque(
+            produtoId: l.produto.id!,
+            quantidadeNova: estoquePlanilha,
+            motivo: 'importacao_planilha',
+          );
+        }
         atualizados++;
         if (mounted) setState(() => _progressoAtual = atualizados);
       }

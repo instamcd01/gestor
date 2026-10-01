@@ -24,8 +24,10 @@ import '../widgets/form_section.dart';
 import '../widgets/familia_variantes_section.dart';
 import '../widgets/fracionamento_section.dart';
 import '../widgets/fornecedores_produto_section.dart';
+import '../widgets/motivo_ajuste_estoque_dialog.dart';
 import '../widgets/vincular_variante_dialog.dart';
 import 'gerenciar_midias_produto_screen.dart';
+import 'historico_estoque_screen.dart';
 
 class EditarProdutoScreen extends StatefulWidget {
   final Produto produto;
@@ -98,6 +100,10 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   String? _imagemUrlVersoAtual;
   int _cacheBusterImagem = DateTime.now().millisecondsSinceEpoch;
 
+  /// Saldo do banco que o usuário está vendo — base pra saber se ele mexeu
+  /// no campo e trava do `ajustar_estoque` (recusa se o banco mudou depois).
+  late int _estoqueBase;
+
   bool _isLoading = false;
   List<String> _categoriasExistentes = [];
   bool _categoriasCarregadas = false;
@@ -142,8 +148,10 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
         TextEditingController(text: widget.produto.codigoBarras);
     _custoController = TextEditingController(
         text: ProdutoValidators.formatarMoeda(widget.produto.custo));
+    _estoqueBase = widget.produto.estoqueAtual;
     _estoqueAtualController =
         TextEditingController(text: widget.produto.estoqueAtual.toString());
+    _recarregarEstoqueDoBanco();
     _estoqueMinimoController =
         TextEditingController(text: widget.produto.estoqueMinimo.toString());
     _cicloRecompraController =
@@ -467,11 +475,90 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     }
   }
 
+  /// O produto chega da lista em memória, que pode ter sido carregada antes
+  /// de vendas/entradas recentes — busca o saldo real ao abrir a tela. Só
+  /// troca o campo se o usuário ainda não começou a editá-lo.
+  Future<int?> _recarregarEstoqueDoBanco() async {
+    final produtoId = widget.produto.id;
+    if (produtoId == null) return null;
+    try {
+      final row = await supabase
+          .from('estoque')
+          .select('quantidade_atual')
+          .eq('produto_id', produtoId)
+          .maybeSingle();
+      final saldo = (row?['quantidade_atual'] as num?)?.toInt();
+      if (saldo == null || !mounted) return saldo;
+      setState(() {
+        if (_estoqueAtualController.text == _estoqueBase.toString()) {
+          _estoqueAtualController.text = saldo.toString();
+        }
+        _estoqueBase = saldo;
+      });
+      return saldo;
+    } catch (e) {
+      debugPrint('Erro ao recarregar estoque do produto: $e');
+      return null;
+    }
+  }
+
+  void _abrirHistoricoEstoque() {
+    final produtoId = widget.produto.id;
+    if (produtoId == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => HistoricoEstoqueScreen(produtoId: produtoId, nomeProduto: _nomeController.text),
+    ));
+  }
+
   // Salva as alterações do produto no Supabase.
   Future<void> _salvarEdicao() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // Mudança de saldo não vai mais junto com o cadastro: passa pelo
+    // `ajustar_estoque` com motivo (fica no histórico) e trava contra
+    // sobrescrever venda/entrada que aconteceu com a tela aberta.
+    final estoqueDigitado = int.tryParse(_estoqueAtualController.text);
+    final mudouEstoque = widget.produto.id != null && estoqueDigitado != null && estoqueDigitado != _estoqueBase;
+    ({String motivo, String? observacao})? ajuste;
+    if (mudouEstoque) {
+      ajuste = await perguntarMotivoAjusteEstoque(
+        context,
+        nomeProduto: _nomeController.text,
+        de: _estoqueBase,
+        para: estoqueDigitado,
+      );
+      if (ajuste == null || !mounted) return;
+    }
+
     setState(() => _isLoading = true);
+
+    if (mudouEstoque) {
+      final baseAnterior = _estoqueBase;
+      try {
+        await context.read<ProdutoProvider>().ajustarEstoque(
+              produtoId: widget.produto.id!,
+              quantidadeNova: estoqueDigitado,
+              motivo: ajuste!.motivo,
+              observacao: ajuste.observacao,
+              quantidadeEsperada: _estoqueBase,
+            );
+        _estoqueBase = estoqueDigitado;
+      } catch (e) {
+        // Saldo mudou com a tela aberta (ou outro erro): nada é salvo, e o
+        // campo de base é atualizado pra o usuário decidir de novo.
+        final saldoReal = await _recarregarEstoqueDoBanco();
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(saldoReal != null && saldoReal != baseAnterior
+              ?'O estoque mudou para $saldoReal enquanto a tela estava aberta (venda ou entrada). '
+                  'Confira e salve de novo — nada foi alterado.'
+              : 'Erro ao ajustar estoque: $e'),
+          duration: const Duration(seconds: 6),
+        ));
+        return;
+      }
+    }
 
     // Campos "travados" abaixo (só mudam via ação dedicada — vincular
     // variante, trocar produto pai, fracionar — nunca por este formulário)
@@ -480,6 +567,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
     // uma dessas ações dedicadas e DEPOIS salvar qualquer campo comum nesta
     // mesma tela revertia o vínculo recém-criado silenciosamente — bug real
     // achado 12/09 (família de variantes perdendo vínculo ao salvar).
+    if (!mounted) return;
     final atual = context.read<ProdutoProvider>().getProdutoPorId(widget.produto.id ?? '') ?? widget.produto;
 
     final produtoAtualizado = Produto(
@@ -1183,7 +1271,10 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                 children: [
                   TextFormField(
                     controller: _estoqueAtualController,
-                    decoration: const InputDecoration(labelText: 'Estoque Atual'),
+                    decoration: const InputDecoration(
+                      labelText: 'Estoque Atual',
+                      helperText: 'Alterar pede o motivo e fica registrado no histórico',
+                    ),
                     keyboardType: TextInputType.number,
                     inputFormatters: [InteiroInputFormatter()],
                     validator: (value) =>
@@ -1197,6 +1288,15 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                     validator: (value) =>
                         ProdutoValidators.estoqueInteiro(value, campo: 'o estoque mínimo'),
                   ),
+                  if (widget.produto.id != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _abrirHistoricoEstoque,
+                        icon: const Icon(Icons.history),
+                        label: const Text('Ver histórico de estoque'),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 16.0),

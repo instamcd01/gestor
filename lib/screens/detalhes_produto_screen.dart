@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/produto.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/form_section.dart';
+import 'historico_estoque_screen.dart';
 
 /// Tela somente-leitura de produto, usada pelo papel "vendedor" — precisa
 /// ver preço/estoque/descrição pra atender o cliente, mas não deve alterar
@@ -86,6 +87,17 @@ class DetalhesProdutoScreen extends StatelessWidget {
                 semEstoque ? 'Sem estoque' : '${produto.estoqueAtual} unidade(s)',
                 cor: semEstoque ? colorScheme.error : (estoqueBaixo ? Colors.orange : null),
               ),
+              if (produto.id != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => HistoricoEstoqueScreen(produtoId: produto.id!, nomeProduto: produto.nome),
+                    )),
+                    icon: const Icon(Icons.history),
+                    label: const Text('Ver histórico de estoque'),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 16),

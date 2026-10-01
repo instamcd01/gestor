@@ -1,4 +1,5 @@
 import '../config/supabase_config.dart';
+import '../models/movimentacao_estoque.dart';
 import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
 
@@ -156,25 +157,54 @@ class ProdutoRepository {
         .select()
         .single();
 
+    // NUNCA grava quantidade_atual aqui: o objeto vem de uma lista carregada
+    // antes, e regravar o saldo dela "ressuscitava" unidades vendidas nesse
+    // meio-tempo (bug real 01/10 — salvar custo na importação de NF-e ou
+    // editar o preço desfazia baixas). Saldo só muda via [ajustarEstoque]
+    // (motivo obrigatório + histórico) ou pelas rotinas de venda/entrada.
+    // O saldo devolvido é o lido do banco agora, não o da memória.
+    List<dynamic> estoqueAtualizado = [];
     if (produto.estoqueId != null) {
-      await supabase.from('estoque').update({
-        'quantidade_atual': produto.estoqueAtual,
-        'quantidade_minima': produto.estoqueMinimo,
-      }).eq('id', produto.estoqueId!);
+      estoqueAtualizado = await supabase
+          .from('estoque')
+          .update({'quantidade_minima': produto.estoqueMinimo})
+          .eq('id', produto.estoqueId!)
+          .select('id, quantidade_atual, quantidade_minima');
     }
 
     return Produto.fromSupabase({
       ...produtoAtualizado,
-      'estoque': produto.estoqueId != null
-          ? [
-              {
-                'id': produto.estoqueId,
-                'quantidade_atual': produto.estoqueAtual,
-                'quantidade_minima': produto.estoqueMinimo,
-              }
-            ]
-          : [],
+      'estoque': estoqueAtualizado,
     });
+  }
+
+  /// Ajuste manual de saldo (RPC `ajustar_estoque`): exige motivo e grava no
+  /// histórico de movimentações. [quantidadeEsperada] é o saldo que o
+  /// usuário estava vendo — se o banco mudou nesse meio-tempo (venda,
+  /// entrada), a RPC recusa em vez de sobrescrever. Retorna o saldo final.
+  Future<int> ajustarEstoque({
+    required String produtoId,
+    required int quantidadeNova,
+    required String motivo,
+    String? observacao,
+    int? quantidadeEsperada,
+  }) async {
+    final resultado = await supabase.rpc('ajustar_estoque', params: {
+      'p_produto_id': produtoId,
+      'p_quantidade_nova': quantidadeNova,
+      'p_motivo': motivo,
+      'p_observacao': observacao,
+      'p_quantidade_esperada': quantidadeEsperada,
+    });
+    return (resultado as num).toInt();
+  }
+
+  Future<List<MovimentacaoEstoque>> listarMovimentacoesEstoque(String produtoId, {int limite = 300}) async {
+    final data = await supabase.rpc('listar_movimentacoes_estoque', params: {
+      'p_produto_id': produtoId,
+      'p_limite': limite,
+    });
+    return (data as List).map((r) => MovimentacaoEstoque.fromSupabase(r as Map<String, dynamic>)).toList();
   }
 
   /// Exclusão lógica — preserva histórico (vendas antigas continuam
