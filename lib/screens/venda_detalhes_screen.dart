@@ -13,6 +13,9 @@ import '../repositories/cancelamentos_ifood_repository.dart';
 import '../repositories/venda_repository.dart';
 import '../utils/canal_venda_utils.dart';
 import '../utils/mensagem_entregador.dart';
+import '../utils/mensagem_status_dialog.dart';
+import '../utils/mensagens_status_pedido.dart';
+import '../utils/previsao_entrega_utils.dart';
 import '../utils/telefone_utils.dart';
 import 'alterar_forma_pagamento_screen.dart';
 import 'recibo_screen.dart';
@@ -51,6 +54,12 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     }
   }
 
+  /// Botão "Enviar mensagem" da AppBar — mensagem opcional sobre o status
+  /// atual do pedido (mesmo diálogo reaproveitado nos cards da Fila de
+  /// Pedidos, ver `mensagem_status_dialog.dart`).
+  Future<void> _enviarMensagemStatus(String mensagemPadrao) =>
+      enviarMensagemStatusWhatsApp(context, _venda, mensagemPadrao);
+
   /// Pedidos iFood vêm com um número de telefone mascarado (proxy 0800) —
   /// WhatsApp não funciona com ele, só ligação de voz. O código localizador
   /// (se a iFood mandou algum) fica só como texto de apoio na tela, já que
@@ -85,15 +94,6 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     }
   }
 
-  /// Mesma distinção do fila_pedidos_screen: iFood usa agendado/entregaPrevista*,
-  /// pedido com checkout do app (loja física/WhatsApp/site) usa
-  /// agendadoManualmente/previsaoEntrega* — ver comentário no model Venda.
-  DateTime? _previsaoInicio(Venda venda) => venda.previsaoEntregaInicio ?? venda.entregaPrevistaInicio;
-  DateTime? _previsaoFim(Venda venda) => venda.previsaoEntregaFim ?? venda.entregaPrevistaFim;
-  bool _ehAgendado(Venda venda) => venda.agendado || venda.agendadoManualmente;
-
-  bool _temPrevisaoEntrega(Venda venda) => _previsaoFim(venda) != null;
-
   /// Usado tanto no resumo fixo (topo) quanto no card "Pagamento" da aba —
   /// mesmo texto nos dois lugares, um método só pra não desalinhar depois.
   String _resumoFormaPagamento(Venda venda) {
@@ -108,27 +108,6 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       return '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega';
     }
     return venda.metodoPagamento;
-  }
-
-  String _labelPrevisaoEntrega(Venda venda) {
-    if (_ehAgendado(venda)) return venda.retirada ? 'Retirada agendada' : 'Entrega agendada';
-    if (venda.modalidade == 'economica') return 'Entrega econômica';
-    return 'Previsão de entrega';
-  }
-
-  String _formatarPrevisaoEntrega(Venda venda) {
-    final formato = DateFormat('dd/MM HH:mm');
-    final fim = _previsaoFim(venda)!;
-    if (_ehAgendado(venda)) {
-      final inicio = _previsaoInicio(venda);
-      return inicio != null ? '${formato.format(inicio)} - ${formato.format(fim)}' : '~${formato.format(fim)}';
-    }
-    // previsaoEntregaFim aqui guarda a mesma hora-do-dia do pedido (só a
-    // DATA já pula dias fechados — ver `finalizar_pedido_site`) — mostrar a
-    // hora seria enganoso, mesmo ajuste já feito no site e na Fila de
-    // Pedidos (ver `Venda.modalidade`).
-    if (venda.modalidade == 'economica') return 'Até ${DateFormat('dd/MM').format(fim)}';
-    return '~${formato.format(fim)}';
   }
 
   void _verRecibo() {
@@ -541,10 +520,22 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       if (podeVerFinancas) _abaFinanceiro(venda, currencyFormat),
     ];
 
+    // null pra status sem mensagem definida (aguardando_pagamento,
+    // aguardando_conciliacao) ou pra "pronto" fora de retirada — decisão do
+    // usuário (19/09). Pedido iFood também fica de fora: telefone mascarado
+    // pela iFood não recebe WhatsApp (ver aviso já existente na aba Cliente).
+    final mensagemStatus = venda.ehMarketplace ? null : mensagemPadraoStatus(venda, venda.status);
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Venda - ${venda.cliente.nome}'),
         actions: [
+          if (mensagemStatus != null)
+            IconButton(
+              icon: const Icon(Icons.chat_bubble_outline),
+              tooltip: 'Enviar mensagem ao cliente',
+              onPressed: () => _enviarMensagemStatus(mensagemStatus),
+            ),
           if (venda.temEntrega && !cancelada)
             IconButton(
               icon: const Icon(Icons.delivery_dining),
@@ -757,8 +748,8 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_temPrevisaoEntrega(venda))
-                _linhaInfo(Icons.schedule, _labelPrevisaoEntrega(venda), _formatarPrevisaoEntrega(venda)),
+              if (temPrevisaoEntrega(venda))
+                _linhaInfo(Icons.schedule, labelPrevisaoEntrega(venda), formatarPrevisaoEntrega(venda)),
               if (venda.cliente.cpf.isNotEmpty) _linhaInfo(Icons.badge_outlined, 'CPF', venda.cliente.cpf),
               if (venda.cliente.cnpj.isNotEmpty) _linhaInfo(Icons.badge_outlined, 'CNPJ', venda.cliente.cnpj),
               if (venda.cliente.celular.isNotEmpty)
@@ -872,6 +863,8 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 ),
               if (venda.saldoUsado > 0)
                 _linhaValor('Saldo utilizado', -venda.saldoUsado, currencyFormat, cor: Colors.red),
+              if (venda.petcashUsado > 0)
+                _linhaValor('PetCash utilizado', -venda.petcashUsado, currencyFormat, cor: Colors.red),
               if (temEntrega)
                 _linhaValor(
                   venda.entregaSelecionada.isNotEmpty ? 'Entrega (${venda.entregaSelecionada})' : 'Entrega',

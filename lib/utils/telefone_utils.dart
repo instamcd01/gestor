@@ -51,3 +51,10 @@ String telefoneParaLinkWhatsApp(String telefone) {
 /// Monta o link do wa.me a partir de um telefone em qualquer formato já
 /// salvo no banco — ver [telefoneParaLinkWhatsApp].
 String linkWhatsApp(String telefone) => 'https://wa.me/${telefoneParaLinkWhatsApp(telefone)}';
+
+/// Mesmo link do wa.me, com o texto da mensagem já preenchido no campo de
+/// digitação do WhatsApp — quem manda ainda revisa e aperta enviar de lá,
+/// não é envio automático (a Cloud API do WhatsApp Business não é usada
+/// aqui, então não depende do número estar aprovado pra produção).
+String linkWhatsAppComTexto(String telefone, String texto) =>
+    '${linkWhatsApp(telefone)}?text=${Uri.encodeComponent(texto)}';

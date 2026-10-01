@@ -8,6 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/venda.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../utils/canal_venda_utils.dart';
+import '../utils/mensagem_status_dialog.dart';
+import '../utils/mensagens_status_pedido.dart';
 import '../widgets/categoria_cliente_badge.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'alterar_forma_pagamento_screen.dart';
@@ -628,41 +630,71 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                     ],
                                   ),
                                 ],
-                                // Só aparece a partir de "saiu para entrega" — é o
-                                // momento real em que o cliente pode mudar de ideia
-                                // na porta (combinou débito, quer pagar Pix; ou quer
-                                // parcelar um crédito que tinha sido à vista). Vale
-                                // pra qualquer canal cobrado na entrega (loja física,
-                                // WhatsApp, site, iFood/99Food ainda não coletado) —
-                                // só some quando já foi pago de verdade por gateway
-                                // ou pelo marketplace (`formaPagamentoEditavel`).
-                                if (venda.status == StatusPedido.saiuParaEntrega &&
-                                    venda.formaPagamentoEditavel) ...[
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => AlterarFormaPagamentoScreen(venda: venda),
+                                // WhatsApp com a mensagem padrão do status atual (ver
+                                // `mensagens_status_pedido.dart`) no canto esquerdo, e
+                                // as ações do pedido no direito — mesmo diálogo de
+                                // revisar/editar antes de enviar já usado na AppBar de
+                                // `venda_detalhes_screen.dart`. `null` pra status sem
+                                // mensagem definida ou pedido de marketplace (telefone
+                                // mascarado pela iFood não recebe WhatsApp).
+                                Builder(builder: (context) {
+                                  final mensagemStatus =
+                                      venda.ehMarketplace ? null : mensagemPadraoStatus(venda, venda.status);
+                                  // Só aparece "Forma de pagamento" a partir de "saiu
+                                  // para entrega" — é o momento real em que o cliente
+                                  // pode mudar de ideia na porta (combinou débito, quer
+                                  // pagar Pix; ou quer parcelar um crédito que tinha
+                                  // sido à vista). Vale pra qualquer canal cobrado na
+                                  // entrega (loja física, WhatsApp, site, iFood/99Food
+                                  // ainda não coletado) — só some quando já foi pago de
+                                  // verdade por gateway ou pelo marketplace
+                                  // (`formaPagamentoEditavel`).
+                                  final botoesDireita = <Widget>[
+                                    if (venda.status == StatusPedido.saiuParaEntrega && venda.formaPagamentoEditavel)
+                                      OutlinedButton.icon(
+                                        onPressed: () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => AlterarFormaPagamentoScreen(venda: venda),
+                                          ),
                                         ),
+                                        icon: const Icon(Icons.payments_outlined, size: 18),
+                                        label: const Text('Forma de pagamento'),
                                       ),
-                                      icon: const Icon(Icons.payments_outlined, size: 18),
-                                      label: const Text('Forma de pagamento'),
+                                    if (venda.proximoStatus != null)
+                                      ElevatedButton(
+                                        onPressed: () => _avancarStatus(venda),
+                                        child: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!)}'),
+                                      ),
+                                  ];
+
+                                  if (mensagemStatus == null && botoesDireita.isEmpty) return const SizedBox.shrink();
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Row(
+                                      children: [
+                                        if (mensagemStatus != null)
+                                          IconButton(
+                                            icon: const Icon(Icons.message, color: Colors.green),
+                                            tooltip: 'Enviar mensagem por WhatsApp',
+                                            onPressed: () =>
+                                                enviarMensagemStatusWhatsApp(context, venda, mensagemStatus),
+                                          ),
+                                        const Spacer(),
+                                        if (botoesDireita.isNotEmpty)
+                                          Flexible(
+                                            child: Wrap(
+                                              alignment: WrapAlignment.end,
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children: botoesDireita,
+                                            ),
+                                          ),
+                                      ],
                                     ),
-                                  ),
-                                ],
-                                if (venda.proximoStatus != null) ...[
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: ElevatedButton(
-                                      onPressed: () => _avancarStatus(venda),
-                                      child: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!)}'),
-                                    ),
-                                  ),
-                                ],
+                                  );
+                                }),
                               ],
                             ),
                           ),
