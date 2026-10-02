@@ -20,6 +20,7 @@ import '../providers/entregador_provider.dart';
 import '../providers/tarefa_provider.dart';
 import '../providers/sugestao_planejamento_provider.dart';
 import '../providers/meta_financeira_provider.dart';
+import '../services/notificacao_desktop_service.dart';
 import '../services/push_notification_service.dart';
 import 'auth/login_screen.dart';
 import 'auth/onboarding_empresa_screen.dart';
@@ -88,6 +89,7 @@ class _AuthGateState extends State<AuthGate> {
           ..definirEmpresa(empresaId)
           ..carregar();
         PushNotificationService.inicializar(notificacaoProvider);
+        NotificacaoDesktopService.inicializar(notificacaoProvider);
       });
     }
 

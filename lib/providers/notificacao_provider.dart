@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/supabase_config.dart';
 import '../models/notificacao.dart';
 import '../repositories/notificacao_repository.dart';
 
@@ -15,6 +19,13 @@ class NotificacaoProvider with ChangeNotifier {
   String? _erro;
   Map<String, bool> _preferencias = {};
   int _retencaoDias = 30;
+  RealtimeChannel? _canal;
+  final _novas = StreamController<Notificacao>.broadcast();
+
+  /// Notificações que chegaram pelo Realtime com o app aberto — usado pelo
+  /// aviso do desktop (`NotificacaoDesktopService`), já que o push (FCM)
+  /// só existe no Android.
+  Stream<Notificacao> get novas => _novas.stream;
 
   List<Notificacao> get notificacoes => _notificacoes;
   bool get carregando => _carregando;
@@ -110,6 +121,41 @@ class NotificacaoProvider with ChangeNotifier {
     _empresaId = empresaId;
     carregarPreferencias();
     carregarRetencaoDias();
+    _ouvirNovas(empresaId);
+  }
+
+  /// Sem isso a lista só atualizava no login ou ao abrir a tela de
+  /// Notificações. O RLS de `notificacoes` vale também pro Realtime, então
+  /// tipos restritos (custo, despesa...) não chegam pra vendedor.
+  void _ouvirNovas(String empresaId) {
+    _canal?.unsubscribe();
+    _canal = supabase
+        .channel('notificacoes_$empresaId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'notificacoes',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'empresa_id', value: empresaId),
+          callback: (payload) {
+            final nova = Notificacao.fromSupabase(payload.newRecord);
+            if (_notificacoes.any((n) => n.id == nova.id)) return;
+            _notificacoes = [nova, ..._notificacoes];
+            notifyListeners();
+            _novas.add(nova);
+          },
+        )
+        .subscribe((status, _) {
+          // Ao reconectar (rede caiu, PC dormiu), o que chegou nesse meio
+          // tempo não vem pelo canal — recarrega a lista pra não perder.
+          if (status == RealtimeSubscribeStatus.subscribed) carregar();
+        });
+  }
+
+  @override
+  void dispose() {
+    _canal?.unsubscribe();
+    _novas.close();
+    super.dispose();
   }
 
   Future<void> carregarPreferencias() async {
