@@ -28,6 +28,7 @@ import '../widgets/motivo_ajuste_estoque_dialog.dart';
 import '../widgets/vincular_variante_dialog.dart';
 import 'gerenciar_midias_produto_screen.dart';
 import 'historico_estoque_screen.dart';
+import 'historico_precos_screen.dart';
 
 class EditarProdutoScreen extends StatefulWidget {
   final Produto produto;
@@ -1264,6 +1265,20 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                       inputFormatters: [MoedaInputFormatter()],
                       validator: ProdutoValidators.precoOpcional,
                     ),
+                    if (widget.produto.id != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => HistoricoPrecosScreen(
+                              produtoId: widget.produto.id!,
+                              nomeProduto: _nomeController.text,
+                            ),
+                          )),
+                          icon: const Icon(Icons.price_change_outlined),
+                          label: const Text('Ver histórico de preços'),
+                        ),
+                      ),
                   ],
                 ],
               ),
