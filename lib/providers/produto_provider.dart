@@ -130,6 +130,18 @@ class ProdutoProvider with ChangeNotifier {
     return saldo;
   }
 
+  /// Relê do banco só esses produtos — depois de mudanças feitas por RPC
+  /// (ex: contagem do checklist, que também recalcula o pai do granel).
+  Future<void> recarregarProdutos(List<String> ids) async {
+    if (ids.isEmpty) return;
+    final atualizados = await _repository.buscarPorIds(ids);
+    for (final produto in atualizados) {
+      final index = _produtos.indexWhere((p) => p.id == produto.id);
+      if (index != -1) _produtos[index] = produto;
+    }
+    notifyListeners();
+  }
+
   /// Ver `ProdutoRepository.vincularFracionamentoExistente`. Recarrega os
   /// dois produtos do banco depois — estoque, custo e preço mudam por
   /// trigger/RPC, não dá pra deduzir localmente.

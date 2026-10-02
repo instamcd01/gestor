@@ -8,6 +8,7 @@ import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/checklist_estoque_repository.dart';
 import '../repositories/produto_repository.dart';
 import '../repositories/revisao_preco_repository.dart';
 import '../utils/busca_utils.dart';
@@ -15,6 +16,7 @@ import '../utils/produto_validators.dart';
 import '../utils/variante_label_utils.dart';
 import '../widgets/dialogo_revisao_variante.dart';
 import 'adicionar_imagens_lote_screen.dart';
+import 'checklist_estoque_screen.dart' show diasParaVencer, formatarValidade;
 import 'editar_produto_screen.dart';
 import 'sugestoes_variante_rejeitadas_screen.dart';
 
@@ -2738,7 +2740,12 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
   String _busca = '';
   String? _filtroFaixa;
   String? _filtroCategoria;
+  String? _filtroValidade;
   bool _processando = false;
+
+  /// Do checklist de estoque. Produto ausente = validade nunca conferida;
+  /// valor null = conferido sem validade (ex: acessório).
+  Map<String, DateTime?> _validades = {};
 
   @override
   void initState() {
@@ -2746,12 +2753,28 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
     _carregar();
   }
 
+  String _faixaValidade(String produtoId) {
+    if (!_validades.containsKey(produtoId)) return 'Não conferida';
+    final v = _validades[produtoId];
+    if (v == null) return 'Sem validade';
+    final dias = diasParaVencer(v);
+    if (dias < 0) return 'Vencido';
+    if (dias <= 90) return 'Vence em até 90 dias';
+    return 'Mais de 90 dias';
+  }
+
   Future<void> _carregar() async {
     setState(() => _erro = null);
     try {
-      final itens = await ProdutoRepository().listarEstoqueParado();
+      final resultados = await Future.wait([
+        ProdutoRepository().listarEstoqueParado(),
+        ChecklistEstoqueRepository().listarValidades(),
+      ]);
       if (!mounted) return;
-      setState(() => _itens = itens);
+      setState(() {
+        _itens = resultados[0] as List<EstoqueParado>;
+        _validades = resultados[1] as Map<String, DateTime?>;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _erro = 'Erro ao carregar estoque parado: $e');
@@ -2873,14 +2896,18 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
     ];
     final contagemPorFaixa = <String, int>{};
     final contagemPorCategoria = <String, int>{};
+    final contagemPorValidade = <String, int>{};
     for (final par in pares) {
       contagemPorFaixa[par.item.faixa] = (contagemPorFaixa[par.item.faixa] ?? 0) + 1;
+      final fv = _faixaValidade(par.item.produtoId);
+      contagemPorValidade[fv] = (contagemPorValidade[fv] ?? 0) + 1;
       final cat = par.produto.categoria.isNotEmpty ? par.produto.categoria : 'Sem categoria';
       contagemPorCategoria[cat] = (contagemPorCategoria[cat] ?? 0) + 1;
     }
     final lista = pares
         .where((par) => contemTodasPalavras(par.produto.nome, _busca))
         .where((par) => _filtroFaixa == null || par.item.faixa == _filtroFaixa)
+        .where((par) => _filtroValidade == null || _faixaValidade(par.item.produtoId) == _filtroValidade)
         .where((par) =>
             _filtroCategoria == null ||
             (par.produto.categoria.isNotEmpty ? par.produto.categoria : 'Sem categoria') == _filtroCategoria)
@@ -2941,6 +2968,12 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
                 contagemPorValor: contagemPorCategoria,
                 onChanged: (v) => setState(() => _filtroCategoria = v),
               ),
+              _FiltroPorValor(
+                label: 'Validade',
+                valor: _filtroValidade,
+                contagemPorValor: contagemPorValidade,
+                onChanged: (v) => setState(() => _filtroValidade = v),
+              ),
             ],
           ),
         ),
@@ -2975,6 +3008,15 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
                       final ultimaVenda = item.ultimaVenda == null
                           ? 'Sem venda no histórico'
                           : 'Última venda ${_data.format(item.ultimaVenda!)} (${item.diasSemVenda} dias)';
+                      final validade = _validades[item.produtoId];
+                      final diasValidade = validade != null ? diasParaVencer(validade) : null;
+                      final textoValidade = !_validades.containsKey(item.produtoId)
+                          ? 'Validade não conferida'
+                          : validade == null
+                              ? 'Sem validade'
+                              : diasValidade! < 0
+                                  ? 'VENCIDO (${formatarValidade(validade)})'
+                                  : 'Validade ${formatarValidade(validade)} ($diasValidade dias)';
                       final emPromocao = produto.precoPromocional != null && produto.precoPromocional! < produto.preco;
                       final precos = emPromocao
                           ? 'Promoção ${_moeda.format(produto.precoPromocional)} (de ${_moeda.format(produto.preco)})'
@@ -2990,11 +3032,19 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
                         }),
                         controlAffinity: ListTileControlAffinity.leading,
                         title: Text(produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
-                        subtitle: Text(
-                          '${item.quantidade} un. • ${_moeda.format(item.capital)} parados\n'
-                          '$ultimaVenda\n'
-                          '$precos${produto.destacar ? ' • destaque' : ''}',
-                        ),
+                        subtitle: Text.rich(TextSpan(children: [
+                          TextSpan(
+                            text: '${item.quantidade} un. • ${_moeda.format(item.capital)} parados\n'
+                                '$ultimaVenda\n'
+                                '$precos${produto.destacar ? ' • destaque' : ''}\n',
+                          ),
+                          TextSpan(
+                            text: textoValidade,
+                            style: diasValidade != null && diasValidade <= 90
+                                ? TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w600)
+                                : null,
+                          ),
+                        ])),
                         isThreeLine: true,
                         secondary: IconButton(
                           tooltip: 'Contagem física',

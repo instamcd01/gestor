@@ -10,6 +10,7 @@ import '../models/produto.dart';
 import 'adicionar_imagens_lote_screen.dart';
 import 'analise_produtos_screen.dart';
 import 'cadastro_produto_screen.dart';
+import 'checklist_estoque_screen.dart';
 import 'configuracoes_produto_screen.dart';
 import 'detalhes_produto_screen.dart';
 import 'editar_produto_screen.dart';
@@ -83,6 +84,16 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
               icon: const Icon(Icons.more_vert),
               onSelected: (acao) => acao(),
               itemBuilder: (context) => [
+                PopupMenuItem<VoidCallback>(
+                  value: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const ChecklistEstoqueScreen(),
+                  )),
+                  child: const ListTile(
+                    leading: Icon(Icons.fact_check_outlined),
+                    title: Text('Checklist de estoque'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
                 PopupMenuItem<VoidCallback>(
                   value: () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => const ProdutosExcluidosScreen(),
