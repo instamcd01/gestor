@@ -86,13 +86,14 @@ class ProdutoProvider with ChangeNotifier {
     }
   }
 
-  Future<void> atualizarProduto(Produto produto) async {
+  /// Ver `ProdutoRepository.atualizar` sobre [gravarExibirNoCatalogo].
+  Future<void> atualizarProduto(Produto produto, {bool gravarExibirNoCatalogo = false}) async {
     if (produto.id == null || produto.id!.isEmpty) {
       debugPrint('Erro: produto sem id para atualização.');
       return;
     }
     try {
-      final produtoAtualizado = await _repository.atualizar(produto);
+      final produtoAtualizado = await _repository.atualizar(produto, gravarExibirNoCatalogo: gravarExibirNoCatalogo);
       final index = _produtos.indexWhere((p) => p.id == produto.id);
       if (index != -1) {
         _produtos[index] = produtoAtualizado;

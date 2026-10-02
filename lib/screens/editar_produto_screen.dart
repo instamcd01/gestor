@@ -659,7 +659,10 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
 
     try {
       await Provider.of<ProdutoProvider>(context, listen: false)
-          .atualizarProduto(produtoAtualizado);
+          .atualizarProduto(
+            produtoAtualizado,
+            gravarExibirNoCatalogo: _exibirNoCatalogo != widget.produto.exibirNoCatalogo,
+          );
 
       if (widget.produto.id != null) {
         await _canaisKey.currentState

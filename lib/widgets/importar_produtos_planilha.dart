@@ -488,7 +488,8 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
 
       var atualizados = 0;
       for (final l in atualizacoesLista) {
-        await ProdutoRepository().atualizar(l.produto);
+        // A planilha tem coluna "Exibir no Catálogo" escolhida pelo usuário.
+        await ProdutoRepository().atualizar(l.produto, gravarExibirNoCatalogo: true);
         final estoquePlanilha = l.estoqueDaPlanilha;
         if (estoquePlanilha != null && estoquePlanilha >= 0 && l.produto.id != null) {
           // Sem quantidade esperada de propósito: a planilha é uma contagem

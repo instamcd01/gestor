@@ -146,14 +146,24 @@ class ProdutoRepository {
   /// tela via o nome/margem antigos até o próximo `listar()` completo (ex:
   /// reabrir o app) — foi o que fez "gerar nome automaticamente" parecer
   /// quebrado quando na real o banco já tinha gerado certo.
-  Future<Produto> atualizar(Produto produto) async {
+  ///
+  /// `exibir_no_catalogo` só vai no UPDATE com [gravarExibirNoCatalogo]
+  /// (usuário mexeu no switch): quem cuida dele é o trigger
+  /// `trg_sincronizar_visibilidade_catalogo` (estoque > 0 → aparece). Mandar
+  /// o valor do objeto em memória desfazia o trigger — bug real 02/10:
+  /// ajustar estoque 0→4 e salvar na mesma tela deixava o produto oculto,
+  /// e ele saía inativo na planilha do iFood.
+  Future<Produto> atualizar(Produto produto, {bool gravarExibirNoCatalogo = false}) async {
     if (produto.id == null) {
       throw ArgumentError('Produto sem id não pode ser atualizado');
     }
 
+    final payload = produto.toSupabaseMap();
+    if (!gravarExibirNoCatalogo) payload.remove('exibir_no_catalogo');
+
     final produtoAtualizado = await supabase
         .from('produtos')
-        .update(produto.toSupabaseMap())
+        .update(payload)
         .eq('id', produto.id!)
         .select()
         .single();
