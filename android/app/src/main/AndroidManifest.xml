@@ -76,5 +76,11 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
         </intent>
+        <!-- whatsapp://send: sem isto o Android 11+ não enxerga o WhatsApp e
+             cai no wa.me, que troca emoji por "?" (status do pedido, campanhas). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
     </queries>
 </manifest>

@@ -19,37 +19,57 @@ String? mensagemPadraoStatus(Venda venda, String status) {
   final saudacao = primeiroNome.isEmpty ? 'Oi!' : 'Oi, $primeiroNome!';
   final numero = venda.numeroSequencial != null ? ' #${venda.numeroSequencial}' : '';
 
+  // Cada informação num bloco, separado por linha em branco — numa linha
+  // só ficava tudo colado no WhatsApp (pedido do usuário 02/10).
+  String blocos(List<String?> partes) =>
+      partes.where((p) => p != null && p.trim().isNotEmpty).join('\n\n');
+
   switch (status) {
     case StatusPedido.pendente:
-      return '$saudacao Recebemos seu pedido$numero 🥰 *${_previsaoParaPendente(venda)}*. '
-          'Já estamos cuidando de tudo por aqui!';
+      return blocos([
+        '$saudacao Recebemos seu pedido$numero 🥰',
+        '*${_previsaoParaPendente(venda)}*',
+        'Já estamos cuidando de tudo por aqui!',
+      ]);
 
     case StatusPedido.preparando:
       // Não é ping de "começamos a preparar" — só existe pra avisar uma
       // alteração (item trocado/removido/em falta), decisão explícita do
       // usuário. Por isso o placeholder livre em vez de texto fixo.
-      return '$saudacao Um aviso rapidinho sobre seu pedido$numero: '
-          '*[descreva aqui a alteração]*. Qualquer dúvida, pode chamar a gente.';
+      return blocos([
+        '$saudacao Um aviso rapidinho sobre seu pedido$numero:',
+        '*[descreva aqui a alteração]*',
+        'Qualquer dúvida, pode chamar a gente.',
+      ]);
 
     case StatusPedido.pronto:
       if (!venda.retirada) return null; // só retirada, decisão do usuário
-      return 'Seu pedido$numero já está *pronto pra retirada*! 📦 Te esperamos por aqui!';
+      return blocos([
+        'Seu pedido$numero já está *pronto pra retirada*! 📦',
+        'Te esperamos por aqui!',
+      ]);
 
     case StatusPedido.saiuParaEntrega:
-      final base = 'Seu pedido$numero *saiu para entrega*! 🛵 Fica de olho no celular, '
-          'o entregador pode ligar ou tocar a campainha a qualquer momento.';
-      final lembretePagamento = _lembretePagamentoNaEntrega(venda);
-      return lembretePagamento == null ? base : '$base $lembretePagamento';
+      return blocos([
+        'Seu pedido$numero *saiu para entrega*! 🛵',
+        'Fica de olho no celular: o entregador pode ligar ou tocar a campainha a qualquer momento.',
+        _lembretePagamentoNaEntrega(venda),
+      ]);
 
     case StatusPedido.entregue:
-      return '$saudacao Seu pedido chegou certinho aí? 🥰 *Como foi sua experiência?* '
-          'Conta pra gente! Muito obrigada pela preferência.';
+      return blocos([
+        '$saudacao Seu pedido chegou certinho aí? 🥰',
+        '*Como foi sua experiência?* Conta pra gente!',
+        'Muito obrigada pela preferência.',
+      ]);
 
     case StatusPedido.cancelado:
       final motivo = venda.motivoCancelamentoDescricao?.trim();
-      final motivoTexto = (motivo != null && motivo.isNotEmpty) ? '$motivo ' : '';
-      return 'Oi${primeiroNome.isEmpty ? '' : ', $primeiroNome'}, seu pedido$numero *foi cancelado*. '
-          '${motivoTexto}Qualquer dúvida, estamos por aqui pra ajudar 🙏';
+      return blocos([
+        'Oi${primeiroNome.isEmpty ? '' : ', $primeiroNome'}, seu pedido$numero *foi cancelado*.',
+        motivo,
+        'Qualquer dúvida, estamos por aqui pra ajudar 🙏',
+      ]);
 
     default:
       return null;
@@ -57,9 +77,9 @@ String? mensagemPadraoStatus(Venda venda, String status) {
 }
 
 String _previsaoParaPendente(Venda venda) {
-  if (venda.retirada) return 'assim que estiver pronto, te aviso pra retirar';
-  if (!temPrevisaoEntrega(venda)) return 'já já te aviso com a previsão de entrega';
-  return '${labelPrevisaoEntrega(venda).toLowerCase()}: ${formatarPrevisaoEntrega(venda)}';
+  if (venda.retirada) return 'Assim que estiver pronto, te aviso pra retirar';
+  if (!temPrevisaoEntrega(venda)) return 'Já já te aviso com a previsão de entrega';
+  return '${labelPrevisaoEntrega(venda)}: ${formatarPrevisaoEntrega(venda)}';
 }
 
 /// Só faz sentido lembrar de separar dinheiro/cartão quando o pagamento é

@@ -21,7 +21,10 @@ Future<void> enviarMensagemStatusWhatsApp(BuildContext context, Venda venda, Str
         width: double.maxFinite,
         child: TextField(
           controller: controller,
-          maxLines: 6,
+          // A mensagem vem em blocos separados por linha em branco — com 6
+          // linhas o final ficava escondido na revisão.
+          minLines: 6,
+          maxLines: 14,
           autofocus: true,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
@@ -48,8 +51,19 @@ Future<void> enviarMensagemStatusWhatsApp(BuildContext context, Venda venda, Str
     );
     return;
   }
-  final uri = Uri.parse(linkWhatsAppComTexto(numero, controller.text));
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  // `wa.me` passa por um resolvedor de link que troca emoji fora do plano
+  // básico (🥰🛵📦🙏, todos usados nestas mensagens) por "?" — mesmo bug
+  // já contornado em `campanha_detalhe_screen.dart`. `whatsapp://send` abre o
+  // app direto; `wa.me` só se o WhatsApp não estiver instalado.
+  final texto = Uri.encodeComponent(controller.text);
+  final telefone = telefoneParaLinkWhatsApp(numero);
+  final uriApp = Uri.parse('whatsapp://send?phone=$telefone&text=$texto');
+  final uriWeb = Uri.parse(linkWhatsAppComTexto(numero, controller.text));
+  if (await canLaunchUrl(uriApp)) {
+    await launchUrl(uriApp, mode: LaunchMode.externalApplication);
+  } else if (await canLaunchUrl(uriWeb)) {
+    await launchUrl(uriWeb, mode: LaunchMode.externalApplication);
+  } else if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível abrir o WhatsApp.')));
   }
 }
