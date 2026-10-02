@@ -14,7 +14,8 @@ import 'previsao_entrega_utils.dart';
 /// de cada lado) — o texto já sai pronto pra colar, mas quem manda sempre
 /// revisa/edita antes de abrir o WhatsApp (por isso o placeholder livre na
 /// mensagem de Preparando).
-String? mensagemPadraoStatus(Venda venda, String status) {
+/// [nomeLoja] vem do branding (`BrandingProvider.nomeEmpresa`).
+String? mensagemPadraoStatus(Venda venda, String status, {String? nomeLoja}) {
   final primeiroNome = venda.cliente.nome.trim().isEmpty ? '' : venda.cliente.nome.trim().split(' ').first;
   final saudacao = primeiroNome.isEmpty ? 'Oi!' : 'Oi, $primeiroNome!';
   final numero = venda.numeroSequencial != null ? ' #${venda.numeroSequencial}' : '';
@@ -25,11 +26,19 @@ String? mensagemPadraoStatus(Venda venda, String status) {
       partes.where((p) => p != null && p.trim().isNotEmpty).join('\n\n');
 
   switch (status) {
+    // Estratégia (definida com o usuário 02/10): cada mensagem mostra que a
+    // loja acompanha a jornada do pedido, com cuidado concreto e sem
+    // prometer o que não dá pra cumprir (não há rastreio do entregador).
+    // "Saiu pra entrega" fecha com gratidão pra preparar o clima da
+    // pergunta de "Entregue" — cuja resposta abre o pedido de avaliação no
+    // Google (que vai pra TODO cliente que responder, nunca só pros que
+    // elogiaram: o Google proíbe "review gating").
     case StatusPedido.pendente:
       return blocos([
         '$saudacao Recebemos seu pedido$numero 🥰',
         '*${_previsaoParaPendente(venda)}*',
-        'Já estamos cuidando de tudo por aqui!',
+        'Já estou separando tudo com muito carinho.',
+        'Agradecemos por escolher a ${_nomeLoja(nomeLoja)} ❤️',
       ]);
 
     case StatusPedido.preparando:
@@ -37,46 +46,65 @@ String? mensagemPadraoStatus(Venda venda, String status) {
       // alteração (item trocado/removido/em falta), decisão explícita do
       // usuário. Por isso o placeholder livre em vez de texto fixo.
       return blocos([
-        '$saudacao Um aviso rapidinho sobre seu pedido$numero:',
+        '$saudacao Antes de enviar seu pedido$numero, preciso te avisar uma coisa:',
         '*[descreva aqui a alteração]*',
-        'Qualquer dúvida, pode chamar a gente.',
+        'Preferi te consultar antes pra você decidir como prefere. Me responde aqui que eu ajusto na hora.',
       ]);
 
     case StatusPedido.pronto:
       if (!venda.retirada) return null; // só retirada, decisão do usuário
       return blocos([
-        'Seu pedido$numero já está *pronto pra retirada*! 📦',
-        'Te esperamos por aqui!',
+        '$saudacao Seu pedido$numero já está *pronto pra retirada* 📦',
+        'Separei e conferi tudo, já está te esperando aqui.',
+        'Se quiser, me avisa quando estiver chegando que deixo tudo à mão pra você.',
       ]);
 
     case StatusPedido.saiuParaEntrega:
       return blocos([
-        'Seu pedido$numero *saiu para entrega*! 🛵',
+        'Seu pedido$numero *saiu para entrega* 🛵',
         // Genérico de propósito: muitas vezes o entregador não liga, só
         // chega e buzina no portão (correção do usuário 02/10).
         'Fique atento para quando o entregador chegar!',
         _lembretePagamentoNaEntrega(venda),
+        'Esperamos que seu pet aproveite! Obrigada pela confiança 🐾❤️',
       ]);
 
     case StatusPedido.entregue:
       return blocos([
-        '$saudacao Seu pedido chegou certinho aí? 🥰',
-        '*Como foi sua experiência?* Conta pra gente!',
-        'Muito obrigada pela preferência.',
+        'Seu pedido chegou certinho? 🥰',
+        '*Como foi sua experiência com a gente?* Sua opinião ajuda muito a gente a melhorar.',
+        'Conte sempre com a gente! ❤️',
       ]);
 
     case StatusPedido.cancelado:
       final motivo = venda.motivoCancelamentoDescricao?.trim();
-      return blocos([
-        'Oi${primeiroNome.isEmpty ? '' : ', $primeiroNome'}, seu pedido$numero *foi cancelado*.',
-        motivo,
-        'Qualquer dúvida, estamos por aqui pra ajudar 🙏',
-      ]);
+      final oi = 'Oi${primeiroNome.isEmpty ? '' : ', $primeiroNome'}';
+      switch (venda.origemCancelamento) {
+        case 'cliente':
+          return blocos([
+            '$oi! Cancelamento do pedido$numero feito, como você pediu.',
+            'Quando precisar de qualquer coisa pro seu pet, estamos por aqui ❤️',
+          ]);
+        case 'sistema': // pagamento recusado/abandonado
+          return blocos([
+            '$oi. Seu pedido$numero *foi cancelado*.',
+            motivo,
+            'Se quiser, te ajudo a refazer agora mesmo, é só me responder aqui.',
+          ]);
+        default: // loja
+          return blocos([
+            '$oi. Precisei cancelar seu pedido$numero.',
+            motivo,
+            'Sinto muito pelo transtorno. Se quiser, já vejo uma alternativa pra você, é só me responder aqui.',
+          ]);
+      }
 
     default:
       return null;
   }
 }
+
+String _nomeLoja(String? nome) => (nome == null || nome.trim().isEmpty || nome == 'Gestor') ? 'nossa loja' : nome.trim();
 
 String _previsaoParaPendente(Venda venda) {
   if (venda.retirada) return 'Assim que estiver pronto, te aviso pra retirar';

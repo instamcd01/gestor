@@ -21,16 +21,21 @@ String labelPrevisaoEntrega(Venda venda) {
   return 'Previsão de entrega';
 }
 
+/// Faixa completa ("02/10 de 15:00 às 15:30") sempre que houver início —
+/// mostrar só o fim ("~15:30") fazia o cliente achar que ia demorar
+/// (pedido do usuário 02/10). Sem início, cai pro "~fim".
 String formatarPrevisaoEntrega(Venda venda) {
-  final formato = DateFormat('dd/MM HH:mm');
+  final dia = DateFormat('dd/MM');
+  final hora = DateFormat('HH:mm');
   final fim = previsaoFim(venda)!;
-  if (ehAgendado(venda)) {
-    final inicio = previsaoInicio(venda);
-    return inicio != null ? '${formato.format(inicio)} - ${formato.format(fim)}' : '~${formato.format(fim)}';
-  }
   // previsaoEntregaFim aqui guarda a mesma hora-do-dia do pedido (só a DATA
   // já pula dias fechados — ver `finalizar_pedido_site`) — mostrar a hora
   // seria enganoso.
-  if (venda.modalidade == 'economica') return 'Até ${DateFormat('dd/MM').format(fim)}';
-  return '~${formato.format(fim)}';
+  if (!ehAgendado(venda) && venda.modalidade == 'economica') return 'Até ${dia.format(fim)}';
+  final inicio = previsaoInicio(venda);
+  if (inicio == null || !inicio.isBefore(fim)) return '~${dia.format(fim)} ${hora.format(fim)}';
+  final mesmoDia = inicio.year == fim.year && inicio.month == fim.month && inicio.day == fim.day;
+  return mesmoDia
+      ? '${dia.format(fim)} de ${hora.format(inicio)} às ${hora.format(fim)}'
+      : '${dia.format(inicio)} ${hora.format(inicio)} às ${dia.format(fim)} ${hora.format(fim)}';
 }

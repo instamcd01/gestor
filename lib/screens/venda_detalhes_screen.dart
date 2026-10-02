@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/venda.dart';
 import '../providers/auth_provider.dart';
+import '../providers/branding_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/aviso_banner.dart';
 import '../providers/historico_vendas_provider.dart';
@@ -524,7 +525,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     // aguardando_conciliacao) ou pra "pronto" fora de retirada — decisão do
     // usuário (19/09). Pedido iFood também fica de fora: telefone mascarado
     // pela iFood não recebe WhatsApp (ver aviso já existente na aba Cliente).
-    final mensagemStatus = venda.ehMarketplace ? null : mensagemPadraoStatus(venda, venda.status);
+    final mensagemStatus = venda.ehMarketplace ? null : mensagemPadraoStatus(venda, venda.status, nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
 
     return Scaffold(
       appBar: AppBar(

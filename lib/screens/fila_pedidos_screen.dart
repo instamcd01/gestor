@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/venda.dart';
+import '../providers/branding_provider.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../utils/canal_venda_utils.dart';
 import '../utils/mensagem_status_dialog.dart';
@@ -639,7 +640,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                 // mascarado pela iFood não recebe WhatsApp).
                                 Builder(builder: (context) {
                                   final mensagemStatus =
-                                      venda.ehMarketplace ? null : mensagemPadraoStatus(venda, venda.status);
+                                      venda.ehMarketplace ? null : mensagemPadraoStatus(venda, venda.status, nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
                                   // Só aparece "Forma de pagamento" a partir de "saiu
                                   // para entrega" — é o momento real em que o cliente
                                   // pode mudar de ideia na porta (combinou débito, quer
