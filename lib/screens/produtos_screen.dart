@@ -78,22 +78,20 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
       appBar: AppBar(
         title: Text('Produtos (${produtoProvider.produtos.length})'),
         actions: [
+          // Fora do ⋮ de propósito: o vendedor também faz a contagem.
+          IconButton(
+            tooltip: 'Checklist de estoque',
+            icon: const Icon(Icons.fact_check_outlined),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const ChecklistEstoqueScreen(),
+            )),
+          ),
           if (!isVendedor)
             PopupMenuButton<VoidCallback>(
               tooltip: 'Mais opções',
               icon: const Icon(Icons.more_vert),
               onSelected: (acao) => acao(),
               itemBuilder: (context) => [
-                PopupMenuItem<VoidCallback>(
-                  value: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => const ChecklistEstoqueScreen(),
-                  )),
-                  child: const ListTile(
-                    leading: Icon(Icons.fact_check_outlined),
-                    title: Text('Checklist de estoque'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
                 PopupMenuItem<VoidCallback>(
                   value: () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => const ProdutosExcluidosScreen(),

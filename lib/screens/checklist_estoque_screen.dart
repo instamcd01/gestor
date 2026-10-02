@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../models/checklist_estoque.dart';
 import '../models/produto.dart';
+import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/checklist_estoque_repository.dart';
 import '../utils/busca_utils.dart';
@@ -285,6 +286,7 @@ class _ConferenciaChecklistScreenState extends State<ConferenciaChecklistScreen>
         jaConferido: _itens?[produto.id],
         validadeAnterior: validadeAnterior,
         conferidoAntes: _validades.containsKey(produto.id),
+        mostrarValores: !context.read<AuthProvider>().isVendedor,
       ),
     );
     if (resultado == null || !mounted) return false;
@@ -427,7 +429,7 @@ class _ConferenciaChecklistScreenState extends State<ConferenciaChecklistScreen>
                       ? Column(mainAxisSize: MainAxisSize.min, children: [
                           const Text('Tudo conferido!'),
                           const SizedBox(height: 8),
-                          FilledButton(onPressed: _abrirResumo, child: const Text('Ver resumo e concluir')),
+                          FilledButton(onPressed: _abrirResumo, child: const Text('Ver resumo')),
                         ])
                       : const Text('Nenhum produto com esse filtro.'),
                 )
@@ -534,6 +536,9 @@ class _PainelConferencia extends StatefulWidget {
   /// Já teve validade conferida antes (mesmo que "sem validade").
   final bool conferidoAntes;
 
+  /// Vendedor não vê custo (mesma regra das notificações de custo).
+  final bool mostrarValores;
+
   const _PainelConferencia({
     required this.produto,
     required this.pai,
@@ -541,6 +546,7 @@ class _PainelConferencia extends StatefulWidget {
     required this.jaConferido,
     required this.validadeAnterior,
     required this.conferidoAntes,
+    required this.mostrarValores,
   });
 
   @override
@@ -683,7 +689,8 @@ class _PainelConferenciaState extends State<_PainelConferencia> {
             if (q != null && dif != 0) ...[
               const SizedBox(height: 8),
               Text(
-                '${dif > 0 ? 'Sobra' : 'Falta'} de ${dif.abs()} (${_moeda.format(dif.abs() * custo)} a preço de custo)',
+                '${dif > 0 ? 'Sobra' : 'Falta'} de ${dif.abs()}'
+                '${widget.mostrarValores ? ' (${_moeda.format(dif.abs() * custo)} a preço de custo)' : ''}',
                 style: TextStyle(color: dif < 0 ? cores.error : cores.tertiary, fontWeight: FontWeight.w600),
               ),
             ],
@@ -854,6 +861,9 @@ class _ResumoChecklistScreenState extends State<ResumoChecklistScreen> {
   Widget _corpo(BuildContext context, Map<String, ChecklistItem> itens) {
     final cores = Theme.of(context).colorScheme;
     final provider = context.watch<ProdutoProvider>();
+    final vendedor = context.watch<AuthProvider>().isVendedor;
+    // Vendedor não vê custo: só as quantidades.
+    String rs(double v) => vendedor ? '' : ' • ${_moeda.format(v)}';
     final produtos = produtosDoChecklist(provider.produtos);
     final porId = {for (final p in provider.produtos) if (p.id != null) p.id!: p};
     final pendentes = produtos.where((p) => !itens.containsKey(p.id)).length;
@@ -896,11 +906,13 @@ class _ResumoChecklistScreenState extends State<ResumoChecklistScreen> {
               Text('Contagem', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               linhaValor('Conferidos', '${itens.length} de ${produtos.length}'),
-              linhaValor('Faltaram', '${t.faltaUn} un. • ${_moeda.format(t.faltaValor)}', cor: cores.error),
-              linhaValor('Sobraram', '${t.sobraUn} un. • ${_moeda.format(t.sobraValor)}'),
-              const Divider(),
-              linhaValor('Resultado', _moeda.format(liquido), cor: liquido < 0 ? cores.error : null),
-              if (anterior != null)
+              linhaValor('Faltaram', '${t.faltaUn} un.${rs(t.faltaValor)}', cor: cores.error),
+              linhaValor('Sobraram', '${t.sobraUn} un.${rs(t.sobraValor)}'),
+              if (!vendedor) ...[
+                const Divider(),
+                linhaValor('Resultado', _moeda.format(liquido), cor: liquido < 0 ? cores.error : null),
+              ],
+              if (anterior != null && !vendedor)
                 linhaValor(
                   'Mês anterior (${_anterior!.titulo})',
                   _moeda.format(anterior.sobraValor - anterior.faltaValor),
@@ -919,14 +931,14 @@ class _ResumoChecklistScreenState extends State<ResumoChecklistScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('Validade (estoque atual)', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-              linhaValor('Vencidos', '${qtdFaixa((d) => d < 0)} • ${_moeda.format(valorFaixa((d) => d < 0))}',
+              linhaValor('Vencidos', '${qtdFaixa((d) => d < 0)}${rs(valorFaixa((d) => d < 0))}',
                   cor: cores.error),
               linhaValor('Vencem em até 30 dias',
-                  '${qtdFaixa((d) => d >= 0 && d <= 30)} • ${_moeda.format(valorFaixa((d) => d >= 0 && d <= 30))}'),
+                  '${qtdFaixa((d) => d >= 0 && d <= 30)}${rs(valorFaixa((d) => d >= 0 && d <= 30))}'),
               linhaValor('31 a 60 dias',
-                  '${qtdFaixa((d) => d > 30 && d <= 60)} • ${_moeda.format(valorFaixa((d) => d > 30 && d <= 60))}'),
+                  '${qtdFaixa((d) => d > 30 && d <= 60)}${rs(valorFaixa((d) => d > 30 && d <= 60))}'),
               linhaValor('61 a 90 dias',
-                  '${qtdFaixa((d) => d > 60 && d <= 90)} • ${_moeda.format(valorFaixa((d) => d > 60 && d <= 90))}'),
+                  '${qtdFaixa((d) => d > 60 && d <= 90)}${rs(valorFaixa((d) => d > 60 && d <= 90))}'),
               for (final v in vencendo)
                 ListTile(
                   dense: true,
@@ -946,7 +958,7 @@ class _ResumoChecklistScreenState extends State<ResumoChecklistScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Diferenças (maior valor primeiro)', style: Theme.of(context).textTheme.titleMedium),
+                Text('Diferenças', style: Theme.of(context).textTheme.titleMedium),
                 for (final i in divergentes)
                   ListTile(
                     dense: true,
@@ -955,14 +967,14 @@ class _ResumoChecklistScreenState extends State<ResumoChecklistScreen> {
                         maxLines: 2, overflow: TextOverflow.ellipsis),
                     subtitle: Text('Sistema ${i.quantidadeSistema} → contado ${i.quantidadeContada}'),
                     trailing: Text(
-                      '${i.diferenca > 0 ? '+' : ''}${i.diferenca} • ${_moeda.format(i.diferencaValor)}',
+                      '${i.diferenca > 0 ? '+' : ''}${i.diferenca}${rs(i.diferencaValor)}',
                       style: TextStyle(color: i.diferenca < 0 ? cores.error : null, fontWeight: FontWeight.w600),
                     ),
                   ),
               ]),
             ),
           ),
-        if (widget.checklist.aberto) ...[
+        if (widget.checklist.aberto && !vendedor) ...[
           const SizedBox(height: 8),
           FilledButton(
             style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
