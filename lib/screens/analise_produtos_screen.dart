@@ -2,17 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/estoque_parado.dart';
 import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
 import '../providers/auth_provider.dart';
+import '../providers/branding_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/checklist_estoque_repository.dart';
 import '../repositories/produto_repository.dart';
 import '../repositories/revisao_preco_repository.dart';
 import '../utils/busca_utils.dart';
 import '../utils/produto_validators.dart';
+import '../utils/telefone_utils.dart';
 import '../utils/variante_label_utils.dart';
 import '../widgets/dialogo_revisao_variante.dart';
 import 'adicionar_imagens_lote_screen.dart';
@@ -2741,6 +2744,7 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
   String? _filtroFaixa;
   String? _filtroCategoria;
   String? _filtroValidade;
+  String? _filtroSugestao;
   bool _processando = false;
 
   /// Do checklist de estoque. Produto ausente = validade nunca conferida;
@@ -2781,14 +2785,33 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
     }
   }
 
-  /// Promoção = preço × (1 − %), arredondado, com piso no custo. Produto
-  /// cujo preço já está no custo (ou sem preço) fica de fora.
-  static Map<String, double> _calcularPromocao(List<Produto> produtos, double percentual) {
+  EstoqueParado? _item(String? produtoId) => _itens?.where((i) => i.produtoId == produtoId).firstOrNull;
+
+  ({SugestaoEstoqueParado sugestao, String motivo}) _sugestao(EstoqueParado item) {
+    final validade = _validades[item.produtoId];
+    return sugerirAcaoEstoqueParado(item, diasValidade: validade != null ? diasParaVencer(validade) : null);
+  }
+
+  /// Menor promocional sem prejuízo. O mesmo promocional vai pro iFood (a
+  /// exportação do catálogo usa ele quando é menor que o preço do iFood), e
+  /// lá a taxa sai do valor cheio — então o piso é custo + taxa do iFood,
+  /// não só o custo.
+  double _pisoPromocao(Produto p) {
+    final item = _item(p.id);
+    if (p.custo <= 0) return 0;
+    if (item == null || item.precoIfood == null) return p.custo;
+    return (item.precoMinimoIfood(p.custo) * 100).ceilToDouble() / 100;
+  }
+
+  /// Promoção = preço × (1 − %), arredondado, com piso em [_pisoPromocao].
+  /// Produto cujo preço já está no piso (ou sem preço) fica de fora.
+  Map<String, double> _calcularPromocao(List<Produto> produtos, double percentual) {
     final resultado = <String, double>{};
     for (final p in produtos) {
       if (p.id == null || p.preco <= 0) continue;
       final comDesconto = double.parse((p.preco * (1 - percentual / 100)).toStringAsFixed(2));
-      final promocional = p.custo > 0 && comDesconto < p.custo ? p.custo : comDesconto;
+      final piso = _pisoPromocao(p);
+      final promocional = comDesconto < piso ? piso : comDesconto;
       if (promocional >= p.preco) continue;
       resultado[p.id!] = promocional;
     }
@@ -2798,12 +2821,33 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
   Future<void> _aplicarPromocao(List<Produto> selecionados, ProdutoProvider provider) async {
     final percentual = await showDialog<double>(
       context: context,
-      builder: (_) => _DialogoPromocaoEstoqueParado(produtos: selecionados, calcular: _calcularPromocao),
+      builder: (_) => _DialogoPromocaoEstoqueParado(
+        produtos: selecionados,
+        calcular: _calcularPromocao,
+        piso: _pisoPromocao,
+      ),
     );
     if (percentual == null || !mounted) return;
     final promocoes = _calcularPromocao(selecionados, percentual);
     setState(() => _processando = true);
     final falhas = await provider.aplicarPrecoPromocionalEmMassa(promocoes);
+    // Fica no histórico do produto pra medir se a promoção vendeu.
+    final pct = percentual.toStringAsFixed(percentual % 1 == 0 ? 0 : 1);
+    try {
+      await Future.wait([
+        for (final e in promocoes.entries)
+          if (!falhas.contains(e.key))
+            ProdutoRepository().registrarAcaoEstoqueParado(
+              produtoId: e.key,
+              acao: 'Promoção',
+              detalhe: '$pct% → ${_moeda.format(e.value)}',
+              quantidade: _item(e.key)?.quantidade,
+              preco: e.value,
+            ),
+      ]);
+    } catch (e) {
+      debugPrint('Erro ao registrar ação de promoção: $e');
+    }
     if (!mounted) return;
     setState(() {
       _processando = false;
@@ -2814,6 +2858,84 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
           ? 'Promoção aplicada em ${promocoes.length} produto(s).'
           : 'Promoção aplicada em ${promocoes.length - falhas.length}; ${falhas.length} falharam.'),
     ));
+    await _carregar();
+  }
+
+  Future<void> _registrarAcao(Produto produto, EstoqueParado item) async {
+    final resultado = await showDialog<({String acao, String? detalhe})>(
+      context: context,
+      builder: (_) => const _DialogoRegistrarAcao(),
+    );
+    if (resultado == null || !mounted) return;
+    try {
+      await ProdutoRepository().registrarAcaoEstoqueParado(
+        produtoId: item.produtoId,
+        acao: resultado.acao,
+        detalhe: resultado.detalhe,
+        quantidade: item.quantidade,
+        preco: produto.precoPromocional ?? produto.preco,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('"${resultado.acao}" registrada — a análise mostra quanto vendeu desde então.')),
+      );
+      await _carregar();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível registrar: $e')));
+    }
+  }
+
+  Future<void> _abrirClientes(Produto produto, EstoqueParado item) async {
+    final avisados = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _ClientesQueCompraramSheet(
+        produto: produto,
+        nomeLoja: context.read<BrandingProvider>().nomeEmpresa,
+      ),
+    );
+    if (avisados == null || avisados == 0 || !mounted) return;
+    try {
+      await ProdutoRepository().registrarAcaoEstoqueParado(
+        produtoId: item.produtoId,
+        acao: 'Avisei clientes',
+        detalhe: '$avisados cliente(s) no WhatsApp',
+        quantidade: item.quantidade,
+        preco: produto.precoPromocional ?? produto.preco,
+      );
+    } catch (e) {
+      debugPrint('Erro ao registrar aviso a clientes: $e');
+    }
+    await _carregar();
+  }
+
+  void _abrirDetalhes(Produto produto, EstoqueParado item, ProdutoProvider provider) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => _DetalhesEstoqueParado(
+        produto: produto,
+        item: item,
+        sugestao: _sugestao(item),
+        validade: _validades[item.produtoId],
+        validadeConferida: _validades.containsKey(item.produtoId),
+        onContagem: () {
+          Navigator.pop(sheetContext);
+          _contagemFisica(produto, item, provider);
+        },
+        onRegistrarAcao: () {
+          Navigator.pop(sheetContext);
+          _registrarAcao(produto, item);
+        },
+        onClientes: () {
+          Navigator.pop(sheetContext);
+          _abrirClientes(produto, item);
+        },
+      ),
+    );
   }
 
   Future<void> _removerPromocao(List<Produto> selecionados, ProdutoProvider provider) async {
@@ -2892,12 +3014,15 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
     final porId = {for (final p in produtoProvider.produtos) if (p.id != null) p.id!: p};
     final pares = [
       for (final item in itens)
-        if (porId[item.produtoId] != null) (item: item, produto: porId[item.produtoId]!),
+        if (porId[item.produtoId] != null) (item: item, produto: porId[item.produtoId]!, sugestao: _sugestao(item)),
     ];
+    final contagemPorSugestao = <String, int>{};
     final contagemPorFaixa = <String, int>{};
     final contagemPorCategoria = <String, int>{};
     final contagemPorValidade = <String, int>{};
     for (final par in pares) {
+      final rotulo = par.sugestao.sugestao.rotulo;
+      contagemPorSugestao[rotulo] = (contagemPorSugestao[rotulo] ?? 0) + 1;
       contagemPorFaixa[par.item.faixa] = (contagemPorFaixa[par.item.faixa] ?? 0) + 1;
       final fv = _faixaValidade(par.item.produtoId);
       contagemPorValidade[fv] = (contagemPorValidade[fv] ?? 0) + 1;
@@ -2907,6 +3032,7 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
     final lista = pares
         .where((par) => contemTodasPalavras(par.produto.nome, _busca))
         .where((par) => _filtroFaixa == null || par.item.faixa == _filtroFaixa)
+        .where((par) => _filtroSugestao == null || par.sugestao.sugestao.rotulo == _filtroSugestao)
         .where((par) => _filtroValidade == null || _faixaValidade(par.item.produtoId) == _filtroValidade)
         .where((par) =>
             _filtroCategoria == null ||
@@ -2956,6 +3082,12 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
             spacing: 8,
             runSpacing: 4,
             children: [
+              _FiltroPorValor(
+                label: 'Sugestão',
+                valor: _filtroSugestao,
+                contagemPorValor: contagemPorSugestao,
+                onChanged: (v) => setState(() => _filtroSugestao = v),
+              ),
               _FiltroPorValor(
                 label: 'Tempo parado',
                 valor: _filtroFaixa,
@@ -3039,17 +3171,24 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
                                 '$precos${produto.destacar ? ' • destaque' : ''}\n',
                           ),
                           TextSpan(
-                            text: textoValidade,
+                            text: '$textoValidade\n',
                             style: diasValidade != null && diasValidade <= 90
                                 ? TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w600)
                                 : null,
                           ),
+                          TextSpan(
+                            text: par.sugestao.sugestao.rotulo,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ])),
                         isThreeLine: true,
                         secondary: IconButton(
-                          tooltip: 'Contagem física',
-                          icon: const Icon(Icons.fact_check_outlined),
-                          onPressed: () => _contagemFisica(produto, item, produtoProvider),
+                          tooltip: 'Detalhes e ações',
+                          icon: const Icon(Icons.insights_outlined),
+                          onPressed: () => _abrirDetalhes(produto, item, produtoProvider),
                         ),
                       );
                     },
@@ -3089,8 +3228,9 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
 class _DialogoPromocaoEstoqueParado extends StatefulWidget {
   final List<Produto> produtos;
   final Map<String, double> Function(List<Produto>, double) calcular;
+  final double Function(Produto) piso;
 
-  const _DialogoPromocaoEstoqueParado({required this.produtos, required this.calcular});
+  const _DialogoPromocaoEstoqueParado({required this.produtos, required this.calcular, required this.piso});
 
   @override
   State<_DialogoPromocaoEstoqueParado> createState() => _DialogoPromocaoEstoqueParadoState();
@@ -3114,7 +3254,8 @@ class _DialogoPromocaoEstoqueParadoState extends State<_DialogoPromocaoEstoquePa
   Widget build(BuildContext context) {
     final percentual = _percentual;
     final promocoes = percentual == null ? <String, double>{} : widget.calcular(widget.produtos, percentual);
-    final noCusto = widget.produtos.where((p) => p.id != null && p.custo > 0 && promocoes[p.id] == p.custo).length;
+    final noPiso =
+        widget.produtos.where((p) => p.id != null && p.custo > 0 && promocoes[p.id] == widget.piso(p)).length;
     final deFora = widget.produtos.length - promocoes.length;
 
     return AlertDialog(
@@ -3130,12 +3271,13 @@ class _DialogoPromocaoEstoqueParadoState extends State<_DialogoPromocaoEstoquePa
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
-          Text('${promocoes.length} produto(s) entram em promoção no site.'),
-          if (noCusto > 0) Text('$noCusto ficam no preço de custo (o desconto passaria do custo).'),
-          if (deFora > 0) Text('$deFora ficam de fora (preço já no custo ou sem preço).'),
+          Text('${promocoes.length} produto(s) entram em promoção.'),
+          if (noPiso > 0) Text('$noPiso ficam no preço mínimo (o desconto daria prejuízo).'),
+          if (deFora > 0) Text('$deFora ficam de fora (preço já no mínimo ou sem preço).'),
           const SizedBox(height: 8),
           Text(
-            'O preço normal não muda — só o promocional, que aparece riscado no site.',
+            'O preço normal não muda — só o promocional, que aparece riscado no site e também vai pro '
+            'iFood na próxima exportação do catálogo. Por isso o mínimo é o custo + a taxa do iFood.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -3202,6 +3344,344 @@ class _DialogoContagemFisicaState extends State<_DialogoContagemFisica> {
           child: const Text('Confirmar'),
         ),
       ],
+    );
+  }
+}
+
+
+/// Tudo que ajuda a decidir o que fazer com 1 produto parado: sugestão com
+/// o porquê, preço mínimo sem prejuízo por canal, compra, clientes,
+/// família, sazonalidade e a última ação (com quanto vendeu depois).
+class _DetalhesEstoqueParado extends StatelessWidget {
+  final Produto produto;
+  final EstoqueParado item;
+  final ({SugestaoEstoqueParado sugestao, String motivo}) sugestao;
+  final DateTime? validade;
+  final bool validadeConferida;
+  final VoidCallback onContagem;
+  final VoidCallback onRegistrarAcao;
+  final VoidCallback onClientes;
+
+  const _DetalhesEstoqueParado({
+    required this.produto,
+    required this.item,
+    required this.sugestao,
+    required this.validade,
+    required this.validadeConferida,
+    required this.onContagem,
+    required this.onRegistrarAcao,
+    required this.onClientes,
+  });
+
+  static final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+  static final _data = DateFormat('dd/MM/yy');
+
+  @override
+  Widget build(BuildContext context) {
+    final cores = Theme.of(context).colorScheme;
+    final custo = produto.custo;
+    final precoIfood = item.precoIfood;
+    final minIfood = item.precoMinimoIfood(custo);
+    String descontoMax(double preco, double minimo) =>
+        preco > 0 && minimo < preco ? 'até ${((1 - minimo / preco) * 100).floor()}% de desconto' : 'sem margem pra desconto';
+
+    Widget secao(String titulo, List<Widget> filhos) => Padding(
+          padding: const EdgeInsets.only(top: 14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titulo, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: cores.primary)),
+            const SizedBox(height: 4),
+            ...filhos,
+          ]),
+        );
+
+    final fornecedor = item.fornecedorPrincipal ?? item.ultimaCompraFornecedor;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(produto.nome, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text('${item.quantidade} un. • ${_moeda.format(item.capital)} parados (a preço de custo)'),
+            const SizedBox(height: 12),
+            Card(
+              margin: EdgeInsets.zero,
+              color: cores.primaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(sugestao.sugestao.rotulo,
+                      style: TextStyle(fontWeight: FontWeight.w700, color: cores.onPrimaryContainer)),
+                  const SizedBox(height: 4),
+                  Text(sugestao.motivo, style: TextStyle(color: cores.onPrimaryContainer)),
+                ]),
+              ),
+            ),
+            secao('Preço e quanto dá pra baixar', [
+              Text('Loja: ${_moeda.format(produto.preco)} • mínimo ${_moeda.format(custo)} '
+                  '(${descontoMax(produto.preco, custo)})'),
+              if (precoIfood != null)
+                Text('iFood: ${_moeda.format(precoIfood)} • mínimo ${_moeda.format(minIfood)} '
+                    '(${descontoMax(precoIfood, minIfood)}, taxa ${item.taxaIfoodPct.toStringAsFixed(1)}%)'),
+              if (produto.precoPromocional != null)
+                Text('Em promoção agora: ${_moeda.format(produto.precoPromocional)}',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+            ]),
+            secao('Vendas', [
+              Text(item.ultimaVenda == null
+                  ? 'Nenhuma venda registrada'
+                  : 'Última venda ${_data.format(item.ultimaVenda!)} • ${item.vendas12m} venda(s) em 12 meses'),
+              Text(item.vendasAnoPassadoProx90d > 0
+                  ? 'Ano passado, nos próximos 90 dias: ${item.vendasAnoPassadoProx90d} un.'
+                  : 'Ano passado, nos próximos 90 dias: nada'),
+              if (item.familiaVendas90d > 0)
+                Text('Família (outros tamanhos/sabores): ${item.familiaVendas90d} un. em 90 dias'
+                    '${item.familiaMaisVendido != null ? ' — mais vendido: ${item.familiaMaisVendido}' : ''}'),
+            ]),
+            secao('Clientes', [
+              Text(item.clientesCompraram == 0
+                  ? 'Nenhum cliente identificado comprou (vendas só por iFood ou balcão sem cadastro)'
+                  : '${item.clientesCompraram} cliente(s) já compraram • ${item.clientesComContato} com telefone'),
+              if (item.clientesComContato > 0)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: onClientes,
+                    icon: const Icon(Icons.chat_outlined),
+                    label: const Text('Ver clientes e avisar no WhatsApp'),
+                  ),
+                ),
+            ]),
+            secao('Compra e fornecedor', [
+              Text(item.ultimaCompraEm == null
+                  ? 'Sem compra registrada no Gestor (entradas só desde 26/07)'
+                  : 'Última compra ${_data.format(item.ultimaCompraEm!)}: '
+                      '${item.ultimaCompraQtd?.toStringAsFixed(0) ?? '?'} un.'
+                      '${item.ultimaCompraFornecedor != null ? ' de ${item.ultimaCompraFornecedor}' : ''}'),
+              Text(fornecedor != null ? 'Fornecedor: $fornecedor' : 'Fornecedor não cadastrado'),
+            ]),
+            secao('Validade', [
+              Text(!validadeConferida
+                  ? 'Não conferida — faça o checklist de estoque'
+                  : validade == null
+                      ? 'Sem validade'
+                      : 'Mais próxima: ${formatarValidade(validade!)} (${diasParaVencer(validade!)} dias)'),
+              if (item.validadeNfe != null)
+                Text('Lote da última NF-e: ${formatarValidade(item.validadeNfe!)}',
+                    style: TextStyle(color: cores.onSurfaceVariant)),
+            ]),
+            if (item.ultimaAcao != null)
+              secao('Última ação', [
+                Text('${item.ultimaAcao}${item.ultimaAcaoDetalhe != null ? ' — ${item.ultimaAcaoDetalhe}' : ''}'),
+                Text('Em ${_data.format(item.ultimaAcaoEm!)} • vendeu ${item.vendasDesdeAcao ?? 0} un. desde então'),
+              ]),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onRegistrarAcao,
+              icon: const Icon(Icons.edit_note),
+              label: const Text('Registrar o que fiz'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: onContagem,
+              icon: const Icon(Icons.fact_check_outlined),
+              label: const Text('Contagem física'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// O que foi feito com o produto parado. Promoção e aviso a clientes já são
+/// registrados sozinhos quando feitos pela própria aba.
+class _DialogoRegistrarAcao extends StatefulWidget {
+  const _DialogoRegistrarAcao();
+
+  static const acoes = [
+    'Montei kit',
+    'Troca/devolução com fornecedor',
+    'Mudei exposição na loja',
+    'Ofereci no balcão/atendimento',
+    'Doação',
+    'Descarte (vencido ou avariado)',
+    'Parei de recomprar',
+    'Outra',
+  ];
+
+  @override
+  State<_DialogoRegistrarAcao> createState() => _DialogoRegistrarAcaoState();
+}
+
+class _DialogoRegistrarAcaoState extends State<_DialogoRegistrarAcao> {
+  String? _acao;
+  final _detalhe = TextEditingController();
+
+  @override
+  void dispose() {
+    _detalhe.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final detalhe = _detalhe.text.trim();
+    final pode = _acao != null && (_acao != 'Outra' || detalhe.isNotEmpty);
+    return AlertDialog(
+      title: const Text('O que você fez?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final a in _DialogoRegistrarAcao.acoes)
+                ChoiceChip(label: Text(a), selected: _acao == a, onSelected: (_) => setState(() => _acao = a)),
+            ]),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _detalhe,
+              decoration: InputDecoration(
+                labelText: _acao == 'Outra' ? 'Descreva' : 'Detalhe (opcional)',
+                hintText: 'Ex: kit com Golden 1kg',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Doação e descarte não mexem no estoque — faça a contagem física depois pra baixar.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: pode
+              ? () => Navigator.pop(context, (acao: _acao!, detalhe: detalhe.isEmpty ? null : detalhe))
+              : null,
+          child: const Text('Registrar'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Clientes que já compraram o produto, com o WhatsApp aberto já com a
+/// mensagem (quem manda revisa e envia — não é envio automático). Devolve
+/// quantos foram abertos, pra registrar a ação.
+class _ClientesQueCompraramSheet extends StatefulWidget {
+  final Produto produto;
+  final String nomeLoja;
+
+  const _ClientesQueCompraramSheet({required this.produto, required this.nomeLoja});
+
+  @override
+  State<_ClientesQueCompraramSheet> createState() => _ClientesQueCompraramSheetState();
+}
+
+class _ClientesQueCompraramSheetState extends State<_ClientesQueCompraramSheet> {
+  static final _data = DateFormat('dd/MM/yy');
+  static final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+
+  List<({String nome, String? telefone, int vezes, DateTime ultimaCompra})>? _clientes;
+  String? _erro;
+  final Set<int> _avisados = {};
+
+  @override
+  void initState() {
+    super.initState();
+    ProdutoRepository().clientesQueCompraram(widget.produto.id!).then((lista) {
+      if (mounted) setState(() => _clientes = lista.where((c) => c.telefone != null).toList());
+    }).catchError((Object e) {
+      if (mounted) setState(() => _erro = 'Erro ao carregar clientes: $e');
+    });
+  }
+
+  String _mensagem(String nome) {
+    final primeiroNome = nome.trim().split(' ').first;
+    final p = widget.produto;
+    final emPromocao = p.precoPromocional != null && p.precoPromocional! < p.preco;
+    final oferta = emPromocao
+        ? ' Ele está em promoção esta semana: de ${_moeda.format(p.preco)} por ${_moeda.format(p.precoPromocional)}.'
+        : '';
+    return 'Oi, $primeiroNome! Aqui é da ${widget.nomeLoja}. '
+        'Você já levou ${p.nome} com a gente.$oferta '
+        'Quer que eu separe um pra você?';
+  }
+
+  Future<void> _abrir(int indice) async {
+    final c = _clientes![indice];
+    final uri = Uri.parse(linkWhatsAppComTexto(c.telefone!, _mensagem(c.nome)));
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _avisados.add(indice));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível abrir o WhatsApp.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final clientes = _clientes;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) Navigator.pop(context, _avisados.length);
+      },
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Quem já comprou', style: Theme.of(context).textTheme.titleMedium),
+            Text(widget.produto.nome, maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 8),
+            Text(
+              'Abre o WhatsApp com a mensagem pronta — revise e envie de lá. '
+              'Avise poucos por vez; mensagem demais vira spam.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _erro != null
+                  ? Center(child: Text(_erro!))
+                  : clientes == null
+                      ? const Center(child: CircularProgressIndicator())
+                      : clientes.isEmpty
+                          ? const Center(child: Text('Nenhum cliente com telefone.'))
+                          : ListView.builder(
+                              itemCount: clientes.length,
+                              itemBuilder: (context, i) {
+                                final c = clientes[i];
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(c.nome),
+                                  subtitle: Text('Comprou ${c.vezes}x • última em ${_data.format(c.ultimaCompra)}'),
+                                  trailing: _avisados.contains(i)
+                                      ? const Icon(Icons.check)
+                                      : IconButton(
+                                          tooltip: 'Abrir WhatsApp',
+                                          icon: const Icon(Icons.chat_outlined),
+                                          onPressed: () => _abrir(i),
+                                        ),
+                                );
+                              },
+                            ),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, _avisados.length),
+              child: Text(_avisados.isEmpty ? 'Fechar' : 'Concluir (${_avisados.length} avisado(s))'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

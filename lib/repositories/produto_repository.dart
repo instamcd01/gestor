@@ -387,8 +387,40 @@ class ProdutoRepository {
   /// Produtos com estoque sem venda há mais de [dias] — ver RPC
   /// `produtos_estoque_parado` (granel conta junto, kits ficam fora).
   Future<List<EstoqueParado>> listarEstoqueParado({int dias = 90}) async {
-    final data = await supabase.rpc('produtos_estoque_parado', params: {'p_dias': dias});
+    final data = await supabase.rpc('analise_estoque_parado', params: {'p_dias': dias});
     return (data as List).map((r) => EstoqueParado.fromSupabase(r as Map<String, dynamic>)).toList();
+  }
+
+  /// O que foi feito com um produto parado — a análise mostra quanto vendeu
+  /// desde a última ação.
+  Future<void> registrarAcaoEstoqueParado({
+    required String produtoId,
+    required String acao,
+    String? detalhe,
+    int? quantidade,
+    double? preco,
+  }) async {
+    await supabase.from('estoque_parado_acoes').insert({
+      'produto_id': produtoId,
+      'acao': acao,
+      'detalhe': detalhe,
+      'quantidade_no_momento': quantidade,
+      'preco_no_momento': preco,
+    });
+  }
+
+  Future<List<({String nome, String? telefone, int vezes, DateTime ultimaCompra})>> clientesQueCompraram(
+      String produtoId) async {
+    final data = await supabase.rpc('clientes_que_compraram_produto', params: {'p_produto_id': produtoId});
+    return [
+      for (final r in (data as List).cast<Map<String, dynamic>>())
+        (
+          nome: r['nome'] as String? ?? 'Cliente',
+          telefone: r['telefone'] as String?,
+          vezes: (r['vezes'] as num).toInt(),
+          ultimaCompra: DateTime.parse(r['ultima_compra'] as String).toLocal(),
+        ),
+    ];
   }
 
   /// Preço promocional por produto (null remove a promoção) — valor
