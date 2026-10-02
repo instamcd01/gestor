@@ -1,5 +1,6 @@
 import '../config/supabase_config.dart';
 import '../models/estoque_parado.dart';
+import '../models/resultado_acao.dart';
 import '../models/movimentacao_estoque.dart';
 import '../models/produto.dart';
 import '../models/sugestao_variante.dart';
@@ -407,6 +408,11 @@ class ProdutoRepository {
       'quantidade_no_momento': quantidade,
       'preco_no_momento': preco,
     });
+  }
+
+  Future<List<ResultadoAcao>> listarResultadoAcoes() async {
+    final data = await supabase.rpc('resultado_acoes_estoque_parado');
+    return (data as List).map((r) => ResultadoAcao.fromSupabase(r as Map<String, dynamic>)).toList();
   }
 
   Future<List<({String nome, String? telefone, int vezes, DateTime ultimaCompra})>> clientesQueCompraram(

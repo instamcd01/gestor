@@ -2,6 +2,7 @@
 /// `trigger_notificacao_estoque_baixo`, `job_notificacao_pedido_parado`,
 /// `job_notificacao_despesa_vencendo`, `trigger_notificacao_avaliacao_disputa_sync`,
 /// `notificar_pedidos_atrasados_entrega`, `notifica_hora_de_sair_para_entrega`,
+/// `notificar_balanco_acoes_estoque_parado` (cron diário, 14 e 30 dias),
 /// `notificar_carrinhos_abandonados`, `notificar_disputas_proximas_do_prazo`
 /// — cron `*/5 * * * *`, `trigger_notificacao_nfe_pendente` em
 /// `nfe_cache_distribuicao`) e, pra `erroSistema`,
@@ -19,6 +20,7 @@ class TipoNotificacao {
   static const disputaPrazoVencendo = 'disputa_prazo_vencendo';
   static const syncFalhou = 'sync_falhou';
   static const custoAlterado = 'custo_alterado';
+  static const resultadoAjustePreco = 'resultado_ajuste_preco';
   static const novoPedido = 'novo_pedido';
   static const pedidoAtrasadoEntrega = 'pedido_atrasado_entrega';
   static const pedidoHoraSaidaEntrega = 'pedido_hora_saida_entrega';
@@ -108,6 +110,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.custoAlterado,
     titulo: 'Custo do produto alterado',
     descricao: 'Quando o custo de um produto muda (ex: importação de nota fiscal) — avisa pra revisar o preço de venda.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.resultadoAjustePreco,
+    titulo: 'Balanço das ações do estoque parado',
+    descricao: '14 e 30 dias depois de um ajuste de preço, promoção ou aviso a clientes: quantos venderam e o lucro.',
   ),
   CategoriaNotificacao(
     chave: TipoNotificacao.carrinhoAbandonado,

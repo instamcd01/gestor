@@ -21,6 +21,7 @@ import '../widgets/dialogo_revisao_variante.dart';
 import 'adicionar_imagens_lote_screen.dart';
 import 'checklist_estoque_screen.dart' show diasParaVencer, formatarValidade;
 import 'editar_produto_screen.dart';
+import 'resultado_acoes_screen.dart';
 import 'sugestoes_variante_rejeitadas_screen.dart';
 
 /// Tela única de análise/ajuste de produtos em massa — reúne os filtros que
@@ -3064,6 +3065,12 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
                       '${lista.length} produto(s) parados (90+ dias sem venda) ou com giro lento (estoque p/ +6 meses)\n'
                       '${_moeda.format(capitalTotal)} parados (a preço de custo)',
                     ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ResultadoAcoesScreen()),
+                    ),
+                    child: const Text('Resultado\ndas ações', textAlign: TextAlign.center),
                   ),
                 ],
               ),
