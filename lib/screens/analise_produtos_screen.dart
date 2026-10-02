@@ -2720,8 +2720,9 @@ class _CardAbcXyzState extends State<_CardAbcXyz> {
 
 /// ---------------------------------------------------------------------
 /// Aba: Estoque parado — produtos com estoque e sem venda há mais de 90
-/// dias (RPC `produtos_estoque_parado`), ordenados pelo dinheiro parado.
-/// Ações: promoção em % (nunca abaixo do custo), destaque no site e
+/// dias, mais o "giro lento" (vende, mas o estoque dura +180 dias) — RPC
+/// `analise_estoque_parado`, ordenados pelo dinheiro parado.
+/// Ações: promoção em % (nunca abaixo de custo + taxa iFood), destaque no site e
 /// contagem física por produto (vai pro histórico de estoque como
 /// "contagem") — a contagem vem primeiro porque parte desse saldo pode nem
 /// existir na prateleira (caso real da Golden 3kg, 01/10).
@@ -3060,7 +3061,7 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      '${lista.length} produto(s) sem venda há mais de 90 dias\n'
+                      '${lista.length} produto(s) parados (90+ dias sem venda) ou com giro lento (estoque p/ +6 meses)\n'
                       '${_moeda.format(capitalTotal)} parados (a preço de custo)',
                     ),
                   ),
@@ -3137,9 +3138,11 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
                       final par = lista[index];
                       final item = par.item;
                       final produto = par.produto;
-                      final ultimaVenda = item.ultimaVenda == null
-                          ? 'Sem venda no histórico'
-                          : 'Última venda ${_data.format(item.ultimaVenda!)} (${item.diasSemVenda} dias)';
+                      final ultimaVenda = item.giroLento
+                          ? 'Giro lento: ${item.vendas90d} vendido(s) em 90 dias • estoque p/ ~${((item.coberturaDias ?? 0) / 30).round()} meses'
+                          : item.ultimaVenda == null
+                              ? 'Sem venda no histórico'
+                              : 'Última venda ${_data.format(item.ultimaVenda!)} (${item.diasSemVenda} dias)';
                       final validade = _validades[item.produtoId];
                       final diasValidade = validade != null ? diasParaVencer(validade) : null;
                       final textoValidade = !_validades.containsKey(item.produtoId)
@@ -3431,6 +3434,9 @@ class _DetalhesEstoqueParado extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w600)),
             ]),
             secao('Vendas', [
+              if (item.giroLento)
+                Text('Giro lento: ${item.vendas90d} un. em 90 dias — o estoque atual dura ~${item.coberturaDias} dias',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
               Text(item.ultimaVenda == null
                   ? 'Nenhuma venda registrada'
                   : 'Última venda ${_data.format(item.ultimaVenda!)} • ${item.vendas12m} venda(s) em 12 meses'),

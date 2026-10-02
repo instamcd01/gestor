@@ -47,6 +47,14 @@ class EstoqueParado {
   /// Última contagem física (checklist ou ajuste por contagem).
   final DateTime? ultimaContagemEm;
 
+  /// 'parado' (sem venda há 90+ dias) ou 'giro_lento' (vende, mas o estoque
+  /// dura mais de 180 dias no ritmo dos últimos 90).
+  final String tipo;
+  final int vendas90d;
+  final int? coberturaDias;
+
+  bool get giroLento => tipo == 'giro_lento';
+
   const EstoqueParado({
     required this.produtoId,
     required this.ultimaVenda,
@@ -71,6 +79,9 @@ class EstoqueParado {
     this.ultimaAcaoEm,
     this.vendasDesdeAcao,
     this.ultimaContagemEm,
+    this.tipo = 'parado',
+    this.vendas90d = 0,
+    this.coberturaDias,
   });
 
   static DateTime? _data(dynamic v) => v != null ? DateTime.parse(v as String).toLocal() : null;
@@ -99,10 +110,14 @@ class EstoqueParado {
         ultimaAcaoEm: _data(row['ultima_acao_em']),
         vendasDesdeAcao: (row['vendas_desde_acao'] as num?)?.toInt(),
         ultimaContagemEm: _data(row['ultima_contagem_em']),
+        tipo: row['tipo'] as String? ?? 'parado',
+        vendas90d: (row['vendas_90d'] as num?)?.toInt() ?? 0,
+        coberturaDias: (row['cobertura_dias'] as num?)?.toInt(),
       );
 
   /// Faixa usada no filtro da aba "Estoque parado".
   String get faixa {
+    if (giroLento) return 'Giro lento (estoque p/ +6 meses)';
     final dias = diasSemVenda;
     if (dias == null) return 'Nunca vendeu';
     if (dias <= 180) return '90 a 180 dias';
@@ -125,6 +140,7 @@ enum SugestaoEstoqueParado {
   sazonal('Sazonal — deve voltar a vender'),
   avisarClientes('Avisar quem já comprou'),
   variante('Família vende, este não'),
+  naoRecomprar('Estoque demais — não recomprar'),
   devolver('Negociar troca com o fornecedor'),
   promocao('Promoção ou kit');
 
@@ -153,6 +169,23 @@ enum SugestaoEstoqueParado {
     return (
       sugestao: SugestaoEstoqueParado.emAndamento,
       motivo: '"${item.ultimaAcao}" há $dias dia(s) — vendeu ${item.vendasDesdeAcao ?? 0} desde então.',
+    );
+  }
+  if (item.giroLento) {
+    final meses = ((item.coberturaDias ?? 0) / 30).round();
+    final porMes = (item.vendas90d / 3).toStringAsFixed(item.vendas90d < 6 ? 1 : 0);
+    // Muito estoque e clientes conhecidos: vale avisar quem já compra.
+    if ((item.coberturaDias ?? 0) > 365 && item.clientesComContato > 0) {
+      return (
+        sugestao: SugestaoEstoqueParado.avisarClientes,
+        motivo: 'Vende ~$porMes/mês e o estoque dura ~$meses meses. '
+            '${item.clientesComContato} cliente(s) com contato já compraram — avise antes de dar desconto.',
+      );
+    }
+    return (
+      sugestao: SugestaoEstoqueParado.naoRecomprar,
+      motivo: 'Vende ~$porMes/mês e o estoque dura ~$meses meses. Não recompre até baixar; '
+          'promoção só se a validade estiver perto.',
     );
   }
   if (item.ultimaVenda == null && item.ultimaContagemEm == null) {
