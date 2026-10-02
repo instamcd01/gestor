@@ -52,7 +52,9 @@ String? mensagemPadraoStatus(Venda venda, String status) {
     case StatusPedido.saiuParaEntrega:
       return blocos([
         'Seu pedido$numero *saiu para entrega*! 🛵',
-        'Fica de olho no celular: o entregador pode ligar ou tocar a campainha a qualquer momento.',
+        // Genérico de propósito: muitas vezes o entregador não liga, só
+        // chega e buzina no portão (correção do usuário 02/10).
+        'Fique atento para quando o entregador chegar!',
         _lembretePagamentoNaEntrega(venda),
       ]);
 
@@ -82,24 +84,26 @@ String _previsaoParaPendente(Venda venda) {
   return '${labelPrevisaoEntrega(venda)}: ${formatarPrevisaoEntrega(venda)}';
 }
 
-/// Só faz sentido lembrar de separar dinheiro/cartão quando o pagamento é
-/// cobrado NA entrega — pedido já pago online (`pagoOnline`) não precisa
-/// disso. `venda.troco` já é o valor de troco a devolver (mesmo campo
-/// mostrado na aba Pagamento como "Troco"), não o valor da nota que o
-/// cliente vai usar pra pagar.
+/// Só informa o valor e a forma de pagamento quando é cobrado NA entrega —
+/// pedido já pago online (`pagoOnline`) não precisa. Tom informativo, sem
+/// mandar o cliente fazer nada ("já separa...", "fica mais rápido pra
+/// você" foram vetados pelo usuário 02/10). `venda.troco` já é o troco a
+/// devolver (mesmo campo da aba Pagamento), não a nota que o cliente usa.
 String? _lembretePagamentoNaEntrega(Venda venda) {
   if (venda.pagoOnline) return null;
   final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+  final valor = '*${moeda.format(venda.valorTotal)}*';
 
   switch (venda.metodoPagamento) {
     case 'Dinheiro':
-      final trocoTexto = venda.troco > 0 ? ' — vamos te devolver *${moeda.format(venda.troco)}* de troco' : '';
-      return 'Já separa *${moeda.format(venda.valorTotal)}*$trocoTexto. Fica mais rápido pra você também.';
+      final troco = venda.troco > 0 ? ' (troco de *${moeda.format(venda.troco)}*)' : '';
+      return 'Pagamento na entrega: $valor em dinheiro$troco.';
     case 'Cartão de Crédito':
+      return 'Pagamento na entrega: $valor no cartão de crédito.';
     case 'Cartão de Débito':
-      return 'Já deixa o cartão à mão — fica mais rápido pra você também.';
+      return 'Pagamento na entrega: $valor no cartão de débito.';
     case 'Pix':
-      return 'Já deixa o Pix pronto pra escanear — fica mais rápido pra você também.';
+      return 'Pagamento na entrega: $valor via Pix.';
     default:
       return null;
   }
