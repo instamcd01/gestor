@@ -104,6 +104,18 @@ String? mensagemPadraoStatus(Venda venda, String status, {String? nomeLoja}) {
   }
 }
 
+/// Pedido de avaliação no Google — enviado DEPOIS que o cliente responde a
+/// mensagem de "Entregue" (texto aprovado pelo usuário 02/10). Vai pra todo
+/// cliente que responder, não só pros que elogiaram: o Google proíbe pedir
+/// avaliação de forma seletiva ("review gating").
+String mensagemPedidoAvaliacaoGoogle(String link) => [
+      'Ahh que bom! Fiquei muito feliz de ler isso 🥰',
+      'Vou mostrar seu recado pro pessoal aqui, eles vão amar',
+      'Consegue deixar esse carinho no Google também? É rapidinho 🙏🏼',
+      link,
+      'Muito obrigada! ❤️',
+    ].join('\n\n');
+
 String _nomeLoja(String? nome) => (nome == null || nome.trim().isEmpty || nome == 'Gestor') ? 'nossa loja' : nome.trim();
 
 String _previsaoParaPendente(Venda venda) {
