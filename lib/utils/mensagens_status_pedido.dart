@@ -109,10 +109,9 @@ String? mensagemPadraoStatus(Venda venda, String status, {String? nomeLoja}) {
 /// cliente que responder, não só pros que elogiaram: o Google proíbe pedir
 /// avaliação de forma seletiva ("review gating").
 String mensagemPedidoAvaliacaoGoogle(String link) => [
-      'Ahh que bom! Fiquei muito feliz de ler isso 🥰',
-      'Vou mostrar seu recado pro pessoal aqui, eles vão amar',
-      'Consegue deixar esse carinho no Google também? É rapidinho 🙏🏼',
-      link,
+      'Ahh que bom! Fiquei muito feliz de ler isso 🥰\n'
+          'Vou mostrar seu recado pro pessoal aqui, eles vão amar',
+      'Consegue deixar esse carinho no Google também? É rapidinho 🙏🏼\n$link',
       'Muito obrigada! ❤️',
     ].join('\n\n');
 
