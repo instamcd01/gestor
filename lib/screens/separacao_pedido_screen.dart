@@ -42,6 +42,21 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
 
   bool get _ehIfood => widget.venda.canalVenda == 'ifood';
 
+  /// Motivo real quando o iFood recusou finalizar (gravado pelo n8n).
+  String? _erroFinalizacao;
+
+  /// Pedido iFood pago em DINHEIRO na entrega não pode ser editado: o iFood
+  /// aceita alterar/remover um a um mas recusa tudo no endSeparation ("A
+  /// forma de pagamento escolhida pelo cliente não permite a edição do
+  /// pedido") — confirmado no ensaio de homologação 02/10.
+  bool get _edicaoBloqueadaPorPagamento =>
+      _ehIfood && widget.venda.statusPagamento != 'pago' && widget.venda.metodoPagamento == 'Dinheiro';
+
+  /// Outros pagamentos na entrega (cartão na maquininha) ainda não foram
+  /// testados — libera, mas avisa.
+  bool get _edicaoPodeSerRecusada =>
+      _ehIfood && widget.venda.statusPagamento != 'pago' && !_edicaoBloqueadaPorPagamento;
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +92,17 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
     try {
       final resultado = await _repository.buscarConfirmacaoPosSeparacao(widget.venda.marketplacePedidoId!);
       if (!mounted) return;
+      // iFood recusou o endSeparation: o n8n voltou pra 'separando' com o
+      // motivo — a tela tinha assumido 'finalizada', desfaz e mostra.
+      final erro = resultado?['separacao_erro'] as String?;
+      if (resultado?['separacao_status'] == 'separando' && erro != null && erro.isNotEmpty) {
+        _pollConfirmacaoTimer?.cancel();
+        setState(() {
+          _status = 'separando';
+          _erroFinalizacao = erro;
+        });
+        return;
+      }
       setState(() => _confirmacao = resultado);
       _tentativasConfirmacao++;
       _pollConfirmacaoTimer?.cancel();
@@ -382,6 +408,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
       if (mounted) {
         setState(() {
           _status = 'finalizada';
+          _erroFinalizacao = null;
           _tentativasConfirmacao = 0;
         });
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Separação finalizada.')));
@@ -420,6 +447,34 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                   child: AvisoBanner(
                     tipo: TipoAviso.sucesso,
                     texto: 'Cliente autoriza substituição de item em falta.',
+                  ),
+                ),
+              if (_edicaoBloqueadaPorPagamento)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: AvisoBanner(
+                    tipo: TipoAviso.erro,
+                    negrito: true,
+                    texto: 'Pedido pago em dinheiro na entrega: o iFood não permite alterar, substituir ou '
+                        'remover itens. Separe como está e finalize — se faltar algo, fale com o cliente ou cancele.',
+                  ),
+                )
+              else if (_edicaoPodeSerRecusada)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: AvisoBanner(
+                    tipo: TipoAviso.alerta,
+                    texto: 'Pagamento na entrega: o iFood pode recusar edições ao finalizar. '
+                        'Se recusar, o motivo aparece aqui.',
+                  ),
+                ),
+              if (_erroFinalizacao != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: AvisoBanner(
+                    tipo: TipoAviso.erro,
+                    negrito: true,
+                    texto: 'O iFood recusou finalizar: $_erroFinalizacao',
                   ),
                 ),
               if (_status == null)
@@ -546,7 +601,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                 ],
               ),
             ),
-            if (_status == 'separando' && acao == null && item.id != null)
+            if (_status == 'separando' && acao == null && item.id != null && !_edicaoBloqueadaPorPagamento)
               Row(
                 children: [
                   IconButton(

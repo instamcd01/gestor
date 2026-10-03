@@ -92,7 +92,9 @@ class SeparacaoPedidoRepository {
   Future<Map<String, dynamic>?> buscarConfirmacaoPosSeparacao(String marketplacePedidoId) async {
     return await supabase
         .from('marketplace_pedidos')
-        .select('itens_confirmados_ifood, separacao_confirmada_em')
+        // separacao_status/erro: se o iFood recusar o endSeparation o n8n
+        // volta o status pra 'separando' e grava o motivo real.
+        .select('itens_confirmados_ifood, separacao_confirmada_em, separacao_status, separacao_erro')
         .eq('id', marketplacePedidoId)
         .maybeSingle();
   }
