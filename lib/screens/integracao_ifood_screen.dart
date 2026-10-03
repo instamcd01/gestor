@@ -390,6 +390,11 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
       final excluidos = <Map<String, String?>>[];
       for (final produto in produtos) {
         final ean = produto.codigoBarras.trim();
+        // preco_ifood é espelho de produto_canal (iFood) mantido por trigger
+        // no banco (trg_espelhar_preco_ifood_do_canal/trg_preco_ifood_segue_canal)
+        // — mesmo preço que a sincronização por API envia. Antes de 02/10
+        // ficava nulo pra produto cadastrado via "Disponibilidade em
+        // Marketplaces" e a planilha subia o preço da loja.
         final preco = produto.precoIfood ?? produto.preco;
 
         String? motivo;
