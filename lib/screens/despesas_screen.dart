@@ -25,7 +25,11 @@ class DespesasScreen extends StatefulWidget {
   /// `apenasPendentes` quando os dois são passados.
   final String? filtroInicial;
 
-  const DespesasScreen({super.key, this.apenasPendentes = false, this.filtroInicial});
+  /// Só contas com vencimento nesse intervalo — usado pelas semanas do
+  /// resumo de Finanças. Dá pra tirar o recorte pelo chip na tela.
+  final DateTimeRange? periodoVencimento;
+
+  const DespesasScreen({super.key, this.apenasPendentes = false, this.filtroInicial, this.periodoVencimento});
 
   @override
   State<DespesasScreen> createState() => _DespesasScreenState();
@@ -33,11 +37,13 @@ class DespesasScreen extends StatefulWidget {
 
 class _DespesasScreenState extends State<DespesasScreen> {
   late String _filtro;
+  DateTimeRange? _periodo;
 
   @override
   void initState() {
     super.initState();
     _filtro = widget.filtroInicial ?? (widget.apenasPendentes ? 'Pendentes' : 'Todas');
+    _periodo = widget.periodoVencimento;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<DespesaProvider>().carregar();
     });
@@ -54,6 +60,10 @@ class _DespesasScreenState extends State<DespesasScreen> {
         filtradas = despesas.where((d) => d.paga).toList();
       default:
         filtradas = [...despesas];
+    }
+    final periodo = _periodo;
+    if (periodo != null) {
+      filtradas.removeWhere((d) => d.dataVencimento.isBefore(periodo.start) || d.dataVencimento.isAfter(periodo.end));
     }
     // Contas a pagar primeiro, da que vence antes pra depois (atrasadas
     // naturalmente no topo) — é a ordem de pagar. Pagas/canceladas vêm
@@ -165,16 +175,30 @@ class _DespesasScreenState extends State<DespesasScreen> {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: ['Todas', 'Pendentes', 'Atrasadas', 'Pagas'].map((rotulo) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(rotulo),
-                      selected: _filtro == rotulo,
-                      onSelected: (_) => setState(() => _filtro = rotulo),
+                children: [
+                  if (_periodo != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: InputChip(
+                        avatar: const Icon(Icons.date_range, size: 18),
+                        label: Text(
+                          'Vence ${DateFormat('dd/MM').format(_periodo!.start)}–${DateFormat('dd/MM').format(_periodo!.end)}',
+                        ),
+                        selected: true,
+                        onDeleted: () => setState(() => _periodo = null),
+                      ),
                     ),
-                  );
-                }).toList(),
+                  ...['Todas', 'Pendentes', 'Atrasadas', 'Pagas'].map((rotulo) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(rotulo),
+                        selected: _filtro == rotulo,
+                        onSelected: (_) => setState(() => _filtro = rotulo),
+                      ),
+                    );
+                  }),
+                ],
               ),
             ),
           ),

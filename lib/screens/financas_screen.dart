@@ -133,53 +133,146 @@ class _FinancasScreenState extends State<FinancasScreen> {
     );
   }
 
-  /// Contas são pagas toda segunda, então o recorte é a semana de
-  /// pagamento (até domingo), não "próximos 7 dias". No sábado/domingo já
-  /// mostra a semana seguinte — é o que vai ser pago na segunda que vem.
-  /// Só aparece quando tem algo pedindo atenção.
+  /// Contas são pagas toda segunda, então o recorte é por semana de
+  /// pagamento (segunda a domingo), não "próximos 7 dias". No sábado/domingo
+  /// a 1ª semana já é a seguinte — é o que vai ser pago na segunda que vem.
+  /// Mostra 4 semanas pra planejar o caixa, destacando a 1ª que ainda tem
+  /// conta em aberto (a que precisa de dinheiro agora); atrasadas ficam
+  /// numa linha própria em vermelho no topo.
   Widget _resumoContasAPagar(BuildContext context) {
     final despesas = context.watch<DespesaProvider>().despesas;
+    final colorScheme = Theme.of(context).colorScheme;
     final agora = DateTime.now();
     final hoje = DateTime(agora.year, agora.month, agora.day);
     var diasAteDomingo = DateTime.sunday - hoje.weekday;
     if (hoje.weekday >= DateTime.saturday) diasAteDomingo += 7;
-    final domingo = hoje.add(Duration(days: diasAteDomingo));
+    final primeiroDomingo = hoje.add(Duration(days: diasAteDomingo));
+    final dataCurta = DateFormat('dd/MM');
 
     final atrasadas = despesas.where((d) => d.atrasada).toList();
-    final venceSemana = despesas
-        .where((d) => d.status == StatusDespesa.pendente && !d.atrasada && !d.dataVencimento.isAfter(domingo))
-        .toList();
-    if (atrasadas.isEmpty && venceSemana.isEmpty) return const SizedBox.shrink();
-
     double soma(List<Despesa> lista) => lista.fold(0.0, (t, d) => t + d.valor);
-    final total = soma(atrasadas) + soma(venceSemana);
-    final ateDomingo = 'até dom ${DateFormat('dd/MM').format(domingo)}';
 
-    final partes = [
-      if (atrasadas.isNotEmpty)
-        '${atrasadas.length} atrasada${atrasadas.length > 1 ? 's' : ''} (${_moeda.format(soma(atrasadas))})',
-      if (venceSemana.isNotEmpty)
-        '${venceSemana.length} vence${venceSemana.length > 1 ? 'm' : ''} $ateDomingo (${_moeda.format(soma(venceSemana))})',
+    final semanas = [
+      for (var i = 0; i < 4; i++)
+        () {
+          final fim = primeiroDomingo.add(Duration(days: 7 * i));
+          // 1ª semana começa hoje (antes de hoje já é atrasada); as outras,
+          // na segunda.
+          final inicio = i == 0 ? hoje : fim.subtract(const Duration(days: 6));
+          bool dentro(Despesa d) => !d.dataVencimento.isBefore(inicio) && !d.dataVencimento.isAfter(fim);
+          final pendentes = despesas.where((d) => d.status == StatusDespesa.pendente && !d.atrasada && dentro(d)).toList();
+          final pagas = despesas.where((d) => d.paga && dentro(d)).length;
+          return (inicio: inicio, fim: fim, pendentes: pendentes, total: soma(pendentes), pagas: pagas);
+        }(),
     ];
-    final cor = atrasadas.isNotEmpty ? Colors.red : Colors.orange;
+    final indiceDestaque = semanas.indexWhere((s) => s.pendentes.isNotEmpty);
+
+    String rotulo(int i) {
+      final s = semanas[i];
+      final segunda = s.fim.subtract(const Duration(days: 6));
+      final periodo = '${dataCurta.format(segunda)}–${dataCurta.format(s.fim)}';
+      // No fim de semana a 1ª semana já é a seguinte — o nome acompanha.
+      final semanasAFrente = i + (hoje.weekday >= DateTime.saturday ? 1 : 0);
+      return switch (semanasAFrente) {
+        0 => 'Esta semana ($periodo)',
+        1 => 'Semana que vem ($periodo)',
+        _ => periodo,
+      };
+    }
+
+    Widget linha({
+      required String titulo,
+      required String valor,
+      String? detalhe,
+      bool destaque = false,
+      Color? cor,
+      VoidCallback? onTap,
+    }) {
+      final corTexto = cor ?? (destaque ? colorScheme.onPrimaryContainer : null);
+      return Material(
+        color: destaque ? colorScheme.primaryContainer : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: destaque ? 10 : 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        titulo,
+                        style: TextStyle(
+                          color: corTexto,
+                          fontWeight: destaque || cor != null ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      if (detalhe != null)
+                        Text(
+                          detalhe,
+                          style: TextStyle(fontSize: 12, color: corTexto ?? colorScheme.onSurfaceVariant),
+                        ),
+                    ],
+                  ),
+                ),
+                Text(
+                  valor,
+                  style: TextStyle(
+                    color: corTexto,
+                    fontWeight: destaque || cor != null ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: destaque ? 17 : 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Card(
         margin: EdgeInsets.zero,
-        child: ListTile(
-          onTap: () => _abrir(DespesasScreen(filtroInicial: atrasadas.isNotEmpty ? 'Atrasadas' : 'Pendentes')),
-          leading: Icon(Icons.warning_amber_rounded, color: cor),
-          title: Text.rich(
-            TextSpan(children: [
-              const TextSpan(text: 'Contas da semana: '),
-              TextSpan(text: _moeda.format(total), style: TextStyle(color: cor, fontWeight: FontWeight.w700)),
-            ]),
-            style: const TextStyle(fontWeight: FontWeight.w600),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: 10, bottom: 6),
+                child: Text('Contas a pagar', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+              ),
+              if (atrasadas.isNotEmpty)
+                linha(
+                  titulo: 'Atrasadas',
+                  detalhe: '${atrasadas.length} conta${atrasadas.length > 1 ? 's' : ''}',
+                  valor: _moeda.format(soma(atrasadas)),
+                  cor: colorScheme.error,
+                  onTap: () => _abrir(const DespesasScreen(filtroInicial: 'Atrasadas')),
+                ),
+              for (var i = 0; i < semanas.length; i++)
+                linha(
+                  titulo: rotulo(i),
+                  detalhe: semanas[i].pendentes.isNotEmpty
+                      ? '${semanas[i].pendentes.length} conta${semanas[i].pendentes.length > 1 ? 's' : ''}'
+                      : (i == 0 && semanas[i].pagas > 0 ? 'tudo pago' : null),
+                  valor: semanas[i].pendentes.isNotEmpty
+                      ? _moeda.format(semanas[i].total)
+                      : (i == 0 && semanas[i].pagas > 0 ? '✓' : '—'),
+                  destaque: i == indiceDestaque,
+                  onTap: semanas[i].pendentes.isEmpty
+                      ? null
+                      : () => _abrir(DespesasScreen(
+                            filtroInicial: 'Pendentes',
+                            periodoVencimento: DateTimeRange(start: semanas[i].inicio, end: semanas[i].fim),
+                          )),
+                ),
+            ],
           ),
-          subtitle: Text(partes.join('\n')),
-          isThreeLine: partes.length > 1,
-          trailing: const Icon(Icons.arrow_forward_ios, size: 14),
         ),
       ),
     );
