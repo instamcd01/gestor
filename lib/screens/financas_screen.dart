@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/despesa.dart';
@@ -13,6 +14,8 @@ import 'fornecedores_screen.dart';
 import 'metricas_despesas_screen.dart';
 import 'pedido_compra_lista_screen.dart';
 import 'sugestao_compra_screen.dart';
+
+final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
 
 class FinancasScreen extends StatefulWidget {
   const FinancasScreen({super.key});
@@ -130,35 +133,52 @@ class _FinancasScreenState extends State<FinancasScreen> {
     );
   }
 
-  /// Só aparece quando tem algo pedindo atenção — sem conta atrasada nem
-  /// vencendo nos próximos 7 dias, não ocupa espaço.
+  /// Contas são pagas toda segunda, então o recorte é a semana de
+  /// pagamento (até domingo), não "próximos 7 dias". No sábado/domingo já
+  /// mostra a semana seguinte — é o que vai ser pago na segunda que vem.
+  /// Só aparece quando tem algo pedindo atenção.
   Widget _resumoContasAPagar(BuildContext context) {
     final despesas = context.watch<DespesaProvider>().despesas;
     final agora = DateTime.now();
     final hoje = DateTime(agora.year, agora.month, agora.day);
-    final limiteSemana = hoje.add(const Duration(days: 7));
+    var diasAteDomingo = DateTime.sunday - hoje.weekday;
+    if (hoje.weekday >= DateTime.saturday) diasAteDomingo += 7;
+    final domingo = hoje.add(Duration(days: diasAteDomingo));
 
-    final atrasadas = despesas.where((d) => d.atrasada).length;
+    final atrasadas = despesas.where((d) => d.atrasada).toList();
     final venceSemana = despesas
-        .where((d) => d.status == StatusDespesa.pendente && !d.atrasada && !d.dataVencimento.isAfter(limiteSemana))
-        .length;
-    if (atrasadas == 0 && venceSemana == 0) return const SizedBox.shrink();
+        .where((d) => d.status == StatusDespesa.pendente && !d.atrasada && !d.dataVencimento.isAfter(domingo))
+        .toList();
+    if (atrasadas.isEmpty && venceSemana.isEmpty) return const SizedBox.shrink();
+
+    double soma(List<Despesa> lista) => lista.fold(0.0, (t, d) => t + d.valor);
+    final total = soma(atrasadas) + soma(venceSemana);
+    final ateDomingo = 'até dom ${DateFormat('dd/MM').format(domingo)}';
 
     final partes = [
-      if (atrasadas > 0) '$atrasadas atrasada${atrasadas > 1 ? 's' : ''}',
-      if (venceSemana > 0) '$venceSemana vence${venceSemana > 1 ? 'm' : ''} em até 7 dias',
+      if (atrasadas.isNotEmpty)
+        '${atrasadas.length} atrasada${atrasadas.length > 1 ? 's' : ''} (${_moeda.format(soma(atrasadas))})',
+      if (venceSemana.isNotEmpty)
+        '${venceSemana.length} vence${venceSemana.length > 1 ? 'm' : ''} $ateDomingo (${_moeda.format(soma(venceSemana))})',
     ];
-    final cor = atrasadas > 0 ? Colors.red : Colors.orange;
+    final cor = atrasadas.isNotEmpty ? Colors.red : Colors.orange;
 
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Card(
         margin: EdgeInsets.zero,
         child: ListTile(
-          onTap: () => _abrir(DespesasScreen(filtroInicial: atrasadas > 0 ? 'Atrasadas' : 'Pendentes')),
+          onTap: () => _abrir(DespesasScreen(filtroInicial: atrasadas.isNotEmpty ? 'Atrasadas' : 'Pendentes')),
           leading: Icon(Icons.warning_amber_rounded, color: cor),
-          title: const Text('Contas a pagar', style: TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: Text(partes.join(' • ')),
+          title: Text.rich(
+            TextSpan(children: [
+              const TextSpan(text: 'Contas da semana: '),
+              TextSpan(text: _moeda.format(total), style: TextStyle(color: cor, fontWeight: FontWeight.w700)),
+            ]),
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(partes.join('\n')),
+          isThreeLine: partes.length > 1,
           trailing: const Icon(Icons.arrow_forward_ios, size: 14),
         ),
       ),
