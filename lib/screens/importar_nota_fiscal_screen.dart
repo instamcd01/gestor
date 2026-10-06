@@ -487,9 +487,14 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   Future<List<PedidoCompra>> _carregarPedidosAbertos(String fornecedorId) async {
     try {
       final repo = PedidoCompraRepository();
+      // Rascunho recente entra também: pedido mandado pelo WhatsApp antes
+      // do envio passar a marcar "enviado" sozinho ficou como rascunho.
+      final limiteRascunho = DateTime.now().subtract(const Duration(days: 20));
       final todos = [
         ...await repo.listar(status: StatusPedidoCompra.confirmado),
         ...await repo.listar(status: StatusPedidoCompra.enviado),
+        ...(await repo.listar(status: StatusPedidoCompra.rascunho))
+            .where((pc) => pc.itens.isNotEmpty && (pc.createdAt?.isAfter(limiteRascunho) ?? false)),
       ];
       return todos.where((pc) => pc.fornecedor.id == fornecedorId).toList()
         ..sort((a, b) => (b.createdAt ?? DateTime(2000)).compareTo(a.createdAt ?? DateTime(2000)));
