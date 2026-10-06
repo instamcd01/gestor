@@ -120,8 +120,12 @@ class _PedidoCompraDetalheScreenState extends State<PedidoCompraDetalheScreen> {
     buffer.writeln('*Pedido de compra${pedido.numeroSequencial != null ? ' #${pedido.numeroSequencial}' : ''}*');
     buffer.writeln('Fornecedor: ${pedido.fornecedor.nome}');
     buffer.writeln('');
-    for (final item in pedido.itens) {
-      buffer.writeln('• ${item.produtoNome} — ${item.quantidadePedida}un');
+    // Linha em branco entre itens pra o vendedor conseguir ler/conferir
+    // item a item no WhatsApp sem a lista virar um bloco só.
+    for (var i = 0; i < pedido.itens.length; i++) {
+      final item = pedido.itens[i];
+      if (i > 0) buffer.writeln('');
+      buffer.writeln('• ${item.produtoNome} (${item.quantidadePedida}un)');
     }
     if (pedido.observacoes?.isNotEmpty == true) {
       buffer.writeln('');
