@@ -113,6 +113,16 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   final _chaveAcessoController = TextEditingController();
   int? _pendentesCount;
 
+  /// Pedidos de compra em aberto (enviado/confirmado) do fornecedor da
+  /// nota — quando a nota não veio já a partir de um pedido, pergunta se
+  /// é de algum deles. Ligar fecha o pedido (sai de "a caminho" na
+  /// sugestão de compra), mede o prazo real de entrega e grava quanto
+  /// chegou de cada item.
+  List<PedidoCompra> _pedidosAbertos = [];
+  PedidoCompra? _pedidoEscolhido;
+
+  PedidoCompra? get _pedidoDaNota => widget.pedidoCompra ?? _pedidoEscolhido;
+
   bool get _temPreVia => _nfe != null;
 
   /// Nota de bonificação (compre 1 ganhe 1, brinde): itens entram no
@@ -430,6 +440,9 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       }
       final fator = fornecedorExistente?.fatorCusto ?? 1.0;
       final codigosFornecedor = await _carregarCodigosFornecedor(fornecedorExistente?.id);
+      final pedidosAbertos = widget.pedidoCompra == null && fornecedorExistente?.id != null
+          ? await _carregarPedidosAbertos(fornecedorExistente!.id!)
+          : <PedidoCompra>[];
 
       if (!mounted) return;
       _limparControllers();
@@ -439,6 +452,14 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         _fornecedorExistente = fornecedorExistente;
         _produtoIdPorCodigoFornecedor = codigosFornecedor.produtos;
         _embalagemPorCodigoFornecedor = codigosFornecedor.embalagens;
+        _pedidosAbertos = pedidosAbertos;
+        // Um único pedido aberto recente é quase certamente o desta nota —
+        // já vem marcado, mas visível pra trocar/desmarcar.
+        final recentes = pedidosAbertos.where((pc) {
+          final data = pc.dataEnvio ?? pc.dataConfirmacao ?? pc.createdAt;
+          return data != null && DateTime.now().difference(data).inDays <= 20;
+        }).toList();
+        _pedidoEscolhido = pedidosAbertos.length == 1 && recentes.length == 1 ? recentes.first : null;
         for (var i = 0; i < nfe.itens.length; i++) {
           final embalagem = _embalagemPorCodigoFornecedor[nfe.itens[i].codigoFornecedor?.trim() ?? ''];
           if (embalagem != null) _embalagemPorItem[i] = embalagem;
@@ -458,6 +479,22 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       if (!mounted) return;
       setState(() => _processando = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao ler o XML: $e')));
+    }
+  }
+
+  /// Melhor esforço: sem conseguir listar, segue a importação normal sem
+  /// a pergunta do pedido.
+  Future<List<PedidoCompra>> _carregarPedidosAbertos(String fornecedorId) async {
+    try {
+      final repo = PedidoCompraRepository();
+      final todos = [
+        ...await repo.listar(status: StatusPedidoCompra.confirmado),
+        ...await repo.listar(status: StatusPedidoCompra.enviado),
+      ];
+      return todos.where((pc) => pc.fornecedor.id == fornecedorId).toList()
+        ..sort((a, b) => (b.createdAt ?? DateTime(2000)).compareTo(a.createdAt ?? DateTime(2000)));
+    } catch (_) {
+      return [];
     }
   }
 
@@ -778,7 +815,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             nfe: nfe,
             itensResolvidos: _itensResolvidos,
             fornecedorId: fornecedorId,
-            pedidoCompraId: widget.pedidoCompra?.id,
+            pedidoCompraId: _pedidoDaNota?.id,
             criadoPor: context.read<AuthProvider>().usuarioAtual?.id,
           );
 
@@ -786,9 +823,10 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       // caminhos de dar entrada — casamento aqui é por produto_id (mesmo
       // critério de "casado" já usado pra vincular custo acima), já que a
       // NF-e não sabe de qual linha do pedido cada item veio.
-      if (widget.pedidoCompra != null) {
+      final pedidoDaNota = _pedidoDaNota;
+      if (pedidoDaNota != null) {
         final pedidoRepo = PedidoCompraRepository();
-        for (final pedidoItem in widget.pedidoCompra!.itens) {
+        for (final pedidoItem in pedidoDaNota.itens) {
           if (pedidoItem.id == null) continue;
           final produtoIdReal = pedidoItem.produtoSubstitutoId ?? pedidoItem.produtoId;
           for (final resolvido in _itensResolvidos) {
@@ -800,8 +838,8 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         }
       }
 
-      if (widget.pedidoCompra?.id != null) {
-        await context.read<PedidoCompraProvider>().marcarComoRecebido(widget.pedidoCompra!.id!);
+      if (pedidoDaNota?.id != null) {
+        await context.read<PedidoCompraProvider>().marcarComoRecebido(pedidoDaNota!.id!);
       }
 
       if (!mounted) return;
@@ -822,6 +860,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
           'Nota importada: ${_itensResolvidos.length - pendentes} item(ns) somado(s) ao estoque'
+          '${pedidoDaNota != null ? ', pedido #${pedidoDaNota.numeroSequencial ?? ''} fechado' : ''}'
           '${temBoletos ? ', ${nfe.parcelas.length} boleto(s) criado(s)' : ''}'
           '${pendentes > 0 ? ', $pendentes sem produto cadastrado (não afetaram estoque)' : ''}.',
         ),
@@ -838,6 +877,8 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         _nfe = null;
         _itensResolvidos = [];
         _fornecedorExistente = null;
+        _pedidosAbertos = [];
+        _pedidoEscolhido = null;
         _processando = false;
       });
       _carregarContagemPendentes();
@@ -955,6 +996,55 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   /// fornecedor da NF-e já foi identificado, confere se bate com o do
   /// pedido (sem bloquear, só avisando — a NF-e mandada pode legitimamente
   /// vir de uma razão social/filial ligeiramente diferente).
+  Widget _cardEscolherPedido(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final dataCurta = DateFormat('dd/MM');
+
+    Widget opcao({required PedidoCompra? pedido, required String titulo, String? subtitulo}) {
+      final marcado = _pedidoEscolhido?.id == pedido?.id;
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+        leading: Icon(marcado ? Icons.radio_button_checked : Icons.radio_button_unchecked, color: colorScheme.primary),
+        title: Text(titulo),
+        subtitle: subtitulo != null ? Text(subtitulo) : null,
+        onTap: () => setState(() => _pedidoEscolhido = pedido),
+      );
+    }
+
+    return Card(
+      color: colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Essa nota é de um pedido de compra?',
+              style: TextStyle(fontWeight: FontWeight.bold, color: colorScheme.onSecondaryContainer),
+            ),
+            Text(
+              'Ligar fecha o pedido, para de contar como "a caminho" na sugestão e mede o prazo de entrega.',
+              style: TextStyle(fontSize: 12, color: colorScheme.onSecondaryContainer),
+            ),
+            for (final pc in _pedidosAbertos)
+              opcao(
+                pedido: pc,
+                titulo: 'Pedido #${pc.numeroSequencial ?? ''} — ${pc.status.label}',
+                subtitulo: [
+                  if ((pc.dataEnvio ?? pc.dataConfirmacao ?? pc.createdAt) != null)
+                    'de ${dataCurta.format((pc.dataEnvio ?? pc.dataConfirmacao ?? pc.createdAt)!.toLocal())}',
+                  '${pc.itens.length} itens',
+                  'R\$ ${(pc.valorTotalConfirmado ?? pc.valorTotal).toStringAsFixed(2)}',
+                ].join(' · '),
+              ),
+            opcao(pedido: null, titulo: 'Não é de nenhum pedido'),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _bannerPedidoVinculado(BuildContext context) {
     final pedido = widget.pedidoCompra!;
     final colorScheme = Theme.of(context).colorScheme;
@@ -1007,6 +1097,9 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       children: [
         if (widget.pedidoCompra != null) ...[
           _bannerPedidoVinculado(context),
+          const SizedBox(height: 16),
+        ] else if (_pedidosAbertos.isNotEmpty) ...[
+          _cardEscolherPedido(context),
           const SizedBox(height: 16),
         ],
         Card(
@@ -1142,6 +1235,8 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                     _nfe = null;
                     _itensResolvidos = [];
                     _fornecedorExistente = null;
+                    _pedidosAbertos = [];
+                    _pedidoEscolhido = null;
                   });
                 },
                 child: const Text('Cancelar'),

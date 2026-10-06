@@ -294,6 +294,10 @@ class SugestaoCompra {
   /// média de venda (zero venda por falta não é zero demanda).
   final int diasSemEstoque;
 
+  /// Já pedido e ainda não recebido (pedido enviado/confirmado nos últimos
+  /// 20 dias) — a quantidade sugerida já vem descontada disso.
+  final int quantidadeACaminho;
+
   SugestaoCompra({
     required this.produtoId,
     required this.produtoNome,
@@ -309,6 +313,7 @@ class SugestaoCompra {
     required this.fornecedorEscolhido,
     this.prazoOrigem,
     this.diasSemEstoque = 0,
+    this.quantidadeACaminho = 0,
   });
 
   factory SugestaoCompra.fromSupabase(Map<String, dynamic> row) {
@@ -327,6 +332,7 @@ class SugestaoCompra {
       fornecedorEscolhido: row['fornecedor_escolhido'] as bool? ?? true,
       prazoOrigem: row['prazo_origem'] as String?,
       diasSemEstoque: (row['dias_sem_estoque'] as num?)?.toInt() ?? 0,
+      quantidadeACaminho: (row['quantidade_a_caminho'] as num?)?.toInt() ?? 0,
     );
   }
 }

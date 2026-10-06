@@ -114,6 +114,9 @@ class _ItemEditavel {
   final double vendaMediaDiaria;
   final int diasSemEstoque;
 
+  /// Já pedido e ainda não recebido — a sugestão já desconta isso.
+  final int quantidadeACaminho;
+
   _ItemEditavel({
     required this.produtoId,
     required this.produtoNome,
@@ -129,6 +132,7 @@ class _ItemEditavel {
     this.precoVenda,
     this.vendaMediaDiaria = 0,
     this.diasSemEstoque = 0,
+    this.quantidadeACaminho = 0,
   });
 
   /// Zerado e com venda: cada dia assim é venda perdida.
@@ -397,6 +401,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         precoVenda: precoPorProduto[escolhida.produtoId],
         vendaMediaDiaria: escolhida.vendaMediaDiaria,
         diasSemEstoque: escolhida.diasSemEstoque,
+        quantidadeACaminho: escolhida.quantidadeACaminho,
       ));
 
       // Também aparece na lista do(s) outro(s) fornecedor(es) que vendem
@@ -1260,6 +1265,7 @@ class _LinhaItemState extends State<_LinhaItem> {
             child: Text(
               [
                 'Estoque atual: ${item.estoqueAtual}un',
+                if (item.quantidadeACaminho > 0) 'A caminho: ${item.quantidadeACaminho}un (já descontado)',
                 if (item.quantidadeSugerida != null && item.quantidadeSugerida != item.quantidadePedida)
                   'Sugerido: ${item.quantidadeSugerida}un',
               ].join(' · '),
