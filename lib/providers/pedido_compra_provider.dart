@@ -38,7 +38,7 @@ class PedidoCompraProvider with ChangeNotifier {
     }
   }
 
-  Future<void> carregarSugestoes({int diasAnalise = 30, int diasCobertura = 14}) async {
+  Future<void> carregarSugestoes({int diasAnalise = 30, int diasCobertura = 30}) async {
     if (_empresaId == null) {
       throw StateError('Nenhuma empresa definida no PedidoCompraProvider ainda.');
     }

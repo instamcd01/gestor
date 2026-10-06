@@ -252,7 +252,7 @@ class SugestaoCompraScreen extends StatefulWidget {
 
 class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
   int _diasAnalise = 30;
-  int _diasCobertura = 14;
+  int _diasCobertura = 30;
   List<_GrupoFornecedor> _grupos = [];
   bool _montandoGrupos = false;
   final Set<String> _criandoPedidoPara = {};

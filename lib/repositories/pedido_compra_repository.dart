@@ -38,7 +38,7 @@ class PedidoCompraRepository {
   Future<List<SugestaoCompra>> buscarSugestoes({
     required String empresaId,
     int diasAnalise = 30,
-    int diasCobertura = 14,
+    int diasCobertura = 30,
   }) async {
     // v2: média de venda só sobre dias com estoque + prazo de entrega
     // medido (pedido -> entrada da nota). A v1 fica no banco pra app antigo.
