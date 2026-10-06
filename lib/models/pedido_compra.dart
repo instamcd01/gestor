@@ -285,6 +285,15 @@ class SugestaoCompra {
   /// vezes, uma por fornecedor vinculado (só pra produto A/B).
   final bool fornecedorEscolhido;
 
+  /// De onde veio [prazoEntregaDias]: 'real' (medido do pedido até a
+  /// entrada da nota), 'cadastrado', 'nota' (estimado pela emissão -> entrada
+  /// quando não há pedido no app) ou null (sem nenhuma informação).
+  final String? prazoOrigem;
+
+  /// Dias sem estoque na janela de análise — esses dias não entram na
+  /// média de venda (zero venda por falta não é zero demanda).
+  final int diasSemEstoque;
+
   SugestaoCompra({
     required this.produtoId,
     required this.produtoNome,
@@ -298,6 +307,8 @@ class SugestaoCompra {
     required this.classeAbc,
     required this.classeXyz,
     required this.fornecedorEscolhido,
+    this.prazoOrigem,
+    this.diasSemEstoque = 0,
   });
 
   factory SugestaoCompra.fromSupabase(Map<String, dynamic> row) {
@@ -314,6 +325,8 @@ class SugestaoCompra {
       classeAbc: row['classe_abc']?.toString() ?? 'sem_dado',
       classeXyz: row['classe_xyz']?.toString() ?? 'sem_dado',
       fornecedorEscolhido: row['fornecedor_escolhido'] as bool? ?? true,
+      prazoOrigem: row['prazo_origem'] as String?,
+      diasSemEstoque: (row['dias_sem_estoque'] as num?)?.toInt() ?? 0,
     );
   }
 }

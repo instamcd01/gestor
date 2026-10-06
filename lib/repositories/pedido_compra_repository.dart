@@ -40,7 +40,9 @@ class PedidoCompraRepository {
     int diasAnalise = 30,
     int diasCobertura = 14,
   }) async {
-    final data = await supabase.rpc('sugestoes_pedido_compra', params: {
+    // v2: média de venda só sobre dias com estoque + prazo de entrega
+    // medido (pedido -> entrada da nota). A v1 fica no banco pra app antigo.
+    final data = await supabase.rpc('sugestoes_pedido_compra_v2', params: {
       'p_empresa_id': empresaId,
       'p_dias_analise': diasAnalise,
       'p_dias_cobertura': diasCobertura,

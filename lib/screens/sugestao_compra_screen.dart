@@ -109,6 +109,11 @@ class _ItemEditavel {
   /// real na margem de trocar de fornecedor, não só "ficou mais barato".
   final double? precoVenda;
 
+  /// Venda média diária já corrigida (só dias com estoque) e quantos dias
+  /// o produto ficou em falta na janela — vêm da RPC.
+  final double vendaMediaDiaria;
+  final int diasSemEstoque;
+
   _ItemEditavel({
     required this.produtoId,
     required this.produtoNome,
@@ -122,7 +127,28 @@ class _ItemEditavel {
     this.alternativas = const [],
     this.prazoFornecedorAtual,
     this.precoVenda,
+    this.vendaMediaDiaria = 0,
+    this.diasSemEstoque = 0,
   });
+
+  /// Zerado e com venda: cada dia assim é venda perdida.
+  bool get emFalta => estoqueAtual <= 0 && vendaMediaDiaria > 0;
+
+  /// Ainda tem, mas não dura até o pedido chegar (prazo do fornecedor) —
+  /// ainda dá pra salvar pedindo agora.
+  bool get acabaAntesDeChegar {
+    final prazo = prazoFornecedorAtual;
+    if (estoqueAtual <= 0 || vendaMediaDiaria <= 0 || prazo == null) return false;
+    return estoqueAtual / vendaMediaDiaria < prazo;
+  }
+
+  double? get diasDeEstoque => vendaMediaDiaria > 0 ? estoqueAtual / vendaMediaDiaria : null;
+
+  /// Quanto se deixa de vender por dia (a preço de venda; sem preço
+  /// cadastrado, usa o custo pra não sumir do cálculo).
+  double get vendaPorDia => vendaMediaDiaria * ((precoVenda ?? 0) > 0 ? precoVenda! : custoUnitario);
+  double get vendaParadaPorDia => emFalta ? vendaPorDia : 0;
+  double get vendaEmRiscoPorDia => acabaAntesDeChegar ? vendaPorDia : 0;
 
   /// Margem % atual sobre o preço de venda — null se não tem preço
   /// cadastrado ou é zero (evita divisão por zero/dado sem sentido).
@@ -160,11 +186,57 @@ class _GrupoFornecedor {
   final List<_ItemEditavel> itens;
   final List<_TambemDisponivel> tambemDisponiveis;
 
-  _GrupoFornecedor({required this.fornecedor, required this.itens, this.tambemDisponiveis = const []});
+  /// Prazo usado no cálculo (medido > cadastrado > estimado pela nota) e
+  /// de onde veio — ver `prazo_entrega_efetivo_fornecedores`.
+  final int? prazoEntregaDias;
+  final String? prazoOrigem;
+
+  _GrupoFornecedor({
+    required this.fornecedor,
+    required this.itens,
+    this.tambemDisponiveis = const [],
+    this.prazoEntregaDias,
+    this.prazoOrigem,
+  });
 
   String get fornecedorId => fornecedor.id!;
   String get fornecedorNome => fornecedor.nome;
-  int? get prazoEntregaDias => fornecedor.prazoEntregaDias;
+
+  int get qtdEmFalta => itens.where((i) => i.emFalta).length;
+  int get qtdAcabaAntesDeChegar => itens.where((i) => i.acabaAntesDeChegar).length;
+  double get vendaParadaPorDia => itens.fold(0, (t, i) => t + i.vendaParadaPorDia);
+  double get vendaEmRiscoPorDia => itens.fold(0, (t, i) => t + i.vendaEmRiscoPorDia);
+
+  /// 2 = tem item em falta que vende, 1 = só risco de faltar, 0 = reposição.
+  int get nivelUrgencia => qtdEmFalta > 0 ? 2 : (qtdAcabaAntesDeChegar > 0 ? 1 : 0);
+
+  /// Urgência em dinheiro, não em contagem: 23 itens em falta que vendem
+  /// pouco pesam menos que 5 que vendem muito.
+  static int compararUrgencia(_GrupoFornecedor a, _GrupoFornecedor b) {
+    for (final c in [
+      b.nivelUrgencia.compareTo(a.nivelUrgencia),
+      b.vendaParadaPorDia.compareTo(a.vendaParadaPorDia),
+      b.vendaEmRiscoPorDia.compareTo(a.vendaEmRiscoPorDia),
+      b.total.compareTo(a.total),
+    ]) {
+      if (c != 0) return c;
+    }
+    return a.fornecedorNome.compareTo(b.fornecedorNome);
+  }
+
+  /// Dentro do fornecedor: em falta primeiro (maior venda perdida no topo),
+  /// depois os que acabam antes de chegar, depois o resto como vinha.
+  void ordenarItensPorUrgencia() {
+    final ordemOriginal = {for (var i = 0; i < itens.length; i++) itens[i]: i};
+    int nivel(_ItemEditavel i) => i.emFalta ? 2 : (i.acabaAntesDeChegar ? 1 : 0);
+    itens.sort((a, b) {
+      final n = nivel(b).compareTo(nivel(a));
+      if (n != 0) return n;
+      final v = (b.vendaParadaPorDia + b.vendaEmRiscoPorDia).compareTo(a.vendaParadaPorDia + a.vendaEmRiscoPorDia);
+      if (v != 0) return v;
+      return ordemOriginal[a]!.compareTo(ordemOriginal[b]!);
+    });
+  }
   double? get valorMinimoPedido => fornecedor.valorMinimoPedido;
 
   double get total => itens.fold(0, (soma, i) => soma + i.subtotal);
@@ -263,14 +335,12 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
           : Fornecedor(id: fornecedorId, nome: nomeFallback, prazoEntregaDias: prazoFallback);
     }
 
-    // Prazo REAL (média de pedidos já recebidos) quando existir dado
-    // suficiente, senão cai pro prazo só cadastrado — comparação de
-    // fornecedor fica mais honesta que confiar num número digitado uma
-    // vez e nunca mais conferido.
-    int? prazoEfetivo(String fornecedorId, int? prazoCadastrado) {
-      final real = desempenho[fornecedorId]?.prazoMedioRealDias;
-      return real != null ? real.round() : prazoCadastrado;
-    }
+    // A RPC já devolve o melhor prazo que tem (medido do pedido até a
+    // entrada da nota > cadastrado > estimado pela nota). O desempenho
+    // (só pedidos marcados como recebidos) fica de reserva pra quando ela
+    // não souber nada.
+    int? prazoEfetivo(String fornecedorId, int? prazoRpc) =>
+        prazoRpc ?? desempenho[fornecedorId]?.prazoMedioRealDias?.round();
 
     // A RPC agora pode trazer mais de uma linha por produto (uma por
     // fornecedor vinculado, só pra produto A/B — ver classe_abc). Agrupa
@@ -308,6 +378,8 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
           fornecedor: resolverFornecedor(escolhida.fornecedorId, escolhida.fornecedorNome, escolhida.prazoEntregaDias),
           itens: [],
           tambemDisponiveis: [],
+          prazoEntregaDias: prazoEfetivo(escolhida.fornecedorId, escolhida.prazoEntregaDias),
+          prazoOrigem: escolhida.prazoOrigem,
         ),
       );
 
@@ -323,6 +395,8 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         alternativas: alternativas,
         prazoFornecedorAtual: prazoEfetivo(escolhida.fornecedorId, escolhida.prazoEntregaDias),
         precoVenda: precoPorProduto[escolhida.produtoId],
+        vendaMediaDiaria: escolhida.vendaMediaDiaria,
+        diasSemEstoque: escolhida.diasSemEstoque,
       ));
 
       // Também aparece na lista do(s) outro(s) fornecedor(es) que vendem
@@ -336,6 +410,8 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
             fornecedor: resolverFornecedor(alt.fornecedorId, alt.fornecedorNome, alt.prazoEntregaDias),
             itens: [],
             tambemDisponiveis: [],
+            prazoEntregaDias: prazoEfetivo(alt.fornecedorId, alt.prazoEntregaDias),
+            prazoOrigem: alt.prazoOrigem,
           ),
         );
         grupoAlt.tambemDisponiveis.add(_TambemDisponivel(
@@ -354,7 +430,10 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
 
     if (!mounted) return;
     setState(() {
-      _grupos = grupos.values.toList()..sort((a, b) => a.fornecedorNome.compareTo(b.fornecedorNome));
+      for (final g in grupos.values) {
+        g.ordenarItensPorUrgencia();
+      }
+      _grupos = grupos.values.toList()..sort(_GrupoFornecedor.compararUrgencia);
       _montandoGrupos = false;
     });
   }
@@ -935,17 +1014,49 @@ class _GrupoFornecedorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final incluidos = grupo.itens.where((i) => i.incluido).length;
+    final corUrgencia = switch (grupo.nivelUrgencia) {
+      2 => colorScheme.error,
+      1 => Colors.orange.shade700,
+      _ => colorScheme.outlineVariant,
+    };
+    final origemPrazo = switch (grupo.prazoOrigem) {
+      'real' => ' (medido)',
+      'nota' => ' (estimado pela nota)',
+      _ => '',
+    };
+    final rotuloPrazo = grupo.prazoEntregaDias == null
+        ? 'prazo de entrega desconhecido'
+        : 'entrega em ${grupo.prazoEntregaDias}d$origemPrazo';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         initiallyExpanded: expandidoPorPadrao,
+        leading: Icon(Icons.circle, size: 14, color: corUrgencia),
         title: Text(grupo.fornecedorNome, style: Theme.of(context).textTheme.titleMedium),
-        subtitle: Text(
-          '${grupo.itens.length} ite${grupo.itens.length == 1 ? 'm' : 'ns'}'
-          '${grupo.prazoEntregaDias != null ? ' · Prazo: ${grupo.prazoEntregaDias}d' : ''}'
-          ' · R\$ ${grupo.total.toStringAsFixed(2)}',
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (grupo.nivelUrgencia > 0)
+              Text(
+                [
+                  if (grupo.qtdEmFalta > 0)
+                    '${grupo.qtdEmFalta} em falta (~R\$ ${grupo.vendaParadaPorDia.toStringAsFixed(0)}/dia parado)',
+                  if (grupo.qtdAcabaAntesDeChegar > 0)
+                    '${grupo.qtdAcabaAntesDeChegar} acaba${grupo.qtdAcabaAntesDeChegar > 1 ? 'm' : ''} antes de chegar',
+                ].join(' · '),
+                style: TextStyle(color: corUrgencia, fontWeight: FontWeight.w600, fontSize: 12.5),
+              ),
+            Text(
+              '${grupo.itens.length} ite${grupo.itens.length == 1 ? 'm' : 'ns'} · $rotuloPrazo'
+              ' · Pedido R\$ ${grupo.total.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: grupo.prazoEntregaDias == null ? Colors.orange.shade800 : null,
+              ),
+            ),
+          ],
         ),
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
@@ -1155,6 +1266,29 @@ class _LinhaItemState extends State<_LinhaItem> {
               style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
             ),
           ),
+          if (item.emFalta || item.acabaAntesDeChegar)
+            Padding(
+              padding: const EdgeInsets.only(left: 40),
+              child: Text(
+                item.emFalta
+                    ? 'Em falta — ~R\$${item.vendaParadaPorDia.toStringAsFixed(2)}/dia de venda parada'
+                    : 'Acaba em ~${item.diasDeEstoque!.toStringAsFixed(0)}d, entrega em ${item.prazoFornecedorAtual}d',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: item.emFalta ? colorScheme.error : Colors.orange.shade800,
+                ),
+              ),
+            ),
+          if (item.diasSemEstoque > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 40),
+              child: Text(
+                'Ficou ${item.diasSemEstoque} dia${item.diasSemEstoque > 1 ? 's' : ''} sem estoque — média de venda '
+                'conta só os dias com estoque (${item.vendaMediaDiaria.toStringAsFixed(2)}/dia)',
+                style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+              ),
+            ),
           if (proxima != null)
             Padding(
               padding: const EdgeInsets.only(left: 40),
