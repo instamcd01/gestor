@@ -44,16 +44,27 @@ class _DespesasScreenState extends State<DespesasScreen> {
   }
 
   List<Despesa> _aplicarFiltro(List<Despesa> despesas) {
+    final List<Despesa> filtradas;
     switch (_filtro) {
       case 'Pendentes':
-        return despesas.where((d) => d.status == StatusDespesa.pendente).toList();
+        filtradas = despesas.where((d) => d.status == StatusDespesa.pendente).toList();
       case 'Atrasadas':
-        return despesas.where((d) => d.atrasada).toList();
+        filtradas = despesas.where((d) => d.atrasada).toList();
       case 'Pagas':
-        return despesas.where((d) => d.paga).toList();
+        filtradas = despesas.where((d) => d.paga).toList();
       default:
-        return despesas;
+        filtradas = [...despesas];
     }
+    // Contas a pagar primeiro, da que vence antes pra depois (atrasadas
+    // naturalmente no topo) — é a ordem de pagar. Pagas/canceladas vêm
+    // depois, da mais recente pra mais antiga, como histórico.
+    filtradas.sort((a, b) {
+      final aPendente = a.status == StatusDespesa.pendente;
+      final bPendente = b.status == StatusDespesa.pendente;
+      if (aPendente != bPendente) return aPendente ? -1 : 1;
+      return aPendente ? a.dataVencimento.compareTo(b.dataVencimento) : b.dataVencimento.compareTo(a.dataVencimento);
+    });
+    return filtradas;
   }
 
   Future<void> _abrirFormulario({Despesa? despesa}) async {
