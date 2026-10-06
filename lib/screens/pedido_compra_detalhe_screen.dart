@@ -150,7 +150,34 @@ class _PedidoCompraDetalheScreenState extends State<PedidoCompraDetalheScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível abrir o WhatsApp: $e')));
+      return;
     }
+    await _marcarEnviadoAoMandar(pedido);
+  }
+
+  /// Mandou pro fornecedor (WhatsApp/imagem) direto do rascunho: já marca
+  /// como enviado. Antes ficava rascunho pra sempre — o "Marcar como
+  /// enviado" era esquecido, o pedido nunca contava como "a caminho" na
+  /// sugestão e a lista de abertos acumulava pedido já recebido.
+  Future<void> _marcarEnviadoAoMandar(PedidoCompra pedido) async {
+    if (pedido.status != StatusPedidoCompra.rascunho || !mounted) return;
+    await _marcarComoEnviado();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('Pedido marcado como enviado'),
+      duration: const Duration(seconds: 6),
+      action: SnackBarAction(
+        label: 'Desfazer',
+        onPressed: () async {
+          await PedidoCompraRepository().atualizarStatus(
+            pedido.id!,
+            StatusPedidoCompra.rascunho,
+            camposExtras: {'data_envio': null, 'data_prevista_entrega': null},
+          );
+          if (mounted) await _carregar();
+        },
+      ),
+    ));
   }
 
   Future<void> _compartilharImagem() async {
@@ -163,10 +190,15 @@ class _PedidoCompraDetalheScreenState extends State<PedidoCompraDetalheScreen> {
 
       final nomeArquivo = 'pedido_compra_${_pedido?.numeroSequencial ?? DateTime.now().millisecondsSinceEpoch}.png';
 
-      await Share.shareXFiles(
+      final resultado = await Share.shareXFiles(
         [XFile.fromData(pngBytes, name: nomeArquivo, mimeType: 'image/png')],
         text: 'Pedido de compra — ${_pedido?.fornecedor.nome ?? ''}',
       );
+      // Só quando escolheu um app pra mandar — fechar o menu sem enviar
+      // não conta.
+      if (resultado.status == ShareResultStatus.success && _pedido != null) {
+        await _marcarEnviadoAoMandar(_pedido!);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível gerar a imagem: $e')));
