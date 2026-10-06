@@ -18,6 +18,8 @@ const categoriasDespesaSugeridas = [
   'Outros',
 ];
 
+const metodosPagamentoDespesa = ['Dinheiro', 'Pix', 'Transferência', 'Boleto', 'Cartão'];
+
 class Despesa {
   final String? id;
   final Fornecedor? fornecedor;

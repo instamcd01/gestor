@@ -13,7 +13,6 @@ import '../utils/formatadores_input.dart';
 import '../widgets/estado_erro_lista.dart';
 import '../widgets/form_section.dart';
 
-const _metodosPagamentoDespesa = ['Dinheiro', 'Pix', 'Transferência', 'Boleto', 'Cartão'];
 
 /// Tela de Despesas — atende tanto "Contas a Pagar" (abre já filtrada em
 /// pendentes) quanto "Saídas" (abre mostrando tudo) do menu de Finanças,
@@ -65,7 +64,7 @@ class _DespesasScreenState extends State<DespesasScreen> {
   }
 
   Future<void> _marcarComoPaga(Despesa despesa) async {
-    String metodoSelecionado = _metodosPagamentoDespesa.first;
+    String metodoSelecionado = metodosPagamentoDespesa.first;
 
     final confirmou = await showDialog<bool>(
       context: context,
@@ -75,7 +74,7 @@ class _DespesasScreenState extends State<DespesasScreen> {
           content: DropdownButtonFormField<String>(
             initialValue: metodoSelecionado,
             decoration: const InputDecoration(labelText: 'Forma de pagamento'),
-            items: _metodosPagamentoDespesa
+            items: metodosPagamentoDespesa
                 .map((m) => DropdownMenuItem(value: m, child: Text(m)))
                 .toList(),
             onChanged: (v) => setModalState(() => metodoSelecionado = v!),

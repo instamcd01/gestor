@@ -178,7 +178,13 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       context,
       MaterialPageRoute(builder: (_) => const NotasPendentesEntradaScreen()),
     );
-    if (xml == null || !mounted) return;
+    if (!mounted) return;
+    // Na lista dá pra dispensar nota que não é mercadoria — contagem muda
+    // mesmo quando volta sem escolher nenhuma pra importar.
+    if (xml == null) {
+      _carregarContagemPendentes();
+      return;
+    }
     await _processarXml(xml);
   }
 
