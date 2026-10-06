@@ -59,7 +59,7 @@ class _DespesasScreenState extends State<DespesasScreen> {
   Future<void> _abrirFormulario({Despesa? despesa}) async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => _DespesaFormScreen(despesa: despesa)),
+      MaterialPageRoute(builder: (_) => DespesaFormScreen(despesa: despesa)),
     );
   }
 
@@ -312,16 +312,20 @@ class _DespesasScreenState extends State<DespesasScreen> {
   }
 }
 
-class _DespesaFormScreen extends StatefulWidget {
+class DespesaFormScreen extends StatefulWidget {
   final Despesa? despesa;
+  /// Atalho "Lançar despesa" de Finanças: quem entra por lá quase sempre
+  /// está registrando um gasto que já saiu do caixa, então a despesa nova
+  /// já vem marcada como paga (dá pra desligar pra conta a vencer).
+  final bool jaPagaPorPadrao;
 
-  const _DespesaFormScreen({this.despesa});
+  const DespesaFormScreen({super.key, this.despesa, this.jaPagaPorPadrao = false});
 
   @override
-  State<_DespesaFormScreen> createState() => _DespesaFormScreenState();
+  State<DespesaFormScreen> createState() => _DespesaFormScreenState();
 }
 
-class _DespesaFormScreenState extends State<_DespesaFormScreen> {
+class _DespesaFormScreenState extends State<DespesaFormScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _descricaoController;
   late final TextEditingController _valorController;
@@ -338,6 +342,10 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
   // referência entre as duas listas.
   String? _fornecedorIdSelecionado;
   bool _salvando = false;
+  // Só pra despesa nova — editar uma existente continua passando pelo
+  // "Marcar como paga" da lista, que já cuida de status/data/forma.
+  late bool _jaPaga;
+  String _metodoPagamento = metodosPagamentoDespesa.first;
 
   bool get _editando => widget.despesa != null;
 
@@ -347,8 +355,11 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
     final d = widget.despesa;
     _descricaoController = TextEditingController(text: d?.descricao ?? '');
     _valorController = TextEditingController(text: d != null ? ClienteValidators.formatarMoeda(d.valor) : '');
+    _jaPaga = d == null && widget.jaPagaPorPadrao;
     _vencimentoController = TextEditingController(
-      text: d != null ? DateFormatUtilsLocal.formatar(d.dataVencimento) : '',
+      text: d != null
+          ? DateFormatUtilsLocal.formatar(d.dataVencimento)
+          : (_jaPaga ? DateFormatUtilsLocal.formatar(DateTime.now()) : ''),
     );
     _observacoesController = TextEditingController(text: d?.observacoes ?? '');
     _codigoBarrasBoletoController = TextEditingController(text: d?.codigoBarrasBoleto ?? '');
@@ -404,9 +415,11 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
       categoria: _categoria,
       valor: ClienteValidators.parseNumero(_valorController.text) ?? 0.0,
       dataVencimento: vencimento,
-      dataPagamento: widget.despesa?.dataPagamento,
-      status: widget.despesa?.status ?? StatusDespesa.pendente,
-      metodoPagamento: widget.despesa?.metodoPagamento,
+      // Já paga: a data do formulário vale como vencimento e pagamento ao
+      // mesmo tempo (gasto à vista não tem vencimento separado).
+      dataPagamento: _jaPaga ? vencimento : widget.despesa?.dataPagamento,
+      status: _jaPaga ? StatusDespesa.pago : (widget.despesa?.status ?? StatusDespesa.pendente),
+      metodoPagamento: _jaPaga ? _metodoPagamento : widget.despesa?.metodoPagamento,
       observacoes: _observacoesController.text.trim(),
       codigoBarrasBoleto: _codigoBarrasBoletoController.text.trim().isEmpty ? null : _codigoBarrasBoletoController.text.trim(),
       recorrente: _recorrente,
@@ -421,7 +434,7 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
         final criadoPor = context.read<AuthProvider>().usuarioAtual?.id;
         await provider.adicionar(despesa, criadoPor: criadoPor);
       }
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar despesa: $e')));
@@ -498,7 +511,10 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
                       Expanded(
                         child: TextFormField(
                           controller: _vencimentoController,
-                          decoration: const InputDecoration(labelText: 'Vencimento', hintText: 'DD/MM/AAAA'),
+                          decoration: InputDecoration(
+                            labelText: _jaPaga ? 'Pago em' : 'Vencimento',
+                            hintText: 'DD/MM/AAAA',
+                          ),
                           keyboardType: TextInputType.datetime,
                           inputFormatters: [DataInputFormatter()],
                           validator: (v) => DateFormatUtilsLocal.parsear(v) == null ? 'Data inválida' : null,
@@ -506,6 +522,22 @@ class _DespesaFormScreenState extends State<_DespesaFormScreen> {
                       ),
                     ],
                   ),
+                  if (!_editando) ...[
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Já está paga'),
+                      subtitle: Text(_jaPaga ? 'O dinheiro já saiu do caixa' : 'Conta a pagar — fica pendente até o vencimento'),
+                      value: _jaPaga,
+                      onChanged: (v) => setState(() => _jaPaga = v),
+                    ),
+                    if (_jaPaga)
+                      DropdownButtonFormField<String>(
+                        initialValue: _metodoPagamento,
+                        decoration: const InputDecoration(labelText: 'Forma de pagamento'),
+                        items: metodosPagamentoDespesa.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                        onChanged: (v) => setState(() => _metodoPagamento = v!),
+                      ),
+                  ],
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Despesa recorrente'),

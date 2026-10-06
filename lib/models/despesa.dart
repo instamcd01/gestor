@@ -62,7 +62,12 @@ class Despesa {
 
   bool get paga => status == StatusDespesa.pago;
   bool get cancelada => status == StatusDespesa.cancelado;
-  bool get atrasada => status == StatusDespesa.pendente && dataVencimento.isBefore(DateTime.now());
+  /// Compara com o início de hoje: vencimento é só data (meia-noite), então
+  /// contra `now()` uma conta que vence hoje já contava como atrasada.
+  bool get atrasada {
+    final agora = DateTime.now();
+    return status == StatusDespesa.pendente && dataVencimento.isBefore(DateTime(agora.year, agora.month, agora.day));
+  }
 
   factory Despesa.fromSupabase(Map<String, dynamic> row) {
     final fornecedorRow = row['fornecedor'] as Map<String, dynamic>?;
