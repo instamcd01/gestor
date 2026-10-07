@@ -135,6 +135,10 @@ class Entrada {
   final List<ItemEntrada> itens;
   final String? pedidoCompraId;
 
+  /// `pedidos_compra.numero_sequencial` do pedido ligado (só vem na
+  /// listagem, pra mostrar "Pedido #N" no histórico).
+  final int? pedidoCompraNumero;
+
   Entrada({
     this.id,
     this.fornecedor,
@@ -148,10 +152,12 @@ class Entrada {
     this.observacoes = '',
     this.itens = const [],
     this.pedidoCompraId,
+    this.pedidoCompraNumero,
   }) : dataEntrada = dataEntrada ?? DateTime.now().toUtc();
 
   factory Entrada.fromSupabase(Map<String, dynamic> row) {
     final fornecedorRow = row['fornecedor'] as Map<String, dynamic>?;
+    final pedidoRow = row['pedido_compra'] as Map<String, dynamic>?;
     return Entrada(
       id: row['id'] as String?,
       fornecedor: fornecedorRow != null ? Fornecedor.fromSupabase(fornecedorRow) : null,
@@ -163,6 +169,8 @@ class Entrada {
       dataEmissao: row['data_emissao'] != null ? DateTime.parse(row['data_emissao'].toString()) : null,
       dataEntrada: DateTime.parse(row['data_entrada'].toString()),
       observacoes: row['observacoes']?.toString() ?? '',
+      pedidoCompraId: row['pedido_compra_id'] as String?,
+      pedidoCompraNumero: (pedidoRow?['numero_sequencial'] as num?)?.toInt(),
     );
   }
 

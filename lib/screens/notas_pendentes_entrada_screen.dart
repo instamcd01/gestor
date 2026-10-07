@@ -141,40 +141,48 @@ class _NotasPendentesEntradaScreenState extends State<NotasPendentesEntradaScree
     }
   }
 
-  /// Nota que veio contra o CNPJ mas não é pra revenda (equipamento,
-  /// material de uso/consumo...): não pode virar entrada de estoque, senão
-  /// cria produto no catálogo e mistura o custo com o das mercadorias.
   Future<void> _naoEMercadoria(NfePendenteEntrada pendente, NfeImportada nfe) async {
-    final resultado = await showDialog<_DispensaNota>(
-      context: context,
-      builder: (_) => _DialogNaoEMercadoria(nfe: nfe),
+    if (await dispensarNotaNaoMercadoria(context, pendente, nfe)) await _recarregar();
+  }
+}
+
+/// Nota que veio contra o CNPJ mas não é pra revenda (equipamento,
+/// material de uso/consumo...): não pode virar entrada de estoque, senão
+/// cria produto no catálogo e mistura o custo com o das mercadorias.
+/// Compartilhado entre esta lista e a tela principal de Notas Fiscais.
+/// Devolve true se a nota saiu da lista de pendentes.
+Future<bool> dispensarNotaNaoMercadoria(BuildContext context, NfePendenteEntrada pendente, NfeImportada nfe) async {
+  final resultado = await showDialog<_DispensaNota>(
+    context: context,
+    builder: (_) => _DialogNaoEMercadoria(nfe: nfe),
+  );
+  if (resultado == null || !context.mounted) return false;
+  try {
+    await NfePendenteEntradaRepository().dispensar(
+      chave: pendente.chave,
+      lancarDespesa: resultado.lancarDespesa,
+      categoria: resultado.categoria,
+      descricao: resultado.descricao,
+      metodoPagamento: resultado.metodoPagamento,
+      dataPagamento: resultado.dataPagamento,
     );
-    if (resultado == null || !mounted) return;
-    try {
-      await NfePendenteEntradaRepository().dispensar(
-        chave: pendente.chave,
-        lancarDespesa: resultado.lancarDespesa,
-        categoria: resultado.categoria,
-        descricao: resultado.descricao,
-        metodoPagamento: resultado.metodoPagamento,
-        dataPagamento: resultado.dataPagamento,
-      );
-      if (!mounted) return;
-      if (resultado.lancarDespesa) {
-        // Tela de despesas lê do provider global — sem isso a despesa nova
-        // só aparece depois de reabrir o app.
-        context.read<DespesaProvider>().carregar();
-      }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(resultado.lancarDespesa
-            ? 'Despesa de ${_moeda.format(nfe.valorTotalNota)} lançada e nota retirada da lista'
-            : 'Nota retirada da lista'),
-      ));
-      await _recarregar();
-    } catch (e) {
-      if (!mounted) return;
+    if (!context.mounted) return true;
+    if (resultado.lancarDespesa) {
+      // Tela de despesas lê do provider global — sem isso a despesa nova
+      // só aparece depois de reabrir o app.
+      context.read<DespesaProvider>().carregar();
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(resultado.lancarDespesa
+          ? 'Despesa de ${_moeda.format(nfe.valorTotalNota)} lançada e nota retirada da lista'
+          : 'Nota retirada da lista'),
+    ));
+    return true;
+  } catch (e) {
+    if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível concluir: $e')));
     }
+    return false;
   }
 }
 

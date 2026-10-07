@@ -9,7 +9,7 @@ import 'despesa_repository.dart';
 /// pelo insert em `itens_entrada` — este repository não mexe em estoque
 /// diretamente.
 class EntradaRepository {
-  static const _selectComFornecedor = '*, fornecedor:fornecedores(*)';
+  static const _selectComFornecedor = '*, fornecedor:fornecedores(*), pedido_compra:pedidos_compra(numero_sequencial)';
 
   Future<List<Entrada>> listar() async {
     final data = await supabase

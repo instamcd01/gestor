@@ -31,7 +31,11 @@ import 'sugestoes_variante_rejeitadas_screen.dart';
 /// resolve "N produtos precisam disso" de uma vez, em vez de abrir produto
 /// por produto.
 class AnaliseProdutosScreen extends StatefulWidget {
-  const AnaliseProdutosScreen({super.key});
+  /// Abre direto na aba "Revisar preço" mostrando só esses produtos — usado
+  /// depois de importar uma nota em que o custo de alguns produtos subiu.
+  final Set<String>? produtosRevisarPreco;
+
+  const AnaliseProdutosScreen({super.key, this.produtosRevisarPreco});
 
   @override
   State<AnaliseProdutosScreen> createState() => _AnaliseProdutosScreenState();
@@ -43,7 +47,14 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 8, vsync: this);
+    _tabController = TabController(length: 8, vsync: this, initialIndex: widget.produtosRevisarPreco != null ? 2 : 0);
+    if (widget.produtosRevisarPreco != null) {
+      // O custo acabou de mudar e o banco marcou `revisar_preco` sozinho
+      // (trigger) — a lista em memória ainda não sabe disso.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.read<ProdutoProvider>().carregarProdutos();
+      });
+    }
   }
 
   @override
@@ -93,15 +104,15 @@ class _AnaliseProdutosScreenState extends State<AnaliseProdutosScreen> with Sing
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          _AbaSemImagem(),
-          _AbaVariantes(),
-          _AbaRevisarPreco(),
-          _AbaCicloRecompra(),
-          _AbaCatalogo(),
-          _AbaEanDuplicado(),
-          _AbaEstoqueParado(),
-          _AbaEstrategia(),
+        children: [
+          const _AbaSemImagem(),
+          const _AbaVariantes(),
+          _AbaRevisarPreco(somenteProdutos: widget.produtosRevisarPreco),
+          const _AbaCicloRecompra(),
+          const _AbaCatalogo(),
+          const _AbaEanDuplicado(),
+          const _AbaEstoqueParado(),
+          const _AbaEstrategia(),
         ],
       ),
     );
@@ -646,7 +657,9 @@ String _pct(double valor) => '${valor >= 0 ? '+' : ''}${valor.toStringAsFixed(1)
 String _moedaRevisao(double valor) => 'R\$ ${valor.toStringAsFixed(2).replaceAll('.', ',')}';
 
 class _AbaRevisarPreco extends StatefulWidget {
-  const _AbaRevisarPreco();
+  final Set<String>? somenteProdutos;
+
+  const _AbaRevisarPreco({this.somenteProdutos});
 
   @override
   State<_AbaRevisarPreco> createState() => _AbaRevisarPrecoState();
@@ -666,6 +679,7 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
   bool _aplicarNoIfood = true;
   Map<String, RevisaoPrecoContexto> _contexto = {};
   bool _carregandoContexto = true;
+  late bool _filtrarProdutosDaNota = widget.somenteProdutos != null;
 
   @override
   void initState() {
@@ -907,8 +921,11 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
   @override
   Widget build(BuildContext context) {
     final produtoProvider = context.watch<ProdutoProvider>();
-    final pendentes =
-        produtoProvider.produtos.where((p) => p.revisarPreco && !_ehPlaceholderInterno(p)).toList();
+    final somenteProdutos = _filtrarProdutosDaNota ? widget.somenteProdutos : null;
+    final pendentes = produtoProvider.produtos
+        .where((p) => p.revisarPreco && !_ehPlaceholderInterno(p))
+        .where((p) => somenteProdutos == null || somenteProdutos.contains(p.id))
+        .toList();
     final contagemPorCategoria = <String, int>{};
     for (final p in pendentes) {
       final cat = p.categoria.isNotEmpty ? p.categoria : 'Sem categoria';
@@ -941,6 +958,24 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
 
     return Column(
       children: [
+        if (somenteProdutos != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Só os produtos da nota que você acabou de importar (${pendentes.length}).',
+                    style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _filtrarProdutosDaNota = false),
+                  child: const Text('Ver todos'),
+                ),
+              ],
+            ),
+          ),
         if (pendentes.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),

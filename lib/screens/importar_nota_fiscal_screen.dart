@@ -26,6 +26,7 @@ import '../utils/leitor_codigo_barras.dart';
 import '../utils/nfe_chave_acesso_validator.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/aviso_banner.dart';
+import 'analise_produtos_screen.dart';
 import 'cadastro_produto_screen.dart';
 import 'despesas_screen.dart';
 import 'notas_pendentes_entrada_screen.dart';
@@ -63,6 +64,8 @@ String _formatarQuantidade(double q) => q == q.roundToDouble() ? q.toStringAsFix
 /// é menor que 1 centavo mas ainda diferente de zero pro Dart.
 bool _custosDivergem(double a, double b) => (a * 100).round() != (b * 100).round();
 
+enum _FiltroItens { todos, vinculo, custoMaior, prontos }
+
 /// Importa uma NF-e (XML) de um fornecedor: casa os itens por código de
 /// barras contra os produtos já cadastrados, mostra uma prévia — separada
 /// em pendentes/prontos, com o produto vinculado sempre visível por nome
@@ -85,7 +88,12 @@ class ImportarNotaFiscalScreen extends StatefulWidget {
   /// lógica de dar entrada em outro lugar.
   final PedidoCompra? pedidoCompra;
 
-  const ImportarNotaFiscalScreen({super.key, this.pedidoCompra});
+  /// XML de uma nota que o poll da Sefaz já baixou (ver tela de Notas
+  /// Fiscais, "Chegou da Sefaz") — abre direto na conferência e, ao
+  /// confirmar ou cancelar, volta pra tela de origem.
+  final String? xmlInicial;
+
+  const ImportarNotaFiscalScreen({super.key, this.pedidoCompra, this.xmlInicial});
 
   @override
   State<ImportarNotaFiscalScreen> createState() => _ImportarNotaFiscalScreenState();
@@ -124,6 +132,13 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   PedidoCompra? get _pedidoDaNota => widget.pedidoCompra ?? _pedidoEscolhido;
 
   bool get _temPreVia => _nfe != null;
+
+  /// Filtro do resumo no topo da conferência e itens "prontos" que o
+  /// usuário abriu pra editar (os prontos sem divergência ficam
+  /// compactos — numa nota de 40 itens, mostrar 4 campos em cada um
+  /// enterrava os poucos que precisam de atenção).
+  _FiltroItens _filtroItens = _FiltroItens.todos;
+  final Set<int> _itensExpandidos = {};
 
   /// Nota de bonificação (compre 1 ganhe 1, brinde): itens entram no
   /// estoque sem custo — o valor da nota é só fiscal, não é pago.
@@ -168,6 +183,11 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     super.initState();
     _fatorController = TextEditingController(text: _formatarFator(1.0));
     _carregarContagemPendentes();
+    final xmlInicial = widget.xmlInicial;
+    if (xmlInicial != null) {
+      _processando = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _processarXml(xmlInicial));
+    }
   }
 
   /// Só a contagem, pra mostrar no botão sem esperar carregar (e parsear)
@@ -449,6 +469,8 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       _fatorController.text = _formatarFator(fator);
       setState(() {
         _nfe = nfe;
+        _filtroItens = _FiltroItens.todos;
+        _itensExpandidos.clear();
         _fornecedorExistente = fornecedorExistente;
         _produtoIdPorCodigoFornecedor = codigosFornecedor.produtos;
         _embalagemPorCodigoFornecedor = codigosFornecedor.embalagens;
@@ -727,6 +749,24 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
 
   Future<void> _executarImportacao(NfeImportada nfe, Map<String, Produto> produtos) async {
     setState(() => _processando = true);
+    // Capturado antes de gravar: o loop abaixo muda `produto.custo` no
+    // próprio objeto do provider, depois disso não dá mais pra comparar.
+    final custoSubiu = <String, ({String nome, double antes, double depois})>{};
+    if (_ehBonificacao) {
+      for (final entrada in _custosMediosBonificacao(produtos).medios.entries) {
+        final produto = produtos[entrada.key];
+        if (produto != null && entrada.value > produto.custo && _custosDivergem(produto.custo, entrada.value)) {
+          custoSubiu[entrada.key] = (nome: produto.nome, antes: produto.custo, depois: entrada.value);
+        }
+      }
+    } else {
+      for (final item in _itensResolvidos) {
+        final produto = produtos[item.produtoId];
+        if (produto != null && _custoSubiu(item, produto)) {
+          custoSubiu[produto.id!] = (nome: produto.nome, antes: produto.custo, depois: item.custoUnitario);
+        }
+      }
+    }
     try {
       final empresaId = context.read<AuthProvider>().empresaId;
       if (empresaId == null) throw StateError('Empresa não identificada.');
@@ -851,18 +891,31 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       final pendentes = _itensResolvidos.where((i) => !i.casado).length;
       final temBoletos = nfe.parcelas.isNotEmpty;
 
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
+
+      // Custo subiu e o preço de venda ficou igual = margem caiu sem ninguém
+      // ver. Pergunta aqui, no momento em que a informação está fresca, e
+      // leva direto pro "Revisar preço" só com esses produtos.
+      final revisarPrecos = custoSubiu.isNotEmpty && await _perguntarRevisaoPrecos(custoSubiu.values.toList());
+      if (!mounted) return;
+      void abrirRevisaoPrecos() => navigator.push(MaterialPageRoute(
+            builder: (_) => AnaliseProdutosScreen(produtosRevisarPreco: custoSubiu.keys.toSet()),
+          ));
+
       // Aberta a partir de um pedido de compra: já dá entrada e marca
       // recebido, então volta direto pro detalhe do pedido em vez de
       // ficar nessa tela pronta pra importar outra nota.
       if (widget.pedidoCompra != null) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        navigator.pop();
+        messenger.showSnackBar(SnackBar(
           content: Text('Pedido #${widget.pedidoCompra!.numeroSequencial ?? ''} recebido — estoque atualizado.'),
         ));
+        if (revisarPrecos) abrirRevisaoPrecos();
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      final avisoImportada = SnackBar(
         content: Text(
           'Nota importada: ${_itensResolvidos.length - pendentes} item(ns) somado(s) ao estoque'
           '${pedidoDaNota != null ? ', pedido #${pedidoDaNota.numeroSequencial ?? ''} fechado' : ''}'
@@ -872,11 +925,21 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         action: temBoletos
             ? SnackBarAction(
                 label: 'Ver boletos',
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DespesasScreen())),
+                onPressed: () => navigator.push(MaterialPageRoute(builder: (_) => const DespesasScreen())),
               )
             : null,
         duration: const Duration(seconds: 6),
-      ));
+      );
+
+      // Aberta a partir de uma nota de "Chegou da Sefaz": volta pra lista.
+      if (widget.xmlInicial != null) {
+        navigator.pop(true);
+        messenger.showSnackBar(avisoImportada);
+        if (revisarPrecos) abrirRevisaoPrecos();
+        return;
+      }
+
+      messenger.showSnackBar(avisoImportada);
       _limparControllers();
       setState(() {
         _nfe = null;
@@ -887,6 +950,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         _processando = false;
       });
       _carregarContagemPendentes();
+      if (revisarPrecos) abrirRevisaoPrecos();
     } catch (e) {
       if (!mounted) return;
       setState(() => _processando = false);
@@ -912,6 +976,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
           : _temPreVia
               ? _prevoia(context)
               : _estadoInicial(context),
+      bottomNavigationBar: !_processando && _temPreVia ? _barraConfirmar(context) : null,
     );
   }
 
@@ -1091,11 +1156,55 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final produtos = _produtosPorId;
 
-    final indicesPendentes = <int>[];
-    final indicesCasados = <int>[];
+    final semEstoquePago =
+        _ehBonificacao ? _custosMediosBonificacao(produtos).semEstoquePago : const <String>{};
+
+    final indicesVinculo = <int>[];
+    final indicesProntos = <int>[];
+    final indicesCustoMaior = <int>{};
     for (var i = 0; i < _itensResolvidos.length; i++) {
-      (_itensResolvidos[i].casado ? indicesCasados : indicesPendentes).add(i);
+      final item = _itensResolvidos[i];
+      (item.casado ? indicesProntos : indicesVinculo).add(i);
+      if (_custoSubiu(item, produtos[item.produtoId])) indicesCustoMaior.add(i);
     }
+    // Filtro cujo chip sumiu (resolveu o último item sem vínculo, por
+    // exemplo) volta pra "Todos" em vez de deixar a lista vazia.
+    var filtro = _filtroItens;
+    if ((filtro == _FiltroItens.vinculo && indicesVinculo.isEmpty) ||
+        (filtro == _FiltroItens.custoMaior && indicesCustoMaior.isEmpty)) {
+      filtro = _FiltroItens.todos;
+    }
+    bool passaFiltro(int i) => switch (filtro) {
+          _FiltroItens.todos => true,
+          _FiltroItens.vinculo => !_itensResolvidos[i].casado,
+          _FiltroItens.custoMaior => indicesCustoMaior.contains(i),
+          _FiltroItens.prontos => _itensResolvidos[i].casado,
+        };
+    final vinculoVisiveis = indicesVinculo.where(passaFiltro).toList();
+    final prontosVisiveis = indicesProntos.where(passaFiltro).toList();
+
+    // Pronto e sem nada a conferir fica numa linha compacta (toca pra
+    // abrir); o resto aparece inteiro, com os campos de edição.
+    Widget item(int i) {
+      final resolvido = _itensResolvidos[i];
+      final produto = produtos[resolvido.produtoId];
+      final precisaAtencao = !resolvido.casado ||
+          produto == null ||
+          indicesCustoMaior.contains(i) ||
+          (_embalagemPorItem[i] ?? 1) > 1 ||
+          semEstoquePago.contains(resolvido.produtoId);
+      if (precisaAtencao) return _itemCard(context, i, produto);
+      if (_itensExpandidos.contains(i)) {
+        return _itemCard(context, i, produto, onRecolher: () => setState(() => _itensExpandidos.remove(i)));
+      }
+      return _itemCompacto(context, i, produto);
+    }
+
+    Widget chip(_FiltroItens valor, String rotulo, {Color? cor}) => ChoiceChip(
+          label: Text(rotulo, style: cor != null && filtro != valor ? TextStyle(color: cor) : null),
+          selected: filtro == valor,
+          onSelected: (_) => setState(() => _filtroItens = valor),
+        );
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1180,28 +1289,47 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
           ),
         ),
         const SizedBox(height: 20),
-        if (indicesPendentes.isNotEmpty) ...[
+        Text('Itens da nota', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            chip(_FiltroItens.todos, 'Todos (${_itensResolvidos.length})'),
+            if (indicesVinculo.isNotEmpty)
+              chip(_FiltroItens.vinculo, 'Precisam de vínculo (${indicesVinculo.length})', cor: colorScheme.error),
+            if (indicesCustoMaior.isNotEmpty) chip(_FiltroItens.custoMaior, 'Custo maior (${indicesCustoMaior.length})'),
+            chip(_FiltroItens.prontos, 'Prontos (${indicesProntos.length})'),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (vinculoVisiveis.isNotEmpty) ...[
           Row(
             children: [
               Icon(Icons.error_outline, size: 18, color: colorScheme.error),
               const SizedBox(width: 6),
-              Text('Pendentes (${indicesPendentes.length})',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(color: colorScheme.error)),
+              Text('Precisam de vínculo (${vinculoVisiveis.length})',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(color: colorScheme.error)),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            'Sem produto cadastrado com esse código de barras — vincule a um produto existente ou cadastre um novo. Não vão somar no estoque até serem resolvidos.',
+            'Sem produto cadastrado com esse código — vincule a um produto existente ou cadastre um novo. Não vão somar no estoque até serem resolvidos.',
             style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12.5),
           ),
           const SizedBox(height: 8),
-          for (final i in indicesPendentes) _itemCard(context, i, produtos[_itensResolvidos[i].produtoId]),
+          for (final i in vinculoVisiveis) item(i),
           const SizedBox(height: 16),
         ],
-        if (indicesCasados.isNotEmpty) ...[
-          Text('Prontos (${indicesCasados.length})', style: Theme.of(context).textTheme.titleMedium),
+        if (prontosVisiveis.isNotEmpty) ...[
+          Text('Prontos (${prontosVisiveis.length})', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 2),
+          Text(
+            'Os que não precisam de conferência ficam resumidos — toque pra editar quantidade, custo ou validade.',
+            style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12.5),
+          ),
           const SizedBox(height: 8),
-          for (final i in indicesCasados) _itemCard(context, i, produtos[_itensResolvidos[i].produtoId]),
+          for (final i in prontosVisiveis) item(i),
         ],
         const SizedBox(height: 12),
         Text('Boletos (${nfe.parcelas.length})', style: Theme.of(context).textTheme.titleMedium),
@@ -1229,38 +1357,164 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
               ],
             ),
           ),
-        const SizedBox(height: 24),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () {
-                  _limparControllers();
-                  setState(() {
-                    _nfe = null;
-                    _itensResolvidos = [];
-                    _fornecedorExistente = null;
-                    _pedidosAbertos = [];
-                    _pedidoEscolhido = null;
-                  });
-                },
-                child: const Text('Cancelar'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: FilledButton(
-                onPressed: _confirmar,
-                child: const Text('Confirmar importação'),
-              ),
-            ),
-          ],
-        ),
+        const SizedBox(height: 16),
       ],
     );
   }
 
-  Widget _itemCard(BuildContext context, int index, Produto? produtoCasado) {
+  void _cancelarPrevia() {
+    // Veio de uma nota da lista "Chegou da Sefaz": cancelar volta pra lá.
+    if (widget.xmlInicial != null) {
+      Navigator.pop(context);
+      return;
+    }
+    _limparControllers();
+    setState(() {
+      _nfe = null;
+      _itensResolvidos = [];
+      _fornecedorExistente = null;
+      _pedidosAbertos = [];
+      _pedidoEscolhido = null;
+    });
+  }
+
+  /// Fica fixa embaixo da conferência — antes o "Confirmar" só aparecia
+  /// depois de rolar a nota inteira.
+  Widget _barraConfirmar(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final total = _itensResolvidos.length;
+    final semVinculo = _itensResolvidos.where((i) => !i.casado).length;
+    return Material(
+      elevation: 8,
+      color: colorScheme.surface,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                semVinculo > 0
+                    ? '$semVinculo de $total itens sem vínculo — não vão somar no estoque'
+                    : '$total ${total == 1 ? 'item pronto' : 'itens prontos'} para dar entrada',
+                style: TextStyle(fontSize: 12.5, color: semVinculo > 0 ? colorScheme.error : colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(onPressed: _cancelarPrevia, child: const Text('Cancelar')),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton(
+                      onPressed: _confirmar,
+                      child: Text('Confirmar · ${_moeda.format(_nfe?.valorTotalNota ?? 0)}'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _perguntarRevisaoPrecos(List<({String nome, double antes, double depois})> produtos) async {
+    const maximoListado = 6;
+    final resposta = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(produtos.length == 1
+            ? '1 produto ficou mais caro'
+            : '${produtos.length} produtos ficaram mais caros'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('O preço de venda continua o mesmo, então a margem desses produtos caiu.'),
+              const SizedBox(height: 8),
+              for (final p in produtos.take(maximoListado))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    '• ${p.nome} — ${_moeda.format(p.antes)} → ${_moeda.format(p.depois)}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              if (produtos.length > maximoListado)
+                Text('e mais ${produtos.length - maximoListado}', style: const TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Depois')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Revisar preços')),
+        ],
+      ),
+    );
+    return resposta ?? false;
+  }
+
+  bool _custoSubiu(ItemEntrada item, Produto? produto) =>
+      !_ehBonificacao &&
+      item.casado &&
+      produto != null &&
+      item.custoUnitario > 0 &&
+      _custosDivergem(produto.custo, item.custoUnitario) &&
+      item.custoUnitario > produto.custo;
+
+  Widget _itemCompacto(BuildContext context, int index, Produto? produto) {
+    final item = _itensResolvidos[index];
+    final colorScheme = Theme.of(context).colorScheme;
+    final validade = _validadeControllers[index]?.text ?? '';
+    final secundario = TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12.5);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => setState(() => _itensExpandidos.add(index)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          child: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.green, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      produto?.nome ?? item.descricaoNfe,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                    ),
+                    Text(
+                      '${_formatarQuantidade(item.quantidade)} un. × ${_moeda.format(item.custoUnitario)}'
+                      '${validade.isNotEmpty ? ' · validade $validade' : ''}',
+                      style: secundario,
+                    ),
+                    Text('Na nota: ${item.descricaoNfe}', maxLines: 1, overflow: TextOverflow.ellipsis, style: secundario),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(_moeda.format(item.valorTotal), style: const TextStyle(fontWeight: FontWeight.w600)),
+              Icon(Icons.expand_more, color: colorScheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _itemCard(BuildContext context, int index, Produto? produtoCasado, {VoidCallback? onRecolher}) {
     final item = _itensResolvidos[index];
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -1390,6 +1644,13 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                   icon: const Icon(Icons.add_box_outlined, size: 16),
                   label: const Text('Cadastrar novo'),
                 ),
+                if (onRecolher != null)
+                  TextButton.icon(
+                    onPressed: onRecolher,
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    icon: const Icon(Icons.expand_less, size: 16),
+                    label: const Text('Recolher'),
+                  ),
                 SizedBox(
                   width: 90,
                   child: TextFormField(
