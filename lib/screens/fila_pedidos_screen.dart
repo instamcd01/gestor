@@ -47,7 +47,9 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<HistoricoVendasProvider>().carregarVendas();
+      // Só o que a Fila mostra (em andamento + hoje) — pedido novo e mudança
+      // de status depois disso chegam sozinhos pelo tempo real do provider.
+      if (mounted) context.read<HistoricoVendasProvider>().atualizarFila();
     });
     // Os selos de urgência dependem só da hora atual (não de dado novo do
     // servidor) — atualiza sozinho pra não precisar puxar pra atualizar só
@@ -369,7 +371,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => provider.carregarVendas(),
+            onPressed: () => provider.atualizarFila(),
           ),
         ],
       ),
@@ -463,13 +465,13 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
               ),
             ),
           ),
-          if (provider.carregando) const LinearProgressIndicator(),
+          if (provider.carregando || provider.atualizandoFila) const LinearProgressIndicator(),
           Expanded(
             child: provider.erro != null && pedidos.isEmpty
-                ? EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.carregarVendas)
+                ? EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.atualizarFila)
                 : pedidos.isEmpty
                 ? RefreshIndicator(
-                    onRefresh: provider.carregarVendas,
+                    onRefresh: provider.atualizarFila,
                     child: ListView(
                       children: [
                         const SizedBox(height: 80),
@@ -499,7 +501,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                     ),
                   )
                 : RefreshIndicator(
-                    onRefresh: provider.carregarVendas,
+                    onRefresh: provider.atualizarFila,
                     child: ListView.builder(
                       padding: const EdgeInsets.all(12),
                       itemCount: pedidos.length,

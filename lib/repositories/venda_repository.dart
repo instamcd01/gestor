@@ -280,6 +280,19 @@ class VendaRepository {
     }).eq('id', idVenda);
   }
 
+  /// Pedidos específicos (não excluídos) — usado pra atualizar só o que
+  /// mudou na lista em memória, sem recarregar a janela inteira. Id que não
+  /// volta foi excluído (ou não existe).
+  Future<List<Venda>> buscarPorIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+    final data = await supabase
+        .from('pedidos')
+        .select(_selectComItensECliente)
+        .inFilter('id', ids)
+        .isFilter('deleted_at', null);
+    return (data as List).map((row) => _vendaFromRow(row as Map<String, dynamic>)).toList();
+  }
+
   Future<Venda> buscarPorId(String idVenda) async {
     final data = await supabase
         .from('pedidos')
