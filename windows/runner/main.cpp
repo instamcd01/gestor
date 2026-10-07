@@ -16,6 +16,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  // Referência extra de STA, nunca liberada. O flutter_windows faz um
+  // CoUninitialize sem par nesta thread (Dart roda na thread da janela) e o
+  // local_notifier pede MTA logo depois: sem essa reserva a contagem zera, a
+  // thread vira MTA e o seletor de arquivos (image_picker/file_selector)
+  // trava o app num deadlock ao abrir.
+  ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
 
