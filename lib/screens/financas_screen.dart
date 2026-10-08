@@ -12,6 +12,7 @@ import 'entradas_screen.dart';
 import 'fluxo_caixa_screen.dart';
 import 'fornecedores_screen.dart';
 import 'metricas_despesas_screen.dart';
+import 'onde_comprar_screen.dart';
 import 'pedido_compra_lista_screen.dart';
 import 'sugestao_compra_screen.dart';
 
@@ -81,6 +82,7 @@ class _FinancasScreenState extends State<FinancasScreen> {
             itens: [
               MenuItem('Sugestão de Compra', Icons.auto_awesome_outlined, const SugestaoCompraScreen()),
               MenuItem('Pedidos de Compra', Icons.shopping_cart_outlined, const PedidoCompraListaScreen()),
+              MenuItem('Onde Comprar', Icons.travel_explore_outlined, const OndeComprarScreen()),
             ],
           ),
         ],
