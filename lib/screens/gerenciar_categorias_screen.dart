@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/supabase_config.dart';
+import '../repositories/subcategoria_repository.dart';
 
 /// Gerencia a hierarquia Departamento -> Categoria -> Subcategoria usada
 /// pelo catálogo (Gestor e site público). Diferente de [CategoriaScreen]
@@ -332,19 +333,8 @@ class _GerenciarCategoriasScreenState extends State<GerenciarCategoriasScreen>
   }
 
   Future<void> _adicionarSubcategoria(String nome) async {
-    if (nome.isEmpty || _categoriaSelecionadaId == null) return;
-    if (_subcategorias.any((s) => (s['nome'] as String).toLowerCase() == nome.toLowerCase())) return;
-    final empresaId = await _obterEmpresaId();
-    if (empresaId == null) return;
-    final proximaOrdem = _subcategorias.isNotEmpty
-        ? _subcategorias.map((s) => s['ordem'] as int).reduce((a, b) => a > b ? a : b) + 1
-        : 0;
-    await supabase.from('subcategorias').insert({
-      'nome': nome,
-      'ordem': proximaOrdem,
-      'empresa_id': empresaId,
-      'categoria_id': _categoriaSelecionadaId,
-    });
+    if (nome.trim().isEmpty || _categoriaSelecionadaId == null) return;
+    await SubcategoriaRepository().criarOuObter(categoriaId: _categoriaSelecionadaId!, nome: nome);
     await _confirmarESetState(_carregarSubcategorias);
   }
 

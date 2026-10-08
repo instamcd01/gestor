@@ -23,6 +23,7 @@ import '../services/descricao_produto_service.dart';
 import '../widgets/campos_estruturados_variante.dart';
 import '../widgets/canais_marketplace_section.dart';
 import '../widgets/form_section.dart';
+import '../widgets/nova_subcategoria_dialog.dart';
 import 'gerenciar_midias_produto_screen.dart';
 
 class CadastroProdutoScreen extends StatefulWidget {
@@ -338,6 +339,13 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
       debugPrint("Erro ao carregar subcategorias: $e");
       if (mounted) setState(() => _subcategoriasCarregadas = true);
     }
+  }
+
+  Future<void> _novaSubcategoria() async {
+    final nome = await mostrarNovaSubcategoriaDialog(context, categoriaNome: _categoriaController.text);
+    if (nome == null) return;
+    _subcategoriaController.text = nome;
+    await _carregarSubcategorias();
   }
 
   Future<void> _carregarFabricantes() async {
@@ -691,22 +699,36 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                       ),
                     ],
                   ),
-                  !_subcategoriasCarregadas
-                      ? const Center(child: CircularProgressIndicator())
-                      : DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(labelText: 'Subcategoria (Opcional)'),
-                          value: _subcategorias.contains(_subcategoriaController.text)
-                              ? _subcategoriaController.text
-                              : '',
-                          items: [
-                            const DropdownMenuItem(value: '', child: Text('Nenhuma')),
-                            for (final subcategoria in _subcategorias)
-                              DropdownMenuItem(value: subcategoria, child: Text(subcategoria)),
-                          ],
-                          onChanged: (value) {
-                            setState(() => _subcategoriaController.text = value ?? '');
-                          },
-                        ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: !_subcategoriasCarregadas
+                            ? const Center(child: CircularProgressIndicator())
+                            : DropdownButtonFormField<String>(
+                                decoration: const InputDecoration(labelText: 'Subcategoria (Opcional)'),
+                                value: _subcategorias.contains(_subcategoriaController.text)
+                                    ? _subcategoriaController.text
+                                    : '',
+                                items: [
+                                  const DropdownMenuItem(value: '', child: Text('Nenhuma')),
+                                  for (final subcategoria in _subcategorias)
+                                    DropdownMenuItem(value: subcategoria, child: Text(subcategoria)),
+                                ],
+                                onChanged: (value) {
+                                  setState(() => _subcategoriaController.text = value ?? '');
+                                },
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        tooltip: _categoriaController.text.isEmpty
+                            ? 'Escolha a categoria primeiro'
+                            : 'Nova subcategoria',
+                        icon: const Icon(Icons.add),
+                        onPressed: _categoriaController.text.isEmpty ? null : _novaSubcategoria,
+                      ),
+                    ],
+                  ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
