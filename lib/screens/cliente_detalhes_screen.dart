@@ -13,6 +13,7 @@ import '../repositories/carrinho_cliente_repository.dart';
 import '../repositories/cliente_repository.dart';
 import '../repositories/saldo_repository.dart';
 import '../repositories/venda_repository.dart';
+import '../repositories/vinculo_cliente_repository.dart';
 import '../utils/canal_venda_utils.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
@@ -149,6 +150,13 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
                 backgroundColor: Theme.of(context).colorScheme.primaryContainer,
               ),
             ),
+          ),
+        if (cliente.idCliente != null && context.watch<AuthProvider>().podeExcluir)
+          _CadastrosVinculadosSection(
+            // Recria a seção quando o vínculo muda (provider recarregado),
+            // senão ela ficava com o grupo antigo em memória.
+            key: ValueKey('${cliente.idCliente}-${cliente.pessoaId}'),
+            cliente: cliente,
           ),
         const SizedBox(height: 8),
         Center(child: CategoriaClienteBadge(categoria: cliente.categoriaCliente)),
@@ -1095,6 +1103,258 @@ class _ContaClienteTabState extends State<_ContaClienteTab> {
             },
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// Cadastros da mesma pessoa em outros canais (site, WhatsApp, Kyte...) +
+/// vincular/desvincular manualmente. Só dono/gerente (a RPC também barra).
+/// O vínculo junta o histórico só na visão da loja: o cliente continua vendo
+/// no site apenas os pedidos do cadastro em que faz login.
+class _CadastrosVinculadosSection extends StatefulWidget {
+  final Cliente cliente;
+
+  const _CadastrosVinculadosSection({super.key, required this.cliente});
+
+  @override
+  State<_CadastrosVinculadosSection> createState() => _CadastrosVinculadosSectionState();
+}
+
+class _CadastrosVinculadosSectionState extends State<_CadastrosVinculadosSection> {
+  final _repository = VinculoClienteRepository();
+  late Future<List<Cliente>> _futureGrupo;
+  bool _processando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _futureGrupo = _repository.listarGrupo(widget.cliente.idCliente!);
+  }
+
+  Future<void> _aposMudanca(String mensagem) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await context.read<ClientProvider>().carregarClientes();
+    if (!mounted) return;
+    final future = _repository.listarGrupo(widget.cliente.idCliente!);
+    setState(() {
+      _futureGrupo = future;
+      _processando = false;
+    });
+    messenger.showSnackBar(SnackBar(content: Text(mensagem)));
+  }
+
+  Future<void> _vincular() async {
+    final outro = await showDialog<Cliente>(
+      context: context,
+      builder: (_) => _EscolherCadastroDialog(excluirId: widget.cliente.idCliente!),
+    );
+    if (outro == null || !mounted) return;
+
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Vincular cadastros?'),
+        content: Text(
+          '"${widget.cliente.nome}" e "${outro.nome}" passam a ser tratados como a mesma pessoa: '
+          'pedidos, total gasto e recompra contam juntos aqui no Gestor.\n\n'
+          'O cadastro com login no site fica como principal. O cliente não vê diferença no site, '
+          'e saldo/PetCash continuam separados.\n\n'
+          'Dá pra desfazer depois em "Desvincular".',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Vincular')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    setState(() => _processando = true);
+    try {
+      await _repository.vincularManual(widget.cliente.idCliente!, outro.idCliente!);
+      if (!mounted) return;
+      await _aposMudanca('Cadastros vinculados.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _processando = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível vincular: $e')));
+    }
+  }
+
+  Future<void> _desvincular(Cliente vinculado, Cliente principal) async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Desvincular?'),
+        content: Text(
+          '"${vinculado.nome}" deixa de estar ligado a "${principal.nome}". '
+          'Cada um volta a contar só os próprios pedidos.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Desvincular')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return;
+
+    setState(() => _processando = true);
+    try {
+      await _repository.desvincular(vinculado.idCliente!);
+      if (!mounted) return;
+      await _aposMudanca('Cadastros desvinculados.');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _processando = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível desvincular: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Cliente>>(
+      future: _futureGrupo,
+      builder: (context, snapshot) {
+        final grupo = snapshot.data ?? [];
+        final principal = grupo.where((c) => c.pessoaId == null).firstOrNull;
+        final outros = grupo.where((c) => c.idCliente != widget.cliente.idCliente).toList();
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (outros.isNotEmpty && principal != null)
+                FormSection(
+                  titulo: 'Cadastros vinculados',
+                  children: outros.map((c) {
+                    final ehPrincipal = c.pessoaId == null;
+                    // Desvincular sempre solta o lado que não é o principal.
+                    final vinculado = ehPrincipal ? widget.cliente : c;
+                    final detalhes = [
+                      if (ehPrincipal) 'principal',
+                      if (c.authUserId != null) 'tem login no site',
+                      if (c.canalOrigem == canalKyteHistorico) 'histórico Kyte',
+                      '${c.quantidadeCompras ?? 0} pedido(s) no grupo',
+                    ].join(' · ');
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.link),
+                      title: Text(c.nome),
+                      subtitle: Text(detalhes),
+                      trailing: TextButton(
+                        onPressed: _processando ? null : () => _desvincular(vinculado, principal),
+                        child: const Text('Desvincular'),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              Center(
+                child: OutlinedButton.icon(
+                  onPressed: _processando || snapshot.connectionState != ConnectionState.done ? null : _vincular,
+                  icon: _processando
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.add_link, size: 16),
+                  label: const Text('Vincular a outro cadastro'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Busca por nome ou telefone em todos os cadastros, inclusive os do
+/// Histórico Kyte (que ficam fora da lista normal de clientes).
+class _EscolherCadastroDialog extends StatefulWidget {
+  final String excluirId;
+
+  const _EscolherCadastroDialog({required this.excluirId});
+
+  @override
+  State<_EscolherCadastroDialog> createState() => _EscolherCadastroDialogState();
+}
+
+class _EscolherCadastroDialogState extends State<_EscolherCadastroDialog> {
+  String _busca = '';
+  List<Cliente> _kyte = [];
+
+  @override
+  void initState() {
+    super.initState();
+    ClienteRepository().listarHistoricoKyte().then((lista) {
+      if (mounted) {
+        setState(() {
+          _kyte = lista;
+        });
+      }
+    }).catchError((_) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final termo = _busca.trim().toLowerCase();
+    final digitos = termo.replaceAll(RegExp(r'\D'), '');
+    final todos = [...context.read<ClientProvider>().clientes, ..._kyte];
+    final resultados = termo.length < 2
+        ? <Cliente>[]
+        : todos.where((c) {
+            if (c.idCliente == widget.excluirId) return false;
+            if (c.nome.toLowerCase().contains(termo)) return true;
+            if (digitos.length < 4) return false;
+            final tel = (c.telefoneKyte ?? c.celular).replaceAll(RegExp(r'\D'), '');
+            return tel.contains(digitos);
+          }).take(50).toList();
+
+    return AlertDialog(
+      title: const Text('Vincular a qual cadastro?'),
+      content: SizedBox(
+        width: 420,
+        height: 420,
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'Nome ou telefone',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (v) => setState(() {
+                _busca = v;
+              }),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: termo.length < 2
+                  ? const Center(child: Text('Digite pelo menos 2 letras.'))
+                  : resultados.isEmpty
+                      ? const Center(child: Text('Nenhum cadastro encontrado.'))
+                      : ListView.builder(
+                          itemCount: resultados.length,
+                          itemBuilder: (context, i) {
+                            final c = resultados[i];
+                            final detalhes = [
+                              c.telefoneKyte ?? c.celular,
+                              if (c.authUserId != null) 'tem login no site',
+                              if (c.canalOrigem == canalKyteHistorico) 'histórico Kyte',
+                              if (c.pessoaId != null) 'já vinculado',
+                            ].where((s) => s.isNotEmpty).join(' · ');
+                            return ListTile(
+                              title: Text(c.nome),
+                              subtitle: Text(detalhes),
+                              onTap: () => Navigator.pop(context, c),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
       ],
     );
   }
