@@ -183,6 +183,8 @@ class _PushCampanhaScreenState extends State<PushCampanhaScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _ResumoUsoApp(repo: _repo),
+          const SizedBox(height: 20),
           Text('Nova campanha', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           TextField(
@@ -374,6 +376,59 @@ class _PushCampanhaScreenState extends State<PushCampanhaScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Quem usa o "app" (site instalado na tela inicial ou app nativo) e quem
+/// recebe notificação — pra saber o tamanho real do público antes de enviar.
+class _ResumoUsoApp extends StatefulWidget {
+  final PushCampanhaRepository repo;
+
+  const _ResumoUsoApp({required this.repo});
+
+  @override
+  State<_ResumoUsoApp> createState() => _ResumoUsoAppState();
+}
+
+class _ResumoUsoAppState extends State<_ResumoUsoApp> {
+  late final Future<Map<String, int>> _futuro = widget.repo.resumoUsoApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, int>>(
+      future: _futuro,
+      builder: (context, snapshot) {
+        final r = snapshot.data;
+        if (r == null || r.isEmpty) return const SizedBox.shrink();
+        final estilo = Theme.of(context).textTheme.bodySmall;
+        return Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Quem usa o app', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 8),
+                Text(
+                  '${r['clientes_usam_app'] ?? 0} cliente(s) com conta usaram nos últimos 60 dias '
+                  '(${r['clientes_iphone'] ?? 0} iPhone · ${r['clientes_android'] ?? 0} Android)',
+                ),
+                const SizedBox(height: 4),
+                Text('${r['notificacao_ativa'] ?? 0} recebem notificação '
+                    '(${r['notificacao_pelo_site'] ?? 0} pelo site instalado)'),
+                const SizedBox(height: 8),
+                Text(
+                  'Sem login, últimos 30 dias: ${r['aberturas_sem_login_30d'] ?? 0} abertura(s) pelo ícone · '
+                  '${r['instalacoes_android_30d'] ?? 0} instalação(ões) no Android',
+                  style: estilo,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

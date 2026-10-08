@@ -91,6 +91,11 @@ class Cliente {
   /// pra esse cliente em vez de `celular`.
   final String? telefoneKyte;
 
+  /// Usa o "app": abriu o site pelo ícone da tela inicial ou pelo app nativo
+  /// (registrado pelo site, RPC registrar_uso_app). 'iphone' | 'android'.
+  final String? appPlataforma;
+  final DateTime? appUltimoUsoEm;
+
   /// Ponto de entrega marcado pelo PRÓPRIO cliente no mapa do site (tela
   /// "Ajustar local no mapa") — o pino é a referência pra entrega, o número
   /// digitado pode estar impreciso. Volta pra false quando a equipe altera
@@ -144,6 +149,8 @@ class Cliente {
     this.authUserId,
     this.pessoaId,
     this.telefoneKyte,
+    this.appPlataforma,
+    this.appUltimoUsoEm,
     this.pontoAjustadoCliente = false,
   });
 
@@ -197,6 +204,8 @@ class Cliente {
       authUserId: authUserId,
       pessoaId: pessoaId,
       telefoneKyte: telefoneKyte,
+      appPlataforma: appPlataforma,
+      appUltimoUsoEm: appUltimoUsoEm,
       pontoAjustadoCliente: pontoAjustadoCliente,
     );
   }
@@ -297,6 +306,8 @@ class Cliente {
       authUserId: row['auth_user_id'] as String?,
       pessoaId: row['pessoa_id'] as String?,
       telefoneKyte: row['telefone_kyte'] as String?,
+      appPlataforma: row['app_plataforma'] as String?,
+      appUltimoUsoEm: row['app_ultimo_uso_em'] != null ? DateTime.tryParse(row['app_ultimo_uso_em'] as String) : null,
       pontoAjustadoCliente: row['ponto_ajustado_cliente'] as bool? ?? false,
     );
   }

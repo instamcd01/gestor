@@ -151,6 +151,20 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
               ),
             ),
           ),
+        if (cliente.appUltimoUsoEm != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Center(
+              child: Chip(
+                avatar: const Icon(Icons.phone_iphone, size: 16),
+                label: Text(
+                  'Tem o app${cliente.appPlataforma == 'iphone' ? ' (iPhone)' : cliente.appPlataforma == 'android' ? ' (Android)' : ''}'
+                  ' · último acesso ${DateFormat('dd/MM').format(cliente.appUltimoUsoEm!.toLocal())}',
+                ),
+                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+              ),
+            ),
+          ),
         if (cliente.idCliente != null && context.watch<AuthProvider>().podeExcluir)
           _CadastrosVinculadosSection(
             // Recria a seção quando o vínculo muda (provider recarregado),

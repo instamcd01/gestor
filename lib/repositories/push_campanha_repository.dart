@@ -26,6 +26,14 @@ class PushCampanhaRepository {
     return data as String;
   }
 
+  /// Quem usa o app (site pela tela inicial ou app nativo) e quem recebe
+  /// push — RPC `resumo_uso_app`, só números da própria empresa.
+  Future<Map<String, int>> resumoUsoApp() async {
+    final data = await supabase.rpc('resumo_uso_app');
+    if (data == null) return {};
+    return (data as Map<String, dynamic>).map((k, v) => MapEntry(k, (v as num).toInt()));
+  }
+
   Future<List<PushCampanha>> listar() async {
     final data = await supabase.rpc('listar_push_campanhas');
     return (data as List).map((row) => PushCampanha.fromSupabase(row as Map<String, dynamic>)).toList();
