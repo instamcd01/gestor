@@ -33,7 +33,9 @@ class _HistoricoEstoqueScreenState extends State<HistoricoEstoqueScreen> {
 
   Future<void> _recarregar() async {
     final futuro = ProdutoRepository().listarMovimentacoesEstoque(widget.produtoId);
-    setState(() => _futuro = futuro);
+    setState(() {
+      _futuro = futuro;
+    });
     await futuro;
   }
 

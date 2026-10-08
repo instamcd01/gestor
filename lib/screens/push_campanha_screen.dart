@@ -114,7 +114,9 @@ class _PushCampanhaScreenState extends State<PushCampanhaScreen> {
   }
 
   Future<void> _recarregarHistorico() async {
-    setState(() => _futuroHistorico = _repo.listar());
+    setState(() {
+      _futuroHistorico = _repo.listar();
+    });
     await _futuroHistorico;
   }
 

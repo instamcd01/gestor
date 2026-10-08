@@ -33,7 +33,9 @@ class _NotasPendentesEntradaScreenState extends State<NotasPendentesEntradaScree
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futuro = NfePendenteEntradaRepository().listar());
+    setState(() {
+      _futuro = NfePendenteEntradaRepository().listar();
+    });
     await _futuro;
   }
 

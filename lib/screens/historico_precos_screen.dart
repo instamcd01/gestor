@@ -35,7 +35,9 @@ class _HistoricoPrecosScreenState extends State<HistoricoPrecosScreen> {
 
   Future<void> _recarregar() async {
     final futuro = _repo.listar(widget.produtoId);
-    setState(() => _futuro = futuro);
+    setState(() {
+      _futuro = futuro;
+    });
     await futuro;
   }
 

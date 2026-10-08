@@ -25,8 +25,11 @@ class _VinculosClientesScreenState extends State<VinculosClientesScreen> {
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futureVinculos = _repository.listarPendentes());
-    await _futureVinculos;
+    final future = _repository.listarPendentes();
+    setState(() {
+      _futureVinculos = future;
+    });
+    await future;
   }
 
   Future<void> _confirmarEAgir(VinculoCliente vinculo, {required bool aprovar}) async {

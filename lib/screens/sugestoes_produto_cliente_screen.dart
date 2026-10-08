@@ -224,7 +224,9 @@ class _BuscasSemResultadoState extends State<_BuscasSemResultado> {
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futuro = _buscar());
+    setState(() {
+      _futuro = _buscar();
+    });
     await _futuro;
   }
 

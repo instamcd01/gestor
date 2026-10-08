@@ -316,7 +316,9 @@ class _AbaHistoricoKyteState extends State<_AbaHistoricoKyte> {
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futureClientes = _repository.listarHistoricoKyte());
+    setState(() {
+      _futureClientes = _repository.listarHistoricoKyte();
+    });
     await _futureClientes;
   }
 

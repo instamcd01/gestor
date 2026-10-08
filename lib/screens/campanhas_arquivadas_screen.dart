@@ -25,7 +25,9 @@ class _CampanhasArquivadasScreenState extends State<CampanhasArquivadasScreen> {
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futuro = CampanhaAtivacaoRepository().listarArquivadas());
+    setState(() {
+      _futuro = CampanhaAtivacaoRepository().listarArquivadas();
+    });
     await _futuro;
   }
 

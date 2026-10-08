@@ -551,7 +551,9 @@ class _CarrinhoClienteTabState extends State<_CarrinhoClienteTab> {
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futureCarrinho = _carregar());
+    setState(() {
+      _futureCarrinho = _carregar();
+    });
     await _futureCarrinho;
   }
 
@@ -702,7 +704,9 @@ class _ComprasClienteTabState extends State<_ComprasClienteTab> {
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futureVendas = _carregar());
+    setState(() {
+      _futureVendas = _carregar();
+    });
     await _futureVendas;
   }
 
@@ -900,7 +904,9 @@ class _ContaClienteTabState extends State<_ContaClienteTab> {
   void didUpdateWidget(covariant _ContaClienteTab oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.cliente.idCliente != widget.cliente.idCliente) {
-      setState(() => _futureMovimentacoes = _carregar());
+      setState(() {
+        _futureMovimentacoes = _carregar();
+      });
     }
   }
 
@@ -968,7 +974,9 @@ class _ContaClienteTabState extends State<_ContaClienteTab> {
       );
       if (!mounted) return;
       Provider.of<ClientProvider>(context, listen: false).atualizarSaldoLocal(clienteId, novoSaldo);
-      setState(() => _futureMovimentacoes = _carregar());
+      setState(() {
+        _futureMovimentacoes = _carregar();
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

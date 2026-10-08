@@ -23,7 +23,9 @@ class _HistoricoImportacoesScreenState extends State<HistoricoImportacoesScreen>
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futuro = ImportacaoPlanilhaRepository().listar(tipo: widget.tipo));
+    setState(() {
+      _futuro = ImportacaoPlanilhaRepository().listar(tipo: widget.tipo);
+    });
     await _futuro;
   }
 

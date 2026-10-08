@@ -29,7 +29,9 @@ class _CampanhasAtivacaoScreenState extends State<CampanhasAtivacaoScreen> {
   }
 
   Future<void> _recarregar() async {
-    setState(() => _futuro = CampanhaAtivacaoRepository().listar());
+    setState(() {
+      _futuro = CampanhaAtivacaoRepository().listar();
+    });
     await _futuro;
   }
 
