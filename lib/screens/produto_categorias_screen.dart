@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/supabase_config.dart';
+import '../widgets/seletor_departamento.dart';
 
 class CategoriaScreen extends StatefulWidget {
   final String? categoriaSelecionada;
@@ -12,9 +13,9 @@ class CategoriaScreen extends StatefulWidget {
 
 class _CategoriaScreenState extends State<CategoriaScreen> {
   final TextEditingController _categoriaController = TextEditingController();
-  final TextEditingController _novaCategoriaController = TextEditingController();
 
-  List<Map<String, dynamic>> _categorias = []; // {id, nome, ordem}
+  List<Map<String, dynamic>> _categorias = []; // {id, nome, ordem, departamento_id}
+  Map<String, String> _nomesDepartamentos = {}; // id -> nome
   String? _empresaId;
 
   @override
@@ -47,8 +48,9 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
       // 1️⃣ Carrega categorias já cadastradas
       final categoriasSalvas = await supabase
           .from('categorias')
-          .select('id, nome, ordem')
+          .select('id, nome, ordem, departamento_id')
           .order('ordem', ascending: true);
+      final departamentos = await supabase.from('departamentos').select('id, nome');
 
       List<Map<String, dynamic>> categorias =
           List<Map<String, dynamic>>.from(categoriasSalvas);
@@ -75,13 +77,19 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
         }
       }
 
-      setState(() => _categorias = categorias);
+      if (!mounted) return;
+      setState(() {
+        _categorias = categorias;
+        _nomesDepartamentos = {
+          for (final d in departamentos) d['id'] as String: d['nome'] as String,
+        };
+      });
     } catch (e) {
       debugPrint('Erro ao carregar categorias: $e');
     }
   }
 
-  Future<void> _adicionarCategoria(String nome) async {
+  Future<void> _adicionarCategoria(String nome, {String? departamentoId}) async {
     if (nome.isEmpty) return;
     if (_categorias.any((c) => (c['nome'] as String).toLowerCase() == nome.toLowerCase())) return;
 
@@ -96,11 +104,12 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
       'nome': nome,
       'ordem': proximaOrdem,
       'empresa_id': empresaId,
+      'departamento_id': departamentoId,
     });
     await _carregarCategorias();
   }
 
-  Future<void> _editarCategoria(String? id, String novoNome) async {
+  Future<void> _editarCategoria(String? id, String novoNome, {String? departamentoId}) async {
     if (novoNome.isEmpty) return;
 
     if (_categorias.any(
@@ -112,7 +121,10 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
     if (id != null) {
       final antigaCategoria = _categorias.firstWhere((c) => c['id'] == id)['nome'] as String;
 
-      await supabase.from('categorias').update({'nome': novoNome}).eq('id', id);
+      await supabase.from('categorias').update({
+        'nome': novoNome,
+        if (departamentoId != null) 'departamento_id': departamentoId,
+      }).eq('id', id);
 
       // Atualiza todos os produtos que usam essa categoria
       await supabase
@@ -120,7 +132,7 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
           .update({'categoria': novoNome})
           .eq('categoria', antigaCategoria);
     } else {
-      await _adicionarCategoria(novoNome);
+      await _adicionarCategoria(novoNome, departamentoId: departamentoId);
     }
 
     await _carregarCategorias();
@@ -177,6 +189,8 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
   void _editarCategoriaDialog(int index) {
     final controllerEdicao = TextEditingController(text: _categorias[index]['nome']);
     String? novaSelecionada;
+    String? departamentoId = _categorias[index]['departamento_id'] as String?;
+    final formKey = GlobalKey<FormState>();
 
     showDialog(
       context: context,
@@ -193,6 +207,17 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
                     decoration: InputDecoration(labelText: "Novo nome"),
                   ),
                   SizedBox(height: 16),
+                  // Mesclando, a categoria some — departamento não se aplica.
+                  if (novaSelecionada == null) ...[
+                    Form(
+                      key: formKey,
+                      child: SeletorDepartamento(
+                        valorInicial: departamentoId,
+                        onChanged: (v) => departamentoId = v,
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                  ],
                   DropdownButton<String>(
                     value: novaSelecionada,
                     hint: Text("Selecionar outra categoria para mesclar"),
@@ -251,7 +276,12 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
                           .update({'categoria': novaSelecionada}).eq('categoria', antigoNome);
                       await supabase.from('categorias').delete().eq('id', _categorias[index]['id']);
                     } else {
-                      await _editarCategoria(_categorias[index]['id'], controllerEdicao.text);
+                      if (!formKey.currentState!.validate()) return;
+                      await _editarCategoria(
+                        _categorias[index]['id'],
+                        controllerEdicao.text,
+                        departamentoId: departamentoId,
+                      );
                     }
                     Navigator.pop(context);
                     await _carregarCategorias();
@@ -263,6 +293,64 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
         );
       },
     );
+  }
+
+  /// Sem departamento a categoria cai num "Outros" no menu do site — fica
+  /// em destaque pra ser corrigida.
+  Widget _subtituloDepartamento(Map<String, dynamic> categoria, ColorScheme colorScheme) {
+    final nome = _nomesDepartamentos[categoria['departamento_id']];
+    if (nome != null) return Text(nome);
+    return Text('Sem departamento — aparece em "Outros" no site', style: TextStyle(color: colorScheme.error));
+  }
+
+  /// Nova categoria pede nome E departamento juntos: criada só com o nome,
+  /// ela ia pro site em "Outros" sem ninguém perceber. Já volta selecionada.
+  Future<void> _novaCategoriaDialog() async {
+    final nomeController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    String? departamentoId;
+    final criada = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nova categoria'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nomeController,
+                autofocus: true,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(labelText: 'Nome'),
+                validator: (v) {
+                  final nome = v?.trim() ?? '';
+                  if (nome.isEmpty) return 'Digite o nome';
+                  if (_categorias.any((c) => (c['nome'] as String).toLowerCase() == nome.toLowerCase())) {
+                    return 'Já existe uma categoria com esse nome';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              SeletorDepartamento(onChanged: (v) => departamentoId = v),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) Navigator.pop(ctx, nomeController.text.trim());
+            },
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+    if (criada == null) return;
+    await _adicionarCategoria(criada, departamentoId: departamentoId);
+    if (mounted) setState(() => _categoriaController.text = criada);
   }
 
   void _salvarEVoltar() {
@@ -313,6 +401,7 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
                         color: selecionada ? colorScheme.primary.withValues(alpha: 0.1) : null,
                         child: ListTile(
                           title: Text(_categorias[index]['nome']),
+                          subtitle: _subtituloDepartamento(_categorias[index], colorScheme),
                           leading: selecionada ? Icon(Icons.check_circle, color: colorScheme.primary) : null,
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -340,25 +429,13 @@ class _CategoriaScreenState extends State<CategoriaScreen> {
           ),
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _novaCategoriaController,
-                    decoration: const InputDecoration(labelText: "Nova categoria"),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (_novaCategoriaController.text.isNotEmpty) {
-                      await _adicionarCategoria(_novaCategoriaController.text);
-                      _novaCategoriaController.clear();
-                    }
-                  },
-                  child: Text("Adicionar"),
-                ),
-              ],
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: _novaCategoriaDialog,
+                icon: const Icon(Icons.add),
+                label: const Text('Nova categoria'),
+              ),
             ),
           ),
         ],

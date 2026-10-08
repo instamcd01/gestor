@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/supabase_config.dart';
 import '../repositories/subcategoria_repository.dart';
+import '../widgets/seletor_departamento.dart';
 
 /// Gerencia a hierarquia Departamento -> Categoria -> Subcategoria usada
 /// pelo catálogo (Gestor e site público). Diferente de [CategoriaScreen]
@@ -187,13 +188,49 @@ class _GerenciarCategoriasScreenState extends State<GerenciarCategoriasScreen>
   Future<void> _adicionarCategoria(String nome) async {
     if (nome.isEmpty) return;
     if (_categorias.any((c) => (c['nome'] as String).toLowerCase() == nome.toLowerCase())) return;
+    // Sem departamento a categoria cai em "Outros" no site — pergunta antes
+    // de gravar; cancelar aqui não cria nada.
+    final departamentoId = await _escolherDepartamentoDialog(nome);
+    if (departamentoId == null) return;
     final empresaId = await _obterEmpresaId();
     if (empresaId == null) return;
     final proximaOrdem = _categorias.isNotEmpty
         ? _categorias.map((c) => c['ordem'] as int).reduce((a, b) => a > b ? a : b) + 1
         : 0;
-    await supabase.from('categorias').insert({'nome': nome, 'ordem': proximaOrdem, 'empresa_id': empresaId});
-    await _confirmarESetState(_carregarCategorias);
+    await supabase.from('categorias').insert({
+      'nome': nome,
+      'ordem': proximaOrdem,
+      'empresa_id': empresaId,
+      'departamento_id': departamentoId,
+    });
+    await _confirmarESetState(() async {
+      await _carregarDepartamentos(); // pode ter nascido um no "+" do seletor
+      await _carregarCategorias();
+    });
+  }
+
+  Future<String?> _escolherDepartamentoDialog(String nomeCategoria) {
+    final formKey = GlobalKey<FormState>();
+    String? departamentoId;
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Departamento de "$nomeCategoria"'),
+        content: Form(
+          key: formKey,
+          child: SeletorDepartamento(onChanged: (v) => departamentoId = v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) Navigator.pop(ctx, departamentoId);
+            },
+            child: const Text('Criar categoria'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _editarCategoria(
@@ -214,7 +251,10 @@ class _GerenciarCategoriasScreenState extends State<GerenciarCategoriasScreen>
     if (novoNome != antigoNome) {
       await supabase.from('produtos').update({'categoria': novoNome}).eq('categoria', antigoNome);
     }
-    await _confirmarESetState(_carregarCategorias);
+    await _confirmarESetState(() async {
+      await _carregarDepartamentos(); // pode ter nascido um no "+" do seletor
+      await _carregarCategorias();
+    });
   }
 
   Future<void> _excluirCategoria(String id) async {
@@ -255,14 +295,8 @@ class _GerenciarCategoriasScreenState extends State<GerenciarCategoriasScreen>
               children: [
                 TextField(controller: controller, decoration: const InputDecoration(labelText: 'Nome')),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String?>(
-                  decoration: const InputDecoration(labelText: 'Departamento'),
-                  initialValue: departamentoSelecionado,
-                  items: [
-                    const DropdownMenuItem<String?>(value: null, child: Text('Sem departamento')),
-                    for (final d in _departamentos)
-                      DropdownMenuItem<String?>(value: d['id'] as String, child: Text(d['nome'] as String)),
-                  ],
+                SeletorDepartamento(
+                  valorInicial: departamentoSelecionado,
                   onChanged: (v) => setStateDialog(() => departamentoSelecionado = v),
                 ),
                 const SizedBox(height: 16),
