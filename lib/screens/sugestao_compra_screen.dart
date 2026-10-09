@@ -123,6 +123,10 @@ class _ItemEditavel {
   /// fornecedor igual ao catálogo da distribuidora (pedido do usuário 09/10).
   final String? fabricante;
 
+  /// Marca/linha (ex: Golden, Premier — as duas da PremieRpet). Quando é
+  /// diferente do fabricante, o grupo vira "PremieRpet · Golden".
+  final String? marca;
+
   /// Código do produto NO fornecedor (vem das notas importadas) — pra bater
   /// com o catálogo dele na hora de pedir.
   String? get codigoFornecedor {
@@ -147,6 +151,7 @@ class _ItemEditavel {
     this.diasSemEstoque = 0,
     this.quantidadeACaminho = 0,
     this.fabricante,
+    this.marca,
   });
 
   /// Zerado e com venda: cada dia assim é venda perdida.
@@ -356,6 +361,10 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
       for (final p in produtosCatalogo)
         if (p.id != null) p.id!: p.fabricante,
     };
+    final marcaPorProduto = {
+      for (final p in produtosCatalogo)
+        if (p.id != null) p.id!: p.empresa,
+    };
     var todosVinculosPorProduto = <String, List<ProdutoFornecedor>>{};
     try {
       todosVinculosPorProduto =
@@ -444,6 +453,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         diasSemEstoque: escolhida.diasSemEstoque,
         quantidadeACaminho: escolhida.quantidadeACaminho,
         fabricante: fabricantePorProduto[escolhida.produtoId],
+        marca: marcaPorProduto[escolhida.produtoId],
       ));
 
       // Também aparece na lista do(s) outro(s) fornecedor(es) que vendem
@@ -576,6 +586,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         vinculo: vinculo,
         custoAvulso: vinculo?.custoUnitario ?? produtoEscolhido.custo,
         fabricante: produtoEscolhido.fabricante,
+        marca: produtoEscolhido.empresa,
       ));
     });
   }
@@ -1326,9 +1337,16 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
 
   void _recolherTodos() => _recolhidos.addAll(widget.grupo.itens.map(_fabricante));
 
+  /// Grupo do item: "Fabricante · Marca" quando a marca é diferente do
+  /// fabricante (PremieRpet · Golden / PremieRpet · Premier), senão só o
+  /// que tiver.
   String _fabricante(_ItemEditavel i) {
-    final f = i.fabricante?.trim();
-    return f == null || f.isEmpty ? _semFabricante : f;
+    final f = i.fabricante?.trim() ?? '';
+    final m = i.marca?.trim() ?? '';
+    if (f.isNotEmpty && m.isNotEmpty && m.toLowerCase() != f.toLowerCase()) return '$f · $m';
+    if (f.isNotEmpty) return f;
+    if (m.isNotEmpty) return m;
+    return _semFabricante;
   }
 
   /// Lista achatada: _CabecalhoFabricante ou _ItemEditavel.

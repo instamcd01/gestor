@@ -37,10 +37,9 @@ class Produto {
   String? empresa;
   double? precoConcorrencia;
 
-  /// Fabricante/laboratório real do produto — distinto de `empresa` (mapeado
-  /// pra coluna `marca`, que neste banco historicamente guarda o
-  /// fornecedor/distribuidor, não o fabricante; ver memória "Padrão de nome
-  /// de produto" do projeto). Campo estruturado, preenchido manualmente —
+  /// Fabricante/laboratório real do produto — distinto de `empresa` (coluna
+  /// `marca`: a MARCA/linha, ex. Golden/Premier da PremieRpet — até 09/10
+  /// guardava a distribuidora, que foi movida pra metadata.distribuidor_antigo). Campo estruturado, preenchido manualmente —
   /// usado como fonte confiável pra organizar imagens de produto por
   /// fabricante no Storage, em vez de tentar extrair do texto do nome.
   String? fabricante;

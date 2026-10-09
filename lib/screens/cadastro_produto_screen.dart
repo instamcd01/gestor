@@ -980,7 +980,11 @@ class _CadastroProdutoScreenState extends State<CadastroProdutoScreen> {
                   ),
                   TextFormField(
                     controller: _empresaController,
-                    decoration: const InputDecoration(labelText: 'Empresa/Fornecedor (Opcional)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Marca (Opcional)',
+                      helperText: 'A linha que o cliente procura (ex: Golden, Premier, Quatree) — não é o fabricante nem o fornecedor.',
+                      helperMaxLines: 2,
+                    ),
                   ),
                   Row(
                     children: [
