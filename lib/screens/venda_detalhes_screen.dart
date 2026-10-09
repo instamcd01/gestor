@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/venda.dart';
 import '../providers/auth_provider.dart';
 import '../providers/branding_provider.dart';
+import '../providers/cliente_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/aviso_banner.dart';
 import '../providers/historico_vendas_provider.dart';
@@ -19,6 +20,7 @@ import '../utils/mensagens_status_pedido.dart';
 import '../utils/previsao_entrega_utils.dart';
 import '../utils/telefone_utils.dart';
 import 'alterar_forma_pagamento_screen.dart';
+import 'cliente_detalhes_screen.dart';
 import 'recibo_screen.dart';
 import 'separacao_pedido_screen.dart';
 
@@ -740,10 +742,36 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
+  /// Abre a ficha do cliente — usa a versão da lista de clientes (mais
+  /// completa: saldo, pets, vínculos) quando já está carregada, senão a que
+  /// veio no pedido.
+  void _abrirCadastroCliente(Venda venda) {
+    final id = venda.cliente.idCliente;
+    if (id == null) return;
+    final daLista = context.read<ClientProvider>().clientes.where((c) => c.idCliente == id).firstOrNull;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ClienteDetalhesScreen(cliente: daLista ?? venda.cliente)),
+    );
+  }
+
   Widget _abaCliente(Venda venda, bool temEntrega) {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        // Atalho pro cadastro (pedido do usuário 09/10). Pedido sem cadastro
+        // (histórico Kyte, iFood sem cliente identificado) não tem pra onde ir.
+        if (venda.cliente.idCliente != null)
+          Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: Text(venda.cliente.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text('Ver cadastro do cliente'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _abrirCadastroCliente(venda),
+            ),
+          ),
         _card(
           titulo: venda.retirada ? 'Retirada' : 'Entrega',
           child: Column(
