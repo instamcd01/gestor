@@ -1255,6 +1255,10 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
 
   String _busca = '';
 
+  /// Fabricantes recolhidos (só o cabeçalho aparece). Buscando, tudo abre —
+  /// senão o resultado ficaria escondido dentro de um grupo recolhido.
+  final Set<String> _recolhidos = {};
+
   String _fabricante(_ItemEditavel i) {
     final f = i.fabricante?.trim();
     return f == null || f.isEmpty ? _semFabricante : f;
@@ -1291,6 +1295,7 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
         entradas.add(_CabecalhoFabricante(fabricante, doFabricante.length, doFabricante.where((i) => i.emFalta).length));
         atual = fabricante;
       }
+      if (termo.isEmpty && _recolhidos.contains(fabricante)) continue;
       entradas.add(item);
     }
     return entradas;
@@ -1299,15 +1304,29 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
   Widget _construir(Object entrada) {
     if (entrada is _CabecalhoFabricante) {
       final colorScheme = Theme.of(context).colorScheme;
-      return Padding(
-        padding: const EdgeInsets.only(top: 10, bottom: 2),
-        child: Text.rich(
-          TextSpan(
-            text: '${entrada.nome} (${entrada.quantidade})',
-            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.primary),
+      final recolhido = _busca.trim().isEmpty && _recolhidos.contains(entrada.nome);
+      return InkWell(
+        onTap: () => setState(() {
+          if (!_recolhidos.remove(entrada.nome)) _recolhidos.add(entrada.nome);
+        }),
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 2),
+          child: Row(
             children: [
-              if (entrada.emFalta > 0)
-                TextSpan(text: ' · ${entrada.emFalta} em falta', style: TextStyle(color: colorScheme.error)),
+              Icon(recolhido ? Icons.chevron_right : Icons.expand_more, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    text: '${entrada.nome} (${entrada.quantidade})',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.primary),
+                    children: [
+                      if (entrada.emFalta > 0)
+                        TextSpan(text: ' · ${entrada.emFalta} em falta', style: TextStyle(color: colorScheme.error)),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -1326,9 +1345,27 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
   @override
   Widget build(BuildContext context) {
     final entradas = _entradas();
+    final fabricantes = widget.grupo.itens.map(_fabricante).toSet();
+    final todosRecolhidos = fabricantes.isNotEmpty && _recolhidos.containsAll(fabricantes);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.porFabricante && fabricantes.length > 1 && _busca.trim().isEmpty)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              onPressed: () => setState(() {
+                if (todosRecolhidos) {
+                  _recolhidos.clear();
+                } else {
+                  _recolhidos.addAll(fabricantes);
+                }
+              }),
+              icon: Icon(todosRecolhidos ? Icons.unfold_more : Icons.unfold_less, size: 16),
+              label: Text(todosRecolhidos ? 'Expandir todos' : 'Recolher todos', style: const TextStyle(fontSize: 12)),
+            ),
+          ),
         if (widget.grupo.itens.length > 8)
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
