@@ -16,6 +16,7 @@ import '../utils/gerador_nome_produto.dart';
 import '../utils/preco_sugerido.dart';
 import '../utils/produto_validators.dart';
 import '../repositories/margem_alvo_categoria_repository.dart';
+import '../repositories/produto_repository.dart';
 import '../repositories/valor_estruturado_repository.dart';
 import '../services/descricao_produto_service.dart';
 import '../widgets/campos_estruturados_variante.dart';
@@ -121,9 +122,55 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
 
   List<MargemAlvoCategoria> _margensAlvo = [];
 
+  /// Fora da sugestão de compra (pausado ou "não sugerir mais") — começa
+  /// com o que veio no produto e é relido do banco ao abrir, porque a pausa
+  /// pode ter sido feita agora há pouco na tela de sugestão de compra.
+  late bool _naoSugerirCompra = widget.produto.naoSugerirCompra;
+  late DateTime? _sugestaoPausadaAte =
+      widget.produto.sugestaoCompraPausada ? widget.produto.sugestaoCompraPausadaAte : null;
+
+  Future<void> _carregarSugestaoCompra() async {
+    final id = widget.produto.id;
+    if (id == null) return;
+    try {
+      final row = await supabase
+          .from('produtos')
+          .select('nao_sugerir_compra, sugestao_compra_pausada_ate')
+          .eq('id', id)
+          .single();
+      final ate = DateTime.tryParse(row['sugestao_compra_pausada_ate']?.toString() ?? '');
+      final hoje = DateTime.now();
+      if (!mounted) return;
+      setState(() {
+        _naoSugerirCompra = row['nao_sugerir_compra'] as bool? ?? false;
+        _sugestaoPausadaAte = ate != null && ate.isAfter(DateTime(hoje.year, hoje.month, hoje.day)) ? ate : null;
+      });
+    } catch (_) {
+      // Sem conexão: fica com o que veio no produto.
+    }
+  }
+
+  Future<void> _voltarASugerir() async {
+    final id = widget.produto.id;
+    if (id == null) return;
+    try {
+      await ProdutoRepository().definirSugestaoCompra(id);
+      if (!mounted) return;
+      setState(() {
+        _naoSugerirCompra = false;
+        _sugestaoPausadaAte = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Produto voltou pra sugestão de compra.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível reativar: $e')));
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _carregarSugestaoCompra();
 
     // Preenche os controladores com os dados atuais do produto
     _nomeController = TextEditingController(text: widget.produto.nome);
@@ -927,6 +974,19 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_naoSugerirCompra || _sugestaoPausadaAte != null)
+                Card(
+                  color: colorScheme.secondaryContainer,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: const Icon(Icons.remove_shopping_cart_outlined),
+                    title: const Text('Fora da sugestão de compra'),
+                    subtitle: Text(_naoSugerirCompra
+                        ? 'Marcado pra não sugerir mais. Continua à venda normalmente.'
+                        : 'Pausado até ${_sugestaoPausadaAte!.day.toString().padLeft(2, '0')}/${_sugestaoPausadaAte!.month.toString().padLeft(2, '0')}. Continua à venda normalmente.'),
+                    trailing: TextButton(onPressed: _voltarASugerir, child: const Text('Voltar a sugerir')),
+                  ),
+                ),
               Center(
                 child: Column(
                   children: [

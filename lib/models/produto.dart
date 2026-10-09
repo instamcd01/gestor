@@ -82,6 +82,23 @@ class Produto {
   /// valor desatualizado (ver `ProdutoRepository.marcarPrecoRevisado`).
   bool revisarPreco;
 
+  /// Fora da sugestão de compra: [naoSugerirCompra] = não vai mais comprar;
+  /// [sugestaoCompraPausadaAte] = pausado até essa data (estoque sobrando,
+  /// fornecedor sem). Só afeta a sugestão de compra. Somente leitura aqui —
+  /// muda só via `ProdutoRepository.definirSugestaoCompra`, nunca enviado
+  /// em `toSupabaseMap` (mesmo motivo de [revisarPreco]).
+  final bool naoSugerirCompra;
+  final DateTime? sugestaoCompraPausadaAte;
+
+  bool get sugestaoCompraPausada {
+    final ate = sugestaoCompraPausadaAte;
+    if (ate == null) return false;
+    final hoje = DateTime.now();
+    return ate.isAfter(DateTime(hoje.year, hoje.month, hoje.day));
+  }
+
+  bool get foraDaSugestaoCompra => naoSugerirCompra || sugestaoCompraPausada;
+
   // Cadastro estruturado (variantes de produto) — todos opcionais. Quando
   // nomeComercial está preenchido, o trigger `gerar_nome_produto_estruturado`
   // no banco recompõe `nome` automaticamente a partir destes campos (a menos
@@ -177,6 +194,8 @@ class Produto {
     this.margemAlvoFracionado,
     this.precoCalculadoAutomatico,
     this.revisarPreco = false,
+    this.naoSugerirCompra = false,
+    this.sugestaoCompraPausadaAte,
     this.nomeComercial,
     this.tipoProduto,
     this.especie,
@@ -258,6 +277,8 @@ class Produto {
       precoConcorrencia: (row['preco_concorrencia'] as num?)?.toDouble(),
       validade: row['validade']?.toString(),
       revisarPreco: row['revisar_preco'] as bool? ?? false,
+      naoSugerirCompra: row['nao_sugerir_compra'] as bool? ?? false,
+      sugestaoCompraPausadaAte: DateTime.tryParse(row['sugestao_compra_pausada_ate']?.toString() ?? ''),
       nomeComercial: row['nome_comercial']?.toString(),
       tipoProduto: row['tipo_produto']?.toString(),
       especie: row['especie']?.toString(),

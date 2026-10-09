@@ -303,6 +303,18 @@ class ProdutoRepository {
     return (data as List).map((row) => Produto.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 
+  /// Tira/volta o produto da sugestão de compra. [naoSugerir] = não vai mais
+  /// comprar; [pausarAte] = pausa até a data (volta sozinho). Os dois nulos/
+  /// false = volta a ser sugerido. Update só desses 2 campos.
+  Future<void> definirSugestaoCompra(String produtoId, {bool naoSugerir = false, DateTime? pausarAte}) async {
+    await supabase.from('produtos').update({
+      'nao_sugerir_compra': naoSugerir,
+      'sugestao_compra_pausada_ate': pausarAte == null
+          ? null
+          : '${pausarAte.year.toString().padLeft(4, '0')}-${pausarAte.month.toString().padLeft(2, '0')}-${pausarAte.day.toString().padLeft(2, '0')}',
+    }).eq('id', produtoId);
+  }
+
   Future<void> marcarPrecoRevisado(String produtoId) async {
     await supabase.from('produtos').update({'revisar_preco': false}).eq('id', produtoId);
   }

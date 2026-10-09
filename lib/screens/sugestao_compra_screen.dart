@@ -14,6 +14,7 @@ import '../providers/produto_provider.dart';
 import '../repositories/entrada_repository.dart';
 import '../repositories/pedido_compra_repository.dart';
 import '../repositories/produto_fornecedor_repository.dart';
+import '../repositories/produto_repository.dart';
 import '../widgets/busca_produto_sheet.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'pedido_compra_detalhe_screen.dart';
@@ -431,6 +432,8 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         quantidadeSugerida: escolhida.quantidadeSugerida,
         estoqueAtual: escolhida.estoqueAtual,
         quantidadePedida: escolhida.quantidadeSugerida,
+        // Sugestão 0 (ex: pedido a caminho já cobre) aparece, mas desmarcado.
+        incluido: escolhida.quantidadeSugerida > 0,
         vinculo: vinculoEscolhido,
         custoAvulso: escolhida.custoUnitario,
         ultimaCompra: ultimosCustos[escolhida.produtoId],
@@ -503,6 +506,40 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
     } finally {
       if (mounted) setState(() => _trocandoPrincipalPara.remove(vinculoId));
     }
+  }
+
+  /// Tira o produto da sugestão: pausa 30 dias ou "não sugerir mais" (só
+  /// afeta a sugestão de compra). Some da lista na hora, com Desfazer.
+  Future<void> _tirarDaSugestao(_GrupoFornecedor grupo, _ItemEditavel item, bool naoSugerir) async {
+    final hoje = DateTime.now();
+    final pausarAte = naoSugerir ? null : DateTime(hoje.year, hoje.month, hoje.day + 30);
+    final indice = grupo.itens.indexOf(item);
+    try {
+      await ProdutoRepository().definirSugestaoCompra(item.produtoId, naoSugerir: naoSugerir, pausarAte: pausarAte);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível tirar da sugestão: $e')));
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => grupo.itens.remove(item));
+    final ate = pausarAte == null ? '' : '${pausarAte.day.toString().padLeft(2, '0')}/${pausarAte.month.toString().padLeft(2, '0')}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(naoSugerir
+            ? '${item.produtoNome} não será mais sugerido.'
+            : '${item.produtoNome} fora da sugestão até $ate.'),
+        action: SnackBarAction(
+          label: 'Desfazer',
+          onPressed: () async {
+            await ProdutoRepository().definirSugestaoCompra(item.produtoId);
+            if (!mounted) return;
+            setState(() => grupo.itens.insert(indice.clamp(0, grupo.itens.length), item));
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _adicionarProdutoManual(_GrupoFornecedor grupo) async {
@@ -716,6 +753,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
                     onAdicionarProduto: () => _adicionarProdutoManual(gruposFiltrados[index]),
                     onCriarPedido: () => _criarPedido(gruposFiltrados[index]),
                     onTornarPrincipal: _tornarPrincipal,
+                    onTirarDaSugestao: (item, naoSugerir) => _tirarDaSugestao(gruposFiltrados[index], item, naoSugerir),
                   ),
                 );
               }),
@@ -1025,6 +1063,7 @@ class _GrupoFornecedorCard extends StatelessWidget {
   final VoidCallback onAdicionarProduto;
   final VoidCallback onCriarPedido;
   final void Function(String vinculoId, String produtoId) onTornarPrincipal;
+  final void Function(_ItemEditavel item, bool naoSugerir) onTirarDaSugestao;
 
   const _GrupoFornecedorCard({
     super.key,
@@ -1037,6 +1076,7 @@ class _GrupoFornecedorCard extends StatelessWidget {
     required this.onAdicionarProduto,
     required this.onCriarPedido,
     required this.onTornarPrincipal,
+    required this.onTirarDaSugestao,
   });
 
   @override
@@ -1095,6 +1135,7 @@ class _GrupoFornecedorCard extends StatelessWidget {
             onMudou: onMudou,
             trocandoPrincipalPara: trocandoPrincipalPara,
             onTornarPrincipal: onTornarPrincipal,
+            onTirarDaSugestao: onTirarDaSugestao,
           ),
           TextButton.icon(
             onPressed: onAdicionarProduto,
@@ -1224,6 +1265,7 @@ class _ListaItensFornecedor extends StatefulWidget {
   final VoidCallback onMudou;
   final Set<String> trocandoPrincipalPara;
   final void Function(String vinculoId, String produtoId) onTornarPrincipal;
+  final void Function(_ItemEditavel item, bool naoSugerir) onTirarDaSugestao;
 
   const _ListaItensFornecedor({
     required this.grupo,
@@ -1231,6 +1273,7 @@ class _ListaItensFornecedor extends StatefulWidget {
     required this.onMudou,
     required this.trocandoPrincipalPara,
     required this.onTornarPrincipal,
+    required this.onTirarDaSugestao,
   });
 
   @override
@@ -1240,9 +1283,18 @@ class _ListaItensFornecedor extends StatefulWidget {
 /// Cabeçalho de um fabricante dentro da lista do fornecedor.
 class _CabecalhoFabricante {
   final String nome;
-  final int quantidade;
-  final int emFalta;
-  const _CabecalhoFabricante(this.nome, this.quantidade, this.emFalta);
+  final List<_ItemEditavel> itens;
+  const _CabecalhoFabricante(this.nome, this.itens);
+
+  int get quantidade => itens.length;
+  int get emFalta => itens.where((i) => i.emFalta).length;
+
+  /// true = todos no pedido, false = nenhum, null = alguns (tri-state).
+  bool? get marcados {
+    final incluidos = itens.where((i) => i.incluido).length;
+    if (incluidos == 0) return false;
+    return incluidos == itens.length ? true : null;
+  }
 }
 
 class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
@@ -1255,9 +1307,24 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
 
   String _busca = '';
 
-  /// Fabricantes recolhidos (só o cabeçalho aparece). Buscando, tudo abre —
-  /// senão o resultado ficaria escondido dentro de um grupo recolhido.
+  /// Fabricantes recolhidos (só o cabeçalho aparece). Nascem todos
+  /// recolhidos ao abrir o fornecedor (pedido do usuário 09/10). Buscando,
+  /// tudo abre — senão o resultado ficaria escondido.
   final Set<String> _recolhidos = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _recolherTodos();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ListaItensFornecedor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.porFabricante && !oldWidget.porFabricante) _recolherTodos();
+  }
+
+  void _recolherTodos() => _recolhidos.addAll(widget.grupo.itens.map(_fabricante));
 
   String _fabricante(_ItemEditavel i) {
     final f = i.fabricante?.trim();
@@ -1292,7 +1359,7 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
       final fabricante = _fabricante(item);
       if (fabricante != atual) {
         final doFabricante = itens.where((i) => _fabricante(i) == fabricante).toList();
-        entradas.add(_CabecalhoFabricante(fabricante, doFabricante.length, doFabricante.where((i) => i.emFalta).length));
+        entradas.add(_CabecalhoFabricante(fabricante, doFabricante));
         atual = fabricante;
       }
       if (termo.isEmpty && _recolhidos.contains(fabricante)) continue;
@@ -1314,7 +1381,22 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
           child: Row(
             children: [
               Icon(recolhido ? Icons.chevron_right : Icons.expand_more, size: 18, color: colorScheme.primary),
-              const SizedBox(width: 2),
+              Checkbox(
+                tristate: true,
+                value: entrada.marcados,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onChanged: (_) {
+                  // Algum desmarcado → marca todos; todos marcados → desmarca todos.
+                  final marcar = entrada.marcados != true;
+                  setState(() {
+                    for (final i in entrada.itens) {
+                      i.incluido = marcar;
+                    }
+                  });
+                  widget.onMudou();
+                },
+              ),
               Expanded(
                 child: Text.rich(
                   TextSpan(
@@ -1339,6 +1421,7 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
       onMudou: widget.onMudou,
       trocandoPrincipalPara: widget.trocandoPrincipalPara,
       onTornarPrincipal: widget.onTornarPrincipal,
+      onTirarDaSugestao: widget.onTirarDaSugestao,
     );
   }
 
@@ -1400,6 +1483,7 @@ class _LinhaItem extends StatefulWidget {
   final VoidCallback onMudou;
   final Set<String> trocandoPrincipalPara;
   final void Function(String vinculoId, String produtoId) onTornarPrincipal;
+  final void Function(_ItemEditavel item, bool naoSugerir) onTirarDaSugestao;
 
   const _LinhaItem({
     super.key,
@@ -1407,6 +1491,7 @@ class _LinhaItem extends StatefulWidget {
     required this.onMudou,
     required this.trocandoPrincipalPara,
     required this.onTornarPrincipal,
+    required this.onTirarDaSugestao,
   });
 
   @override
@@ -1478,6 +1563,16 @@ class _LinhaItemState extends State<_LinhaItem> {
               SizedBox(
                 width: 76,
                 child: Text('R\$${item.subtotal.toStringAsFixed(2)}', textAlign: TextAlign.right),
+              ),
+              PopupMenuButton<bool>(
+                tooltip: 'Mais opções',
+                icon: const Icon(Icons.more_vert, size: 18),
+                padding: EdgeInsets.zero,
+                onSelected: (naoSugerir) => widget.onTirarDaSugestao(item, naoSugerir),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: false, child: Text('Pausar sugestão por 30 dias')),
+                  PopupMenuItem(value: true, child: Text('Não sugerir mais este produto')),
+                ],
               ),
             ],
           ),
