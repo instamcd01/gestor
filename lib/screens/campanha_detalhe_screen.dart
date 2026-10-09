@@ -46,6 +46,9 @@ enum CampoCartaoContato {
 }
 
 const _chaveCamposCartaoContato = 'campanha_campos_cartao_contato';
+// "Esconder enviados" lembrado neste aparelho, pra qualquer campanha — antes
+// voltava desligado toda vez que a tela abria (reclamação do usuário 09/10).
+const _chaveEsconderEnviados = 'campanha_esconder_enviados';
 
 const _aliasesContatos = {
   'telefone': ['telefone', 'celular', 'whatsapp', 'contato', 'fone', 'número', 'numero'],
@@ -99,6 +102,20 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     _mensagemPadraoAtual = widget.campanha.mensagemPadrao;
     _carregar();
     _carregarCamposCartao();
+    _carregarEsconderEnviados();
+  }
+
+  Future<void> _carregarEsconderEnviados() async {
+    final prefs = await SharedPreferences.getInstance();
+    final salvo = prefs.getBool(_chaveEsconderEnviados);
+    if (salvo == null || !mounted) return;
+    setState(() => _esconderEnviados = salvo);
+  }
+
+  Future<void> _alterarEsconderEnviados(bool valor) async {
+    setState(() => _esconderEnviados = valor);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_chaveEsconderEnviados, valor);
   }
 
   Future<void> _carregarCamposCartao() async {
@@ -691,7 +708,7 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
                               const Text('Esconder enviados', style: TextStyle(fontSize: 13)),
                               Switch(
                                 value: _esconderEnviados,
-                                onChanged: (v) => setState(() => _esconderEnviados = v),
+                                onChanged: _alterarEsconderEnviados,
                               ),
                             ],
                           ),
