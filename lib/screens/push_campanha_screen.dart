@@ -39,6 +39,9 @@ class _PushCampanhaScreenState extends State<PushCampanhaScreen> {
 
   String? _segmento;
   String? _atalho;
+  // Quem recebe: todos que permitiram notificação no aparelho (padrão) ou só
+  // quem também tem "aceita marketing" no cadastro.
+  bool _soQuemAceitaMarketing = false;
   int? _audiencia;
   bool _carregandoAudiencia = false;
   bool _enviando = false;
@@ -79,7 +82,7 @@ class _PushCampanhaScreenState extends State<PushCampanhaScreen> {
   }
 
   Map<String, dynamic> _montarFiltro() {
-    final filtro = <String, dynamic>{};
+    final filtro = <String, dynamic>{'exigir_aceite_marketing': _soQuemAceitaMarketing};
     if (_segmento != null) filtro['segmento'] = _segmento;
     if (_atalho != null) filtro['reaproveitar_view'] = _atalho;
     if (_controladorEspecie.text.trim().isNotEmpty) filtro['especie_pet'] = _controladorEspecie.text.trim();
@@ -208,6 +211,33 @@ class _PushCampanhaScreenState extends State<PushCampanhaScreen> {
           ),
           const SizedBox(height: 20),
           Text('Público', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: false,
+                label: Text('Todos com notificação ativa'),
+                icon: Icon(Icons.notifications_active_outlined),
+              ),
+              ButtonSegment(
+                value: true,
+                label: Text('Só quem aceita marketing'),
+                icon: Icon(Icons.campaign_outlined),
+              ),
+            ],
+            selected: {_soQuemAceitaMarketing},
+            onSelectionChanged: (v) {
+              setState(() => _soQuemAceitaMarketing = v.first);
+              _agendarRecalculoAudiencia();
+            },
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _soQuemAceitaMarketing
+                ? 'Só clientes que marcaram "aceita marketing" no cadastro.'
+                : 'Todo cliente com conta que permitiu as notificações no celular.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
