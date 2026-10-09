@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -117,6 +118,17 @@ class _ItemEditavel {
   /// Já pedido e ainda não recebido — a sugestão já desconta isso.
   final int quantidadeACaminho;
 
+  /// Fabricante do produto (cadastro) — usado pra organizar a lista do
+  /// fornecedor igual ao catálogo da distribuidora (pedido do usuário 09/10).
+  final String? fabricante;
+
+  /// Código do produto NO fornecedor (vem das notas importadas) — pra bater
+  /// com o catálogo dele na hora de pedir.
+  String? get codigoFornecedor {
+    final codigo = vinculo?.codigoProdutoFornecedor?.trim();
+    return codigo == null || codigo.isEmpty ? null : codigo;
+  }
+
   _ItemEditavel({
     required this.produtoId,
     required this.produtoNome,
@@ -133,6 +145,7 @@ class _ItemEditavel {
     this.vendaMediaDiaria = 0,
     this.diasSemEstoque = 0,
     this.quantidadeACaminho = 0,
+    this.fabricante,
   });
 
   /// Zerado e com venda: cada dia assim é venda perdida.
@@ -263,10 +276,30 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
   final _buscaFornecedorController = TextEditingController();
   String _buscaFornecedor = '';
 
+  /// Como organizar os itens dentro de cada fornecedor — lembrado neste
+  /// aparelho. Fabricante = igual ao catálogo da distribuidora (montar o
+  /// pedido com o catálogo aberto); urgência = em falta primeiro.
+  bool _porFabricante = false;
+  static const _chavePorFabricante = 'sugestao_compra_organizar_por_fabricante';
+
   @override
   void initState() {
     super.initState();
     _carregar();
+    _carregarOrganizacao();
+  }
+
+  Future<void> _carregarOrganizacao() async {
+    final prefs = await SharedPreferences.getInstance();
+    final salvo = prefs.getBool(_chavePorFabricante);
+    if (salvo == null || !mounted) return;
+    setState(() => _porFabricante = salvo);
+  }
+
+  Future<void> _alterarOrganizacao(bool porFabricante) async {
+    setState(() => _porFabricante = porFabricante);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_chavePorFabricante, porFabricante);
   }
 
   @override
@@ -313,9 +346,14 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
     // Preço de venda atual (catálogo já carregado em memória) — usado só
     // pra mostrar o impacto na margem de trocar de fornecedor, nunca
     // alterado por esta tela.
+    final produtosCatalogo = context.read<ProdutoProvider>().produtos;
     final precoPorProduto = {
-      for (final p in context.read<ProdutoProvider>().produtos)
+      for (final p in produtosCatalogo)
         if (p.id != null) p.id!: p.preco,
+    };
+    final fabricantePorProduto = {
+      for (final p in produtosCatalogo)
+        if (p.id != null) p.id!: p.fabricante,
     };
     var todosVinculosPorProduto = <String, List<ProdutoFornecedor>>{};
     try {
@@ -402,6 +440,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         vendaMediaDiaria: escolhida.vendaMediaDiaria,
         diasSemEstoque: escolhida.diasSemEstoque,
         quantidadeACaminho: escolhida.quantidadeACaminho,
+        fabricante: fabricantePorProduto[escolhida.produtoId],
       ));
 
       // Também aparece na lista do(s) outro(s) fornecedor(es) que vendem
@@ -499,6 +538,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         quantidadePedida: vinculo?.multiploCompra ?? 1,
         vinculo: vinculo,
         custoAvulso: vinculo?.custoUnitario ?? produtoEscolhido.custo,
+        fabricante: produtoEscolhido.fabricante,
       ));
     });
   }
@@ -609,6 +649,25 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
           else ...[
             // Conforme mais fornecedores forem cadastrados essa lista cresce
             // — busca por nome pra achar rápido sem rolar a tela toda.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  const Text('Organizar itens por:', style: TextStyle(fontSize: 13)),
+                  const SizedBox(width: 8),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('Urgência'), icon: Icon(Icons.priority_high, size: 16)),
+                      ButtonSegment(value: true, label: Text('Fabricante'), icon: Icon(Icons.factory_outlined, size: 16)),
+                    ],
+                    selected: {_porFabricante},
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    onSelectionChanged: (v) => _alterarOrganizacao(v.first),
+                  ),
+                ],
+              ),
+            ),
             if (_grupos.length > 1)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -651,6 +710,7 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
                     grupo: gruposFiltrados[index],
                     criando: _criandoPedidoPara.contains(gruposFiltrados[index].fornecedorId),
                     expandidoPorPadrao: expandirPorPadrao,
+                    porFabricante: _porFabricante,
                     trocandoPrincipalPara: _trocandoPrincipalPara,
                     onMudou: () => setState(() {}),
                     onAdicionarProduto: () => _adicionarProdutoManual(gruposFiltrados[index]),
@@ -959,6 +1019,7 @@ class _GrupoFornecedorCard extends StatelessWidget {
   final _GrupoFornecedor grupo;
   final bool criando;
   final bool expandidoPorPadrao;
+  final bool porFabricante;
   final Set<String> trocandoPrincipalPara;
   final VoidCallback onMudou;
   final VoidCallback onAdicionarProduto;
@@ -970,50 +1031,13 @@ class _GrupoFornecedorCard extends StatelessWidget {
     required this.grupo,
     required this.criando,
     required this.expandidoPorPadrao,
+    required this.porFabricante,
     required this.trocandoPrincipalPara,
     required this.onMudou,
     required this.onAdicionarProduto,
     required this.onCriarPedido,
     required this.onTornarPrincipal,
   });
-
-  /// Acima desse tamanho, `_LinhaItem` (que carrega alternativas/variação de
-  /// custo/faixa de desconto, altura variável) para de ser construído tudo
-  /// de uma vez dentro do `ExpansionTile` — um fornecedor com centenas de
-  /// itens travaria a UI no frame em que o card expande. Abaixo do limite,
-  /// mantém a lista solta de sempre (maioria dos fornecedores hoje).
-  static const _limiteListaSolta = 30;
-
-  /// Lista de itens do fornecedor — lazy (`ListView.builder`, altura
-  /// limitada e rolagem própria) quando passa do limite, senão a lista
-  /// solta de sempre (cresce junto com o `ExpansionTile`, sem scroll extra).
-  Widget _listaDeItens() {
-    if (grupo.itens.length <= _limiteListaSolta) {
-      return Column(
-        children: [
-          for (final item in grupo.itens)
-            _LinhaItem(
-              item: item,
-              onMudou: onMudou,
-              trocandoPrincipalPara: trocandoPrincipalPara,
-              onTornarPrincipal: onTornarPrincipal,
-            ),
-        ],
-      );
-    }
-    return SizedBox(
-      height: 420,
-      child: ListView.builder(
-        itemCount: grupo.itens.length,
-        itemBuilder: (context, index) => _LinhaItem(
-          item: grupo.itens[index],
-          onMudou: onMudou,
-          trocandoPrincipalPara: trocandoPrincipalPara,
-          onTornarPrincipal: onTornarPrincipal,
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1065,7 +1089,13 @@ class _GrupoFornecedorCard extends StatelessWidget {
         ),
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: [
-          _listaDeItens(),
+          _ListaItensFornecedor(
+            grupo: grupo,
+            porFabricante: porFabricante,
+            onMudou: onMudou,
+            trocandoPrincipalPara: trocandoPrincipalPara,
+            onTornarPrincipal: onTornarPrincipal,
+          ),
           TextButton.icon(
             onPressed: onAdicionarProduto,
             icon: const Icon(Icons.add, size: 18),
@@ -1183,6 +1213,151 @@ class _LinhaTambemDisponivel extends StatelessWidget {
   }
 }
 
+/// Itens de um fornecedor: busca própria (nome, fabricante ou código no
+/// fornecedor) e, no modo "Fabricante", agrupados por fabricante em ordem
+/// alfabética — igual catálogo de distribuidora — com quantos estão em
+/// falta em cada um, pra urgência não sumir. No modo "Urgência", a ordem de
+/// sempre (em falta primeiro).
+class _ListaItensFornecedor extends StatefulWidget {
+  final _GrupoFornecedor grupo;
+  final bool porFabricante;
+  final VoidCallback onMudou;
+  final Set<String> trocandoPrincipalPara;
+  final void Function(String vinculoId, String produtoId) onTornarPrincipal;
+
+  const _ListaItensFornecedor({
+    required this.grupo,
+    required this.porFabricante,
+    required this.onMudou,
+    required this.trocandoPrincipalPara,
+    required this.onTornarPrincipal,
+  });
+
+  @override
+  State<_ListaItensFornecedor> createState() => _ListaItensFornecedorState();
+}
+
+/// Cabeçalho de um fabricante dentro da lista do fornecedor.
+class _CabecalhoFabricante {
+  final String nome;
+  final int quantidade;
+  final int emFalta;
+  const _CabecalhoFabricante(this.nome, this.quantidade, this.emFalta);
+}
+
+class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
+  /// Acima desse tamanho, `_LinhaItem` (altura variável: alternativas,
+  /// variação de custo, faixa de desconto) para de ser construído tudo de
+  /// uma vez dentro do `ExpansionTile` — um fornecedor com centenas de itens
+  /// travaria a UI no frame em que o card expande.
+  static const _limiteListaSolta = 30;
+  static const _semFabricante = 'Sem fabricante cadastrado';
+
+  String _busca = '';
+
+  String _fabricante(_ItemEditavel i) {
+    final f = i.fabricante?.trim();
+    return f == null || f.isEmpty ? _semFabricante : f;
+  }
+
+  /// Lista achatada: _CabecalhoFabricante ou _ItemEditavel.
+  List<Object> _entradas() {
+    final termo = _busca.trim().toLowerCase();
+    var itens = widget.grupo.itens.where((i) {
+      if (termo.isEmpty) return true;
+      return i.produtoNome.toLowerCase().contains(termo) ||
+          _fabricante(i).toLowerCase().contains(termo) ||
+          (i.codigoFornecedor?.toLowerCase().contains(termo) ?? false);
+    }).toList();
+    if (!widget.porFabricante) return itens;
+
+    int compararFabricante(String a, String b) {
+      // "Sem fabricante" sempre por último.
+      if (a == _semFabricante) return b == _semFabricante ? 0 : 1;
+      if (b == _semFabricante) return -1;
+      return a.toLowerCase().compareTo(b.toLowerCase());
+    }
+
+    itens = [...itens]..sort((a, b) {
+        final f = compararFabricante(_fabricante(a), _fabricante(b));
+        return f != 0 ? f : a.produtoNome.toLowerCase().compareTo(b.produtoNome.toLowerCase());
+      });
+    final entradas = <Object>[];
+    String? atual;
+    for (final item in itens) {
+      final fabricante = _fabricante(item);
+      if (fabricante != atual) {
+        final doFabricante = itens.where((i) => _fabricante(i) == fabricante).toList();
+        entradas.add(_CabecalhoFabricante(fabricante, doFabricante.length, doFabricante.where((i) => i.emFalta).length));
+        atual = fabricante;
+      }
+      entradas.add(item);
+    }
+    return entradas;
+  }
+
+  Widget _construir(Object entrada) {
+    if (entrada is _CabecalhoFabricante) {
+      final colorScheme = Theme.of(context).colorScheme;
+      return Padding(
+        padding: const EdgeInsets.only(top: 10, bottom: 2),
+        child: Text.rich(
+          TextSpan(
+            text: '${entrada.nome} (${entrada.quantidade})',
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: colorScheme.primary),
+            children: [
+              if (entrada.emFalta > 0)
+                TextSpan(text: ' · ${entrada.emFalta} em falta', style: TextStyle(color: colorScheme.error)),
+            ],
+          ),
+        ),
+      );
+    }
+    final item = entrada as _ItemEditavel;
+    return _LinhaItem(
+      key: ValueKey(item.produtoId),
+      item: item,
+      onMudou: widget.onMudou,
+      trocandoPrincipalPara: widget.trocandoPrincipalPara,
+      onTornarPrincipal: widget.onTornarPrincipal,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entradas = _entradas();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.grupo.itens.length > 8)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: TextField(
+              decoration: const InputDecoration(
+                hintText: 'Buscar produto, fabricante ou código...',
+                prefixIcon: Icon(Icons.search, size: 18),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() => _busca = v),
+            ),
+          ),
+        if (entradas.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(8),
+            child: Text('Nenhum produto encontrado.', style: TextStyle(fontSize: 12.5)),
+          )
+        else if (widget.grupo.itens.length <= _limiteListaSolta)
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final e in entradas) _construir(e)])
+        else
+          SizedBox(
+            height: 420,
+            child: ListView.builder(itemCount: entradas.length, itemBuilder: (context, index) => _construir(entradas[index])),
+          ),
+      ],
+    );
+  }
+}
+
 class _LinhaItem extends StatefulWidget {
   final _ItemEditavel item;
   final VoidCallback onMudou;
@@ -1190,6 +1365,7 @@ class _LinhaItem extends StatefulWidget {
   final void Function(String vinculoId, String produtoId) onTornarPrincipal;
 
   const _LinhaItem({
+    super.key,
     required this.item,
     required this.onMudou,
     required this.trocandoPrincipalPara,
@@ -1236,7 +1412,15 @@ class _LinhaItemState extends State<_LinhaItem> {
                 },
               ),
               Expanded(
-                child: Text(item.produtoNome, style: item.incluido ? null : TextStyle(color: colorScheme.onSurfaceVariant)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.produtoNome, style: item.incluido ? null : TextStyle(color: colorScheme.onSurfaceVariant)),
+                    if (item.codigoFornecedor != null)
+                      Text('Cód. no fornecedor: ${item.codigoFornecedor}',
+                          style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                  ],
+                ),
               ),
               SizedBox(
                 width: 64,
