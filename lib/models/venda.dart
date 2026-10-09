@@ -49,6 +49,8 @@ class Venda {
   final double subtotal;          // valor dos produtos antes de frete/desconto
   final double desconto;          // desconto aplicado
   final String? cupomId;          // cupons.id quando o desconto veio de um cupom (não de desconto manual)
+  final String? cupomCodigo;      // cupons.codigo via cupons_uso (fonte de verdade do resgate), fallback metadata.cupomCodigo do site
+  final String? cupomRegra;       // regra do cupom já formatada pra exibir (ex: "10%" ou "R\$ 5,00")
   final double saldoUsado;
   final double petcashUsado;      // metadata.petcashAplicado — separado do saldoUsado (saldo comum), mesma origem (cashback), teto/validade próprios
   final double valorEntrega;      // frete efetivo
@@ -146,6 +148,8 @@ class Venda {
     required this.subtotal,
     required this.desconto,
     this.cupomId,
+    this.cupomCodigo,
+    this.cupomRegra,
     required this.saldoUsado,
     this.petcashUsado = 0,
     required this.valorEntrega,
@@ -232,6 +236,8 @@ class Venda {
     double? subtotal,
     double? desconto,
     String? cupomId,
+    String? cupomCodigo,
+    String? cupomRegra,
     double? saldoUsado,
     double? petcashUsado,
     double? valorEntrega,
@@ -309,6 +315,8 @@ class Venda {
       subtotal: subtotal ?? this.subtotal,
       desconto: desconto ?? this.desconto,
       cupomId: cupomId ?? this.cupomId,
+      cupomCodigo: cupomCodigo ?? this.cupomCodigo,
+      cupomRegra: cupomRegra ?? this.cupomRegra,
       saldoUsado: saldoUsado ?? this.saldoUsado,
       petcashUsado: petcashUsado ?? this.petcashUsado,
       valorEntrega: valorEntrega ?? this.valorEntrega,

@@ -825,7 +825,13 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               _linhaValor('Subtotal', venda.subtotal, currencyFormat),
               if (venda.desconto > 0)
                 _linhaValor(
-                  venda.campanhaMarketplace != null ? 'Desconto (${venda.campanhaMarketplace})' : 'Desconto',
+                  venda.cupomCodigo != null
+                      ? 'Cupom ${venda.cupomCodigo}${venda.cupomRegra != null ? ' (${venda.cupomRegra})' : ''}'
+                      : venda.campanhaMarketplace != null
+                          ? 'Desconto (${venda.campanhaMarketplace})'
+                          : venda.canalVenda == 'loja_fisica'
+                              ? 'Desconto manual'
+                              : 'Desconto',
                   -venda.desconto,
                   currencyFormat,
                   cor: Colors.red,

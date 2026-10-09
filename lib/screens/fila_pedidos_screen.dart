@@ -246,7 +246,12 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     }
 
     if (venda.troco > 0) {
-      chips.add(_chipInfo(context, Icons.money_outlined, 'Troco: R\$ ${venda.troco.toStringAsFixed(2)}'));
+      final pagaraCom = venda.valorPago > venda.valorTotal ? ' (pagará com R\$ ${venda.valorPago.toStringAsFixed(2)})' : '';
+      chips.add(_chipInfo(context, Icons.money_outlined, 'Troco: R\$ ${venda.troco.toStringAsFixed(2)}$pagaraCom'));
+    }
+
+    if (venda.cupomCodigo != null && venda.desconto > 0) {
+      chips.add(_chipInfo(context, Icons.local_offer_outlined, 'Cupom ${venda.cupomCodigo}'));
     }
 
     // Cartão parcelado na entrega/retirada (não é Mercado Pago) — vendedor

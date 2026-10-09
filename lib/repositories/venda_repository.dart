@@ -24,6 +24,7 @@ class VendaRepository {
   // "produtos" (o "!fkey" só escolhe o caminho, não vira alias).
   static const _selectComItensECliente =
       '*, cliente:clientes(*), itens_pedido(*, produtos!itens_pedido_produto_id_fkey(*)), '
+      'cupons_uso(cupom_id, cupons(codigo, tipo_desconto, valor)), '
       'marketplace_pedidos(id, rastreio_latitude, rastreio_longitude, rastreio_eta_entrega, rastreio_atualizado_em, '
       'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
       'codigo_retirada_exibicao, link_confirmacao_entrega, agendado, entrega_prevista_inicio, entrega_prevista_fim, '
@@ -394,6 +395,29 @@ class VendaRepository {
 
     final marketplacePedidoRow = row['marketplace_pedidos'] as Map<String, dynamic>?;
 
+    // Cupom: cupons_uso é a fonte de verdade do resgate (gravado por venda
+    // do app, site e WhatsApp); metadata.cupomCodigo do site fica de reserva
+    // (ex: pedido cancelado, que devolve o uso e apaga a linha).
+    final usoCupom = ((row['cupons_uso'] as List?) ?? const []).cast<Map<String, dynamic>>().firstOrNull;
+    final cupomRow = usoCupom?['cupons'] as Map<String, dynamic>?;
+    final cupomCodigo = cupomRow?['codigo']?.toString() ?? metadata['cupomCodigo']?.toString();
+    String? cupomRegra;
+    final valorCupom = (cupomRow?['valor'] as num?)?.toDouble();
+    if (valorCupom != null) {
+      cupomRegra = cupomRow?['tipo_desconto'] == 'percentual'
+          ? '${valorCupom.toStringAsFixed(valorCupom % 1 == 0 ? 0 : 1)}%'
+          : 'R\$ ${valorCupom.toStringAsFixed(2).replaceAll('.', ',')}';
+    }
+
+    // Troco: o app grava metadata.troco/valorPago; o site grava só
+    // metadata.trocoPara ("pagará com R$ X") — sem derivar daqui o troco
+    // não aparecia pro entregador em pedido do site pago em dinheiro.
+    final valorTotal = (row['valor_total'] as num?)?.toDouble() ?? 0.0;
+    final trocoPara = (metadata['trocoPara'] as num?)?.toDouble();
+    final troco = (metadata['troco'] as num?)?.toDouble() ??
+        (trocoPara != null && trocoPara > valorTotal ? trocoPara - valorTotal : 0.0);
+    final valorPago = (metadata['valorPago'] as num?)?.toDouble() ?? trocoPara ?? 0.0;
+
     return Venda(
       idVenda: row['id'] as String?,
       numeroSequencial: (row['numero_sequencial'] as num?)?.toInt(),
@@ -401,13 +425,16 @@ class VendaRepository {
       dataVenda: DateTime.tryParse(row['created_at'].toString())?.toLocal() ?? DateTime.now(),
       subtotal: (row['valor_produtos'] as num?)?.toDouble() ?? 0.0,
       desconto: (row['desconto'] as num?)?.toDouble() ?? 0.0,
+      cupomId: usoCupom?['cupom_id'] as String?,
+      cupomCodigo: cupomCodigo,
+      cupomRegra: cupomRegra,
       saldoUsado: (metadata['saldoUsado'] as num?)?.toDouble() ?? 0.0,
       petcashUsado: (metadata['petcashAplicado'] as num?)?.toDouble() ?? 0.0,
       valorEntrega: (row['valor_entrega'] as num?)?.toDouble() ?? 0.0,
       entregaSelecionada: metadata['entregaSelecionada']?.toString() ?? '',
-      valorTotal: (row['valor_total'] as num?)?.toDouble() ?? 0.0,
-      valorPago: (metadata['valorPago'] as num?)?.toDouble() ?? 0.0,
-      troco: (metadata['troco'] as num?)?.toDouble() ?? 0.0,
+      valorTotal: valorTotal,
+      valorPago: valorPago,
+      troco: troco,
       metodoPagamento: row['tipo_pagamento']?.toString() ?? '',
       bandeiraCartao: row['bandeira_cartao']?.toString(),
       codigoAutorizacaoCartao: row['codigo_autorizacao_cartao']?.toString(),
