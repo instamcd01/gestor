@@ -324,7 +324,10 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
     );
-    if (data != null) setState(() => _dataExpiracao = data);
+    // "Válido até o dia X" = até o fim desse dia (23:59:59, horário de
+    // Brasília — validar_cupom compara nesse relógio). Gravar o próprio dia
+    // (00:00) fazia o cupom morrer na virada pro dia X.
+    if (data != null) setState(() => _dataExpiracao = DateTime(data.year, data.month, data.day, 23, 59, 59));
   }
 
   Future<void> _salvar() async {
