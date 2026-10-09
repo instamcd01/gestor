@@ -96,6 +96,11 @@ class Cliente {
   final String? appPlataforma;
   final DateTime? appUltimoUsoEm;
 
+  /// Tem aparelho com notificação ativa (campo calculado `recebe_push` do
+  /// banco — só vem quando o select pede, ex: pedidos da Fila). true = o
+  /// aviso de status do pedido chega sozinho no celular dele.
+  final bool recebePush;
+
   /// Ponto de entrega marcado pelo PRÓPRIO cliente no mapa do site (tela
   /// "Ajustar local no mapa") — o pino é a referência pra entrega, o número
   /// digitado pode estar impreciso. Volta pra false quando a equipe altera
@@ -151,6 +156,7 @@ class Cliente {
     this.telefoneKyte,
     this.appPlataforma,
     this.appUltimoUsoEm,
+    this.recebePush = false,
     this.pontoAjustadoCliente = false,
   });
 
@@ -206,6 +212,7 @@ class Cliente {
       telefoneKyte: telefoneKyte,
       appPlataforma: appPlataforma,
       appUltimoUsoEm: appUltimoUsoEm,
+      recebePush: recebePush,
       pontoAjustadoCliente: pontoAjustadoCliente,
     );
   }
@@ -308,6 +315,7 @@ class Cliente {
       telefoneKyte: row['telefone_kyte'] as String?,
       appPlataforma: row['app_plataforma'] as String?,
       appUltimoUsoEm: row['app_ultimo_uso_em'] != null ? DateTime.tryParse(row['app_ultimo_uso_em'] as String) : null,
+      recebePush: row['recebe_push'] as bool? ?? false,
       pontoAjustadoCliente: row['ponto_ajustado_cliente'] as bool? ?? false,
     );
   }

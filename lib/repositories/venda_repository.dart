@@ -23,7 +23,7 @@ class VendaRepository {
   // relationship was found". A chave no JSON de resposta continua
   // "produtos" (o "!fkey" só escolhe o caminho, não vira alias).
   static const _selectComItensECliente =
-      '*, cliente:clientes(*), itens_pedido(*, produtos!itens_pedido_produto_id_fkey(*)), '
+      '*, cliente:clientes(*, recebe_push), itens_pedido(*, produtos!itens_pedido_produto_id_fkey(*)), '
       'cupons_uso(cupom_id, cupons(codigo, tipo_desconto, valor)), '
       'marketplace_pedidos(id, rastreio_latitude, rastreio_longitude, rastreio_eta_entrega, rastreio_atualizado_em, '
       'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '

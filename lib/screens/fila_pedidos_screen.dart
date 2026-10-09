@@ -557,6 +557,16 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                                 ),
                                                 const SizedBox(width: 6),
                                                 CategoriaClienteBadge(categoria: venda.cliente.categoriaCliente),
+                                                // Aviso de status chega sozinho no celular dele — não
+                                                // precisa mandar texto pelo WhatsApp (pedido do usuário 09/10).
+                                                if (venda.cliente.recebePush) ...[
+                                                  const SizedBox(width: 4),
+                                                  Tooltip(
+                                                    message: 'Recebe notificação do pedido no celular',
+                                                    child: Icon(Icons.notifications_active,
+                                                        size: 16, color: Theme.of(context).colorScheme.primary),
+                                                  ),
+                                                ],
                                               ],
                                             ),
                                             Text(
