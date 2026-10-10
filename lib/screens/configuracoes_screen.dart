@@ -18,6 +18,7 @@ import 'veiculos_screen.dart';
 import 'exportar_relatorios_screen.dart';
 import 'historico_entradas_screen.dart';
 import 'integrar_plataformas_screen.dart';
+import 'modulos_screen.dart';
 import '../models/modulo.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
@@ -64,6 +65,8 @@ class ConfiguracoesScreen extends StatelessWidget {
           MenuSecao(
             titulo: 'Loja',
             itens: [
+              // Só o dono instala/desinstala (o banco também exige).
+              if (isDono) MenuItem('Módulos', Icons.extension_outlined, const ModulosScreen()),
               MenuItem('Dados da Loja', Icons.store_outlined, const DadosLojaScreen()),
               MenuItem('Horário de Funcionamento', Icons.schedule_outlined, const GeralScreen()),
               MenuItem('Aparência e Marca', Icons.palette_outlined, const AparenciaMarcaHubScreen()),
