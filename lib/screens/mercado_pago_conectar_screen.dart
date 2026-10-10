@@ -98,10 +98,23 @@ class _MercadoPagoConectarScreenState extends State<MercadoPagoConectarScreen> w
       return;
     }
 
+    // state = código de uso único (30 min) gerado pelo banco, só pro dono —
+    // o site só aceita o retorno com ele. Antes era o empresaId puro: quem
+    // soubesse o id de uma loja ligava a própria conta MP nela.
+    final String codigo;
+    try {
+      codigo = await supabase.rpc('iniciar_conexao', params: {'p_tipo': 'mercadopago'}) as String;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível iniciar a conexão: $e')));
+      }
+      return;
+    }
+
     final redirectUri = Uri.encodeComponent('$kSiteBaseUrl/mp/callback');
     final uri = Uri.parse(
       'https://auth.mercadopago.com/authorization'
-      '?response_type=code&client_id=$kMercadoPagoClientId&redirect_uri=$redirectUri&state=$empresaId',
+      '?response_type=code&client_id=$kMercadoPagoClientId&redirect_uri=$redirectUri&state=$codigo',
     );
 
     if (await canLaunchUrl(uri)) {

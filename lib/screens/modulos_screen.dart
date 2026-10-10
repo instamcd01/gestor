@@ -10,6 +10,7 @@ import 'config_automacoes_whatsapp_screen.dart';
 import 'config_petcash_screen.dart';
 import 'historico_entradas_screen.dart';
 import 'integrar_plataformas_screen.dart';
+import 'whatsapp_conexao_screen.dart';
 
 /// "Loja de aplicativos" do Gestor: o dono instala/desinstala os módulos
 /// da loja (tabela `modulos`). A BASE não aparece aqui — toda loja tem.
@@ -49,6 +50,7 @@ Widget? _telaConfiguracao(String slug) => switch (slug) {
       Modulos.marketing => const ConfigAutomacoesWhatsappScreen(),
       Modulos.ifood || Modulos.food99 => const IntegrarPlataformasScreen(),
       Modulos.notasFiscais => const HistoricoEntradasScreen(),
+      Modulos.whatsapp => const WhatsappConexaoScreen(),
       _ => null,
     };
 

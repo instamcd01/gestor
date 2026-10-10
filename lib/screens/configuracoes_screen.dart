@@ -19,6 +19,7 @@ import 'exportar_relatorios_screen.dart';
 import 'historico_entradas_screen.dart';
 import 'integrar_plataformas_screen.dart';
 import 'modulos_screen.dart';
+import 'whatsapp_conexao_screen.dart';
 import '../models/modulo.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
@@ -99,6 +100,8 @@ class ConfiguracoesScreen extends StatelessWidget {
             titulo: 'Dados e integrações',
             itens: [
               MenuItem('Notas Fiscais', Icons.description_outlined, const HistoricoEntradasScreen(), modulos: [Modulos.notasFiscais]),
+              MenuItem('WhatsApp da Loja', Icons.chat_outlined, const WhatsappConexaoScreen(),
+                  modulos: [Modulos.whatsapp]),
               MenuItem('Exportar Relatórios', Icons.file_download_outlined, const ExportarRelatoriosScreen()),
               MenuItem(
                   'Integrar com Plataformas', Icons.integration_instructions_outlined, const IntegrarPlataformasScreen()),
