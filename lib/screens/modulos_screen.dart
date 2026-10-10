@@ -4,7 +4,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/modulo.dart';
 import '../providers/modulo_provider.dart';
-import '../widgets/aviso_banner.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'catalogo_online_hub_screen.dart';
 import 'config_automacoes_whatsapp_screen.dart';
@@ -239,11 +238,6 @@ class _ModulosScreenState extends State<ModulosScreen> {
       corpo = ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const AvisoBanner(
-            texto: 'Instale só o que a sua loja usa. Vendas, produtos, estoque, clientes, '
-                'pedidos e caixa já fazem parte do Gestor e não precisam ser instalados.',
-          ),
-          const SizedBox(height: 8),
           _secao('Instalados', todos.where((m) => m.ativo).toList(), todos),
           _secao('Disponíveis', todos.where((m) => !m.ativo).toList(), todos),
         ],
