@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
+import '../utils/telefone_utils.dart';
 import '../widgets/form_section.dart';
 
 /// Dados cadastrais da empresa (Configurações > Dados da Loja). Preenche
@@ -28,6 +29,7 @@ class _DadosLojaScreenState extends State<DadosLojaScreen> {
   final _estadoController = TextEditingController();
   final _cepController = TextEditingController();
   final _taxaEntregaController = TextEditingController();
+  final _whatsappAlertasController = TextEditingController();
 
   bool _carregando = true;
   bool _salvando = false;
@@ -49,7 +51,8 @@ class _DadosLojaScreenState extends State<DadosLojaScreen> {
       final data = await supabase
           .from('empresas')
           .select(
-              'nome, razao_social, cnpj, telefone, email, endereco, cidade, estado, cep, taxa_entrega_padrao')
+              'nome, razao_social, cnpj, telefone, email, endereco, cidade, estado, cep, taxa_entrega_padrao, '
+              'whatsapp_alertas')
           .eq('id', empresaId)
           .single();
 
@@ -64,6 +67,10 @@ class _DadosLojaScreenState extends State<DadosLojaScreen> {
       _cepController.text = data['cep']?.toString() ?? '';
       _taxaEntregaController.text =
           (data['taxa_entrega_padrao'] as num?)?.toString() ?? '';
+      // Gravado como 55+DDD+número; mostra sem o 55, como a pessoa digita.
+      final whatsappAlertas = data['whatsapp_alertas']?.toString() ?? '';
+      _whatsappAlertasController.text =
+          whatsappAlertas.startsWith('55') ? whatsappAlertas.substring(2) : whatsappAlertas;
     } catch (e) {
       debugPrint('Erro ao carregar dados da loja: $e');
       if (mounted) {
@@ -96,6 +103,9 @@ class _DadosLojaScreenState extends State<DadosLojaScreen> {
         'cep': _cepController.text.trim(),
         'taxa_entrega_padrao':
             double.tryParse(_taxaEntregaController.text.replaceAll(',', '.')),
+        'whatsapp_alertas': _whatsappAlertasController.text.trim().isEmpty
+            ? null
+            : normalizarTelefoneParaAuth(_whatsappAlertasController.text),
       }).eq('id', empresaId);
 
       if (mounted) {
@@ -126,6 +136,7 @@ class _DadosLojaScreenState extends State<DadosLojaScreen> {
     _estadoController.dispose();
     _cepController.dispose();
     _taxaEntregaController.dispose();
+    _whatsappAlertasController.dispose();
     super.dispose();
   }
 
@@ -240,6 +251,29 @@ class _DadosLojaScreenState extends State<DadosLojaScreen> {
                                 double.tryParse(value.replaceAll(',', '.')) == null) {
                               return 'Número inválido';
                             }
+                            return null;
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    FormSection(
+                      titulo: 'Alertas no WhatsApp',
+                      children: [
+                        TextFormField(
+                          controller: _whatsappAlertasController,
+                          decoration: const InputDecoration(
+                            labelText: 'WhatsApp para receber alertas',
+                            hintText: '(21) 99999-9999',
+                            helperText: 'Estoque baixo, validade e resumo do dia. Deixe vazio para não receber.',
+                            helperMaxLines: 2,
+                          ),
+                          keyboardType: TextInputType.phone,
+                          validator: (value) {
+                            final digitos = (value ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+                            if (digitos.isEmpty) return null;
+                            final semDdi = digitos.startsWith('55') && digitos.length >= 12 ? digitos.substring(2) : digitos;
+                            if (semDdi.length < 10 || semDdi.length > 11) return 'Informe DDD + número';
                             return null;
                           },
                         ),
