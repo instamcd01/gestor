@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/modulo.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
 import 'campanhas_ativacao_screen.dart';
@@ -32,13 +33,13 @@ class ClientesHubScreen extends StatelessWidget {
             itens: [
               MenuItem('Clientes', Icons.person_outline, ClientesScreen()),
               if (podeVerGerencial)
-                MenuItem('Campanhas de Ativação', Icons.campaign_outlined, const CampanhasAtivacaoScreen()),
+                MenuItem('Campanhas de Ativação', Icons.campaign_outlined, const CampanhasAtivacaoScreen(), modulos: [Modulos.marketing]),
               if (podeVerGerencial)
-                MenuItem('Campanha de Push', Icons.notifications_active_outlined, const PushCampanhaScreen()),
+                MenuItem('Campanha de Push', Icons.notifications_active_outlined, const PushCampanhaScreen(), modulos: [Modulos.lojaOnline]),
               if (podeVerGerencial)
                 MenuItem('Vínculos de Clientes', Icons.link, const VinculosClientesScreen()),
               if (podeVerGerencial)
-                MenuItem('Sugestões de Clientes', Icons.search_off, const SugestoesProdutoClienteScreen()),
+                MenuItem('Sugestões de Clientes', Icons.search_off, const SugestoesProdutoClienteScreen(), modulos: [Modulos.marketing]),
             ],
           ),
         ],

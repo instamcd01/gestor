@@ -3,10 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/modulo.dart';
 import '../models/venda.dart';
 import '../providers/auth_provider.dart';
 import '../providers/despesa_provider.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../providers/modulo_provider.dart';
 import '../providers/produto_provider.dart';
 import '../widgets/metric_card.dart';
 import 'custos_operacao_screen.dart';
@@ -444,7 +446,10 @@ class _InicioScreenState extends State<InicioScreen> {
               valor: lucro == null ? '—' : _moeda.format(lucro),
               subtitulo: lucro == null ? 'Carregando...' : null,
               corIcone: lucro == null ? null : (lucro >= 0 ? Colors.green : Colors.red),
-              onTap: () => _abrir(const CustosOperacaoScreen()),
+              // Detalhamento só com Gestão Financeira; sem ela, cai no fluxo de caixa.
+              onTap: () => _abrir(context.read<ModuloProvider>().ativo(Modulos.gestaoFinanceira)
+                  ? const CustosOperacaoScreen()
+                  : const FluxoCaixaScreen()),
             ),
           ],
         ),

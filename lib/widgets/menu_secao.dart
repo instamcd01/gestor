@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/modulo_provider.dart';
 
 /// Um item navegável dentro de uma [MenuSecao] — título, ícone e a tela
-/// que abre ao tocar.
+/// que abre ao tocar. [modulos]: módulos (ver `Modulos`) que liberam o
+/// item — null é base, toda loja tem; com mais de um, basta qualquer um.
 class MenuItem {
   final String titulo;
   final IconData icone;
   final Widget tela;
+  final List<String>? modulos;
 
-  const MenuItem(this.titulo, this.icone, this.tela);
+  const MenuItem(this.titulo, this.icone, this.tela, {this.modulos});
 }
 
 /// Agrupa itens de menu relacionados sob um rótulo, num único card com
@@ -22,6 +27,13 @@ class MenuSecao extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final moduloProvider = context.watch<ModuloProvider>();
+    final itens = this
+        .itens
+        .where((item) => item.modulos == null || moduloProvider.algumAtivo(item.modulos!))
+        .toList();
+    // Seção inteira de módulos não instalados some, em vez de um card vazio.
+    if (itens.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/branding_provider.dart';
+import '../providers/modulo_provider.dart';
 import '../utils/app_destinos.dart';
 import 'inicio_screen.dart';
 import 'meu_perfil_screen.dart';
@@ -67,7 +68,8 @@ class _DrawerHomeShellState extends State<DrawerHomeShell> {
               child: Center(child: _logoOuIcone(logoUrl, colorScheme, tamanho: 130)),
             ),
           ),
-          ...destinosParaPapel(context.watch<AuthProvider>().papel).map((destino) => ListTile(
+          ...destinosVisiveis(context.watch<AuthProvider>().papel, context.watch<ModuloProvider>())
+              .map((destino) => ListTile(
                 leading: destino.construirIcone(context, color: colorScheme.primary),
                 title: Text(destino.titulo),
                 onTap: () {

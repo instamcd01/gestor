@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/modulo.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
 import 'avaliacoes_disputas_screen.dart';
@@ -34,7 +35,7 @@ class DesempenhoHubScreen extends StatelessWidget {
               if (podeVerGerencial)
                 MenuItem('Estatísticas', Icons.area_chart, const EstatisticasScreen()),
               if (podeVerGerencial)
-                MenuItem('Avaliações', Icons.reviews_outlined, const AvaliacoesDisputasScreen()),
+                MenuItem('Avaliações', Icons.reviews_outlined, const AvaliacoesDisputasScreen(), modulos: Modulos.marketplaces),
             ],
           ),
         ],

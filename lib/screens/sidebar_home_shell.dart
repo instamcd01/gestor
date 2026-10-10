@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/branding_provider.dart';
+import '../providers/modulo_provider.dart';
 import '../providers/preferencias_provider.dart';
 import '../utils/app_destinos.dart';
 import 'drawer_home_shell.dart';
@@ -33,7 +34,10 @@ class SidebarHomeShell extends StatefulWidget {
 }
 
 class _SidebarHomeShellState extends State<SidebarHomeShell> {
-  int _indiceSelecionado = 0;
+  // Pelo título, não pela posição: a lista muda quando os módulos da loja
+  // terminam de carregar (ou o dono instala um), e um índice guardado
+  // passaria a apontar pra outro destino.
+  String? _tituloSelecionado;
 
   @override
   void initState() {
@@ -61,11 +65,11 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
   Widget _buildLayoutLargo(BuildContext context, {required bool extended}) {
     final colorScheme = Theme.of(context).colorScheme;
     final logoUrl = context.watch<BrandingProvider>().urlParaPosicao('app_sidebar');
-    final destinos = destinosParaPapel(context.watch<AuthProvider>().papel);
-    // Defensivo: se o papel mudou (ex: dono acabou de rebaixar o próprio
-    // usuário de teste) e a lista filtrada ficou mais curta que o índice
-    // selecionado antes, volta pro primeiro destino em vez de estourar.
-    final indiceSeguro = _indiceSelecionado < destinos.length ? _indiceSelecionado : 0;
+    final destinos = destinosVisiveis(context.watch<AuthProvider>().papel, context.watch<ModuloProvider>());
+    // Defensivo: se o destino selecionado sumiu (papel mudou, módulo
+    // desinstalado), volta pro primeiro em vez de estourar.
+    final indiceAtual = destinos.indexWhere((d) => d.titulo == _tituloSelecionado);
+    final indiceSeguro = indiceAtual >= 0 ? indiceAtual : 0;
 
     return Scaffold(
       body: Row(
@@ -91,7 +95,7 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
             // só decoração.
             trailing: _rodapeConta(context),
             trailingAtBottom: true,
-            onDestinationSelected: (index) => setState(() => _indiceSelecionado = index),
+            onDestinationSelected: (index) => setState(() => _tituloSelecionado = destinos[index].titulo),
             destinations: destinos
                 .map((destino) => NavigationRailDestination(
                       icon: destino.construirIcone(context),
@@ -108,7 +112,8 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
             child: IndexedStack(
               index: indiceSeguro,
               children: [
-                for (final destino in destinos) destino.builder(context),
+                for (final destino in destinos)
+                  KeyedSubtree(key: ValueKey(destino.titulo), child: destino.builder(context)),
               ],
             ),
           ),

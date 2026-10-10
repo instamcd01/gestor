@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/modulo.dart';
 import '../models/despesa.dart';
 import '../providers/despesa_provider.dart';
 import '../widgets/menu_secao.dart';
@@ -63,26 +64,26 @@ class _FinancasScreenState extends State<FinancasScreen> {
               MenuItem('Fluxo de Caixa', Icons.account_balance_outlined, const FluxoCaixaScreen()),
               MenuItem('Entradas', Icons.arrow_downward, const EntradasScreen()),
               MenuItem('Saídas', Icons.arrow_upward, const DespesasScreen(apenasPendentes: false)),
-              MenuItem('Financeiro por Marketplace', Icons.storefront_outlined, const DashboardMarketplaceScreen()),
+              MenuItem('Financeiro por Marketplace', Icons.storefront_outlined, const DashboardMarketplaceScreen(), modulos: Modulos.marketplaces),
             ],
           ),
           const SizedBox(height: 20),
           MenuSecao(
             titulo: 'Gestão',
             itens: [
-              MenuItem('Custos da Operação', Icons.insights_outlined, const CustosOperacaoScreen()),
+              MenuItem('Custos da Operação', Icons.insights_outlined, const CustosOperacaoScreen(), modulos: [Modulos.gestaoFinanceira]),
               MenuItem('Contas a Pagar', Icons.payment_outlined, const DespesasScreen(apenasPendentes: true)),
-              MenuItem('Métricas de Contas a Pagar', Icons.bar_chart_outlined, const MetricasDespesasScreen()),
-              MenuItem('Fornecedores', Icons.business_outlined, const FornecedoresScreen()),
+              MenuItem('Métricas de Contas a Pagar', Icons.bar_chart_outlined, const MetricasDespesasScreen(), modulos: [Modulos.gestaoFinanceira]),
+              MenuItem('Fornecedores', Icons.business_outlined, const FornecedoresScreen(), modulos: [Modulos.compras]),
             ],
           ),
           const SizedBox(height: 20),
           MenuSecao(
             titulo: 'Compras a Fornecedor',
             itens: [
-              MenuItem('Sugestão de Compra', Icons.auto_awesome_outlined, const SugestaoCompraScreen()),
-              MenuItem('Pedidos de Compra', Icons.shopping_cart_outlined, const PedidoCompraListaScreen()),
-              MenuItem('Onde Comprar', Icons.travel_explore_outlined, const OndeComprarScreen()),
+              MenuItem('Sugestão de Compra', Icons.auto_awesome_outlined, const SugestaoCompraScreen(), modulos: [Modulos.compras]),
+              MenuItem('Pedidos de Compra', Icons.shopping_cart_outlined, const PedidoCompraListaScreen(), modulos: [Modulos.compras]),
+              MenuItem('Onde Comprar', Icons.travel_explore_outlined, const OndeComprarScreen(), modulos: [Modulos.compras]),
             ],
           ),
         ],

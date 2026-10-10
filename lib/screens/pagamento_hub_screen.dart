@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/modulo.dart';
 import '../providers/auth_provider.dart';
+import '../providers/modulo_provider.dart';
 import 'mercado_pago_conectar_screen.dart';
 import 'opcoes_pagamento_screen.dart';
 
@@ -16,8 +18,10 @@ class PagamentoHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDono = context.watch<AuthProvider>().isDono;
+    // Pagamento online (Mercado Pago) só existe pra quem tem o site.
+    final temLojaOnline = context.watch<ModuloProvider>().ativo(Modulos.lojaOnline);
 
-    if (!isDono) {
+    if (!isDono || !temLojaOnline) {
       return Scaffold(
         appBar: AppBar(title: const Text('Opções de Pagamento')),
         body: const OpcoesPagamentoScreen(),

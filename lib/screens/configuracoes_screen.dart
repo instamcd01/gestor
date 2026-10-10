@@ -18,6 +18,7 @@ import 'veiculos_screen.dart';
 import 'exportar_relatorios_screen.dart';
 import 'historico_entradas_screen.dart';
 import 'integrar_plataformas_screen.dart';
+import '../models/modulo.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
 
@@ -66,7 +67,7 @@ class ConfiguracoesScreen extends StatelessWidget {
               MenuItem('Dados da Loja', Icons.store_outlined, const DadosLojaScreen()),
               MenuItem('Horário de Funcionamento', Icons.schedule_outlined, const GeralScreen()),
               MenuItem('Aparência e Marca', Icons.palette_outlined, const AparenciaMarcaHubScreen()),
-              MenuItem('Catálogo Online', Icons.storefront_outlined, const CatalogoOnlineHubScreen()),
+              MenuItem('Catálogo Online', Icons.storefront_outlined, const CatalogoOnlineHubScreen(), modulos: [Modulos.lojaOnline]),
               MenuItem('Meu Recibo', Icons.receipt_long_outlined, const MeuReciboScreen()),
               MenuItem('Notificações', Icons.notifications_outlined, const ConfiguracaoNotificacoesScreen()),
             ],
@@ -77,24 +78,24 @@ class ConfiguracoesScreen extends StatelessWidget {
             itens: [
               MenuItem('Opções de Pagamento', Icons.payment_outlined, const PagamentoHubScreen()),
               if (isDono)
-                MenuItem('Custos Operacionais', Icons.calculate_outlined, const CustosOperacionaisScreen()),
+                MenuItem('Custos Operacionais', Icons.calculate_outlined, const CustosOperacionaisScreen(), modulos: [Modulos.gestaoFinanceira]),
               if (isDono)
-                MenuItem('Margem por Categoria', Icons.trending_up_outlined, const MargemAlvoCategoriaScreen()),
+                MenuItem('Margem por Categoria', Icons.trending_up_outlined, const MargemAlvoCategoriaScreen(), modulos: [Modulos.gestaoFinanceira]),
               if (isDono)
-                MenuItem('Veículos', Icons.two_wheeler_outlined, const VeiculosScreen()),
+                MenuItem('Veículos', Icons.two_wheeler_outlined, const VeiculosScreen(), modulos: [Modulos.entregas]),
               MenuItem('Pedidos e Vendas', Icons.shopping_cart_outlined, const PedidosVendasScreen()),
               MenuItem('Opções de Entrega', Icons.local_shipping_outlined, const ConfiguracaoEntregaScreen()),
               MenuItem('Cupons', Icons.local_offer_outlined, const CuponsHubScreen()),
-              if (isDono) MenuItem('PetCash (Cashback)', Icons.pets_outlined, const ConfigPetCashScreen()),
+              if (isDono) MenuItem('PetCash (Cashback)', Icons.pets_outlined, const ConfigPetCashScreen(), modulos: [Modulos.petcash]),
               if (isDono)
-                MenuItem('Automações de WhatsApp', Icons.campaign_outlined, const ConfigAutomacoesWhatsappScreen()),
+                MenuItem('Automações de WhatsApp', Icons.campaign_outlined, const ConfigAutomacoesWhatsappScreen(), modulos: [Modulos.marketing]),
             ],
           ),
           const SizedBox(height: 20),
           MenuSecao(
             titulo: 'Dados e integrações',
             itens: [
-              MenuItem('Notas Fiscais', Icons.description_outlined, const HistoricoEntradasScreen()),
+              MenuItem('Notas Fiscais', Icons.description_outlined, const HistoricoEntradasScreen(), modulos: [Modulos.notasFiscais]),
               MenuItem('Exportar Relatórios', Icons.file_download_outlined, const ExportarRelatoriosScreen()),
               MenuItem(
                   'Integrar com Plataformas', Icons.integration_instructions_outlined, const IntegrarPlataformasScreen()),

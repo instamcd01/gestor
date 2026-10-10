@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../models/marketplace.dart';
 import '../models/marketplace_config.dart';
+import '../models/modulo.dart';
 import '../providers/auth_provider.dart';
+import '../providers/modulo_provider.dart';
 import '../repositories/marketplace_config_repository.dart';
 import '../repositories/marketplace_repository.dart';
 import '../widgets/aviso_banner.dart';
@@ -85,6 +87,14 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
   @override
   Widget build(BuildContext context) {
     final souDono = context.watch<AuthProvider>().papel == 'dono';
+    final moduloProvider = context.watch<ModuloProvider>();
+    // iFood e 99Food só aparecem com o módulo instalado; plataformas sem
+    // integração construída (só guardam credencial) não têm módulo.
+    const moduloPorPlataforma = {'ifood': Modulos.ifood, '99food': Modulos.food99};
+    final marketplaces = _marketplaces.where((m) {
+      final modulo = moduloPorPlataforma[m.nome.toLowerCase()];
+      return modulo == null || moduloProvider.ativo(modulo);
+    }).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Integrar com Plataformas')),
@@ -112,7 +122,7 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
                             'ficam com as credenciais só guardadas até lá.',
                       ),
                     ),
-                    if (_marketplaces.isEmpty)
+                    if (marketplaces.isEmpty)
                       Center(
                         child: Text(
                           'Nenhuma plataforma disponível.',
@@ -120,7 +130,7 @@ class _IntegrarPlataformasScreenState extends State<IntegrarPlataformasScreen> {
                         ),
                       )
                     else
-                      ..._marketplaces.map(_cardPlataforma),
+                      ...marketplaces.map(_cardPlataforma),
                   ],
                 ),
     );

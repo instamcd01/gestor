@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/modulo.dart';
 import '../models/produto.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../providers/modulo_provider.dart';
 import '../providers/notificacao_provider.dart';
 import '../providers/produto_provider.dart';
 import '../providers/tarefa_provider.dart';
@@ -43,15 +45,22 @@ class AppDestino {
   /// que o papel restrito já não consegue ler ou alterar de qualquer jeito).
   final List<String>? papeisPermitidos;
 
+  /// Módulos (ver [Modulos]) que liberam este destino — null significa
+  /// "base", toda loja tem. Com mais de um, basta QUALQUER um estar ativo.
+  final List<String>? modulos;
+
   const AppDestino({
     required this.titulo,
     required this.icone,
     required this.builder,
     this.contador,
     this.papeisPermitidos,
+    this.modulos,
   });
 
-  bool visivelPara(String? papel) => papeisPermitidos == null || papeisPermitidos!.contains(papel);
+  bool visivelPara(String? papel, ModuloProvider moduloProvider) =>
+      (papeisPermitidos == null || papeisPermitidos!.contains(papel)) &&
+      (modulos == null || moduloProvider.algumAtivo(modulos!));
 
   Widget construirIcone(BuildContext context, {Color? color}) {
     final n = contador?.call(context) ?? 0;
@@ -81,8 +90,14 @@ final List<AppDestino> appDestinos = [
     icone: Icons.event_note_outlined,
     builder: (_) => const PlanejamentoScreen(),
     contador: (context) => context.watch<TarefaProvider>().tarefasPendentesHoje.length,
+    modulos: [Modulos.planejamento],
   ),
-  AppDestino(titulo: 'Rotas de Entrega', icone: Icons.alt_route, builder: (_) => const RotasEntregaScreen()),
+  AppDestino(
+    titulo: 'Rotas de Entrega',
+    icone: Icons.alt_route,
+    builder: (_) => const RotasEntregaScreen(),
+    modulos: [Modulos.entregas],
+  ),
   AppDestino(
     titulo: 'Produtos',
     icone: Icons.local_mall,
@@ -120,7 +135,8 @@ final List<AppDestino> appDestinos = [
   ),
 ];
 
-/// Lista de destinos já filtrada pro papel do usuário — usar esta em vez de
-/// `appDestinos` diretamente em qualquer shell de navegação.
-List<AppDestino> destinosParaPapel(String? papel) =>
-    appDestinos.where((d) => d.visivelPara(papel)).toList();
+/// Lista de destinos já filtrada pro papel do usuário e pelos módulos
+/// instalados na loja — usar esta em vez de `appDestinos` diretamente em
+/// qualquer shell de navegação.
+List<AppDestino> destinosVisiveis(String? papel, ModuloProvider moduloProvider) =>
+    appDestinos.where((d) => d.visivelPara(papel, moduloProvider)).toList();
