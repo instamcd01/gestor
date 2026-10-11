@@ -45,6 +45,18 @@ class AppTheme {
       onPrimary: _corContrastante(corPrimaria),
       secondary: corSecundaria,
       onSecondary: _corContrastante(corSecundaria),
+    ).copyWith(
+      // Fundos neutros fixos: o `fromSeed` tinge cards/campos/painéis com a
+      // cor principal da loja (com o vermelho-raposa os cards ficavam
+      // alaranjados, competindo com o botão Vender). Cor de marca fica só
+      // nos destaques (botões, ícones, topo). Escuro = grafite da INARI.
+      surface: isDark ? const Color(0xFF16161A) : const Color(0xFFFFFFFF),
+      surfaceTint: Colors.transparent,
+      surfaceContainerLowest: isDark ? const Color(0xFF111114) : const Color(0xFFFFFFFF),
+      surfaceContainerLow: isDark ? const Color(0xFF1E1E24) : const Color(0xFFFFFFFF),
+      surfaceContainer: isDark ? const Color(0xFF232329) : const Color(0xFFF1F1F3),
+      surfaceContainerHigh: isDark ? const Color(0xFF2A2A31) : const Color(0xFFEBEBEE),
+      surfaceContainerHighest: isDark ? const Color(0xFF323239) : const Color(0xFFE4E4E8),
     );
 
     final baseTextTheme = _textThemeParaFonte(

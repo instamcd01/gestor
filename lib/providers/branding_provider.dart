@@ -19,7 +19,33 @@ const _chaveCacheNome = 'branding_cache_nome';
 // Posições de imagem do próprio app guardadas no cache (as do site não
 // importam aqui).
 const _posicoesApp = ['app_inicio', 'app_drawer', 'app_sidebar'];
-String _chaveCacheUrl(String posicao) => 'branding_cache_url_$posicao';
+String _chaveCacheMarca(String posicao) => 'branding_cache_marca_$posicao';
+
+/// O que mostrar numa posição de marca do app (topo, menu, barra lateral).
+/// `padrao` = a loja não configurou nada ali → identidade INARI ("INARI
+/// por fora", a loja personaliza se quiser — ver Kit de Marca).
+class MarcaExibicao {
+  final String? url;
+  final bool texto;
+
+  const MarcaExibicao.imagem(String this.url) : texto = false;
+  const MarcaExibicao.texto()
+      : url = null,
+        texto = true;
+  const MarcaExibicao.padrao()
+      : url = null,
+        texto = false;
+
+  bool get padrao => url == null && !texto;
+
+  String get _codificada => url != null ? 'url:$url' : (texto ? 'texto' : 'padrao');
+
+  static MarcaExibicao? _decodificar(String? valor) {
+    if (valor == null) return null;
+    if (valor.startsWith('url:')) return MarcaExibicao.imagem(valor.substring(4));
+    return valor == 'texto' ? const MarcaExibicao.texto() : const MarcaExibicao.padrao();
+  }
+}
 
 /// Controla a identidade visual da empresa logada: qual modelo/tema
 /// (`ModeloVisual`) ela escolheu, mais a personalização por cima (cor
@@ -67,7 +93,7 @@ class BrandingProvider with ChangeNotifier {
   // e só se forem da MESMA loja (ver `carregarBranding`).
   String? _empresaCache;
   String? _nomeCache;
-  Map<String, String> _urlsCache = {};
+  Map<String, MarcaExibicao> _marcasCache = {};
   bool _marcaCarregada = false;
 
   ModeloVisual? get modelo => _modelo;
@@ -93,13 +119,27 @@ class BrandingProvider with ChangeNotifier {
   /// URL da imagem configurada pra essa posição — null quando o modo é
   /// "texto" (mostrar o nome da empresa) ou nada foi configurado ainda.
   String? urlParaPosicao(String posicao) {
-    if (!_marcaCarregada) return _urlsCache[posicao];
+    if (!_marcaCarregada) return _marcasCache[posicao]?.url;
     final p = _posicoes[posicao];
     if (p == null || p.modo != 'imagem' || p.ativoId == null) return null;
     for (final ativo in _ativos) {
       if (ativo.id == p.ativoId) return ativo.url;
     }
     return null;
+  }
+
+  /// O que mostrar na posição: imagem da loja, nome em texto (escolha da
+  /// loja) ou o padrão INARI (nada configurado). null = ainda carregando no
+  /// primeiro uso deste aparelho (quem mostra deixa vazio).
+  MarcaExibicao? marcaPara(String posicao) {
+    if (!_marcaCarregada) return _marcasCache[posicao];
+    final p = _posicoes[posicao];
+    if (p == null) return const MarcaExibicao.padrao();
+    if (p.modo == 'imagem') {
+      final url = urlParaPosicao(posicao);
+      return url == null ? const MarcaExibicao.padrao() : MarcaExibicao.imagem(url);
+    }
+    return const MarcaExibicao.texto();
   }
 
   Color get corPrimaria =>
@@ -150,9 +190,9 @@ class BrandingProvider with ChangeNotifier {
 
       _empresaCache = prefs.getString(_chaveCacheEmpresa);
       _nomeCache = prefs.getString(_chaveCacheNome);
-      _urlsCache = {
+      _marcasCache = {
         for (final posicao in _posicoesApp)
-          if (prefs.getString(_chaveCacheUrl(posicao)) case final url?) posicao: url,
+          if (MarcaExibicao._decodificar(prefs.getString(_chaveCacheMarca(posicao))) case final marca?) posicao: marca,
       };
 
       notifyListeners();
@@ -178,8 +218,7 @@ class BrandingProvider with ChangeNotifier {
       if (_nomeEmpresa != null) await prefs.setString(_chaveCacheNome, _nomeEmpresa!);
       if (_marcaCarregada) {
         for (final posicao in _posicoesApp) {
-          final url = urlParaPosicao(posicao);
-          url == null ? await prefs.remove(_chaveCacheUrl(posicao)) : await prefs.setString(_chaveCacheUrl(posicao), url);
+          await prefs.setString(_chaveCacheMarca(posicao), marcaPara(posicao)!._codificada);
         }
       }
     } catch (e) {
@@ -194,7 +233,7 @@ class BrandingProvider with ChangeNotifier {
     // topo vazio por um instante do que a logo da loja errada.
     if (_empresaCache != null && _empresaCache != empresaId) {
       _nomeCache = null;
-      _urlsCache = {};
+      _marcasCache = {};
     }
     _carregando = true;
     notifyListeners();

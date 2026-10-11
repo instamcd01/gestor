@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/branding_provider.dart';
 import '../providers/modulo_provider.dart';
+import '../theme/app_theme.dart';
 import '../utils/app_destinos.dart';
 import 'inicio_screen.dart';
 import 'meu_perfil_screen.dart';
@@ -30,8 +31,8 @@ class _DrawerHomeShellState extends State<DrawerHomeShell> {
     // exemplo, só o nome no topo da tela inicial e o mascote no menu —
     // usar a mesma posição pras duas (como era antes) forçava a mesma
     // imagem nos dois lugares mesmo quando o usuário configurava diferente.
-    final logoTopo = branding.urlParaPosicao('app_inicio');
-    final logoMenu = branding.urlParaPosicao('app_drawer');
+    final marcaTopo = branding.marcaPara('app_inicio');
+    final marcaMenu = branding.marcaPara('app_drawer');
     final nomeEmpresa = branding.nomeParaExibir;
 
     return Scaffold(
@@ -42,15 +43,22 @@ class _DrawerHomeShellState extends State<DrawerHomeShell> {
         title: SizedBox(
           height: 44,
           width: 200,
-          child: logoTopo == null
-              ? Center(child: Text(nomeEmpresa ?? '', maxLines: 1, overflow: TextOverflow.ellipsis))
-              : CachedNetworkImage(
-                  imageUrl: logoTopo,
-                  fit: BoxFit.contain,
-                  fadeInDuration: Duration.zero,
-                  placeholderFadeInDuration: Duration.zero,
-                  placeholder: (_, __) => const SizedBox.shrink(),
-                ),
+          child: switch (marcaTopo) {
+            null => const SizedBox.shrink(),
+            // Nada configurado: logotipo INARI (branco, sobre o topo colorido).
+            MarcaExibicao(padrao: true) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Image.asset('lib/assets/images/inari_nome_branco.png', fit: BoxFit.contain),
+              ),
+            MarcaExibicao(url: final url?) => CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                fadeInDuration: Duration.zero,
+                placeholderFadeInDuration: Duration.zero,
+                placeholder: (_, __) => const SizedBox.shrink(),
+              ),
+            _ => Center(child: Text(nomeEmpresa ?? '', maxLines: 1, overflow: TextOverflow.ellipsis)),
+          },
         ),
         centerTitle: true,
         leading: IconButton(
@@ -58,12 +66,12 @@ class _DrawerHomeShellState extends State<DrawerHomeShell> {
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
       ),
-      drawer: _buildDrawer(context, colorScheme, logoMenu),
+      drawer: _buildDrawer(context, colorScheme, marcaMenu, nomeEmpresa),
       body: const InicioScreen(mostrarAppBar: false),
     );
   }
 
-  Widget _buildDrawer(BuildContext context, ColorScheme colorScheme, String? logoUrl) {
+  Widget _buildDrawer(BuildContext context, ColorScheme colorScheme, MarcaExibicao? marca, String? nome) {
     return Drawer(
       width: MediaQuery.of(context).size.width * 0.75,
       child: ListView(
@@ -76,8 +84,27 @@ class _DrawerHomeShellState extends State<DrawerHomeShell> {
             // ficava pequena demais com o tamanho antigo (64).
             height: 190,
             child: DrawerHeader(
-              decoration: BoxDecoration(color: colorScheme.primary),
-              child: Center(child: _logoOuIcone(logoUrl, colorScheme, tamanho: 130)),
+              // Padrão INARI: raposa + nome sobre o grafite da marca (sobre o
+              // laranja a raposa sumiria).
+              decoration: BoxDecoration(
+                color: marca?.padrao ?? false ? AppThemeDefaults.fundoLogo : colorScheme.primary,
+              ),
+              child: Center(
+                child: switch (marca) {
+                  null => const SizedBox.shrink(),
+                  MarcaExibicao(padrao: true) =>
+                    Image.asset('lib/assets/images/inari_horizontal_claro.png', height: 76, fit: BoxFit.contain),
+                  MarcaExibicao(url: final url?) => _logoOuIcone(url, colorScheme, tamanho: 130),
+                  _ => Text(
+                      nome ?? '',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(color: colorScheme.onPrimary, fontWeight: FontWeight.w700),
+                    ),
+                },
+              ),
             ),
           ),
           ...destinosVisiveis(context.watch<AuthProvider>().papel, context.watch<ModuloProvider>())

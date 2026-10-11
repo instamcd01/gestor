@@ -64,7 +64,7 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
 
   Widget _buildLayoutLargo(BuildContext context, {required bool extended}) {
     final colorScheme = Theme.of(context).colorScheme;
-    final logoUrl = context.watch<BrandingProvider>().urlParaPosicao('app_sidebar');
+    final marca = context.watch<BrandingProvider>().marcaPara('app_sidebar');
     final destinos = destinosVisiveis(context.watch<AuthProvider>().papel, context.watch<ModuloProvider>());
     // Defensivo: se o destino selecionado sumiu (papel mudou, módulo
     // desinstalado), volta pro primeiro em vez de estourar.
@@ -88,7 +88,22 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
             groupAlignment: 0.0,
             leading: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
-              child: _logoOuIcone(logoUrl, colorScheme, tamanho: 32),
+              child: switch (marca) {
+                null => const SizedBox(height: 32),
+                // Padrão INARI: raposa + nome com a barra aberta; só a raposa
+                // com ela recolhida (não cabe o nome). Letras grafite no tema
+                // claro, brancas no escuro.
+                MarcaExibicao(padrao: true) => extended
+                    ? Image.asset(
+                        Theme.of(context).brightness == Brightness.dark
+                            ? 'lib/assets/images/inari_horizontal_claro.png'
+                            : 'lib/assets/images/inari_horizontal_escuro.png',
+                        height: 40,
+                        fit: BoxFit.contain,
+                      )
+                    : Image.asset('lib/assets/images/inari_raposa.png', height: 32, fit: BoxFit.contain),
+                _ => _logoOuIcone(marca.url, colorScheme, tamanho: 32),
+              },
             ),
             // Fixo no rodapé (independente do groupAlignment acima) — usa o
             // espaço que sobraria vazio pra algo útil (conta/sair) em vez de
