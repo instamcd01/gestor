@@ -6,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/campanha_ativacao.dart';
+import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
+import '../providers/branding_provider.dart';
 import '../repositories/campanha_ativacao_repository.dart';
 import '../utils/planilha_utils.dart';
 import '../utils/produto_validators.dart';
@@ -100,9 +102,26 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   void initState() {
     super.initState();
     _mensagemPadraoAtual = widget.campanha.mensagemPadrao;
+    _carregarSiteLoja();
     _carregar();
     _carregarCamposCartao();
     _carregarEsconderEnviados();
+  }
+
+  /// Domínio do site da loja pros textos sugeridos — null (sem site
+  /// próprio) usa a versão das mensagens que não cita link.
+  String? _siteLoja;
+
+  Future<void> _carregarSiteLoja() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    try {
+      final data = await supabase.from('empresas').select('dominio_customizado').eq('id', empresaId).maybeSingle();
+      final dominio = (data?['dominio_customizado'] as String?)?.trim();
+      if (mounted && dominio != null && dominio.isNotEmpty) setState(() => _siteLoja = dominio);
+    } catch (e) {
+      debugPrint('Erro ao carregar site da loja: $e');
+    }
   }
 
   Future<void> _carregarEsconderEnviados() async {
@@ -366,6 +385,8 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   /// token `{produtos}` (se presente) é trocado pelos produtos DESSE
   /// contato — mesma ideia da saudação com o nome, só que pro produto.
   String _textoInicial({required String? nome, required String? perfil, List<String> produtosPendentes = const []}) {
+    final loja = context.read<BrandingProvider>().nomeEmpresa;
+    final site = _siteLoja;
     final padrao = _mensagemPadraoAtual;
     if (padrao != null && padrao.trim().isNotEmpty) {
       final corpo = (_personalizaPorProduto && produtosPendentes.isNotEmpty)
@@ -374,12 +395,12 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
       return '${_saudacao(nome)} $corpo';
     }
     if (widget.campanha.origemSistema == 'reativacao_brinde' && produtosPendentes.isNotEmpty) {
-      return _mensagemReativacaoBrinde(nome: nome, produtosBrinde: produtosPendentes);
+      return _mensagemReativacaoBrinde(nome: nome, produtosBrinde: produtosPendentes, site: site);
     }
     if (_personalizaPorProduto && produtosPendentes.isNotEmpty) {
-      return _mensagemProntosRecompra(nome: nome, produtos: produtosPendentes);
+      return _mensagemProntosRecompra(nome: nome, produtos: produtosPendentes, loja: loja);
     }
-    return _mensagemPadrao(nome: nome, perfil: perfil);
+    return _mensagemPadrao(nome: nome, perfil: perfil, loja: loja, site: site);
   }
 
   Future<void> _abrirWhatsApp(String telefone) async {
@@ -894,20 +915,27 @@ final _regexSaudacao = RegExp(r'^(Oi!|Oi, [^\n!]+!)');
 /// (vip/regular) e quem sumiu há mais de 90 dias (inativo) merecem tom
 /// diferente (ver discussão da migração Kyte: "sentimos sua falta" só faz
 /// sentido pra quem realmente sumiu).
-String _mensagemPadrao({required String? nome, required String? perfil}) {
+String _mensagemPadrao({required String? nome, required String? perfil, required String loja, String? site}) {
   final saudacao = _saudacao(nome);
+  if (site == null) {
+    return perfil == 'inativo'
+        ? '$saudacao Aqui é da $loja 🐾 Faz um tempinho que a gente não se fala! Precisando de alguma coisa pro seu '
+            'pet, é só responder por aqui 🐶🐱'
+        : '$saudacao Aqui é da $loja 🐾 Passando pra lembrar que estamos por aqui pro que o seu pet precisar. '
+            'É só responder esta mensagem!';
+  }
   switch (perfil) {
     case 'vip':
-      return '$saudacao Aqui é da Delivery Pet 🐾 Você é um dos nossos clientes mais fiéis, por isso quero te contar '
+      return '$saudacao Aqui é da $loja 🐾 Você é um dos nossos clientes mais fiéis, por isso quero te contar '
           'em primeira mão: agora dá pra pedir pelo nosso site novo, com Pix e acompanhamento em tempo real: '
-          'deliverypetexpress.com.br';
+          '$site';
     case 'inativo':
-      return '$saudacao Aqui é da Delivery Pet 🐾 Faz um tempinho que a gente não se fala! Ficamos com site novo, '
-          'bem mais prático — catálogo completo, Pix e acompanhamento do pedido: deliverypetexpress.com.br '
+      return '$saudacao Aqui é da $loja 🐾 Faz um tempinho que a gente não se fala! Ficamos com site novo, '
+          'bem mais prático — catálogo completo, Pix e acompanhamento do pedido: $site '
           'Dá uma olhada quando puder 🐶🐱';
     default:
-      return '$saudacao Aqui é da Delivery Pet 🐾 Agora você pode fazer seu pedido pelo nosso site novo, com Pix e '
-          'acompanhamento em tempo real: deliverypetexpress.com.br';
+      return '$saudacao Aqui é da $loja 🐾 Agora você pode fazer seu pedido pelo nosso site novo, com Pix e '
+          'acompanhamento em tempo real: $site';
   }
 }
 
@@ -929,10 +957,10 @@ String _fraseProdutos(List<String> produtos) {
 /// Sugestão pra campanha "Prontos pra recompra" — cita os produtos vencidos
 /// desse contato (só os nomes; os dias/ciclo ficam só na nota interna, ver
 /// [ContatoCampanha.mensagemPersonalizada]) e puxa pro "Comprar novamente".
-String _mensagemProntosRecompra({required String? nome, required List<String> produtos}) {
+String _mensagemProntosRecompra({required String? nome, required List<String> produtos, required String loja}) {
   final listaProdutos = _fraseProdutos(produtos);
   final plural = produtos.length > 1;
-  return '${_saudacao(nome)} Aqui é da Delivery Pet 🐾 Notei que $listaProdutos do seu pet '
+  return '${_saudacao(nome)} Aqui é da $loja 🐾 Notei que $listaProdutos do seu pet '
       '${plural ? 'devem' : 'deve'} estar acabando. Quer que eu repita seu último pedido do jeitinho que ficou '
       'da última vez?';
 }
@@ -950,14 +978,15 @@ const _validadeCupomTodevolta = '26/09';
 /// validada com pesquisa de marketing: 18/09). Sem sinal claro de espécie
 /// (ou espécie mista no histórico), `produtosBrinde` vem com os 2 nomes e
 /// cai na versão "escolha um dos dois".
-String _mensagemReativacaoBrinde({required String? nome, required List<String> produtosBrinde}) {
+String _mensagemReativacaoBrinde({required String? nome, required List<String> produtosBrinde, String? site}) {
   final saudacao = _saudacao(nome);
+  final link = site == null ? '' : '👉 $site\n\n';
   if (produtosBrinde.length == 1) {
     return '$saudacao Tudo bem? 🐾\n\n'
         'Faz um tempo que você não aparece por aqui, então a gente separou um *mimo* pra você na sua volta. 😊\n\n'
         'No seu próximo pedido, *${produtosBrinde.first}* fica *por nossa conta* em compras a partir de *R\$99*.\n\n'
         'É só adicionar ao carrinho e usar o cupom *TODEVOLTA*.\n\n'
-        '👉 deliverypetexpress.com.br\n\n'
+        '$link'
         '*Válido até $_validadeCupomTodevolta.*';
   }
   final opcoes = produtosBrinde.asMap().entries.map((e) {
@@ -969,7 +998,7 @@ String _mensagemReativacaoBrinde({required String? nome, required List<String> p
       'Faz um tempo que você não aparece por aqui, então a gente separou um *mimo* pra você na sua volta. 😊\n\n'
       'Você pode escolher um desses dois:\n$opcoes\n\n'
       'É só adicionar o escolhido ao carrinho e usar o cupom *TODEVOLTA* — fica *por nossa conta* em pedidos a partir de *R\$99*.\n\n'
-      '👉 deliverypetexpress.com.br\n\n'
+      '$link'
       '*Válido até $_validadeCupomTodevolta.*';
 }
 

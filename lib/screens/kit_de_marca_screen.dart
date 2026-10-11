@@ -7,11 +7,12 @@ import 'package:provider/provider.dart';
 
 import '../models/marca_ativo.dart';
 import '../providers/branding_provider.dart';
-import '../widgets/aviso_banner.dart';
 import '../widgets/form_section.dart';
 
 const _tiposUnicos = ['logo_completa', 'logo_slogan', 'nome_loja_imagem'];
-const _posicoes = ['site_header', 'site_sidebar', 'app_inicio', 'app_drawer', 'app_sidebar', 'app_login'];
+// Sem 'app_login': a tela de login é sempre da INARI (antes de entrar não
+// dá pra saber qual é a loja).
+const _posicoes = ['site_header', 'site_sidebar', 'app_inicio', 'app_drawer', 'app_sidebar'];
 
 /// Kit de marca da empresa — aba "Kit de Marca" de
 /// `AparenciaMarcaHubScreen`: galeria de imagens (mascote com variações,
@@ -204,13 +205,6 @@ class _KitDeMarcaScreenState extends State<KitDeMarcaScreen> {
           const SizedBox(height: 24),
 
           Text('Onde aparece', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          const AvisoBanner(
-            tipo: TipoAviso.alerta,
-            texto: 'A tela de login é única pra todo o sistema (ainda não dá pra saber qual loja é antes '
-                'de entrar) — por enquanto ela mostra a mesma imagem pra qualquer empresa que configurar essa '
-                'posição. Não é um problema hoje, mas não escala se mais de uma loja usar esse recurso ao mesmo tempo.',
-          ),
           const SizedBox(height: 8),
           Card(
             margin: EdgeInsets.zero,

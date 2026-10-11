@@ -62,9 +62,9 @@ class BrandingProvider with ChangeNotifier {
   LayoutNavegacao get layoutNavegacao => _modelo?.layoutNavegacao ?? _layoutCache ?? LayoutNavegacao.drawer;
 
   /// Nome da empresa — fallback textual pra qualquer posição em modo
-  /// "texto" ('Gestor' só se ainda não carregou/sem empresa, nunca deveria
+  /// "texto" ('INARI' só se ainda não carregou/sem empresa, nunca deveria
   /// aparecer de verdade pro usuário final).
-  String get nomeEmpresa => _nomeEmpresa ?? 'Gestor';
+  String get nomeEmpresa => _nomeEmpresa ?? 'INARI';
 
   List<MarcaAtivo> get ativosDeMarca => _ativos;
   List<MarcaAtivo> ativosDeMarcaPorTipo(String tipo) => _ativos.where((a) => a.tipo == tipo).toList();

@@ -1,6 +1,6 @@
 {
-    "name": "gestor",
-    "short_name": "gestor",
+    "name": "INARI",
+    "short_name": "INARI",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

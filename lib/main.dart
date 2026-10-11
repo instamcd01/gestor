@@ -82,7 +82,7 @@ class MyApp extends StatelessWidget {
       child: Consumer<BrandingProvider>(
         builder: (context, branding, _) {
           return MaterialApp(
-            title: 'Gestor',
+            title: 'INARI',
             theme: branding.temaClaro,
             darkTheme: branding.temaEscuro,
             themeMode: branding.temaModo,

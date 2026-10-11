@@ -1,7 +1,5 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../config/supabase_config.dart';
 import '../../providers/auth_provider.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -18,32 +16,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _modoCadastro = false;
   bool _carregando = false;
   bool _mostrarSenha = false;
-
-  // Kit de Marca > "Tela de login" — busca ANTES de qualquer autenticação
-  // (view `app_login_marca_publico`, legível por `anon`). Só existe 1
-  // empresa de verdade usando isso hoje, então a view devolve a config
-  // dela direto, sem precisar saber quem vai logar. null = mantém o
-  // logo genérico da plataforma (asset local).
-  String? _logoConfigurado;
-
-  @override
-  void initState() {
-    super.initState();
-    _carregarLogoConfigurado();
-  }
-
-  Future<void> _carregarLogoConfigurado() async {
-    try {
-      final data = await supabase.from('app_login_marca_publico').select().maybeSingle();
-      if (data == null || data['modo'] != 'imagem') return;
-      final url = data['url'] as String?;
-      if (mounted && url != null) setState(() => _logoConfigurado = url);
-    } catch (e) {
-      debugPrint('Erro ao buscar logo configurado pro login: $e');
-      // Mantém o logo genérico — tela de login nunca deve travar por causa
-      // de personalização visual.
-    }
-  }
 
   @override
   void dispose() {
@@ -135,18 +107,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // Login é sempre da plataforma (antes de entrar não dá
+                          // pra saber a loja). Nome em texto até a INARI ter logo.
                           Center(
-                            child: SizedBox(
-                              width: 200,
-                              height: 200,
-                              child: _logoConfigurado != null
-                                  ? CachedNetworkImage(
-                                      imageUrl: _logoConfigurado!,
-                                      fit: BoxFit.contain,
-                                      errorWidget: (_, __, ___) =>
-                                          Image.asset('lib/assets/images/logo.png', fit: BoxFit.contain),
-                                    )
-                                  : Image.asset('lib/assets/images/logo.png', fit: BoxFit.contain),
+                            child: Text(
+                              'INARI',
+                              style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 6,
+                                    color: colorScheme.primary,
+                                  ),
                             ),
                           ),
                           const SizedBox(height: 28),

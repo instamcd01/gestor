@@ -19,7 +19,7 @@ class NotificacaoDesktopService {
     try {
       // No Windows o toast exige um atalho no Menu Iniciar com o ID do app;
       // requireCreate cria na primeira vez.
-      await localNotifier.setup(appName: 'Gestor', shortcutPolicy: ShortcutPolicy.requireCreate);
+      await localNotifier.setup(appName: 'INARI', shortcutPolicy: ShortcutPolicy.requireCreate);
       provider.novas.listen((n) {
         LocalNotification(title: n.titulo, body: n.mensagem).show();
       });

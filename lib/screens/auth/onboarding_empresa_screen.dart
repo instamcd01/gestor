@@ -137,7 +137,7 @@ class _OnboardingEmpresaScreenState extends State<OnboardingEmpresaScreen> {
                       onChanged: (_) => setState(() {}),
                       decoration: const InputDecoration(
                         labelText: 'Nome da empresa',
-                        hintText: 'Ex: Delivery Pet',
+                        hintText: 'Ex: Pet Shop Amigo',
                         prefixIcon: Icon(Icons.badge_outlined),
                       ),
                     ),

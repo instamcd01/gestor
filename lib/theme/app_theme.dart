@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Cores padrão do app, baseadas na identidade visual da Delivery Pet.
+/// Cores padrão do app (tema de fábrica da INARI — a loja pode trocar pelas
+/// dela em Aparência e Marca).
 /// Usadas como fallback antes de carregar o branding da empresa (tenant)
 /// vindo do Supabase, e como valor inicial pra novas empresas no SaaS.
 class AppThemeDefaults {

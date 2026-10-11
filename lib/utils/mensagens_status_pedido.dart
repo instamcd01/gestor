@@ -115,7 +115,7 @@ String mensagemPedidoAvaliacaoGoogle(String link) => [
       'Muito obrigada! ❤️',
     ].join('\n\n');
 
-String _nomeLoja(String? nome) => (nome == null || nome.trim().isEmpty || nome == 'Gestor') ? 'nossa loja' : nome.trim();
+String _nomeLoja(String? nome) => (nome == null || nome.trim().isEmpty || nome == 'Gestor' || nome == 'INARI') ? 'nossa loja' : nome.trim();
 
 String _previsaoParaPendente(Venda venda) {
   if (venda.retirada) return 'Assim que estiver pronto, te aviso pra retirar';
