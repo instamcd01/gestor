@@ -4,5 +4,5 @@
          no app de cliente (gestor-loja/android), pra manter os dois
          visualmente consistentes. -->
     <color name="notification_color">#2C9FE0</color>
-	<color name="ic_launcher_background">#1B191F</color>
+	<color name="ic_launcher_background">#1E1E24</color>
 </resources>

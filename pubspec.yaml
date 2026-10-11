@@ -107,10 +107,10 @@ flutter:
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
-# Identidade INARI — fundo = grafite da arte da logo (#1B191F), não o
-# #1E1E24 da paleta, pra raposa não ficar com "moldura" de outro tom.
+# Identidade INARI — fundo = grafite da paleta (#1E1E24), igual ao da arte
+# do ícone (assets_icone/), pra raposa não ficar com "moldura" de outro tom.
 flutter_native_splash:
-  color: "#1B191F"
+  color: "#1E1E24"
   image: assets_icone/inari_icone_frente.png
   android: true
   ios: true
@@ -118,24 +118,24 @@ flutter_native_splash:
   ios_content_mode: center
   android_12:
     image: assets_icone/inari_icone_frente.png
-    color: "#1B191F"
-    icon_background_color: "#1B191F"
+    color: "#1E1E24"
+    icon_background_color: "#1E1E24"
 
 # Ícone do app: `dart run flutter_launcher_icons` (fontes em assets_icone/,
 # fora dos assets do app de propósito).
 flutter_launcher_icons:
   image_path: "assets_icone/inari_icone.png"
   android: true
-  adaptive_icon_background: "#1B191F"
+  adaptive_icon_background: "#1E1E24"
   adaptive_icon_foreground: "assets_icone/inari_icone_frente.png"
-  # A raposa já vem com margem (58% da arte); sem isso o gerador soma +16%.
+  # A raposa já vem com margem (43% da arte); sem isso o gerador soma +16%.
   adaptive_icon_foreground_inset: 0
   ios: true
   remove_alpha_ios: true
   web:
     generate: true
     image_path: "assets_icone/inari_icone.png"
-    background_color: "#1B191F"
+    background_color: "#1E1E24"
     theme_color: "#E4572E"
   windows:
     generate: true
