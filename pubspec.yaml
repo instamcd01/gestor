@@ -139,7 +139,7 @@ flutter_launcher_icons:
     generate: true
     image_path: "assets_icone/inari_icone.png"
     background_color: "#1E1E24"
-    theme_color: "#E4572E"
+    theme_color: "#E84C1C"
   windows:
     generate: true
     image_path: "assets_icone/inari_icone.png"

@@ -7,7 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 /// vindo do Supabase, e como valor inicial pra novas empresas no SaaS.
 class AppThemeDefaults {
   // Identidade INARI: vermelho-raposa (principal) e dourado (detalhe).
-  static const String corPrimaria = '#E4572E';
+  static const String corPrimaria = '#E84C1C';
   static const String corSecundaria = '#C9A227';
   // Grafite da paleta (#1E1E24) — fundo da tela de login e da abertura.
   static const Color fundoLogo = Color(0xFF1E1E24);
