@@ -164,6 +164,11 @@ class BrandingProvider with ChangeNotifier {
         radiusFab: _modelo?.radiusFab ?? 16,
         cardElevado: _modelo?.cardElevado ?? false,
         densidadeCompacta: _modelo?.densidadeCompacta ?? false,
+        // Tema de fábrica INARI (loja não escolheu cor própria): barra do
+        // topo grafite. Com cor própria, a barra segue a cor da loja.
+        corTopo: AppTheme.colorParaHex(corPrimaria).toUpperCase() == AppThemeDefaults.corPrimaria.toUpperCase()
+            ? AppThemeDefaults.fundoLogo
+            : null,
       );
 
   /// Restaura, a partir do cache local deste aparelho, a cor/tema/layout do

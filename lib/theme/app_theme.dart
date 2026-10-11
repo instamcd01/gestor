@@ -28,6 +28,9 @@ class AppTheme {
     double radiusFab = 16,
     bool cardElevado = false,
     bool densidadeCompacta = false,
+    // Fundo da barra do topo. null = cor principal (loja que escolheu a
+    // própria cor); no tema de fábrica INARI vem o grafite da marca.
+    Color? corTopo,
   }) {
     final isDark = brightness == Brightness.dark;
 
@@ -80,8 +83,9 @@ class AppTheme {
         // Cor cheia da marca (mesma dos botões/chip selecionado), não o
         // fundo neutro que o Material 3 usaria por padrão — pedido explícito
         // pra manter o topo de cada tela com a cor de marca em destaque.
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
+        // Exceção: tema de fábrica INARI usa o grafite (`corTopo`).
+        backgroundColor: corTopo ?? colorScheme.primary,
+        foregroundColor: corTopo == null ? colorScheme.onPrimary : _corContrastante(corTopo),
         elevation: 0,
         scrolledUnderElevation: 1,
         centerTitle: false,
@@ -197,8 +201,9 @@ class AppTheme {
       // já calculada pra ter contraste garantido contra colorScheme.primary.
       tabBarTheme: TabBarThemeData(
         indicatorColor: colorScheme.secondary,
-        labelColor: colorScheme.onPrimary,
-        unselectedLabelColor: colorScheme.onPrimary.withValues(alpha: 0.7),
+        labelColor: corTopo == null ? colorScheme.onPrimary : _corContrastante(corTopo),
+        unselectedLabelColor:
+            (corTopo == null ? colorScheme.onPrimary : _corContrastante(corTopo)).withValues(alpha: 0.7),
       ),
     );
   }
