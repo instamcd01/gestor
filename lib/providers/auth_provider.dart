@@ -93,7 +93,16 @@ class AuthProvider with ChangeNotifier {
   Future<bool> cadastrar(String email, String senha) async {
     _erro = null;
     try {
-      await supabase.auth.signUp(email: email, password: senha);
+      final resposta = await supabase.auth.signUp(email: email, password: senha);
+      // E-mail que já tem conta: o Supabase não manda e-mail nenhum e
+      // responde "sucesso" com a lista de identidades vazia (pra não revelar
+      // quem é cadastrado). Sem isso o app dizia "Conta criada! Verifique
+      // seu e-mail" e o e-mail nunca chegava.
+      if (resposta.user?.identities?.isEmpty ?? false) {
+        _erro = 'Este e-mail já tem uma conta. Use "Já tenho uma conta — entrar".';
+        notifyListeners();
+        return false;
+      }
       return true;
     } on AuthException catch (e) {
       _erro = e.message;

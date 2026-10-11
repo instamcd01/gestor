@@ -71,34 +71,8 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: AppThemeDefaults.fundoLogo,
       body: Stack(
         children: [
-          // Fundo em degradê + brilhos ambiente: a tela de login roda
-          // sempre no tema escuro (ver BrandingProvider._temaModo padrão),
-          // já que é a primeira impressão do app e ainda não há empresa
-          // logada pra definir o tema real.
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    AppThemeDefaults.fundoLogo,
-                    Color.lerp(AppThemeDefaults.fundoLogo, Colors.black, 0.35)!,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: -90,
-            right: -70,
-            child: _BrilhoAmbiente(cor: colorScheme.primary, tamanho: 260),
-          ),
-          Positioned(
-            bottom: -110,
-            left: -90,
-            child: _BrilhoAmbiente(cor: colorScheme.secondary, tamanho: 280),
-          ),
+          // Fundo sólido grafite (o do Scaffold), igual ao da marca e ao da
+          // tela de abertura — sem degradê nem brilhos (pedido do usuário).
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -228,31 +202,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Brilho ambiente decorativo (glow) usado no fundo da tela de login,
-/// pra dar profundidade ao tema escuro sem depender de assets extras.
-class _BrilhoAmbiente extends StatelessWidget {
-  const _BrilhoAmbiente({required this.cor, required this.tamanho});
-
-  final Color cor;
-  final double tamanho;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        width: tamanho,
-        height: tamanho,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [cor.withValues(alpha: 0.28), cor.withValues(alpha: 0)],
-          ),
-        ),
       ),
     );
   }
