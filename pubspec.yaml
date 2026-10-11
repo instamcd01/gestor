@@ -111,15 +111,18 @@ flutter:
 # do ícone (assets_icone/), pra raposa não ficar com "moldura" de outro tom.
 flutter_native_splash:
   color: "#1E1E24"
-  image: assets_icone/inari_icone_frente.png
+  image: assets_icone/inari_abertura.png
   android: true
   ios: true
   android_gravity: center
   ios_content_mode: center
+  # Android 12+ só mostra um ícone dentro de um círculo (cortaria o nome):
+  # raposa no centro + "INARI" na faixa de marca embaixo.
   android_12:
     image: assets_icone/inari_icone_frente.png
     color: "#1E1E24"
     icon_background_color: "#1E1E24"
+    branding: assets_icone/inari_nome.png
 
 # Ícone do app: `dart run flutter_launcher_icons` (fontes em assets_icone/,
 # fora dos assets do app de propósito).

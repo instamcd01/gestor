@@ -125,17 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           // Login é sempre da plataforma (antes de entrar não dá
                           // pra saber a loja).
                           Center(
-                            child: Image.asset('lib/assets/images/inari_logo.png', width: 150, height: 150),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'INARI',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 8,
-                                  color: colorScheme.onSurface,
-                                ),
+                            child: Image.asset('lib/assets/images/inari_marca.png', width: 170),
                           ),
                           const SizedBox(height: 28),
                           Text(

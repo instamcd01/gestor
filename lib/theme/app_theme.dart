@@ -9,9 +9,8 @@ class AppThemeDefaults {
   // Identidade INARI: vermelho-raposa (principal) e dourado (detalhe).
   static const String corPrimaria = '#E4572E';
   static const String corSecundaria = '#C9A227';
-  // Grafite do fundo da arte da logo (#1B191F, um pouco diferente do
-  // #1E1E24 da paleta) — usado atrás da logo pra ela se fundir sem borda.
-  static const Color fundoLogo = Color(0xFF1B191F);
+  // Grafite da paleta (#1E1E24) — fundo da tela de login e da abertura.
+  static const Color fundoLogo = Color(0xFF1E1E24);
 }
 
 /// Monta um ThemeData completo (Material 3) a partir das cores de marca
