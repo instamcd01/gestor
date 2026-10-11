@@ -140,8 +140,10 @@ flutter_launcher_icons:
     image_path: "assets_icone/inari_icone.png"
     background_color: "#1E1E24"
     theme_color: "#E84C1C"
+  # Windows: o gerador só grava 256px; o .ico com 16-256px (barra de
+  # tarefas/título nítidos) é gerado à parte a partir de assets_icone/inari_icone.png.
   windows:
-    generate: true
+    generate: false
     image_path: "assets_icone/inari_icone.png"
     icon_size: 256
   # An image asset can refer to one or more resolution-specific "variants", see
