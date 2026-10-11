@@ -14,6 +14,12 @@ const _chaveCacheCorPrimaria = 'branding_cache_cor_primaria';
 const _chaveCacheCorSecundaria = 'branding_cache_cor_secundaria';
 const _chaveCacheTema = 'branding_cache_tema';
 const _chaveCacheLayoutSidebar = 'branding_cache_layout_sidebar';
+const _chaveCacheEmpresa = 'branding_cache_empresa_id';
+const _chaveCacheNome = 'branding_cache_nome';
+// Posições de imagem do próprio app guardadas no cache (as do site não
+// importam aqui).
+const _posicoesApp = ['app_inicio', 'app_drawer', 'app_sidebar'];
+String _chaveCacheUrl(String posicao) => 'branding_cache_url_$posicao';
 
 /// Controla a identidade visual da empresa logada: qual modelo/tema
 /// (`ModeloVisual`) ela escolheu, mais a personalização por cima (cor
@@ -55,6 +61,15 @@ class BrandingProvider with ChangeNotifier {
   // de "pular" pra cor real da empresa.
   LayoutNavegacao? _layoutCache;
 
+  // Mesmo motivo, pro nome e as logos do topo/menu: sem isso a abertura
+  // mostrava "INARI" → nome em texto → logo deslocada → logo no lugar.
+  // Só valem enquanto o Kit de Marca real não chegou (`_marcaCarregada`),
+  // e só se forem da MESMA loja (ver `carregarBranding`).
+  String? _empresaCache;
+  String? _nomeCache;
+  Map<String, String> _urlsCache = {};
+  bool _marcaCarregada = false;
+
   ModeloVisual? get modelo => _modelo;
   List<ModeloVisual> get modelosDisponiveis => _modelosDisponiveis;
   ThemeMode get temaModo => _temaModo;
@@ -66,6 +81,11 @@ class BrandingProvider with ChangeNotifier {
   /// aparecer de verdade pro usuário final).
   String get nomeEmpresa => _nomeEmpresa ?? 'INARI';
 
+  /// Nome pro topo/menu: o carregado, senão o do cache deste aparelho, senão
+  /// null (primeiro uso) — quem mostra deixa vazio em vez de exibir "INARI"
+  /// e trocar logo depois.
+  String? get nomeParaExibir => _nomeEmpresa ?? _nomeCache;
+
   List<MarcaAtivo> get ativosDeMarca => _ativos;
   List<MarcaAtivo> ativosDeMarcaPorTipo(String tipo) => _ativos.where((a) => a.tipo == tipo).toList();
   MarcaPosicao? posicaoDeMarca(String posicao) => _posicoes[posicao];
@@ -73,6 +93,7 @@ class BrandingProvider with ChangeNotifier {
   /// URL da imagem configurada pra essa posição — null quando o modo é
   /// "texto" (mostrar o nome da empresa) ou nada foi configurado ainda.
   String? urlParaPosicao(String posicao) {
+    if (!_marcaCarregada) return _urlsCache[posicao];
     final p = _posicoes[posicao];
     if (p == null || p.modo != 'imagem' || p.ativoId == null) return null;
     for (final ativo in _ativos) {
@@ -127,6 +148,13 @@ class BrandingProvider with ChangeNotifier {
       final layoutSidebar = prefs.getBool(_chaveCacheLayoutSidebar);
       if (layoutSidebar != null) _layoutCache = layoutSidebar ? LayoutNavegacao.sidebar : LayoutNavegacao.drawer;
 
+      _empresaCache = prefs.getString(_chaveCacheEmpresa);
+      _nomeCache = prefs.getString(_chaveCacheNome);
+      _urlsCache = {
+        for (final posicao in _posicoesApp)
+          if (prefs.getString(_chaveCacheUrl(posicao)) case final url?) posicao: url,
+      };
+
       notifyListeners();
     } catch (e) {
       debugPrint('Erro ao carregar cache local de branding: $e');
@@ -146,6 +174,14 @@ class BrandingProvider with ChangeNotifier {
       await prefs.setString(_chaveCacheCorSecundaria, AppTheme.colorParaHex(corSecundaria));
       await prefs.setString(_chaveCacheTema, _temaModoToString(_temaModo));
       await prefs.setBool(_chaveCacheLayoutSidebar, layoutNavegacao == LayoutNavegacao.sidebar);
+      if (_empresaId != null) await prefs.setString(_chaveCacheEmpresa, _empresaId!);
+      if (_nomeEmpresa != null) await prefs.setString(_chaveCacheNome, _nomeEmpresa!);
+      if (_marcaCarregada) {
+        for (final posicao in _posicoesApp) {
+          final url = urlParaPosicao(posicao);
+          url == null ? await prefs.remove(_chaveCacheUrl(posicao)) : await prefs.setString(_chaveCacheUrl(posicao), url);
+        }
+      }
     } catch (e) {
       debugPrint('Erro ao salvar cache local de branding: $e');
     }
@@ -154,29 +190,38 @@ class BrandingProvider with ChangeNotifier {
   /// Busca o branding salvo da empresa e o catálogo de modelos disponíveis.
   Future<void> carregarBranding(String empresaId) async {
     _empresaId = empresaId;
+    // Cache de outra loja (outro login neste aparelho) não serve: melhor
+    // topo vazio por um instante do que a logo da loja errada.
+    if (_empresaCache != null && _empresaCache != empresaId) {
+      _nomeCache = null;
+      _urlsCache = {};
+    }
     _carregando = true;
     notifyListeners();
 
     try {
+      // Tudo é buscado ANTES de aplicar: aplicar o nome antes das imagens
+      // deixava o topo num estado intermediário (nome em texto) sempre que
+      // outro provider redesenhava a tela no meio do carregamento.
       final data = await supabase
           .from('empresas')
           .select('nome, cor_primaria, cor_secundaria, tema_preferido, modelo_visual_id')
           .eq('id', empresaId)
           .single();
-
-      _nomeEmpresa = data['nome']?.toString();
-      _corPrimariaOverride = data['cor_primaria'] != null ? AppTheme.hexParaColor(data['cor_primaria']) : null;
-      _corSecundariaOverride = data['cor_secundaria'] != null ? AppTheme.hexParaColor(data['cor_secundaria']) : null;
-      _temaModo = _temaModoFromString(data['tema_preferido']);
-
       final resultados = await Future.wait([
         _modeloRepository.listarAtivos(),
         _marcaRepository.listarAtivos(),
         _marcaRepository.listarPosicoes(),
       ]);
+
+      _nomeEmpresa = data['nome']?.toString();
+      _corPrimariaOverride = data['cor_primaria'] != null ? AppTheme.hexParaColor(data['cor_primaria']) : null;
+      _corSecundariaOverride = data['cor_secundaria'] != null ? AppTheme.hexParaColor(data['cor_secundaria']) : null;
+      _temaModo = _temaModoFromString(data['tema_preferido']);
       _modelosDisponiveis = resultados[0] as List<ModeloVisual>;
       _ativos = resultados[1] as List<MarcaAtivo>;
       _posicoes = {for (final p in resultados[2] as List<MarcaPosicao>) p.posicao: p};
+      _marcaCarregada = true;
 
       final modeloVisualId = data['modelo_visual_id'] as String?;
       ModeloVisual? modeloEncontrado;
@@ -303,6 +348,7 @@ class BrandingProvider with ChangeNotifier {
     _ativos = resultados[0] as List<MarcaAtivo>;
     _posicoes = {for (final p in resultados[1] as List<MarcaPosicao>) p.posicao: p};
     notifyListeners();
+    unawaited(_salvarCacheLocal());
   }
 
   /// Atualiza a preferência de tema claro/escuro/sistema.

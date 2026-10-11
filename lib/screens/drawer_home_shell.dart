@@ -32,14 +32,26 @@ class _DrawerHomeShellState extends State<DrawerHomeShell> {
     // imagem nos dois lugares mesmo quando o usuário configurava diferente.
     final logoTopo = branding.urlParaPosicao('app_inicio');
     final logoMenu = branding.urlParaPosicao('app_drawer');
-    final nomeEmpresa = branding.nomeEmpresa;
+    final nomeEmpresa = branding.nomeParaExibir;
 
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
-        title: logoTopo == null
-            ? Text(nomeEmpresa)
-            : CachedNetworkImage(imageUrl: logoTopo, height: 44, fit: BoxFit.contain),
+        // Espaço de tamanho fixo: com a largura da imagem desconhecida até
+        // ela baixar, o AppBar calculava o centro errado e a logo "pulava".
+        title: SizedBox(
+          height: 44,
+          width: 200,
+          child: logoTopo == null
+              ? Center(child: Text(nomeEmpresa ?? '', maxLines: 1, overflow: TextOverflow.ellipsis))
+              : CachedNetworkImage(
+                  imageUrl: logoTopo,
+                  fit: BoxFit.contain,
+                  fadeInDuration: Duration.zero,
+                  placeholderFadeInDuration: Duration.zero,
+                  placeholder: (_, __) => const SizedBox.shrink(),
+                ),
+        ),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.menu),
