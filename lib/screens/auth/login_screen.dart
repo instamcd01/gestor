@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -51,9 +52,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Login é sempre da INARI (antes de entrar não se sabe a loja): tema
+    // próprio, escuro, sem herdar as cores da última loja deste aparelho.
+    return Theme(
+      data: AppTheme.build(
+        corPrimaria: AppTheme.hexParaColor(AppThemeDefaults.corPrimaria),
+        corSecundaria: AppTheme.hexParaColor(AppThemeDefaults.corSecundaria),
+        brightness: Brightness.dark,
+      ),
+      child: Builder(builder: _conteudo),
+    );
+  }
+
+  Widget _conteudo(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: AppThemeDefaults.fundoLogo,
       body: Stack(
         children: [
           // Fundo em degradê + brilhos ambiente: a tela de login roda
@@ -67,8 +82,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    colorScheme.surfaceContainerLowest,
-                    colorScheme.surface,
+                    AppThemeDefaults.fundoLogo,
+                    Color.lerp(AppThemeDefaults.fundoLogo, Colors.black, 0.35)!,
                   ],
                 ),
               ),
@@ -108,16 +123,19 @@ class _LoginScreenState extends State<LoginScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           // Login é sempre da plataforma (antes de entrar não dá
-                          // pra saber a loja). Nome em texto até a INARI ter logo.
+                          // pra saber a loja).
                           Center(
-                            child: Text(
-                              'INARI',
-                              style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 6,
-                                    color: colorScheme.primary,
-                                  ),
-                            ),
+                            child: Image.asset('lib/assets/images/inari_logo.png', width: 150, height: 150),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'INARI',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 8,
+                                  color: colorScheme.onSurface,
+                                ),
                           ),
                           const SizedBox(height: 28),
                           Text(
