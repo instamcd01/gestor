@@ -7,9 +7,9 @@ import '../config/supabase_config.dart';
 import '../models/venda.dart';
 import '../providers/auth_provider.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../providers/metodos_pagamento_provider.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
-import 'opcoes_pagamento_screen.dart' show metodosPagamentoDisponiveis;
 
 class _OpcaoParcela {
   final int parcelas;
@@ -47,7 +47,6 @@ class _AlterarFormaPagamentoScreenState extends State<AlterarFormaPagamentoScree
 
   bool _carregandoConfig = true;
   bool _salvando = false;
-  List<String> _metodosAtivos = List.from(metodosPagamentoDisponiveis);
   Map<String, dynamic> _taxasParcelamento = {};
   double _valorMinimoParcela = 5;
 
@@ -63,6 +62,7 @@ class _AlterarFormaPagamentoScreenState extends State<AlterarFormaPagamentoScree
     _metodoSelecionado = widget.venda.metodoPagamento;
     _parcelaEscolhida = widget.venda.parcelasCartao ?? 1;
     _carregarConfig();
+    context.read<MetodosPagamentoProvider>().carregar();
   }
 
   @override
@@ -77,13 +77,11 @@ class _AlterarFormaPagamentoScreenState extends State<AlterarFormaPagamentoScree
       if (empresaId == null) return;
       final data = await supabase
           .from('empresas')
-          .select('metodos_pagamento_ativos, taxas_parcelamento, valor_minimo_parcela')
+          .select('taxas_parcelamento, valor_minimo_parcela')
           .eq('id', empresaId)
           .maybeSingle();
       if (!mounted) return;
-      final metodos = (data?['metodos_pagamento_ativos'] as List?)?.map((m) => m.toString()).toList();
       setState(() {
-        if (metodos != null && metodos.isNotEmpty) _metodosAtivos = metodos;
         _taxasParcelamento = (data?['taxas_parcelamento'] as Map<String, dynamic>?) ?? {};
         _valorMinimoParcela = (data?['valor_minimo_parcela'] as num?)?.toDouble() ?? 5;
       });
@@ -95,7 +93,8 @@ class _AlterarFormaPagamentoScreenState extends State<AlterarFormaPagamentoScree
     }
   }
 
-  List<Map<String, dynamic>> get _opcoesMetodo => _metodosAtivos
+  // Ordem da loja vem do provider (cache), igual à tela de pagamento da venda.
+  List<Map<String, dynamic>> _opcoesMetodo(List<String> metodosAtivos) => metodosAtivos
       .where((metodo) => _iconesPorMetodo.containsKey(metodo))
       .map((metodo) => {'metodo': metodo, 'icone': _iconesPorMetodo[metodo]!})
       .toList();
@@ -186,10 +185,12 @@ class _AlterarFormaPagamentoScreenState extends State<AlterarFormaPagamentoScree
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final metodosAtivos = context.watch<MetodosPagamentoProvider>().metodos;
+    final opcoesMetodo = metodosAtivos == null ? const <Map<String, dynamic>>[] : _opcoesMetodo(metodosAtivos);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Alterar Forma de Pagamento')),
-      body: _carregandoConfig
+      body: _carregandoConfig || metodosAtivos == null
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -218,10 +219,10 @@ class _AlterarFormaPagamentoScreenState extends State<AlterarFormaPagamentoScree
                       mainAxisSpacing: 10,
                       childAspectRatio: 0.9,
                     ),
-                    itemCount: _opcoesMetodo.length,
+                    itemCount: opcoesMetodo.length,
                     itemBuilder: (context, index) {
-                      final metodo = _opcoesMetodo[index]['metodo'] as String;
-                      final icone = _opcoesMetodo[index]['icone'] as IconData;
+                      final metodo = opcoesMetodo[index]['metodo'] as String;
+                      final icone = opcoesMetodo[index]['icone'] as IconData;
                       final selecionado = _metodoSelecionado == metodo;
 
                       return Material(

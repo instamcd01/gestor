@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
+import '../providers/metodos_pagamento_provider.dart';
 import '../utils/cliente_validators.dart';
 import '../widgets/form_section.dart';
 
@@ -159,6 +160,7 @@ class _OpcoesPagamentoScreenState extends State<OpcoesPagamentoScreen> {
       }).eq('id', empresaId);
 
       if (mounted) {
+        context.read<MetodosPagamentoProvider>().atualizar(_metodosAtivos.toList());
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Opções de pagamento salvas com sucesso!')),
         );

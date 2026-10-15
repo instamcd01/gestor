@@ -5,18 +5,16 @@ import 'package:gestor/screens/pagamento_outros_screen.dart';
 import 'package:gestor/screens/pagamento_pix_screen.dart';
 import 'package:provider/provider.dart';
 
-import '../config/supabase_config.dart';
 import '../models/cliente.dart';
 import '../models/zona_entrega.dart';
-import '../providers/auth_provider.dart';
 import '../providers/carrinho_provider.dart';
+import '../providers/metodos_pagamento_provider.dart';
 import '../utils/agendamento_utils.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
 import '../widgets/itens_compra_card.dart';
 import '../widgets/resumo_pagamento_card.dart';
 import 'opcao_entrega_screen.dart';
-import 'opcoes_pagamento_screen.dart';
 import 'pagamento_credito_screen.dart';
 import 'pagamento_debito_screen.dart';
 import 'pagamento_dinheiro_screen.dart';
@@ -76,8 +74,6 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   ZonaEntrega? _zonaEntrega;
   JanelaHorarioAgendamento? _agendamento;
 
-  List<String> _metodosAtivos = List.from(metodosPagamentoDisponiveis);
-
   @override
   void initState() {
     super.initState();
@@ -92,25 +88,8 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     _entregaSelecionada = widget.entregaSelecionada;
     _zonaEntrega = widget.zonaEntrega;
     _agendamento = widget.agendamento;
-    _carregarMetodosAtivos();
-  }
-
-  Future<void> _carregarMetodosAtivos() async {
-    final empresaId = context.read<AuthProvider>().empresaId;
-    if (empresaId == null) return;
-    try {
-      final data = await supabase
-          .from('empresas')
-          .select('metodos_pagamento_ativos')
-          .eq('id', empresaId)
-          .single();
-      final metodos = (data['metodos_pagamento_ativos'] as List?)?.map((m) => m.toString()).toList();
-      if (metodos != null && metodos.isNotEmpty && mounted) {
-        setState(() => _metodosAtivos = metodos);
-      }
-    } catch (e) {
-      debugPrint('Erro ao carregar métodos de pagamento ativos: $e');
-    }
+    // Lista já vem do cache; isto só traz mudança feita em outro aparelho.
+    context.read<MetodosPagamentoProvider>().carregar();
   }
 
   static const _iconesPorMetodo = <String, IconData>{
@@ -122,8 +101,8 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     'Outros': Icons.more_horiz,
   };
 
-  List<Map<String, dynamic>> get _opcoesPagamentoFiltradas => _metodosAtivos
-      .where((metodo) => _iconesPorMetodo.containsKey(metodo))
+  List<Map<String, dynamic>>? _opcoesPagamentoFiltradas(List<String>? metodosAtivos) => metodosAtivos
+      ?.where((metodo) => _iconesPorMetodo.containsKey(metodo))
       .map((metodo) => {'metodo': metodo, 'icone': _iconesPorMetodo[metodo]!})
       .toList();
 
@@ -382,6 +361,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
   Widget build(BuildContext context) {
     final cliente = _cliente;
     final colorScheme = Theme.of(context).colorScheme;
+    final opcoesPagamento = _opcoesPagamentoFiltradas(context.watch<MetodosPagamentoProvider>().metodos);
 
     return Scaffold(
       appBar: AppBar(
@@ -523,6 +503,14 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
               style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
+            // Sem a lista da loja ainda (1ª vez neste aparelho), espera em vez
+            // de mostrar a ordem padrão — trocar depois mexia os botões de lugar.
+            if (opcoesPagamento == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else
             GridView.builder(
               shrinkWrap: true,
               physics: NeverScrollableScrollPhysics(),
@@ -532,9 +520,8 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
                 mainAxisSpacing: 10,
                 childAspectRatio: 0.9,
               ),
-              itemCount: _opcoesPagamentoFiltradas.length,
+              itemCount: opcoesPagamento.length,
               itemBuilder: (context, index) {
-                final opcoesPagamento = _opcoesPagamentoFiltradas;
                 String metodo = opcoesPagamento[index]['metodo']!;
                 IconData icone = opcoesPagamento[index]['icone']!;
                 final selecionado = metodoPagamentoSelecionado == metodo;

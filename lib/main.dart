@@ -26,6 +26,7 @@ import 'providers/tarefa_provider.dart';
 import 'providers/sugestao_planejamento_provider.dart';
 import 'providers/meta_financeira_provider.dart';
 import 'providers/modulo_provider.dart';
+import 'providers/metodos_pagamento_provider.dart';
 import 'screens/auth_gate.dart';
 import 'config/supabase_config.dart';
 
@@ -78,6 +79,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SugestaoPlanejamentoProvider()),
         ChangeNotifierProvider(create: (_) => MetaFinanceiraProvider()),
         ChangeNotifierProvider(create: (_) => ModuloProvider()),
+        ChangeNotifierProvider(create: (_) => MetodosPagamentoProvider()),
       ],
       child: Consumer<BrandingProvider>(
         builder: (context, branding, _) {
