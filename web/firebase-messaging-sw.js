@@ -9,8 +9,8 @@ importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js');
 
 const config = {
-  apiKey: '',
-  appId: '',
+  apiKey: 'AIzaSyAEVl5tYM0h-Pf4L5wyTNgo7CAXy4Zj52Y',
+  appId: '1:380570421425:web:9c64ac6c91d09fa250fa90',
   messagingSenderId: '380570421425',
   projectId: 'deliverypet-6d0e7',
   authDomain: 'deliverypet-6d0e7.firebaseapp.com',
