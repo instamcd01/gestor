@@ -115,6 +115,17 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     return venda.ehMarketplace && prazo != null && agora.isAfter(prazo);
   }
 
+  /// Qual pedido do cliente é este (1º, 2º...), igual o painel do iFood.
+  /// `total_pedidos` conta só os ENTREGUES da pessoa (cadastros vinculados
+  /// somados), então pedido ainda em andamento é o próximo (+1). iFood/99Food
+  /// ficam de fora: hoje caem no cliente genérico do relatório e a própria
+  /// plataforma já mostra isso.
+  int? _ordemPedidoCliente(Venda venda) {
+    if (venda.ehMarketplace || venda.canalVenda == '99food' || venda.cancelada) return null;
+    final entregues = venda.cliente.numeroCompras ?? 0;
+    return venda.finalizada ? (entregues < 1 ? 1 : entregues) : entregues + 1;
+  }
+
   /// Chip com cor de destaque (fundo na cor primária), diferente do
   /// `_chipInfo` neutro — usado só pro número do pedido na plataforma
   /// (ex: iFood), que o funcionário precisa achar rápido pra falar com o
@@ -569,8 +580,22 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                                 ],
                                               ],
                                             ),
-                                            Text(
-                                              '#${venda.numeroSequencial ?? '-'} • ${rotuloCanalVenda(venda.canalVenda)} • $tempoDecorrido',
+                                            Text.rich(
+                                              TextSpan(
+                                                text: '#${venda.numeroSequencial ?? '-'} • ${rotuloCanalVenda(venda.canalVenda)} • $tempoDecorrido',
+                                                children: [
+                                                  if (_ordemPedidoCliente(venda) case final ordem?)
+                                                    TextSpan(
+                                                      text: ' • $ordemº pedido',
+                                                      style: ordem == 1
+                                                          ? TextStyle(
+                                                              color: Theme.of(context).colorScheme.primary,
+                                                              fontWeight: FontWeight.bold,
+                                                            )
+                                                          : null,
+                                                    ),
+                                                ],
+                                              ),
                                               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                                             ),
                                             Text(
