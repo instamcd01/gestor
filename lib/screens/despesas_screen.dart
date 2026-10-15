@@ -85,7 +85,11 @@ class _DespesasScreenState extends State<DespesasScreen> {
   }
 
   Future<void> _marcarComoPaga(Despesa despesa) async {
-    String metodoSelecionado = metodosPagamentoDespesa.first;
+    // Parte do que já veio na conta (NF-e grava "Boleto"); sem nada, Boleto
+    // é o caso mais comum de conta a pagar.
+    String metodoSelecionado = metodosPagamentoDespesa.contains(despesa.metodoPagamento)
+        ? despesa.metodoPagamento!
+        : 'Boleto';
 
     final confirmou = await showDialog<bool>(
       context: context,
