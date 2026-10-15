@@ -15,6 +15,7 @@ abstract final class Modulos {
   static const gestaoFinanceira = 'gestao_financeira';
   static const planejamento = 'planejamento';
   static const conteudoSocial = 'conteudo_social';
+  static const dominioProprio = 'dominio_proprio';
 
   /// Qualquer marketplace com integração construída — pra telas que
   /// servem aos dois (Avaliações, Financeiro por Marketplace).

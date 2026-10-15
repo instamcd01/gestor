@@ -40,12 +40,13 @@ const _icones = <String, IconData>{
   'calculate': Icons.calculate_outlined,
   'event_note': Icons.event_note_outlined,
   'photo_camera': Icons.photo_camera_outlined,
+  'language': Icons.language,
 };
 
 /// Onde configurar cada módulo logo depois de instalar — só os que já têm
 /// tela de configuração no app.
 Widget? _telaConfiguracao(String slug) => switch (slug) {
-      Modulos.lojaOnline => const CatalogoOnlineHubScreen(),
+      Modulos.lojaOnline || Modulos.dominioProprio => const CatalogoOnlineHubScreen(),
       Modulos.petcash => const ConfigPetCashScreen(),
       Modulos.marketing => const ConfigAutomacoesWhatsappScreen(),
       Modulos.ifood || Modulos.food99 => const IntegrarPlataformasScreen(),

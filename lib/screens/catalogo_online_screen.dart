@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../config/plataforma_config.dart';
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
@@ -252,8 +253,8 @@ class _CatalogoOnlineScreenState extends State<CatalogoOnlineScreen> {
                           controller: _slugController,
                           decoration: const InputDecoration(
                             labelText: 'Link da loja',
-                            prefixText: 'suaLoja.com/',
-                            helperText: 'Só letras minúsculas, números e hífen',
+                            suffixText: '.$kDominioBaseLojas',
+                            helperText: 'Vira o endereço do site. Só letras minúsculas, números e hífen',
                           ),
                           onChanged: (texto) {
                             final sanitizado = _sanitizarSlug(texto);
