@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/notificacao.dart';
 import '../providers/notificacao_provider.dart';
+import '../services/push_notification_service.dart';
 
 /// Tela de preferências de notificação da empresa (Configurações > Loja >
 /// Notificações). Cada categoria liga/desliga in-app E push juntos — o
@@ -38,6 +40,10 @@ class ConfiguracaoNotificacoesScreen extends StatelessWidget {
                 ),
           ),
           const SizedBox(height: 16),
+          if (kIsWeb) ...[
+            const _AvisosNesteNavegador(),
+            const SizedBox(height: 16),
+          ],
           Card(
             clipBehavior: Clip.antiAlias,
             child: Column(
@@ -133,6 +139,87 @@ class _CategoriaExpansionTile extends StatelessWidget {
                   ),
         ),
       ],
+    );
+  }
+}
+
+/// Só no Gestor web: o navegador precisa de permissão própria (pedida num
+/// toque, exigência do iPhone) pra receber os avisos com o app fechado.
+class _AvisosNesteNavegador extends StatefulWidget {
+  const _AvisosNesteNavegador();
+
+  @override
+  State<_AvisosNesteNavegador> createState() => _AvisosNesteNavegadorState();
+}
+
+class _AvisosNesteNavegadorState extends State<_AvisosNesteNavegador> {
+  EstadoPushNavegador? _estado;
+  bool _ativando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    PushNotificationService.estadoNavegador().then((e) {
+      if (mounted) setState(() => _estado = e);
+    });
+  }
+
+  Future<void> _ativar() async {
+    setState(() => _ativando = true);
+    final estado = await PushNotificationService.ativarNoNavegador();
+    if (!mounted) return;
+    setState(() {
+      _estado = estado;
+      _ativando = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final estado = _estado;
+    if (estado == null || estado == EstadoPushNavegador.indisponivel) return const SizedBox.shrink();
+
+    final (icone, cor, texto) = switch (estado) {
+      EstadoPushNavegador.ativo => (Icons.notifications_active, Colors.green, 'Avisos ativos neste aparelho.'),
+      EstadoPushNavegador.bloqueado => (
+          Icons.notifications_off,
+          Colors.red,
+          'Os avisos foram bloqueados neste navegador. Libere nas configurações do navegador '
+              '(no iPhone: Ajustes › Notificações › INARI) e volte aqui.'
+        ),
+      EstadoPushNavegador.naoSuportado => (
+          Icons.info_outline,
+          Colors.orange,
+          'No iPhone, os avisos só funcionam com o INARI salvo na Tela de Início: toque em Compartilhar › '
+              'Adicionar à Tela de Início e abra por lá.'
+        ),
+      _ => (Icons.notifications_none, Colors.orange, 'Receba os avisos da loja neste aparelho, mesmo com o INARI fechado.'),
+    };
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icone, color: cor),
+                const SizedBox(width: 12),
+                Expanded(child: Text(texto)),
+              ],
+            ),
+            if (estado == EstadoPushNavegador.desativado) ...[
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _ativando ? null : _ativar,
+                icon: const Icon(Icons.notifications_active_outlined),
+                label: Text(_ativando ? 'Ativando...' : 'Ativar avisos neste aparelho'),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
