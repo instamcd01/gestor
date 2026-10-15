@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:barcode_scan2/barcode_scan2.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -15,7 +16,8 @@ import 'package:flutter/services.dart';
 /// Windows/desktop e web não têm câmera suportada por ele, então nem tenta
 /// (evita `MissingPluginException` travando a tela).
 Future<String?> lerCodigoDeBarras(BuildContext context) async {
-  if (!(Platform.isAndroid || Platform.isIOS)) {
+  // kIsWeb primeiro: no navegador `Platform` lança erro em vez de responder.
+  if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Leitor de código de barras só está disponível no celular.')),
     );

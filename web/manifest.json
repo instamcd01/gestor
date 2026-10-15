@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#1E1E24",
     "theme_color": "#E84C1C",
-    "description": "A new Flutter project.",
+    "description": "Painel de gestão da loja — INARI",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
