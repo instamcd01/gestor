@@ -20,6 +20,7 @@ import 'historico_entradas_screen.dart';
 import 'integrar_plataformas_screen.dart';
 import 'modulos_screen.dart';
 import 'whatsapp_conexao_screen.dart';
+import 'acessos_plataforma_screen.dart';
 import '../models/modulo.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/menu_secao.dart';
@@ -105,6 +106,8 @@ class ConfiguracoesScreen extends StatelessWidget {
               MenuItem('Exportar Relatórios', Icons.file_download_outlined, const ExportarRelatoriosScreen()),
               MenuItem(
                   'Integrar com Plataformas', Icons.integration_instructions_outlined, const IntegrarPlataformasScreen()),
+              // transparência: a loja vê quando a equipe da plataforma abriu os dados dela
+              if (isDono) MenuItem('Acessos da equipe INARI', Icons.shield_outlined, const AcessosPlataformaScreen()),
             ],
           ),
           const SizedBox(height: 24),
