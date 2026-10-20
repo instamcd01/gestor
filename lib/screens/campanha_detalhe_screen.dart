@@ -118,7 +118,27 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     try {
       final data = await supabase.from('empresas').select('dominio_customizado').eq('id', empresaId).maybeSingle();
       final dominio = (data?['dominio_customizado'] as String?)?.trim();
-      if (mounted && dominio != null && dominio.isNotEmpty) setState(() => _siteLoja = dominio);
+      if (!mounted || dominio == null || dominio.isEmpty) return;
+      // O 1º contato pode ter sido selecionado antes do domínio chegar (as
+      // duas buscas correm juntas) — aí a mensagem saiu sem os links. Gera
+      // de novo só se o texto ainda é a sugestão intocada, pra não apagar
+      // edição de quem já começou a mexer.
+      ContatoCampanha? selecionado;
+      for (final c in _contatosCache ?? const <ContatoCampanha>[]) {
+        if (c.contatoId == _contatoSelecionadoId) selecionado = c;
+      }
+      final sugestaoSemSite = selecionado == null
+          ? null
+          : _textoInicial(
+              nome: selecionado.nomeCliente ?? selecionado.nomeWhatsapp,
+              perfil: selecionado.perfil,
+              produtosPendentes: selecionado.produtosPendentes,
+              produtosLinks: selecionado.produtosLinks,
+            );
+      setState(() => _siteLoja = dominio);
+      if (selecionado != null && _mensagemController.text == sugestaoSemSite) {
+        _restaurarSugestaoPadrao(selecionado);
+      }
     } catch (e) {
       debugPrint('Erro ao carregar site da loja: $e');
     }
@@ -247,7 +267,12 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
       final nome = c.nomeCliente ?? c.nomeWhatsapp;
       final textoAtual = _mensagemController.text;
       if (textoAtual.trim().isEmpty || _personalizaPorProduto) {
-        _mensagemController.text = _textoInicial(nome: nome, perfil: c.perfil, produtosPendentes: c.produtosPendentes);
+        _mensagemController.text = _textoInicial(
+          nome: nome,
+          perfil: c.perfil,
+          produtosPendentes: c.produtosPendentes,
+          produtosLinks: c.produtosLinks,
+        );
         return;
       }
       final novaSaudacao = _saudacao(nome);
@@ -325,6 +350,7 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
         nome: c.nomeCliente ?? c.nomeWhatsapp,
         perfil: c.perfil,
         produtosPendentes: c.produtosPendentes,
+        produtosLinks: c.produtosLinks,
       );
     });
   }
@@ -346,6 +372,11 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
     final texto = _mensagemController.text.trim();
     if (texto.isEmpty) return;
     var corpo = texto.replaceFirst(_regexSaudacao, '').trim();
+    // Links do site são montados na hora pra cada contato (ver
+    // [_blocoLinksSite]) — salvar junto travaria os produtos desse contato
+    // no padrão de todo mundo.
+    final inicioLinks = corpo.indexOf(_marcadorLinksSite);
+    if (inicioLinks >= 0) corpo = corpo.substring(0, inicioLinks).trimRight();
 
     var semProdutoDetectado = false;
     if (_personalizaPorProduto) {
@@ -384,21 +415,28 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   /// contato). Num padrão salvo de campanha personalizada por produto, o
   /// token `{produtos}` (se presente) é trocado pelos produtos DESSE
   /// contato — mesma ideia da saudação com o nome, só que pro produto.
-  String _textoInicial({required String? nome, required String? perfil, List<String> produtosPendentes = const []}) {
+  /// Nessas campanhas o fim da mensagem ganha o link de cada produto no
+  /// site (quando a loja tem site), pra quem preferir pedir por lá.
+  String _textoInicial({
+    required String? nome,
+    required String? perfil,
+    List<String> produtosPendentes = const [],
+    List<ProdutoLinkCampanha> produtosLinks = const [],
+  }) {
     final loja = context.read<BrandingProvider>().nomeEmpresa;
     final site = _siteLoja;
     final padrao = _mensagemPadraoAtual;
+    final porProduto = _personalizaPorProduto && produtosPendentes.isNotEmpty;
+    final links = porProduto ? _blocoLinksSite(site, produtosLinks) : '';
     if (padrao != null && padrao.trim().isNotEmpty) {
-      final corpo = (_personalizaPorProduto && produtosPendentes.isNotEmpty)
-          ? padrao.replaceAll('{produtos}', _fraseProdutos(produtosPendentes))
-          : padrao;
-      return '${_saudacao(nome)} $corpo';
+      final corpo = porProduto ? padrao.replaceAll('{produtos}', _fraseProdutos(produtosPendentes)) : padrao;
+      return '${_saudacao(nome)} $corpo$links';
     }
     if (widget.campanha.origemSistema == 'reativacao_brinde' && produtosPendentes.isNotEmpty) {
       return _mensagemReativacaoBrinde(nome: nome, produtosBrinde: produtosPendentes, site: site);
     }
-    if (_personalizaPorProduto && produtosPendentes.isNotEmpty) {
-      return _mensagemProntosRecompra(nome: nome, produtos: produtosPendentes, loja: loja);
+    if (porProduto) {
+      return '${_mensagemProntosRecompra(nome: nome, produtos: produtosPendentes)}$links';
     }
     return _mensagemPadrao(nome: nome, perfil: perfil, loja: loja, site: site);
   }
@@ -954,15 +992,34 @@ String _fraseProdutos(List<String> produtos) {
   return '${nomeados.join(', ')} e mais $restantes item${restantes == 1 ? '' : 's'}';
 }
 
-/// Sugestão pra campanha "Prontos pra recompra" — cita os produtos vencidos
-/// desse contato (só os nomes; os dias/ciclo ficam só na nota interna, ver
-/// [ContatoCampanha.mensagemPersonalizada]) e puxa pro "Comprar novamente".
-String _mensagemProntosRecompra({required String? nome, required List<String> produtos, required String loja}) {
-  final listaProdutos = _fraseProdutos(produtos);
-  final plural = produtos.length > 1;
-  return '${_saudacao(nome)} Aqui é da $loja 🐾 Notei que $listaProdutos do seu pet '
-      '${plural ? 'devem' : 'deve'} estar acabando. Quer que eu repita seu último pedido do jeitinho que ficou '
-      'da última vez?';
+/// Sugestão pra "Prontos pra recompra"/"Segunda Chance" sem padrão salvo —
+/// cita os produtos vencidos desse contato (só os nomes; os dias/ciclo
+/// ficam só na nota interna, ver [ContatoCampanha.mensagemPersonalizada]) e
+/// puxa pro "Comprar novamente". Mesmo texto que o usuário salvou como
+/// padrão na "Prontos" (20/10), pras duas campanhas falarem igual.
+String _mensagemProntosRecompra({required String? nome, required List<String> produtos}) {
+  return '${_saudacao(nome)} Tudo bem? 🐾\n\n'
+      'Já está perto do período em que você costuma repor *${_fraseProdutos(produtos)}* do seu pet.\n\n'
+      'Quer que eu repita seu último pedido?';
+}
+
+/// Início do bloco de links — também usado pra tirar o bloco antes de
+/// salvar o texto como padrão da campanha (ver [_salvarComoPadrao]).
+const _marcadorLinksSite = 'Se preferir pedir pelo site';
+
+/// Links dos mesmos produtos que [_fraseProdutos] cita (até 3), no formato
+/// curto `/produto/<id>` — o site resolve pela loja do domínio e redireciona
+/// pra URL completa com o nome. Com 1 produto, link sozinho; com mais, cada
+/// link leva o nome curto pra o cliente saber qual é qual. Sem site, vazio.
+String _blocoLinksSite(String? site, List<ProdutoLinkCampanha> produtos) {
+  if (site == null || produtos.isEmpty) return '';
+  final base = '${site.startsWith('http') ? '' : 'https://'}${site.replaceAll(RegExp(r'/+$'), '')}';
+  final nomeados = produtos.take(3).toList();
+  if (nomeados.length == 1) {
+    return '\n\n$_marcadorLinksSite, é só tocar aqui 👇\n$base/produto/${nomeados.first.id}';
+  }
+  final linhas = nomeados.map((p) => '👉 ${p.rotulo}: $base/produto/${p.id}').join('\n');
+  return '\n\n$_marcadorLinksSite:\n$linhas';
 }
 
 /// Validade do cupom TODEVOLTA nessa campanha — fixa aqui porque essa

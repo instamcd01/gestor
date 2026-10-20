@@ -145,6 +145,10 @@ class ContatoCampanha {
   /// os nomes, pra montar a mensagem. Os dias/ciclo de cada um ficam em
   /// [mensagemPersonalizada] (referência interna, não vai na mensagem).
   final List<String> produtosPendentes;
+
+  /// Código + nome curto de cada produto de [produtosPendentes], na mesma
+  /// ordem — pra mensagem de recompra levar o link do produto no site.
+  final List<ProdutoLinkCampanha> produtosLinks;
   final String? clienteId;
   final String? nomeCliente;
   final bool ativou;
@@ -165,6 +169,7 @@ class ContatoCampanha {
     this.perfil,
     this.mensagemPersonalizada,
     this.produtosPendentes = const [],
+    this.produtosLinks = const [],
     this.clienteId,
     this.nomeCliente,
     required this.ativou,
@@ -185,6 +190,7 @@ class ContatoCampanha {
       perfil: perfil,
       mensagemPersonalizada: mensagemPersonalizada,
       produtosPendentes: produtosPendentes,
+      produtosLinks: produtosLinks,
       clienteId: clienteId,
       nomeCliente: nomeCliente,
       ativou: ativou,
@@ -206,6 +212,10 @@ class ContatoCampanha {
       perfil: row['perfil'] as String?,
       mensagemPersonalizada: row['mensagem_personalizada'] as String?,
       produtosPendentes: (row['produtos_pendentes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      produtosLinks: (row['produtos_links'] as List<dynamic>?)
+              ?.map((e) => ProdutoLinkCampanha.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
       clienteId: row['cliente_id'] as String?,
       nomeCliente: row['nome_cliente'] as String?,
       ativou: row['ativou'] as bool? ?? false,
@@ -215,4 +225,14 @@ class ContatoCampanha {
       temFavoritoSemCompra: row['tem_favorito_sem_compra'] as bool? ?? false,
     );
   }
+}
+
+class ProdutoLinkCampanha {
+  final String id;
+  final String rotulo;
+
+  const ProdutoLinkCampanha({required this.id, required this.rotulo});
+
+  factory ProdutoLinkCampanha.fromJson(Map<String, dynamic> json) =>
+      ProdutoLinkCampanha(id: json['id'] as String, rotulo: json['rotulo'] as String);
 }
