@@ -100,6 +100,63 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
     _carregar();
   }
 
+  /// Vários OFX de uma vez, de qualquer banco: cada arquivo acha (ou cria)
+  /// a própria conta; no fim roda a classificação e mostra quantos Achados.
+  Future<void> _enviarExtratos() async {
+    final empresaId = _empresaId;
+    if (empresaId == null) return;
+    final r = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['ofx'],
+      allowMultiple: true,
+      withData: true,
+    );
+    if (r == null || r.files.isEmpty) return;
+    setState(() => _carregando = true);
+    final linhas = <String>[];
+    for (final f in r.files) {
+      if (f.bytes == null) continue;
+      try {
+        final res = await _repository.importarAutomatico(empresaId: empresaId, arquivoNome: f.name, bytes: f.bytes!);
+        linhas.add('${res.conta.nome}: ${res.resultado.novas} novas'
+            '${res.resultado.repetidas > 0 ? ', ${res.resultado.repetidas} já estavam' : ''}');
+      } catch (e) {
+        linhas.add('${f.name}: ${e.toString().replaceFirst('Exception: ', '')}');
+      }
+    }
+    try {
+      final cont = await _repository.classificar();
+      final achados = cont['achado'] ?? 0;
+      linhas.add(achados == 0 ? 'Tudo conferido.' : '$achados achados pra você olhar.');
+    } catch (e) {
+      linhas.add('Classificação: $e');
+    }
+    await _carregar();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Extratos enviados'),
+        content: Text(linhas.join('\n')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _abrirAchados();
+            },
+            child: const Text('Ver achados'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _abrirAchados() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const AchadosScreen()));
+    _carregar();
+  }
+
   Future<void> _conectarStone(ContaFinanceira conta) async {
     final resumo = await showDialog<String?>(
       context: context,
@@ -127,7 +184,17 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
     final semSaldo = ativas.where((c) => c.saldoAtual == null && !c.automatica).length;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Contas e Conferência')),
+      appBar: AppBar(
+        title: const Text('Contas e Conferência'),
+        actions: [
+          IconButton(tooltip: 'Achados', icon: const Icon(Icons.find_in_page_outlined), onPressed: _abrirAchados),
+          TextButton.icon(
+            onPressed: _carregando ? null : _enviarExtratos,
+            icon: const Icon(Icons.upload_file),
+            label: const Text('Enviar extratos'),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _editarConta(),
         icon: const Icon(Icons.add),
@@ -164,8 +231,14 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
             const Text('Cadastre as contas da loja', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             const Text(
-              'Banco, maquininha e conta do site. Depois é só importar o extrato (OFX) de cada uma.',
+              'Toque em "Enviar extratos" e escolha os arquivos OFX dos seus bancos: o Gestor reconhece cada conta sozinho.',
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _enviarExtratos,
+              icon: const Icon(Icons.upload_file),
+              label: const Text('Enviar extratos'),
             ),
           ],
         ),
@@ -803,6 +876,151 @@ class _VendasCartaoScreenState extends State<VendasCartaoScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+/// O que a classificação automática não explicou: Pix sem pedido, saída
+/// sem dono, pagamento a fornecedor sem conta lançada... maior valor
+/// primeiro. Resolver aqui pode virar regra ("fazer sempre assim").
+class AchadosScreen extends StatefulWidget {
+  const AchadosScreen({super.key});
+
+  @override
+  State<AchadosScreen> createState() => _AchadosScreenState();
+}
+
+class _AchadosScreenState extends State<AchadosScreen> {
+  final _repository = ContaFinanceiraRepository();
+  List<Achado>? _achados;
+
+  static const _opcoes = [
+    (classificacao: 'venda', categoria: 'Venda não registrada', rotulo: 'Venda (não está no Gestor)', entrada: true),
+    (classificacao: 'repasse_marketplace', categoria: 'Repasse', rotulo: 'Repasse (iFood, 99, Mercado Pago)', entrada: true),
+    (classificacao: 'transferencia', categoria: null, rotulo: 'Transferência entre minhas contas', entrada: null),
+    (classificacao: 'despesa', categoria: 'Fornecedores', rotulo: 'Fornecedor', entrada: false),
+    (classificacao: 'despesa', categoria: 'Combustível', rotulo: 'Combustível', entrada: false),
+    (classificacao: 'entregador', categoria: 'Entregador', rotulo: 'Pagamento do entregador', entrada: false),
+    (classificacao: 'despesa', categoria: 'Energia', rotulo: 'Energia / água / internet', entrada: false),
+    (classificacao: 'despesa', categoria: 'Embalagens', rotulo: 'Embalagens', entrada: false),
+    (classificacao: 'despesa', categoria: 'Outras despesas', rotulo: 'Outra despesa da loja', entrada: false),
+    (classificacao: 'imposto', categoria: 'Impostos', rotulo: 'Imposto', entrada: false),
+    (classificacao: 'outro', categoria: 'Retirada do dono', rotulo: 'Retirada pessoal', entrada: false),
+    (classificacao: 'ignorar', categoria: null, rotulo: 'Ignorar', entrada: null),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    final lista = await _repository.listarAchados(empresaId);
+    if (mounted) setState(() => _achados = lista);
+  }
+
+  Future<void> _resolver(Achado a) async {
+    final regra = TextEditingController(text: a.textoRegra);
+    var sempre = false;
+    final escolha = await showModalBottomSheet<({String classificacao, String? categoria})>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${a.entrada ? '+' : '−'} ${_moeda.format(a.valor)} · ${_dataCurta.format(a.data)}',
+                    style: Theme.of(ctx).textTheme.titleMedium),
+                if (a.descricao != null) Text(a.descricao!, style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: sempre,
+                  onChanged: (v) => setLocal(() => sempre = v ?? false),
+                  title: const Text('Fazer sempre assim com lançamentos que tenham:'),
+                  subtitle: TextField(controller: regra, enabled: sempre),
+                ),
+                const Divider(),
+                for (final o in _opcoes.where((o) => o.entrada == null || o.entrada == a.entrada))
+                  ListTile(
+                    dense: true,
+                    title: Text(o.rotulo),
+                    onTap: () => Navigator.pop(ctx, (classificacao: o.classificacao, categoria: o.categoria)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (escolha == null || !mounted) return;
+    final empresaId = context.read<AuthProvider>().empresaId;
+    if (empresaId == null) return;
+    try {
+      await _repository.resolverAchado(
+        empresaId: empresaId,
+        achado: a,
+        classificacao: escolha.classificacao,
+        categoria: escolha.categoria,
+        regraTexto: sempre ? regra.text : null,
+      );
+      // Regra nova pode resolver outros achados parecidos de uma vez.
+      if (sempre) await _repository.classificar();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
+    }
+    _carregar();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final lista = _achados;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Achados')),
+      body: lista == null
+          ? const Center(child: CircularProgressIndicator())
+          : lista.isEmpty
+              ? const Center(child: Text('Nada pra conferir. Tudo bateu.'))
+              : ListView.separated(
+                  itemCount: lista.length + 1,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    if (i == 0) {
+                      final entradas = lista.where((a) => a.entrada).fold<double>(0, (t, a) => t + a.valor);
+                      final saidas = lista.where((a) => !a.entrada).fold<double>(0, (t, a) => t + a.valor);
+                      return Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          '${lista.length} lançamentos sem explicação · entradas ${_moeda.format(entradas)} · '
+                          'saídas ${_moeda.format(saidas)}. Toque pra dizer o que é.',
+                          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
+                        ),
+                      );
+                    }
+                    final a = lista[i - 1];
+                    return ListTile(
+                      title: Text(a.descricao ?? (a.entrada ? 'Entrada' : 'Saída'), maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text([
+                        '${a.contaNome} · ${_dataCurta.format(a.data)}',
+                        if (a.sugestao != null) a.sugestao!,
+                      ].join('\n')),
+                      isThreeLine: a.sugestao != null,
+                      trailing: Text(
+                        '${a.entrada ? '+' : '−'} ${_moeda.format(a.valor)}',
+                        style: TextStyle(color: a.entrada ? Colors.green.shade700 : cs.error, fontWeight: FontWeight.w600),
+                      ),
+                      onTap: () => _resolver(a),
+                    );
+                  },
+                ),
     );
   }
 }

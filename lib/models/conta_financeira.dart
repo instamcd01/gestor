@@ -42,6 +42,7 @@ class ContaFinanceira {
   /// "outro" e usa importação de arquivo.
   static const provedores = {
     'inter': 'Banco Inter',
+    'ton': 'Ton',
     'stone': 'Stone',
     'mercado_pago': 'Mercado Pago',
     'outro': 'Outro',
@@ -186,6 +187,47 @@ class VendaCartao {
         valorCancelado: (row['valor_cancelado'] as num?)?.toDouble() ?? 0,
         vinculo: row['vinculo'] as String?,
         pedidoNumero: ((row['pedido'] as Map?)?['numero_sequencial'] as num?)?.toInt(),
+      );
+}
+
+/// Movimentação que a classificação automática não explicou (status
+/// pendente/sugerida) — com a explicação do porquê em [sugestao].
+class Achado {
+  final String id;
+  final String contaNome;
+  final DateTime data;
+  final bool entrada;
+  final double valor;
+  final String? descricao;
+  final String? sugestao;
+
+  const Achado({
+    required this.id,
+    required this.contaNome,
+    required this.data,
+    required this.entrada,
+    required this.valor,
+    this.descricao,
+    this.sugestao,
+  });
+
+  /// Texto sugerido pra "fazer sempre assim": a descrição sem números
+  /// (datas, documentos, valores mudam a cada lançamento).
+  String get textoRegra => (descricao ?? '')
+      .replaceAll(RegExp(r'[\d./-]+'), ' ')
+      .split(RegExp(r'\s+'))
+      .where((p) => p.length > 1)
+      .take(4)
+      .join(' ');
+
+  factory Achado.fromSupabase(Map<String, dynamic> row) => Achado(
+        id: row['id'] as String,
+        contaNome: (row['conta'] as Map?)?['nome'] as String? ?? '',
+        data: DateTime.parse(row['data'] as String),
+        entrada: row['tipo'] == 'entrada',
+        valor: (row['valor'] as num).toDouble(),
+        descricao: row['descricao'] as String?,
+        sugestao: row['sugestao'] as String?,
       );
 }
 

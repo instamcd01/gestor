@@ -206,5 +206,109 @@ class ContaFinanceiraRepository {
 
   Future<void> desconectar(String contaId) => _supabase.rpc('conta_desconectar', params: {'p_conta_id': contaId});
 
+  /// Banco (código Febraban do OFX) → provedor conhecido. O resto entra como
+  /// "outro" com o nome da instituição que vem no arquivo.
+  static const _bancos = {'77': 'inter', '197': 'ton', '323': 'mercado_pago'};
+
+  /// "Enviar extrato": lê o OFX, acha a conta pelo banco+agência+conta do
+  /// próprio arquivo (ou pela única conta daquele banco ainda sem
+  /// identificação) e, na primeira vez, cria a conta. Devolve a conta usada
+  /// e o resultado da importação.
+  Future<({ContaFinanceira conta, ResultadoImportacao resultado})> importarAutomatico({
+    required String empresaId,
+    required String arquivoNome,
+    required List<int> bytes,
+  }) async {
+    final extrato = OfxParser.parse(bytes);
+    if (extrato.lancamentos.isEmpty) throw Exception('$arquivoNome: nenhuma movimentação no arquivo');
+    final banco = extrato.bancoNormalizado;
+    final provedor = _bancos[banco] ?? 'outro';
+
+    final contas = await listar(empresaId);
+    ContaFinanceira? conta = contas.where((c) => extrato.identificacao != null && c.identificacao == extrato.identificacao).firstOrNull;
+    conta ??= () {
+      final mesmoBanco =
+          contas.where((c) => c.provedor == provedor && provedor != 'outro' && c.identificacao == null && !c.automatica).toList();
+      return mesmoBanco.length == 1 ? mesmoBanco.first : null;
+    }();
+
+    if (conta == null) {
+      final criada = await _supabase
+          .from('contas_financeiras')
+          .insert({
+            'empresa_id': empresaId,
+            'nome': switch (provedor) {
+              'inter' => 'Banco Inter',
+              'ton' => 'Ton',
+              'mercado_pago' => 'Mercado Pago (extrato)',
+              _ => extrato.instituicao ?? 'Banco $banco',
+            },
+            'tipo': 'banco',
+            'provedor': provedor,
+            'identificacao': extrato.identificacao,
+          })
+          .select()
+          .single();
+      conta = ContaFinanceira.fromSupabase(criada);
+    } else if (conta.identificacao == null && extrato.identificacao != null) {
+      await _supabase.from('contas_financeiras').update({'identificacao': extrato.identificacao}).eq('id', conta.id);
+    }
+
+    final resultado = await importarOfx(empresaId: empresaId, conta: conta, arquivoNome: arquivoNome, extrato: extrato);
+    return (conta: conta, resultado: resultado);
+  }
+
+  /// Roda a classificação automática do extrato da loja (venda, repasse,
+  /// transferência, fornecedor, imposto, regras...) e devolve a contagem.
+  Future<Map<String, int>> classificar() async {
+    final r = await _supabase.rpc('contas_classificar');
+    return (r as Map? ?? {}).map((k, v) => MapEntry(k.toString(), (v as num).toInt()));
+  }
+
+  /// Achados: o que a classificação não conseguiu explicar, maior valor primeiro.
+  Future<List<Achado>> listarAchados(String empresaId) async {
+    final data = await _supabase
+        .from('movimentacoes_financeiras')
+        .select('id, conta_id, data, tipo, valor, descricao, sugestao, conta:contas_financeiras(nome)')
+        .eq('empresa_id', empresaId)
+        .inFilter('status_conferencia', ['pendente', 'sugerida'])
+        .order('valor', ascending: false)
+        .limit(500);
+    return (data as List).map((r) => Achado.fromSupabase(r as Map<String, dynamic>)).toList();
+  }
+
+  /// Resolve um Achado. [regraTexto] preenchido = "fazer sempre assim" pra
+  /// lançamentos com esse texto (vira regra da loja, aplicada nas próximas
+  /// importações).
+  Future<void> resolverAchado({
+    required String empresaId,
+    required Achado achado,
+    required String classificacao,
+    String? categoria,
+    String? regraTexto,
+  }) async {
+    final ignorar = classificacao == 'ignorar';
+    await _supabase.from('movimentacoes_financeiras').update({
+      'classificacao': ignorar ? 'outro' : classificacao,
+      'categoria': categoria,
+      'status_conferencia': ignorar ? 'ignorada' : 'conferida',
+      'sugestao': null,
+    }).eq('id', achado.id);
+    if (regraTexto != null && regraTexto.trim().length >= 4) {
+      await _supabase.from('regras_conciliacao').insert({
+        'empresa_id': empresaId,
+        'tipo': achado.entrada ? 'entrada' : 'saida',
+        'descricao_contem': regraTexto.trim(),
+        'acao': switch (classificacao) {
+          'ignorar' => 'ignorar',
+          'transferencia' || 'entregador' || 'imposto' || 'repasse_marketplace' => classificacao,
+          _ => 'despesa',
+        },
+        'categoria': categoria,
+        'criado_por': _supabase.auth.currentUser?.id,
+      });
+    }
+  }
+
   static String? _dia(DateTime? d) => d?.toIso8601String().split('T').first;
 }

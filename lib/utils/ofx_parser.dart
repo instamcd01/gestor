@@ -27,7 +27,31 @@ class ExtratoOfx {
   final double? saldoFinal;
   final DateTime? saldoEm;
 
-  const ExtratoOfx({required this.lancamentos, this.inicio, this.fim, this.saldoFinal, this.saldoEm});
+  /// Identificação da conta no próprio arquivo — é o que deixa o Gestor
+  /// achar (ou criar) a conta sozinho, sem o lojista escolher.
+  final String? bancoCodigo;
+  final String? agencia;
+  final String? conta;
+  final String? instituicao;
+
+  const ExtratoOfx({
+    required this.lancamentos,
+    this.inicio,
+    this.fim,
+    this.saldoFinal,
+    this.saldoEm,
+    this.bancoCodigo,
+    this.agencia,
+    this.conta,
+    this.instituicao,
+  });
+
+  /// Código do banco sem zeros à esquerda ("0197" → "197").
+  String? get bancoNormalizado => bancoCodigo?.replaceFirst(RegExp(r'^0+(?=\d)'), '');
+
+  /// "077 · 0001-9 · 362347727" — gravado em `contas_financeiras.identificacao`.
+  String? get identificacao =>
+      bancoNormalizado == null || conta == null ? null : [bancoNormalizado, agencia, conta].whereType<String>().join(' · ');
 }
 
 /// Lê OFX 1.x (SGML, tags sem fechamento — o que quase todo banco
@@ -92,6 +116,10 @@ class OfxParser {
       fim: _data(_tag(texto, 'DTEND')),
       saldoFinal: saldoTexto == null ? null : double.tryParse(saldoTexto.replaceAll(',', '.')),
       saldoEm: saldoBloco == null ? null : _data(_tag(saldoBloco, 'DTASOF')),
+      bancoCodigo: _tag(texto, 'BANKID'),
+      agencia: _tag(texto, 'BRANCHID'),
+      conta: _tag(texto, 'ACCTID'),
+      instituicao: _tag(texto, 'ORG'),
     );
   }
 
