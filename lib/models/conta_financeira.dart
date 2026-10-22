@@ -194,6 +194,10 @@ class VendaCartao {
 /// pendente/sugerida) — com a explicação do porquê em [sugestao].
 class Achado {
   final String id;
+
+  /// Preenchido quando o Achado é uma despesa "A classificar" (compra no
+  /// Mercado Livre pelo login da loja) em vez de um lançamento de extrato.
+  final String? despesaId;
   final String contaNome;
   final DateTime data;
   final bool entrada;
@@ -203,6 +207,7 @@ class Achado {
 
   const Achado({
     required this.id,
+    this.despesaId,
     required this.contaNome,
     required this.data,
     required this.entrada,
@@ -228,6 +233,20 @@ class Achado {
         valor: (row['valor'] as num).toDouble(),
         descricao: row['descricao'] as String?,
         sugestao: row['sugestao'] as String?,
+      );
+
+  factory Achado.daDespesa(Map<String, dynamic> row) => Achado(
+        id: row['id'] as String,
+        despesaId: row['id'] as String,
+        contaNome: 'Compra pelo login do Mercado Pago',
+        data: DateTime.parse((row['data_pagamento'] ?? row['data_vencimento']) as String),
+        entrada: false,
+        valor: (row['valor'] as num).toDouble(),
+        descricao: row['descricao'] as String?,
+        sugestao: [
+          'Que tipo de despesa é?',
+          if (row['observacoes'] != null) (row['observacoes'] as String).replaceFirst('Compra pelo login do Mercado Pago', '').replaceFirst(RegExp(r'^, '), ''),
+        ].where((s) => s.isNotEmpty).join(' '),
       );
 }
 

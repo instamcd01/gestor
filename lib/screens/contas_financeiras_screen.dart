@@ -45,7 +45,12 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
     try {
       final contas = await _repository.listar(empresaId);
       final destinos = await _repository.listarDestinos(empresaId);
-      if (mounted) setState(() { _contas = contas; _destinos = destinos; });
+      if (mounted) {
+        setState(() {
+          _contas = contas;
+          _destinos = destinos;
+        });
+      }
     } catch (e) {
       _aviso('Erro ao carregar contas: $e');
     } finally {
@@ -65,7 +70,8 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
   Future<void> _importar(ContaFinanceira conta) async {
     final empresaId = _empresaId;
     if (empresaId == null) return;
-    final arquivo = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['ofx'], withData: true);
+    final arquivo =
+        await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['ofx'], withData: true);
     final bytes = arquivo?.files.single.bytes;
     if (arquivo == null || bytes == null) return;
 
@@ -276,7 +282,8 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
       if (c.identificacao != null) c.identificacao!,
       if (!c.ativa) 'inativa',
     ].join(' · ');
-    final horaSync = c.ultimaSincronizacaoEm == null ? null : DateFormat("dd/MM 'às' HH:mm").format(c.ultimaSincronizacaoEm!);
+    final horaSync =
+        c.ultimaSincronizacaoEm == null ? null : DateFormat("dd/MM 'às' HH:mm").format(c.ultimaSincronizacaoEm!);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -514,13 +521,16 @@ class _ContaDialogState extends State<_ContaDialog> {
             DropdownButtonFormField<String>(
               initialValue: _tipo,
               decoration: const InputDecoration(labelText: 'Tipo'),
-              items: ContaFinanceira.tipos.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+              items: ContaFinanceira.tipos.entries
+                  .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                  .toList(),
               onChanged: (v) => setState(() => _tipo = v ?? 'banco'),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _identificacao,
-              decoration: const InputDecoration(labelText: 'Identificação (opcional)', hintText: 'Ex.: Ag 0001 · final 1234'),
+              decoration:
+                  const InputDecoration(labelText: 'Identificação (opcional)', hintText: 'Ex.: Ag 0001 · final 1234'),
             ),
             if (widget.conta != null)
               SwitchListTile(
@@ -813,7 +823,8 @@ class VendasCartaoScreen extends StatefulWidget {
 }
 
 class _VendasCartaoScreenState extends State<VendasCartaoScreen> {
-  late final Future<List<VendaCartao>> _futuro = ContaFinanceiraRepository().listarVendasCartao(contaId: widget.conta.id);
+  late final Future<List<VendaCartao>> _futuro =
+      ContaFinanceiraRepository().listarVendasCartao(contaId: widget.conta.id);
 
   @override
   Widget build(BuildContext context) {
@@ -831,7 +842,8 @@ class _VendasCartaoScreenState extends State<VendasCartaoScreen> {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Text('Nenhuma venda ainda. A Stone libera o arquivo de cada dia a partir das 5h do dia seguinte.',
+                child: Text(
+                    'Nenhuma venda ainda. A Stone libera o arquivo de cada dia a partir das 5h do dia seguinte.',
                     textAlign: TextAlign.center),
               ),
             );
@@ -861,7 +873,8 @@ class _VendasCartaoScreenState extends State<VendasCartaoScreen> {
                       : 'sem pedido';
               return ListTile(
                 dense: true,
-                title: Text('${v.tipoRotulo}${v.bandeira == null ? '' : ' ${v.bandeira}'} · ${_moeda.format(v.valorBruto)}'),
+                title: Text(
+                    '${v.tipoRotulo}${v.bandeira == null ? '' : ' ${v.bandeira}'} · ${_moeda.format(v.valorBruto)}'),
                 subtitle: Text([
                   dataHora.format(v.capturadaEm),
                   'taxa ${_moeda.format(v.taxa)} (${v.taxaPercentual.toStringAsFixed(2)}%)',
@@ -896,13 +909,20 @@ class _AchadosScreenState extends State<AchadosScreen> {
 
   static const _opcoes = [
     (classificacao: 'venda', categoria: 'Venda não registrada', rotulo: 'Venda (não está no Gestor)', entrada: true),
-    (classificacao: 'repasse_marketplace', categoria: 'Repasse', rotulo: 'Repasse (iFood, 99, Mercado Pago)', entrada: true),
+    (
+      classificacao: 'repasse_marketplace',
+      categoria: 'Repasse',
+      rotulo: 'Repasse (iFood, 99, Mercado Pago)',
+      entrada: true
+    ),
     (classificacao: 'transferencia', categoria: null, rotulo: 'Transferência entre minhas contas', entrada: null),
     (classificacao: 'despesa', categoria: 'Fornecedores', rotulo: 'Fornecedor', entrada: false),
     (classificacao: 'despesa', categoria: 'Combustível', rotulo: 'Combustível', entrada: false),
     (classificacao: 'entregador', categoria: 'Entregador', rotulo: 'Pagamento do entregador', entrada: false),
     (classificacao: 'despesa', categoria: 'Energia', rotulo: 'Energia / água / internet', entrada: false),
     (classificacao: 'despesa', categoria: 'Embalagens', rotulo: 'Embalagens', entrada: false),
+    (classificacao: 'despesa', categoria: 'Manutenção', rotulo: 'Manutenção (moto, PC, equipamentos)', entrada: false),
+    (classificacao: 'despesa', categoria: 'Mercadoria para revenda', rotulo: 'Mercadoria para revenda', entrada: false),
     (classificacao: 'despesa', categoria: 'Outras despesas', rotulo: 'Outra despesa da loja', entrada: false),
     (classificacao: 'imposto', categoria: 'Impostos', rotulo: 'Imposto', entrada: false),
     (classificacao: 'outro', categoria: 'Retirada do dono', rotulo: 'Retirada pessoal', entrada: false),
@@ -940,15 +960,19 @@ class _AchadosScreenState extends State<AchadosScreen> {
                     style: Theme.of(ctx).textTheme.titleMedium),
                 if (a.descricao != null) Text(a.descricao!, style: const TextStyle(fontSize: 13)),
                 const SizedBox(height: 8),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: sempre,
-                  onChanged: (v) => setLocal(() => sempre = v ?? false),
-                  title: const Text('Fazer sempre assim com lançamentos que tenham:'),
-                  subtitle: TextField(controller: regra, enabled: sempre),
-                ),
+                if (a.despesaId == null)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: sempre,
+                    onChanged: (v) => setLocal(() => sempre = v ?? false),
+                    title: const Text('Fazer sempre assim com lançamentos que tenham:'),
+                    subtitle: TextField(controller: regra, enabled: sempre),
+                  ),
                 const Divider(),
-                for (final o in _opcoes.where((o) => o.entrada == null || o.entrada == a.entrada))
+                for (final o in _opcoes.where((o) =>
+                    (o.entrada == null || o.entrada == a.entrada) &&
+                    // Compra já é despesa: não faz sentido "transferência".
+                    !(a.despesaId != null && o.classificacao == 'transferencia')))
                   ListTile(
                     dense: true,
                     title: Text(o.rotulo),
@@ -971,8 +995,9 @@ class _AchadosScreenState extends State<AchadosScreen> {
         categoria: escolha.categoria,
         regraTexto: sempre ? regra.text : null,
       );
-      // Regra nova pode resolver outros achados parecidos de uma vez.
-      if (sempre) await _repository.classificar();
+      // Classificar de novo: lança a despesa da saída que acabou de ganhar
+      // categoria e, com regra nova, resolve os parecidos de uma vez.
+      if (a.despesaId == null) await _repository.classificar();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e')));
     }
@@ -1007,7 +1032,8 @@ class _AchadosScreenState extends State<AchadosScreen> {
                     }
                     final a = lista[i - 1];
                     return ListTile(
-                      title: Text(a.descricao ?? (a.entrada ? 'Entrada' : 'Saída'), maxLines: 2, overflow: TextOverflow.ellipsis),
+                      title: Text(a.descricao ?? (a.entrada ? 'Entrada' : 'Saída'),
+                          maxLines: 2, overflow: TextOverflow.ellipsis),
                       subtitle: Text([
                         '${a.contaNome} · ${_dataCurta.format(a.data)}',
                         if (a.sugestao != null) a.sugestao!,
@@ -1015,7 +1041,8 @@ class _AchadosScreenState extends State<AchadosScreen> {
                       isThreeLine: a.sugestao != null,
                       trailing: Text(
                         '${a.entrada ? '+' : '−'} ${_moeda.format(a.valor)}',
-                        style: TextStyle(color: a.entrada ? Colors.green.shade700 : cs.error, fontWeight: FontWeight.w600),
+                        style:
+                            TextStyle(color: a.entrada ? Colors.green.shade700 : cs.error, fontWeight: FontWeight.w600),
                       ),
                       onTap: () => _resolver(a),
                     );
@@ -1090,7 +1117,8 @@ class _MovimentacoesContaScreenState extends State<MovimentacoesContaScreen> {
               ];
               return ListTile(
                 dense: true,
-                title: Text(m.descricao ?? (m.entrada ? 'Entrada' : 'Saída'), maxLines: 2, overflow: TextOverflow.ellipsis),
+                title: Text(m.descricao ?? (m.entrada ? 'Entrada' : 'Saída'),
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
                 subtitle: Text(detalhes.join(' · ')),
                 trailing: Text(
                   '${m.entrada ? '+' : '−'} ${_moeda.format(m.valor)}',

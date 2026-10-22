@@ -274,7 +274,16 @@ class ContaFinanceiraRepository {
         .inFilter('status_conferencia', ['pendente', 'sugerida'])
         .order('valor', ascending: false)
         .limit(500);
-    return (data as List).map((r) => Achado.fromSupabase(r as Map<String, dynamic>)).toList();
+    final compras = await _supabase
+        .from('despesas')
+        .select('id, descricao, valor, data_pagamento, data_vencimento, observacoes')
+        .eq('empresa_id', empresaId)
+        .eq('categoria', 'A classificar')
+        .isFilter('deleted_at', null);
+    return [
+      ...(data as List).map((r) => Achado.fromSupabase(r as Map<String, dynamic>)),
+      ...(compras as List).map((r) => Achado.daDespesa(r as Map<String, dynamic>)),
+    ]..sort((a, b) => b.valor.compareTo(a.valor));
   }
 
   /// Resolve um Achado. [regraTexto] preenchido = "fazer sempre assim" pra
@@ -288,6 +297,17 @@ class ContaFinanceiraRepository {
     String? regraTexto,
   }) async {
     final ignorar = classificacao == 'ignorar';
+    if (achado.despesaId != null) {
+      // Compra pelo login do Mercado Pago: já é despesa, só ganha categoria.
+      // Não é da loja (pessoal/ignorar) → cancela, sai do custo.
+      final naoELoja = ignorar || categoria == 'Retirada do dono';
+      await _supabase.from('despesas').update({
+        'categoria': naoELoja ? 'Outros' : (categoria ?? 'Outros'),
+        if (naoELoja) 'status': 'cancelado',
+        if (naoELoja) 'data_cancelamento': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', achado.despesaId!);
+      return;
+    }
     await _supabase.from('movimentacoes_financeiras').update({
       'classificacao': ignorar ? 'outro' : classificacao,
       'categoria': categoria,
