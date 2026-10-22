@@ -11,6 +11,8 @@ class ContaFinanceira {
   final bool ativa;
   final double? saldoAtual;
   final DateTime? saldoAtualizadoEm;
+  final DateTime? ultimaSincronizacaoEm;
+  final String? ultimoErro;
 
   const ContaFinanceira({
     required this.id,
@@ -22,7 +24,12 @@ class ContaFinanceira {
     this.ativa = true,
     this.saldoAtual,
     this.saldoAtualizadoEm,
+    this.ultimaSincronizacaoEm,
+    this.ultimoErro,
   });
+
+  /// Atualiza sozinha (n8n/serviço de bancos) — sem importação de arquivo.
+  bool get automatica => conector == 'api';
 
   static const tipos = {
     'banco': 'Banco',
@@ -53,6 +60,9 @@ class ContaFinanceira {
         ativa: row['ativa'] as bool? ?? true,
         saldoAtual: (row['saldo_atual'] as num?)?.toDouble(),
         saldoAtualizadoEm: row['saldo_atualizado_em'] != null ? DateTime.parse(row['saldo_atualizado_em'] as String).toLocal() : null,
+        ultimaSincronizacaoEm:
+            row['ultima_sincronizacao_em'] != null ? DateTime.parse(row['ultima_sincronizacao_em'] as String).toLocal() : null,
+        ultimoErro: row['ultimo_erro'] as String?,
       );
 }
 
@@ -85,6 +95,12 @@ class MovimentacaoFinanceira {
   final String? descricao;
   final String statusConferencia;
 
+  /// Só conector por API: taxa descontada e quando o dinheiro fica
+  /// disponível (Mercado Pago libera cartão depois da venda).
+  final double? taxa;
+  final bool? liberado;
+  final DateTime? liberacao;
+
   const MovimentacaoFinanceira({
     required this.id,
     required this.contaId,
@@ -93,7 +109,12 @@ class MovimentacaoFinanceira {
     required this.valor,
     this.descricao,
     required this.statusConferencia,
+    this.taxa,
+    this.liberado,
+    this.liberacao,
   });
+
+  bool get conferida => statusConferencia == 'conferida';
 
   factory MovimentacaoFinanceira.fromSupabase(Map<String, dynamic> row) => MovimentacaoFinanceira(
         id: row['id'] as String,
@@ -103,6 +124,11 @@ class MovimentacaoFinanceira {
         valor: (row['valor'] as num).toDouble(),
         descricao: row['descricao'] as String?,
         statusConferencia: row['status_conferencia'] as String? ?? 'pendente',
+        taxa: ((row['dados_brutos'] as Map?)?['taxa'] as num?)?.toDouble(),
+        liberado: (row['dados_brutos'] as Map?)?['liberado'] as bool?,
+        liberacao: (row['dados_brutos'] as Map?)?['liberacao'] != null
+            ? DateTime.tryParse((row['dados_brutos'] as Map)['liberacao'] as String)?.toLocal()
+            : null,
       );
 }
 

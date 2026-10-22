@@ -93,7 +93,7 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
   Widget build(BuildContext context) {
     final ativas = _contas.where((c) => c.ativa).toList();
     final saldoTotal = ativas.fold<double>(0, (t, c) => t + (c.saldoAtual ?? 0));
-    final semSaldo = ativas.where((c) => c.saldoAtual == null).length;
+    final semSaldo = ativas.where((c) => c.saldoAtual == null && !c.automatica).length;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Contas e Conferência')),
@@ -172,6 +172,7 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
       if (c.identificacao != null) c.identificacao!,
       if (!c.ativa) 'inativa',
     ].join(' · ');
+    final horaSync = c.ultimaSincronizacaoEm == null ? null : DateFormat("dd/MM 'às' HH:mm").format(c.ultimaSincronizacaoEm!);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -183,7 +184,7 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(c.saldoAtual == null ? '—' : _moeda.format(c.saldoAtual),
+                Text(c.saldoAtual == null ? (c.automatica ? 'saldo em breve' : '—') : _moeda.format(c.saldoAtual),
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
                 if (c.saldoAtualizadoEm != null)
                   Text('em ${_dataCurta.format(c.saldoAtualizadoEm!)}',
@@ -195,15 +196,35 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
               MaterialPageRoute(builder: (_) => MovimentacoesContaScreen(conta: c)),
             ),
           ),
+          if (c.automatica)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Row(
+                children: [
+                  Icon(c.ultimoErro == null ? Icons.sync : Icons.sync_problem,
+                      size: 16, color: c.ultimoErro == null ? Colors.green.shade700 : cs.error),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      c.ultimoErro != null
+                          ? 'Falha ao atualizar: ${c.ultimoErro}'
+                          : 'Atualiza sozinha${horaSync == null ? '' : ' · última vez $horaSync'}',
+                      style: TextStyle(fontSize: 12, color: c.ultimoErro == null ? cs.onSurfaceVariant : cs.error),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
             child: Row(
               children: [
-                TextButton.icon(
-                  onPressed: () => _importar(c),
-                  icon: const Icon(Icons.upload_file, size: 18),
-                  label: const Text('Importar extrato'),
-                ),
+                if (!c.automatica)
+                  TextButton.icon(
+                    onPressed: () => _importar(c),
+                    icon: const Icon(Icons.upload_file, size: 18),
+                    label: const Text('Importar extrato'),
+                  ),
                 TextButton.icon(
                   onPressed: () => _editarConta(c),
                   icon: const Icon(Icons.edit_outlined, size: 18),
@@ -423,6 +444,8 @@ class _MovimentacoesContaScreenState extends State<MovimentacoesContaScreen> {
           }
           final entradas = lista.where((m) => m.entrada).fold<double>(0, (t, m) => t + m.valor);
           final saidas = lista.where((m) => !m.entrada).fold<double>(0, (t, m) => t + m.valor);
+          final taxas = lista.fold<double>(0, (t, m) => t + (m.taxa ?? 0));
+          final aConferir = lista.where((m) => !m.conferida).length;
           return ListView.separated(
             itemCount: lista.length + 1,
             separatorBuilder: (_, __) => const Divider(height: 1),
@@ -431,17 +454,27 @@ class _MovimentacoesContaScreenState extends State<MovimentacoesContaScreen> {
                 return Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    '${lista.length} movimentações · entradas ${_moeda.format(entradas)} · saídas ${_moeda.format(saidas)}',
+                    [
+                      '${lista.length} movimentações · entradas ${_moeda.format(entradas)} · saídas ${_moeda.format(saidas)}',
+                      if (taxas > 0) 'taxas descontadas ${_moeda.format(taxas)}',
+                      '$aConferir a conferir',
+                    ].join(' · '),
                     style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
                   ),
                 );
               }
               final m = lista[i - 1];
               final cor = m.entrada ? Colors.green.shade700 : cs.error;
+              final detalhes = [
+                _dataCurta.format(m.data),
+                if (m.taxa != null && m.taxa! > 0) 'taxa ${_moeda.format(m.taxa)}',
+                if (m.liberado == false && m.liberacao != null) 'libera em ${DateFormat('dd/MM').format(m.liberacao!)}',
+                m.conferida ? 'conferida' : 'a conferir',
+              ];
               return ListTile(
                 dense: true,
                 title: Text(m.descricao ?? (m.entrada ? 'Entrada' : 'Saída'), maxLines: 2, overflow: TextOverflow.ellipsis),
-                subtitle: Text(_dataCurta.format(m.data)),
+                subtitle: Text(detalhes.join(' · ')),
                 trailing: Text(
                   '${m.entrada ? '+' : '−'} ${_moeda.format(m.valor)}',
                   style: TextStyle(color: cor, fontWeight: FontWeight.w600),

@@ -62,7 +62,7 @@ class ContaFinanceiraRepository {
   Future<List<MovimentacaoFinanceira>> listarMovimentacoes({required String contaId, int limite = 300}) async {
     final data = await _supabase
         .from('movimentacoes_financeiras')
-        .select('id, conta_id, data, tipo, valor, descricao, status_conferencia')
+        .select('id, conta_id, data, tipo, valor, descricao, status_conferencia, dados_brutos')
         .eq('conta_id', contaId)
         .order('data', ascending: false)
         .order('created_at', ascending: false)
