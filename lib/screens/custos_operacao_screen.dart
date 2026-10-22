@@ -72,14 +72,15 @@ class _CustosOperacaoScreenState extends State<CustosOperacaoScreen> {
       });
       final linha = (resumo as List).first as Map<String, dynamic>;
 
-      final infra = await supabase
-          .from('despesas')
-          .select('id, descricao, valor, status, observacoes')
-          .eq('empresa_id', empresaId)
-          .eq('categoria', 'Infraestrutura/Tecnologia')
-          .eq('recorrente', true)
-          .isFilter('deleted_at', null)
-          .order('valor', ascending: false);
+      // Custos ativos no mês: assinaturas recorrentes + pagamentos anuais
+      // diluídos (VPS, domínio) pelo valor mensal — `listar_custos_mensais`.
+      final custosMes = await supabase.rpc('listar_custos_mensais', params: {'p_empresa_id': empresaId});
+      final infra = (custosMes as List)
+          .cast<Map<String, dynamic>>()
+          .where((d) => d['categoria'] == 'Infraestrutura/Tecnologia')
+          .map((d) => {...d, 'valor': d['valor_mensal']})
+          .toList()
+        ..sort((x, y) => (y['valor'] as num).compareTo(x['valor'] as num));
 
       final banco = await supabase.rpc('obter_tamanho_banco');
       final bancoLinha = (banco as List).first as Map<String, dynamic>;

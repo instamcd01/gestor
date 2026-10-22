@@ -13,6 +13,8 @@ import '../utils/formatadores_input.dart';
 import '../widgets/estado_erro_lista.dart';
 import '../widgets/form_section.dart';
 
+final _moedaDiluida = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+
 
 /// Tela de Despesas — atende tanto "Contas a Pagar" (abre já filtrada em
 /// pendentes) quanto "Saídas" (abre mostrando tudo) do menu de Finanças,
@@ -250,6 +252,14 @@ class _DespesasScreenState extends State<DespesasScreen> {
                                 child: Icon(Icons.autorenew, size: 14, color: Theme.of(context).colorScheme.primary),
                               ),
                             ],
+                            if (despesa.diluida) ...[
+                              const SizedBox(width: 6),
+                              Tooltip(
+                                message:
+                                    'Custo diluído em ${despesa.diluirMeses} meses: ${currencyFormat.format(despesa.valorMensal)}/mês no lucro',
+                                child: Icon(Icons.calendar_view_month, size: 14, color: Theme.of(context).colorScheme.primary),
+                              ),
+                            ],
                           ],
                         ),
                         subtitle: Column(
@@ -373,6 +383,8 @@ class _DespesaFormScreenState extends State<DespesaFormScreen> {
   late final TextEditingController _codigoBarrasBoletoController;
   late final TextEditingController _recorrenciaDiaController;
   late bool _recorrente;
+  late bool _diluida;
+  late final TextEditingController _diluirMesesController;
   late String _categoria;
   // Guardado por id, não pela instância de `Despesa.fornecedor` (essa vem
   // de uma consulta separada da lista usada no dropdown) — senão o
@@ -403,6 +415,8 @@ class _DespesaFormScreenState extends State<DespesaFormScreen> {
     _observacoesController = TextEditingController(text: d?.observacoes ?? '');
     _codigoBarrasBoletoController = TextEditingController(text: d?.codigoBarrasBoleto ?? '');
     _recorrente = d?.recorrente ?? false;
+    _diluida = d?.diluida ?? false;
+    _diluirMesesController = TextEditingController(text: (d?.diluirMeses ?? 12).toString());
     _recorrenciaDiaController = TextEditingController(
       text: (d?.recorrenciaDia ?? d?.dataVencimento.day)?.toString() ?? '',
     );
@@ -422,6 +436,7 @@ class _DespesaFormScreenState extends State<DespesaFormScreen> {
     _observacoesController.dispose();
     _codigoBarrasBoletoController.dispose();
     _recorrenciaDiaController.dispose();
+    _diluirMesesController.dispose();
     super.dispose();
   }
 
@@ -463,6 +478,8 @@ class _DespesaFormScreenState extends State<DespesaFormScreen> {
       codigoBarrasBoleto: _codigoBarrasBoletoController.text.trim().isEmpty ? null : _codigoBarrasBoletoController.text.trim(),
       recorrente: _recorrente,
       recorrenciaDia: _recorrente ? int.tryParse(_recorrenciaDiaController.text.trim()) : null,
+      diluirMeses: _diluida ? int.tryParse(_diluirMesesController.text.trim()) : null,
+      diluirInicio: _diluida ? DateTime(vencimento.year, vencimento.month) : null,
     );
 
     try {
@@ -601,6 +618,40 @@ class _DespesaFormScreenState extends State<DespesaFormScreen> {
                       validator: (v) {
                         final dia = int.tryParse(v?.trim() ?? '');
                         if (dia == null || dia < 1 || dia > 28) return 'Informe um dia entre 1 e 28';
+                        return null;
+                      },
+                    ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Custo diluído'),
+                    subtitle: const Text('Pagamento anual ou semestral: no lucro, cada mês de uso leva uma parte'),
+                    value: _diluida,
+                    onChanged: (v) => setState(() {
+                      _diluida = v;
+                      // Diluída não é recorrente mensal (era o erro da VPS/domínio).
+                      if (v) _recorrente = false;
+                    }),
+                  ),
+                  if (_diluida)
+                    TextFormField(
+                      controller: _diluirMesesController,
+                      decoration: InputDecoration(
+                        labelText: 'Meses de uso que o pagamento cobre',
+                        helperText: () {
+                          final meses = int.tryParse(_diluirMesesController.text.trim()) ?? 0;
+                          final valor = ClienteValidators.parseNumero(_valorController.text) ?? 0;
+                          final inicio = DateFormatUtilsLocal.parsear(_vencimentoController.text);
+                          if (meses < 2 || valor <= 0 || inicio == null) return 'Ex.: 12 pra anual, 6 pra semestral';
+                          final fim = DateTime(inicio.year, inicio.month + meses - 1);
+                          final mes = DateFormat('MM/yyyy');
+                          return '${_moedaDiluida.format(valor / meses)}/mês de ${mes.format(inicio)} a ${mes.format(fim)}';
+                        }(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => setState(() {}),
+                      validator: (v) {
+                        final m = int.tryParse(v?.trim() ?? '');
+                        if (m == null || m < 2 || m > 60) return 'Informe de 2 a 60 meses';
                         return null;
                       },
                     ),

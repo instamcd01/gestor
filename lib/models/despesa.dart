@@ -43,6 +43,12 @@ class Despesa {
   final bool recorrente;
   final int? recorrenciaDia; // dia do mês (1-28) em que a próxima ocorrência nasce
 
+  /// Custo diluído: pagamento anual/semestral entra inteiro no caixa, mas no
+  /// custo/lucro cada um dos [diluirMeses] meses de uso leva valor ÷ meses
+  /// (`despesa_custo_no_periodo` no banco). null/1 = não diluída.
+  final int? diluirMeses;
+  final DateTime? diluirInicio;
+
   Despesa({
     this.id,
     this.fornecedor,
@@ -58,7 +64,12 @@ class Despesa {
     this.codigoBarrasBoleto,
     this.recorrente = false,
     this.recorrenciaDia,
+    this.diluirMeses,
+    this.diluirInicio,
   });
+
+  bool get diluida => (diluirMeses ?? 1) > 1;
+  double get valorMensal => diluida ? valor / diluirMeses! : valor;
 
   bool get paga => status == StatusDespesa.pago;
   bool get cancelada => status == StatusDespesa.cancelado;
@@ -86,6 +97,8 @@ class Despesa {
       codigoBarrasBoleto: row['codigo_barras_boleto']?.toString(),
       recorrente: row['recorrente'] as bool? ?? false,
       recorrenciaDia: (row['recorrencia_dia'] as num?)?.toInt(),
+      diluirMeses: (row['diluir_meses'] as num?)?.toInt(),
+      diluirInicio: row['diluir_inicio'] != null ? DateTime.parse(row['diluir_inicio'].toString()) : null,
     );
   }
 
@@ -104,6 +117,8 @@ class Despesa {
       'codigo_barras_boleto': codigoBarrasBoleto,
       'recorrente': recorrente,
       'recorrencia_dia': recorrenciaDia,
+      'diluir_meses': diluida ? diluirMeses : null,
+      'diluir_inicio': diluida ? (diluirInicio ?? DateTime(dataVencimento.year, dataVencimento.month)).toIso8601String().split('T').first : null,
     };
   }
 }
