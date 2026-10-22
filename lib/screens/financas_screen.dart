@@ -6,6 +6,7 @@ import '../models/modulo.dart';
 import '../models/despesa.dart';
 import '../providers/despesa_provider.dart';
 import '../widgets/menu_secao.dart';
+import 'contas_financeiras_screen.dart';
 import 'custos_operacao_screen.dart';
 import 'dashboard_marketplace_screen.dart';
 import 'despesas_screen.dart';
@@ -61,6 +62,8 @@ class _FinancasScreenState extends State<FinancasScreen> {
           MenuSecao(
             titulo: 'Movimentações',
             itens: [
+              MenuItem('Contas e Conferência', Icons.account_balance_wallet_outlined, const ContasFinanceirasScreen(),
+                  modulos: [Modulos.contasConferencia]),
               MenuItem('Fluxo de Caixa', Icons.account_balance_outlined, const FluxoCaixaScreen()),
               MenuItem('Entradas', Icons.arrow_downward, const EntradasScreen()),
               MenuItem('Saídas', Icons.arrow_upward, const DespesasScreen(apenasPendentes: false)),

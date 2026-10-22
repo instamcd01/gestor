@@ -41,6 +41,7 @@ const _icones = <String, IconData>{
   'event_note': Icons.event_note_outlined,
   'photo_camera': Icons.photo_camera_outlined,
   'language': Icons.language,
+  'account_balance': Icons.account_balance_outlined,
 };
 
 /// Onde configurar cada módulo logo depois de instalar — só os que já têm
