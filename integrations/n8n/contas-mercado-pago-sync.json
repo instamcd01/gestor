@@ -12,11 +12,14 @@
       "name": "LEIA-ME",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-420, -260],
+      "position": [
+        -420,
+        -260
+      ],
       "parameters": {
         "width": 520,
-        "height": 300,
-        "content": "## Contas e Conferência — Mercado Pago\nA cada 15 min, pra TODA loja com Mercado Pago conectado (empresa_mercadopago):\n1. mp_lojas_para_sincronizar() → token + desde quando buscar (última sync − 3 dias)\n2. /v1/payments/search por date_last_updated, paginado\n3. mp_sincronizar_pagamentos() grava o extrato da conta Mercado Pago da loja (cria a conta se não existir), concilia com o pedido (external_reference) e corrige a taxa real (bruto − líquido, inclui antecipação)\nErro → contas_registrar_erro_sincronizacao (aparece na conta no Gestor).\nExecuções com sucesso NÃO são salvas (token no payload + carga da VPS)."
+        "height": 420,
+        "content": "## Contas e Conferência — Mercado Pago\nA cada 15 min, pra TODA loja com Mercado Pago conectado (empresa_mercadopago):\n1. mp_lojas_para_sincronizar() → token + desde quando buscar (última sync − 3 dias)\n2. /v1/payments/search por date_last_updated, paginado\n3. mp_sincronizar_pagamentos() grava o extrato da conta Mercado Pago da loja (cria a conta se não existir), concilia com o pedido (external_reference) e corrige a taxa real (bruto − líquido, inclui antecipação)\nErro → contas_registrar_erro_sincronizacao (aparece na conta no Gestor).\nExecuções com sucesso NÃO são salvas (token no payload + carga da VPS).\n\nSaldo (a cada 6h): API de saldo do MP é 403 → relatório de liberações (BALANCE_AMOUNT). Pede relatório novo se o último tiver >5h, baixa o mais recente pronto, mp_gravar_relatorio_liberacoes grava saldo base + saques (payout) e ignora arquivo repetido. Entre relatórios, o saldo anda com os pagamentos (contas_recalcular_saldo)."
       }
     },
     {
@@ -24,29 +27,52 @@
       "name": "A cada 15 min",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-400, 100],
-      "parameters": { "rule": { "interval": [ { "field": "minutes", "minutesInterval": 15 } ] } }
+      "position": [
+        -400,
+        100
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
     },
     {
       "id": "b1f0c001-0000-4000-8000-000000000003",
       "name": "Lojas com Mercado Pago",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [-180, 100],
+      "position": [
+        -180,
+        100
+      ],
       "alwaysOutputData": false,
       "parameters": {
         "operation": "executeQuery",
         "query": "select empresa_id, access_token, buscar_desde from public.mp_lojas_para_sincronizar();",
         "options": {}
       },
-      "credentials": { "postgres": { "id": "GEzDAcb9DFtH5ozo", "name": "Postgres cloud" } }
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
     },
     {
       "id": "b1f0c001-0000-4000-8000-000000000004",
       "name": "Buscar pagamentos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [40, 100],
+      "position": [
+        40,
+        100
+      ],
       "parameters": {
         "mode": "runOnceForEachItem",
         "jsCode": "// Pagamentos alterados desde a última sync (date_last_updated pega\n// também liberação e estorno de pagamento antigo). Devolve só os campos\n// que mp_sincronizar_pagamentos usa — o token fica fora da saída.\nconst { empresa_id, access_token, buscar_desde } = $json;\nconst desde = new Date(buscar_desde).toISOString();\nconst pagamentos = [];\ntry {\n  for (let offset = 0; offset < 5000; offset += 100) {\n    const r = await this.helpers.httpRequest({\n      method: 'GET',\n      url: 'https://api.mercadopago.com/v1/payments/search',\n      qs: { sort: 'date_last_updated', criteria: 'asc', range: 'date_last_updated', begin_date: desde, end_date: 'NOW', limit: 100, offset },\n      headers: { Authorization: `Bearer ${access_token}` },\n      json: true,\n    });\n    for (const p of r.results || []) {\n      pagamentos.push({\n        id: String(p.id),\n        status: p.status,\n        external_reference: p.external_reference,\n        transaction_amount: p.transaction_amount,\n        net_received_amount: p.transaction_details?.net_received_amount ?? null,\n        transaction_amount_refunded: p.transaction_amount_refunded ?? 0,\n        date_approved: p.date_approved,\n        date_last_updated: p.date_last_updated,\n        money_release_date: p.money_release_date,\n        money_release_status: p.money_release_status,\n        payment_type_id: p.payment_type_id,\n        payment_method_id: p.payment_method_id,\n        installments: p.installments,\n      });\n    }\n    const total = r.paging?.total ?? 0;\n    if (!r.results?.length || offset + 100 >= total) break;\n  }\n  return { json: { empresa_id, pagamentos, erro: null } };\n} catch (e) {\n  const status = e.httpCode || e.response?.status || '';\n  return { json: { empresa_id, pagamentos: [], erro: `Mercado Pago ${status}: ${e.message}`.slice(0, 400) } };\n}"
@@ -57,12 +83,29 @@
       "name": "Deu erro?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [260, 100],
+      "position": [
+        260,
+        100
+      ],
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
           "conditions": [
-            { "id": "c1", "leftValue": "={{ $json.erro }}", "rightValue": "", "operator": { "type": "string", "operation": "notEmpty", "singleValue": true } }
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.erro }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
           ],
           "combinator": "and"
         },
@@ -74,32 +117,256 @@
       "name": "Registrar erro",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [480, 0],
+      "position": [
+        480,
+        0
+      ],
       "parameters": {
         "operation": "executeQuery",
         "query": "select public.contas_registrar_erro_sincronizacao($1::uuid, 'mercado_pago', $2);",
-        "options": { "queryReplacement": "={{ [$json.empresa_id, $json.erro] }}" }
+        "options": {
+          "queryReplacement": "={{ [$json.empresa_id, $json.erro] }}"
+        }
       },
-      "credentials": { "postgres": { "id": "GEzDAcb9DFtH5ozo", "name": "Postgres cloud" } }
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
     },
     {
       "id": "b1f0c001-0000-4000-8000-000000000007",
       "name": "Gravar extrato",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [480, 200],
+      "position": [
+        480,
+        200
+      ],
       "parameters": {
         "operation": "executeQuery",
         "query": "select public.mp_sincronizar_pagamentos($1::uuid, $2::jsonb) as resultado;",
-        "options": { "queryReplacement": "={{ [$json.empresa_id, JSON.stringify($json.pagamentos)] }}" }
+        "options": {
+          "queryReplacement": "={{ [$json.empresa_id, JSON.stringify($json.pagamentos)] }}"
+        }
       },
-      "credentials": { "postgres": { "id": "GEzDAcb9DFtH5ozo", "name": "Postgres cloud" } }
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "b1f0c001-0000-4000-8000-000000000008",
+      "name": "A cada 6h (saldo)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        420
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b1f0c001-0000-4000-8000-000000000009",
+      "name": "Lojas (saldo)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -180,
+        420
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, access_token from public.mp_lojas_para_sincronizar();",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "id": "b1f0c001-0000-4000-8000-000000000010",
+      "name": "Relatório de liberações",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        420
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Saldo do Mercado Pago (API de saldo = 403): relatório de liberações.\n// Pede um relatório novo (últimos 3 dias) se o mais recente tiver mais de 5h\n// e baixa o mais recente pronto; mp_gravar_relatorio_liberacoes ignora\n// arquivo já processado. Saldo = BALANCE_AMOUNT da última linha com data.\nconst { empresa_id, access_token } = $json;\nconst base = 'https://api.mercadopago.com/v1/account/release_report';\nconst headers = { Authorization: `Bearer ${access_token}` };\ntry {\n  const lista = await this.helpers.httpRequest({ method: 'GET', url: `${base}/list`, headers, json: true });\n  const prontos = (lista || []).filter((r) => r.status === 'enabled' && r.file_name)\n    .sort((a, b) => new Date(b.date_created) - new Date(a.date_created));\n  const recente = (lista || []).sort((a, b) => new Date(b.date_created) - new Date(a.date_created))[0];\n  if (!recente || Date.now() - new Date(recente.date_created).getTime() > 5 * 3600e3) {\n    const agora = new Date();\n    await this.helpers.httpRequest({\n      method: 'POST', url: base, headers, json: true,\n      body: { begin_date: new Date(agora - 3 * 864e5).toISOString().slice(0, 19) + 'Z', end_date: agora.toISOString().slice(0, 19) + 'Z' },\n    });\n  }\n  const r = prontos[0];\n  if (!r) return { json: { empresa_id, pular: true } };\n  const csv = await this.helpers.httpRequest({ method: 'GET', url: `${base}/${r.file_name}`, headers, json: false });\n  const linhas = String(csv).split(/\\r?\\n/).filter(Boolean);\n  const cab = linhas[0].split(';');\n  const col = (n) => cab.indexOf(n);\n  const [iData, iId, iDesc, iDeb, iSaldo] = ['DATE', 'SOURCE_ID', 'DESCRIPTION', 'NET_DEBIT_AMOUNT', 'BALANCE_AMOUNT'].map(col);\n  const dados = linhas.slice(1).map((l) => l.split(';')).filter((c) => c[iData]);\n  if (!dados.length || iSaldo < 0) return { json: { empresa_id, pular: true } };\n  const saldo = Number(dados[dados.length - 1][iSaldo]);\n  const saques = dados.filter((c) => (c[iDesc] || '').toLowerCase() === 'payout')\n    .map((c) => ({ id: c[iId], data: c[iData], valor: Number(c[iDeb]) }));\n  return { json: { empresa_id, arquivo: r.file_name, saldo, fim: r.end_date, saques, pular: false } };\n} catch (e) {\n  return { json: { empresa_id, pular: true, erro: `Relatório MP: ${e.message}`.slice(0, 300) } };\n}"
+      }
+    },
+    {
+      "id": "b1f0c001-0000-4000-8000-000000000011",
+      "name": "Tem relatório?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        260,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.pular }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b1f0c001-0000-4000-8000-000000000012",
+      "name": "Gravar saldo",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        480,
+        420
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.mp_gravar_relatorio_liberacoes($1::uuid, $2, $3::numeric, $4::timestamptz, $5::jsonb) as resultado;",
+        "options": {
+          "queryReplacement": "={{ [$json.empresa_id, $json.arquivo, $json.saldo, $json.fim, JSON.stringify($json.saques)] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
     }
   ],
   "connections": {
-    "A cada 15 min": { "main": [ [ { "node": "Lojas com Mercado Pago", "type": "main", "index": 0 } ] ] },
-    "Lojas com Mercado Pago": { "main": [ [ { "node": "Buscar pagamentos", "type": "main", "index": 0 } ] ] },
-    "Buscar pagamentos": { "main": [ [ { "node": "Deu erro?", "type": "main", "index": 0 } ] ] },
-    "Deu erro?": { "main": [ [ { "node": "Registrar erro", "type": "main", "index": 0 } ], [ { "node": "Gravar extrato", "type": "main", "index": 0 } ] ] }
+    "A cada 15 min": {
+      "main": [
+        [
+          {
+            "node": "Lojas com Mercado Pago",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lojas com Mercado Pago": {
+      "main": [
+        [
+          {
+            "node": "Buscar pagamentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar pagamentos": {
+      "main": [
+        [
+          {
+            "node": "Deu erro?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deu erro?": {
+      "main": [
+        [
+          {
+            "node": "Registrar erro",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gravar extrato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A cada 6h (saldo)": {
+      "main": [
+        [
+          {
+            "node": "Lojas (saldo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lojas (saldo)": {
+      "main": [
+        [
+          {
+            "node": "Relatório de liberações",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relatório de liberações": {
+      "main": [
+        [
+          {
+            "node": "Tem relatório?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem relatório?": {
+      "main": [
+        [
+          {
+            "node": "Gravar saldo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
   }
 }
