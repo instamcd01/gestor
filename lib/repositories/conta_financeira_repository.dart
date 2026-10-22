@@ -142,5 +142,38 @@ class ContaFinanceiraRepository {
     return ResultadoImportacao(novas: novas, repetidas: repetidas, saldoFinal: extrato.saldoFinal);
   }
 
+  /// Grava Client ID/Secret e o certificado no Vault (RPC confere se é
+  /// dono/gerente da loja) e já busca saldo e extrato pra confirmar que a
+  /// conexão funciona — erro do Inter volta como exceção com a mensagem dele.
+  Future<double?> conectarInter({
+    required String contaId,
+    required String clientId,
+    required String clientSecret,
+    required String certificado,
+    required String chave,
+    String? contaCorrente,
+  }) async {
+    await _supabase.rpc('conta_conectar_inter', params: {
+      'p_conta_id': contaId,
+      'p_client_id': clientId,
+      'p_client_secret': clientSecret,
+      'p_certificado': certificado,
+      'p_chave': chave,
+      'p_conta_corrente': contaCorrente,
+    });
+    return sincronizarAgora(contaId);
+  }
+
+  /// Sincroniza uma conta com certificado (Inter) na hora; devolve o saldo.
+  Future<double?> sincronizarAgora(String contaId) async {
+    final r = await _supabase.functions.invoke('contas-sync', body: {'conta_id': contaId});
+    final resultado = ((r.data as Map?)?['resultados'] as List?)?.cast<Map>().firstOrNull;
+    if (resultado == null) throw Exception('A conta não está conectada');
+    if (resultado['erro'] != null) throw Exception(resultado['erro']);
+    return (resultado['saldo'] as num?)?.toDouble();
+  }
+
+  Future<void> desconectar(String contaId) => _supabase.rpc('conta_desconectar', params: {'p_conta_id': contaId});
+
   static String? _dia(DateTime? d) => d?.toIso8601String().split('T').first;
 }

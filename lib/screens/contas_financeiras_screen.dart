@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../models/conta_financeira.dart';
 import '../providers/auth_provider.dart';
@@ -87,6 +88,26 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
     } catch (e) {
       _aviso('Erro ao importar: $e');
     }
+  }
+
+  Future<void> _conectarInter(ContaFinanceira conta) async {
+    final saldo = await showDialog<double?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ConectarInterDialog(conta: conta),
+    );
+    if (saldo != null) _aviso('Inter conectado. Saldo: ${_moeda.format(saldo)}');
+    _carregar();
+  }
+
+  Future<void> _sincronizar(ContaFinanceira conta) async {
+    try {
+      final saldo = await _repository.sincronizarAgora(conta.id);
+      _aviso(saldo == null ? 'Conta atualizada' : 'Conta atualizada. Saldo: ${_moeda.format(saldo)}');
+    } catch (e) {
+      _aviso('Não deu pra atualizar: ${e.toString().replaceFirst('Exception: ', '')}');
+    }
+    _carregar();
   }
 
   @override
@@ -219,6 +240,19 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
             child: Row(
               children: [
+                // Com erro (certificado vencido, secret trocado) reconecta por cima.
+                if (c.provedor == 'inter' && (!c.automatica || c.ultimoErro != null))
+                  TextButton.icon(
+                    onPressed: () => _conectarInter(c),
+                    icon: const Icon(Icons.link, size: 18),
+                    label: Text(c.automatica ? 'Reconectar' : 'Conectar ao Inter'),
+                  ),
+                if (c.automatica && c.provedor == 'inter')
+                  TextButton.icon(
+                    onPressed: () => _sincronizar(c),
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Atualizar agora'),
+                  ),
                 if (!c.automatica)
                   TextButton.icon(
                     onPressed: () => _importar(c),
@@ -403,6 +437,156 @@ class _ContaDialogState extends State<_ContaDialog> {
       actions: [
         TextButton(onPressed: _salvando ? null : () => Navigator.pop(context), child: const Text('Cancelar')),
         FilledButton(onPressed: _salvando ? null : _salvar, child: const Text('Salvar')),
+      ],
+    );
+  }
+}
+
+/// Conexão com o Banco Inter por API: Client ID/Secret e o certificado
+/// (.crt + .key) baixados em Internet Banking PJ › Soluções para sua
+/// empresa › Nova integração. O conteúdo dos arquivos vai direto pro Vault
+/// pela RPC; depois a Edge Function `contas-sync` já busca saldo e extrato
+/// pra confirmar. Devolve o saldo quando conecta.
+class _ConectarInterDialog extends StatefulWidget {
+  final ContaFinanceira conta;
+
+  const _ConectarInterDialog({required this.conta});
+
+  @override
+  State<_ConectarInterDialog> createState() => _ConectarInterDialogState();
+}
+
+class _ConectarInterDialogState extends State<_ConectarInterDialog> {
+  final _clientId = TextEditingController();
+  final _clientSecret = TextEditingController();
+  final _contaCorrente = TextEditingController();
+  String? _certificado;
+  String? _certificadoNome;
+  String? _chave;
+  String? _chaveNome;
+  bool _salvando = false;
+  String? _erro;
+
+  @override
+  void dispose() {
+    _clientId.dispose();
+    _clientSecret.dispose();
+    _contaCorrente.dispose();
+    super.dispose();
+  }
+
+  Future<void> _escolher({required bool chave}) async {
+    final r = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: chave ? ['key', 'pem'] : ['crt', 'pem', 'cer'],
+      withData: true,
+    );
+    final arquivo = r?.files.single;
+    if (arquivo?.bytes == null) return;
+    final texto = String.fromCharCodes(arquivo!.bytes!);
+    setState(() {
+      _erro = null;
+      if (chave) {
+        _chave = texto;
+        _chaveNome = arquivo.name;
+      } else {
+        _certificado = texto;
+        _certificadoNome = arquivo.name;
+      }
+    });
+  }
+
+  Future<void> _conectar() async {
+    if (_clientId.text.trim().isEmpty || _clientSecret.text.trim().isEmpty || _certificado == null || _chave == null) {
+      setState(() => _erro = 'Preencha o Client ID, o Client Secret e escolha os dois arquivos.');
+      return;
+    }
+    setState(() {
+      _salvando = true;
+      _erro = null;
+    });
+    try {
+      final saldo = await ContaFinanceiraRepository().conectarInter(
+        contaId: widget.conta.id,
+        clientId: _clientId.text,
+        clientSecret: _clientSecret.text,
+        certificado: _certificado!,
+        chave: _chave!,
+        contaCorrente: _contaCorrente.text,
+      );
+      if (mounted) Navigator.pop(context, saldo ?? 0);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _salvando = false;
+          _erro = e is PostgrestException ? e.message : e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    Widget arquivo(String rotulo, String? nome, bool chave) => OutlinedButton.icon(
+          onPressed: _salvando ? null : () => _escolher(chave: chave),
+          icon: Icon(nome == null ? Icons.attach_file : Icons.check_circle, size: 18),
+          label: Text(nome ?? rotulo, overflow: TextOverflow.ellipsis),
+        );
+    return AlertDialog(
+      title: const Text('Conectar ao Inter'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'No Internet Banking PJ do Inter: Soluções para sua empresa › Nova integração. '
+                'Marque só consultar extrato e saldo. Baixe o certificado e copie o Client ID e o Client Secret.',
+                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              TextField(controller: _clientId, decoration: const InputDecoration(labelText: 'Client ID')),
+              TextField(
+                controller: _clientSecret,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Client Secret'),
+              ),
+              const SizedBox(height: 12),
+              arquivo('Certificado (.crt)', _certificadoNome, false),
+              const SizedBox(height: 8),
+              arquivo('Chave (.key)', _chaveNome, true),
+              TextField(
+                controller: _contaCorrente,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Número da conta (opcional)',
+                  helperText: 'Só se a empresa tiver mais de uma conta no Inter',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Só leitura: o Gestor não faz pagamento nem Pix por essa conexão.',
+                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+              ),
+              if (_erro != null) ...[
+                const SizedBox(height: 12),
+                Text(_erro!, style: TextStyle(color: cs.error)),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _salvando ? null : () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: _salvando ? null : _conectar,
+          child: _salvando
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Conectar'),
+        ),
       ],
     );
   }
