@@ -100,6 +100,16 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
     _carregar();
   }
 
+  Future<void> _conectarStone(ContaFinanceira conta) async {
+    final resumo = await showDialog<String?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ConectarStoneDialog(conta: conta),
+    );
+    if (resumo != null) _aviso(resumo);
+    _carregar();
+  }
+
   Future<void> _sincronizar(ContaFinanceira conta) async {
     try {
       final saldo = await _repository.sincronizarAgora(conta.id);
@@ -247,7 +257,22 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
                     icon: const Icon(Icons.link, size: 18),
                     label: Text(c.automatica ? 'Reconectar' : 'Conectar ao Inter'),
                   ),
-                if (c.automatica && c.provedor == 'inter')
+                if (c.provedor == 'stone' && (!c.automatica || c.ultimoErro != null))
+                  TextButton.icon(
+                    onPressed: () => _conectarStone(c),
+                    icon: const Icon(Icons.link, size: 18),
+                    label: Text(c.automatica ? 'Reconectar' : 'Conectar à Stone'),
+                  ),
+                if (c.automatica && c.provedor == 'stone')
+                  TextButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => VendasCartaoScreen(conta: c)),
+                    ),
+                    icon: const Icon(Icons.credit_card, size: 18),
+                    label: const Text('Vendas no cartão'),
+                  ),
+                if (c.automatica && (c.provedor == 'inter' || c.provedor == 'stone'))
                   TextButton.icon(
                     onPressed: () => _sincronizar(c),
                     icon: const Icon(Icons.refresh, size: 18),
@@ -588,6 +613,196 @@ class _ConectarInterDialogState extends State<_ConectarInterDialog> {
               : const Text('Conectar'),
         ),
       ],
+    );
+  }
+}
+
+/// Conexão com a Stone pela API de Conciliação (modo cliente): o titular
+/// cria a chave no Portal Stone (Perfil › Chaves de Autenticação › Criar
+/// Chave › "API de Conciliação Stone") e informa o StoneCode. A chave vai
+/// pro Vault; a Edge Function `contas-sync` baixa os arquivos diários.
+class _ConectarStoneDialog extends StatefulWidget {
+  final ContaFinanceira conta;
+
+  const _ConectarStoneDialog({required this.conta});
+
+  @override
+  State<_ConectarStoneDialog> createState() => _ConectarStoneDialogState();
+}
+
+class _ConectarStoneDialogState extends State<_ConectarStoneDialog> {
+  final _stoneCode = TextEditingController();
+  final _chave = TextEditingController();
+  bool _salvando = false;
+  String? _erro;
+
+  @override
+  void dispose() {
+    _stoneCode.dispose();
+    _chave.dispose();
+    super.dispose();
+  }
+
+  Future<void> _conectar() async {
+    setState(() {
+      _salvando = true;
+      _erro = null;
+    });
+    try {
+      final r = await ContaFinanceiraRepository().conectarStone(
+        contaId: widget.conta.id,
+        stoneCode: _stoneCode.text,
+        chave: _chave.text,
+      );
+      final dias = (r['dias'] as num?)?.toInt() ?? 0;
+      final vendas = (r['vendas'] as num?)?.toInt() ?? 0;
+      if (mounted) {
+        Navigator.pop(
+          context,
+          dias == 0
+              ? 'Stone conectada. Os arquivos do dia ficam prontos a partir das 5h do dia seguinte.'
+              : 'Stone conectada: $vendas vendas de $dias dias. O resto do histórico chega nas próximas atualizações.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _salvando = false;
+          _erro = e is PostgrestException ? e.message : e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: const Text('Conectar à Stone'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'No Portal Stone (titular da conta): Perfil › Chaves de Autenticação › Criar Chave › '
+                '"API de Conciliação Stone". Copie a chave e o StoneCode da loja.',
+                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _stoneCode,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'StoneCode'),
+              ),
+              TextField(
+                controller: _chave,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Chave da API de Conciliação'),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Só leitura: vendas, taxas e recebimentos. A Stone libera o arquivo de cada dia a partir das 5h do dia seguinte.',
+                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+              ),
+              if (_erro != null) ...[
+                const SizedBox(height: 12),
+                Text(_erro!, style: TextStyle(color: cs.error)),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _salvando ? null : () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: _salvando ? null : _conectar,
+          child: _salvando
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Conectar'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Vendas no cartão da maquininha: bruto, taxa real, líquido, quando cai e
+/// o pedido do Gestor que casou (ou "escolher" quando há mais de um igual).
+class VendasCartaoScreen extends StatefulWidget {
+  final ContaFinanceira conta;
+
+  const VendasCartaoScreen({super.key, required this.conta});
+
+  @override
+  State<VendasCartaoScreen> createState() => _VendasCartaoScreenState();
+}
+
+class _VendasCartaoScreenState extends State<VendasCartaoScreen> {
+  late final Future<List<VendaCartao>> _futuro = ContaFinanceiraRepository().listarVendasCartao(contaId: widget.conta.id);
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final dataHora = DateFormat('dd/MM HH:mm');
+    return Scaffold(
+      appBar: AppBar(title: const Text('Vendas no cartão')),
+      body: FutureBuilder<List<VendaCartao>>(
+        future: _futuro,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+          if (snap.hasError) return Center(child: Text('Erro: ${snap.error}'));
+          final lista = snap.data!;
+          if (lista.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('Nenhuma venda ainda. A Stone libera o arquivo de cada dia a partir das 5h do dia seguinte.',
+                    textAlign: TextAlign.center),
+              ),
+            );
+          }
+          final bruto = lista.fold<double>(0, (t, v) => t + v.valorBruto);
+          final taxas = lista.fold<double>(0, (t, v) => t + v.taxa);
+          final semPedido = lista.where((v) => v.pedidoNumero == null).length;
+          return ListView.separated(
+            itemCount: lista.length + 1,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              if (i == 0) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    '${lista.length} vendas · ${_moeda.format(bruto)} · taxas ${_moeda.format(taxas)} '
+                    '(${bruto == 0 ? 0 : (taxas / bruto * 100).toStringAsFixed(2)}%) · $semPedido sem pedido no Gestor',
+                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
+                  ),
+                );
+              }
+              final v = lista[i - 1];
+              final pedido = v.pedidoNumero != null
+                  ? 'pedido #${v.pedidoNumero}'
+                  : v.vinculo == 'ambiguo'
+                      ? 'mais de um pedido igual'
+                      : 'sem pedido';
+              return ListTile(
+                dense: true,
+                title: Text('${v.tipoRotulo}${v.bandeira == null ? '' : ' ${v.bandeira}'} · ${_moeda.format(v.valorBruto)}'),
+                subtitle: Text([
+                  dataHora.format(v.capturadaEm),
+                  'taxa ${_moeda.format(v.taxa)} (${v.taxaPercentual.toStringAsFixed(2)}%)',
+                  if (v.previsaoPagamento != null) 'cai ${DateFormat('dd/MM').format(v.previsaoPagamento!)}',
+                  pedido,
+                  if (v.valorCancelado > 0) 'cancelada ${_moeda.format(v.valorCancelado)}',
+                ].join(' · ')),
+                trailing: Text(_moeda.format(v.valorLiquido),
+                    style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600)),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

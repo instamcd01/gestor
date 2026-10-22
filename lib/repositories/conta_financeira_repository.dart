@@ -164,13 +164,44 @@ class ContaFinanceiraRepository {
     return sincronizarAgora(contaId);
   }
 
-  /// Sincroniza uma conta com certificado (Inter) na hora; devolve o saldo.
-  Future<double?> sincronizarAgora(String contaId) async {
+  /// Stone (API de Conciliação, modo cliente): StoneCode + chave criada no
+  /// Portal Stone. Já baixa os primeiros dias pra confirmar.
+  Future<Map<String, dynamic>> conectarStone({
+    required String contaId,
+    required String stoneCode,
+    required String chave,
+  }) async {
+    await _supabase.rpc('conta_conectar_stone', params: {
+      'p_conta_id': contaId,
+      'p_stone_code': stoneCode,
+      'p_chave': chave,
+    });
+    return _sincronizar(contaId);
+  }
+
+  Future<Map<String, dynamic>> _sincronizar(String contaId) async {
     final r = await _supabase.functions.invoke('contas-sync', body: {'conta_id': contaId});
     final resultado = ((r.data as Map?)?['resultados'] as List?)?.cast<Map>().firstOrNull;
     if (resultado == null) throw Exception('A conta não está conectada');
     if (resultado['erro'] != null) throw Exception(resultado['erro']);
-    return (resultado['saldo'] as num?)?.toDouble();
+    return Map<String, dynamic>.from(resultado);
+  }
+
+  /// Sincroniza uma conta conectada (Inter/Stone) na hora; devolve o saldo
+  /// quando o provedor informa (Inter).
+  Future<double?> sincronizarAgora(String contaId) async =>
+      ((await _sincronizar(contaId))['saldo'] as num?)?.toDouble();
+
+  /// Vendas no cartão da maquininha, mais novas primeiro.
+  Future<List<VendaCartao>> listarVendasCartao({required String contaId, int limite = 300}) async {
+    final data = await _supabase
+        .from('vendas_cartao')
+        .select('id, capturada_em, tipo, bandeira, parcelas, valor_bruto, valor_liquido, taxa, previsao_pagamento, '
+            'valor_cancelado, vinculo, pedido:pedidos(numero_sequencial)')
+        .eq('conta_id', contaId)
+        .order('capturada_em', ascending: false)
+        .limit(limite);
+    return (data as List).map((r) => VendaCartao.fromSupabase(r as Map<String, dynamic>)).toList();
   }
 
   Future<void> desconectar(String contaId) => _supabase.rpc('conta_desconectar', params: {'p_conta_id': contaId});

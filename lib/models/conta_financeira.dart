@@ -132,6 +132,63 @@ class MovimentacaoFinanceira {
       );
 }
 
+/// Venda no cartão vinda da maquininha (`vendas_cartao`): o que vai cair,
+/// com a taxa real da adquirente e o pedido do Gestor quando casou.
+class VendaCartao {
+  final String id;
+  final DateTime capturadaEm;
+  final String tipo;
+  final String? bandeira;
+  final int parcelas;
+  final double valorBruto;
+  final double valorLiquido;
+  final double taxa;
+  final DateTime? previsaoPagamento;
+  final double valorCancelado;
+  final String? vinculo;
+  final int? pedidoNumero;
+
+  const VendaCartao({
+    required this.id,
+    required this.capturadaEm,
+    required this.tipo,
+    this.bandeira,
+    required this.parcelas,
+    required this.valorBruto,
+    required this.valorLiquido,
+    required this.taxa,
+    this.previsaoPagamento,
+    this.valorCancelado = 0,
+    this.vinculo,
+    this.pedidoNumero,
+  });
+
+  String get tipoRotulo => switch (tipo) {
+        'debito' => 'Débito',
+        'credito' => parcelas > 1 ? 'Crédito ${parcelas}x' : 'Crédito',
+        'pre_pago' => 'Pré-pago',
+        'voucher' => 'Voucher',
+        _ => 'Cartão',
+      };
+
+  double get taxaPercentual => valorBruto == 0 ? 0 : taxa / valorBruto * 100;
+
+  factory VendaCartao.fromSupabase(Map<String, dynamic> row) => VendaCartao(
+        id: row['id'] as String,
+        capturadaEm: DateTime.parse(row['capturada_em'] as String).toLocal(),
+        tipo: row['tipo'] as String,
+        bandeira: row['bandeira'] as String?,
+        parcelas: (row['parcelas'] as num?)?.toInt() ?? 1,
+        valorBruto: (row['valor_bruto'] as num).toDouble(),
+        valorLiquido: (row['valor_liquido'] as num).toDouble(),
+        taxa: (row['taxa'] as num?)?.toDouble() ?? 0,
+        previsaoPagamento: row['previsao_pagamento'] != null ? DateTime.parse(row['previsao_pagamento'] as String) : null,
+        valorCancelado: (row['valor_cancelado'] as num?)?.toDouble() ?? 0,
+        vinculo: row['vinculo'] as String?,
+        pedidoNumero: ((row['pedido'] as Map?)?['numero_sequencial'] as num?)?.toInt(),
+      );
+}
+
 class ResultadoImportacao {
   final int novas;
   final int repetidas;
