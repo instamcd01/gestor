@@ -36,6 +36,7 @@ class ContaFinanceira {
     'maquininha': 'Maquininha',
     'pagamento_online': 'Pagamento online',
     'caixa': 'Caixa físico',
+    'cartao_credito': 'Cartão de crédito',
   };
 
   /// Provedores com conector próprio planejado; qualquer outro entra como
@@ -43,6 +44,7 @@ class ContaFinanceira {
   static const provedores = {
     'inter': 'Banco Inter',
     'ton': 'Ton',
+    'nubank': 'Nubank',
     'stone': 'Stone',
     'mercado_pago': 'Mercado Pago',
     'outro': 'Outro',

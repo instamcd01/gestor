@@ -185,7 +185,8 @@ class _ContasFinanceirasScreenState extends State<ContasFinanceirasScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ativas = _contas.where((c) => c.ativa).toList();
+    // Cartão de crédito não tem saldo (é fatura): fica fora do total.
+    final ativas = _contas.where((c) => c.ativa && c.tipo != 'cartao_credito').toList();
     final saldoTotal = ativas.fold<double>(0, (t, c) => t + (c.saldoAtual ?? 0));
     final semSaldo = ativas.where((c) => c.saldoAtual == null && !c.automatica).length;
 

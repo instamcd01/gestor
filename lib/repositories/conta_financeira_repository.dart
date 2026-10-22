@@ -124,7 +124,9 @@ class ContaFinanceiraRepository {
     await _supabase.from('importacoes_extrato').update({'qtd_novas': novas, 'qtd_repetidas': repetidas}).eq('id', importacaoId);
 
     final saldoEm = extrato.saldoEm ?? extrato.fim;
-    if (extrato.saldoFinal != null &&
+    // Fatura de cartão: o "saldo" do arquivo é a dívida da fatura, não dinheiro da loja.
+    if (!extrato.cartaoCredito &&
+        extrato.saldoFinal != null &&
         saldoEm != null &&
         (conta.saldoAtualizadoEm == null || !saldoEm.isBefore(conta.saldoAtualizadoEm!))) {
       await _supabase.from('contas_financeiras').update({
@@ -208,7 +210,7 @@ class ContaFinanceiraRepository {
 
   /// Banco (código Febraban do OFX) → provedor conhecido. O resto entra como
   /// "outro" com o nome da instituição que vem no arquivo.
-  static const _bancos = {'77': 'inter', '197': 'ton', '323': 'mercado_pago'};
+  static const _bancos = {'77': 'inter', '197': 'ton', '323': 'mercado_pago', '260': 'nubank'};
 
   /// "Enviar extrato": lê o OFX, acha a conta pelo banco+agência+conta do
   /// próprio arquivo (ou pela única conta daquele banco ainda sem
@@ -227,8 +229,15 @@ class ContaFinanceiraRepository {
     final contas = await listar(empresaId);
     ContaFinanceira? conta = contas.where((c) => extrato.identificacao != null && c.identificacao == extrato.identificacao).firstOrNull;
     conta ??= () {
-      final mesmoBanco =
-          contas.where((c) => c.provedor == provedor && provedor != 'outro' && c.identificacao == null && !c.automatica).toList();
+      final tipo = extrato.cartaoCredito ? 'cartao_credito' : null;
+      final mesmoBanco = contas
+          .where((c) =>
+              c.provedor == provedor &&
+              provedor != 'outro' &&
+              c.identificacao == null &&
+              !c.automatica &&
+              (tipo == null ? c.tipo != 'cartao_credito' : c.tipo == tipo))
+          .toList();
       return mesmoBanco.length == 1 ? mesmoBanco.first : null;
     }();
 
@@ -238,12 +247,13 @@ class ContaFinanceiraRepository {
           .insert({
             'empresa_id': empresaId,
             'nome': switch (provedor) {
+              _ when extrato.cartaoCredito => 'Cartão ${ContaFinanceira.provedores[provedor] ?? extrato.instituicao ?? ''}'.trim(),
               'inter' => 'Banco Inter',
               'ton' => 'Ton',
               'mercado_pago' => 'Mercado Pago (extrato)',
               _ => extrato.instituicao ?? 'Banco $banco',
             },
-            'tipo': 'banco',
+            'tipo': extrato.cartaoCredito ? 'cartao_credito' : 'banco',
             'provedor': provedor,
             'identificacao': extrato.identificacao,
           })

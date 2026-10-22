@@ -34,6 +34,10 @@ class ExtratoOfx {
   final String? conta;
   final String? instituicao;
 
+  /// Fatura de cartão de crédito (`<CCSTMTRS>`): saldo do arquivo é a
+  /// fatura, não dinheiro em conta.
+  final bool cartaoCredito;
+
   const ExtratoOfx({
     required this.lancamentos,
     this.inicio,
@@ -44,12 +48,14 @@ class ExtratoOfx {
     this.agencia,
     this.conta,
     this.instituicao,
+    this.cartaoCredito = false,
   });
 
   /// Código do banco sem zeros à esquerda ("0197" → "197").
   String? get bancoNormalizado => bancoCodigo?.replaceFirst(RegExp(r'^0+(?=\d)'), '');
 
   /// "077 · 0001-9 · 362347727" — gravado em `contas_financeiras.identificacao`.
+  /// Cartão não tem agência/banco no arquivo: identifica por instituição + conta.
   String? get identificacao =>
       bancoNormalizado == null || conta == null ? null : [bancoNormalizado, agencia, conta].whereType<String>().join(' · ');
 }
@@ -116,10 +122,13 @@ class OfxParser {
       fim: _data(_tag(texto, 'DTEND')),
       saldoFinal: saldoTexto == null ? null : double.tryParse(saldoTexto.replaceAll(',', '.')),
       saldoEm: saldoBloco == null ? null : _data(_tag(saldoBloco, 'DTASOF')),
-      bancoCodigo: _tag(texto, 'BANKID'),
+      // Fatura de cartão não traz BANKID; o FID da instituição faz o papel
+      // (Nubank = 260).
+      bancoCodigo: _tag(texto, 'BANKID') ?? _tag(texto, 'FID'),
       agencia: _tag(texto, 'BRANCHID'),
       conta: _tag(texto, 'ACCTID'),
       instituicao: _tag(texto, 'ORG'),
+      cartaoCredito: RegExp('<CCSTMTRS>', caseSensitive: false).hasMatch(texto),
     );
   }
 
