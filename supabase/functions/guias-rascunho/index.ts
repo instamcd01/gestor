@@ -238,14 +238,14 @@ Primeiro decida se o Reel é EDUCATIVO: ensina algo útil sobre cuidar de pet (a
 
 Se for, escreva o guia em português do Brasil do dia a dia, frases curtas, falando com o dono do pet ("você"):
 - titulo = a PERGUNTA que a pessoa digitaria no Google (ex.: "Cachorro pode comer ovo?"); sem nome da série nem emoji.
-- slug = titulo em minúsculas, sem acento, palavras separadas por hífen, até 60 letras.
+- slug = titulo em minúsculas, sem acento, palavras separadas por hífen (palavra composta mantém o hífen: "vira-lata"), até 60 letras.
 - resumo = até 155 letras, responde e convida a ler.
 - resposta_curta = 2 a 4 frases respondendo direto, como no começo de um bom artigo.
 - corpo = 3 a 5 seções: cada seção abre com um bloco h2 e segue com blocos p, lista ou passos ("passos" = sequência numerada). Use texto em h2/p e itens em lista/passos; o outro campo vai null.
 - perguntas = 3 ou 4 dúvidas relacionadas que a pessoa também teria, com resposta curta.
 - Explique o PORQUÊ, não só a regra. Vá além do vídeo só com o que é consenso e bem estabelecido em cuidado de pets; não invente estudo, número, estatística ou marca.
-- Saúde: nunca diagnóstico, remédio, dose ou promessa de cura; sinais de alerta e casos especiais terminam em "procure o veterinário".
-- categorias_relacionadas = 1 ou 2 categorias da lista dada que combinam com o tema (só nomes exatos da lista; vazio se nenhuma combina).
+- Saúde: nunca diagnóstico, remédio, dose ou promessa de cura; sinais de alerta e casos especiais terminam em "procure o veterinário". Frequência de vacina, vermífugo ou antipulgas: sempre "no calendário/na frequência que o veterinário orientar", nunca um intervalo fixo ("todo ano", "a cada 3 meses").
+- categorias_relacionadas = 1 ou 2 categorias da lista dada que combinam com o tema (só nomes exatos da lista). Se o texto fala de um tipo de produto que a lista tem (ração, petisco, sachê, vermífugo, antipulgas, areia…), escolha essa categoria. Vazio só se nenhuma combina.
 - serie = nome da série se a legenda/hashtag indicar (ex.: "Mito ou Verdade", "Pergunta da Semana", "Sinal de Alerta", "Lê o Rótulo", "Gato Não É Cachorro Pequeno", "Raça em 30s", "Pet no Rio"), senão null.
 - titulo_video = título curto deste vídeo (ex.: "O jeito certo de guardar a ração").
 
