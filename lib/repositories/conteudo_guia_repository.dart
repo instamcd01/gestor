@@ -10,6 +10,11 @@ class ConteudoGuiaRepository {
     return (data as List).map((row) => ConteudoGuia.fromSupabase(row as Map<String, dynamic>)).toList();
   }
 
+  Future<ConteudoGuia?> buscar(String id) async {
+    final row = await supabase.from('conteudos_guia').select().eq('id', id).maybeSingle();
+    return row == null ? null : ConteudoGuia.fromSupabase(row);
+  }
+
   Future<void> atualizar(String id, Map<String, dynamic> campos) async {
     await supabase.from('conteudos_guia').update(campos).eq('id', id);
   }

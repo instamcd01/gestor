@@ -4,55 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../models/notificacao.dart';
 import '../providers/notificacao_provider.dart';
-import '../providers/produto_provider.dart';
+import '../services/navegacao_notificacao.dart';
 import '../widgets/estado_erro_lista.dart';
-import 'avaliacoes_disputas_screen.dart';
-import 'campanhas_ativacao_screen.dart';
-import 'catalogo_online_hub_screen.dart';
-import 'cliente_screen.dart';
-import 'despesas_screen.dart';
-import 'editar_produto_screen.dart';
-import 'fila_pedidos_screen.dart';
-import 'importar_nota_fiscal_screen.dart';
-import 'produtos_screen.dart';
-
-/// Pra onde a notificação leva quando tocada — por `tipo`, não por
-/// `entidadeTipo`, porque o mesmo entidadeTipo ('pedido') serve tanto pra
-/// pedido parado quanto pra avaliação/disputa, que têm telas diferentes.
-Widget? _telaRelacionada(String tipo) {
-  switch (tipo) {
-    case TipoNotificacao.estoqueBaixo:
-    case TipoNotificacao.estoqueZerado:
-    case TipoNotificacao.syncFalhou:
-    case TipoNotificacao.custoAlterado:
-      return ProdutosScreen();
-    case TipoNotificacao.pedidoParado:
-    case TipoNotificacao.pedidoHoraSaidaEntrega:
-    case TipoNotificacao.pedidoAtrasadoEntrega:
-      return const FilaPedidosScreen();
-    case TipoNotificacao.despesaVencendo:
-    case TipoNotificacao.despesaVencida:
-      return const DespesasScreen();
-    case TipoNotificacao.avaliacaoRecebida:
-    case TipoNotificacao.disputaRecebida:
-    case TipoNotificacao.disputaPrazoVencendo:
-      return const AvaliacoesDisputasScreen();
-    case TipoNotificacao.carrinhoAbandonado:
-      return const CampanhasAtivacaoScreen();
-    case TipoNotificacao.clienteAtivoNoSite:
-      return ClientesScreen();
-    case TipoNotificacao.nfePendente:
-      return const ImportarNotaFiscalScreen();
-    case TipoNotificacao.guiaRascunho:
-      return const CatalogoOnlineHubScreen(abaInicial: CatalogoOnlineHubScreen.abaDicas);
-    case TipoNotificacao.erroSistema:
-      // Sem tela própria — a mensagem já vem com a rota do site onde o
-      // erro aconteceu; investigar é olhar o código, não navegar no app.
-      return null;
-    default:
-      return null;
-  }
-}
 
 (IconData, Color) _iconeECor(BuildContext context, String tipo) {
   final colorScheme = Theme.of(context).colorScheme;
@@ -116,24 +69,7 @@ class _NotificacoesScreenState extends State<NotificacoesScreen> {
   Future<void> _abrir(Notificacao notificacao) async {
     await context.read<NotificacaoProvider>().marcarComoLida(notificacao.id);
     if (!mounted) return;
-
-    // Falha de sincronização é sobre UM produto específico — leva direto pra
-    // edição dele (onde "Disponibilidade em Marketplaces" mostra o motivo
-    // completo, sem cortar) em vez de largar o usuário na lista inteira pra
-    // caçar qual produto falhou. Cai pro fallback genérico se o produto não
-    // estiver carregado localmente por algum motivo.
-    if (notificacao.tipo == TipoNotificacao.syncFalhou && notificacao.entidadeId != null) {
-      final produto = context.read<ProdutoProvider>().getProdutoPorId(notificacao.entidadeId!);
-      if (produto != null) {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: produto)));
-        return;
-      }
-    }
-
-    final tela = _telaRelacionada(notificacao.tipo);
-    if (tela != null) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => tela));
-    }
+    await abrirNotificacao(tipo: notificacao.tipo, entidadeId: notificacao.entidadeId);
   }
 
   Future<void> _excluir(Notificacao notificacao) async {

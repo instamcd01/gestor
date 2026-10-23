@@ -4,11 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:local_notifier/local_notifier.dart';
 
 import '../providers/notificacao_provider.dart';
+import 'navegacao_notificacao.dart';
 
 /// Aviso do sistema (toast do Windows) no desktop — equivalente ao push do
 /// Android (`PushNotificationService`), que o FCM não cobre no desktop.
 /// A fonte é o Realtime de `NotificacaoProvider.novas`, então só avisa com
-/// o app aberto (minimizado serve).
+/// o app aberto (minimizado serve). Clicar no aviso abre a tela dele
+/// (`abrirNotificacao`), igual ao toque no push.
 class NotificacaoDesktopService {
   static bool _inicializado = false;
 
@@ -21,7 +23,12 @@ class NotificacaoDesktopService {
       // requireCreate cria na primeira vez.
       await localNotifier.setup(appName: 'INARI', shortcutPolicy: ShortcutPolicy.requireCreate);
       provider.novas.listen((n) {
-        LocalNotification(title: n.titulo, body: n.mensagem).show();
+        final aviso = LocalNotification(title: n.titulo, body: n.mensagem);
+        aviso.onClick = () async {
+          await provider.marcarComoLida(n.id);
+          await abrirNotificacao(tipo: n.tipo, entidadeId: n.entidadeId);
+        };
+        aviso.show();
       });
     } catch (e) {
       debugPrint('Erro ao inicializar notificações do desktop: $e');

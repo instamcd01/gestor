@@ -29,6 +29,7 @@ import 'providers/modulo_provider.dart';
 import 'providers/metodos_pagamento_provider.dart';
 import 'screens/auth_gate.dart';
 import 'config/supabase_config.dart';
+import 'services/navegacao_notificacao.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -84,6 +85,7 @@ class MyApp extends StatelessWidget {
       child: Consumer<BrandingProvider>(
         builder: (context, branding, _) {
           return MaterialApp(
+            navigatorKey: navigatorKey,
             title: 'INARI',
             theme: branding.temaClaro,
             darkTheme: branding.temaEscuro,

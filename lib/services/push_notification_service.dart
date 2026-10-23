@@ -4,11 +4,13 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 import '../config/supabase_config.dart';
 import '../firebase_options.dart';
 import '../models/notificacao.dart';
 import '../providers/notificacao_provider.dart';
+import 'navegacao_notificacao.dart';
 
 /// Push (Firebase Cloud Messaging) — Android e navegador (Gestor web, inclusive
 /// iPhone com o site salvo na Tela de Início, iOS 16.4+). O envio em si (quem
@@ -25,6 +27,10 @@ import '../providers/notificacao_provider.dart';
 /// `NotificacaoProvider.alertaHabilitado` (tela Configurações > Notificações).
 /// No navegador, quem mostra com o app fechado é `web/firebase-messaging-sw.js`;
 /// com ele aberto, a sininho já atualiza em tempo real.
+///
+/// Toque no aviso abre a tela dele (`abrirNotificacaoPorId`): no Android pelo
+/// `notificacao_id` do `data` da mensagem; no navegador o link do push
+/// (workflow n8n) traz `?notificacao=<id>`.
 class PushNotificationService {
   static bool _inicializado = false;
   static const _canalNativo = MethodChannel('gestor/notificacao_alerta');
@@ -39,6 +45,12 @@ class PushNotificationService {
       _inicializado = true;
 
       if (kIsWeb) {
+        final tocada = Uri.base.queryParameters['notificacao'];
+        if (tocada != null && tocada.isNotEmpty) {
+          // Tira o ?notificacao da barra pra um F5 não reabrir a mesma tela.
+          SystemNavigator.routeInformationUpdated(uri: Uri.parse(Uri.base.path), replace: true);
+          _abrirTocada(tocada, preferencias);
+        }
         // No navegador a permissão só pode ser pedida num toque do usuário
         // (iPhone exige) — isso fica no botão de Configurações > Notificações.
         // Aqui só renova o token de quem já permitiu antes.
@@ -53,6 +65,9 @@ class PushNotificationService {
       await _salvarToken();
       FirebaseMessaging.instance.onTokenRefresh.listen((_) => _salvarToken());
       FirebaseMessaging.onMessage.listen((mensagem) => _alertarPrimeiroPlano(mensagem, preferencias));
+      FirebaseMessaging.onMessageOpenedApp.listen((mensagem) => _abrirTocada(mensagem.data['notificacao_id'], preferencias));
+      final inicial = await FirebaseMessaging.instance.getInitialMessage();
+      if (inicial != null) _abrirTocada(inicial.data['notificacao_id'], preferencias);
     } catch (e) {
       debugPrint('Erro ao inicializar notificações push: $e');
     }
@@ -109,6 +124,12 @@ class PushNotificationService {
     } catch (e) {
       debugPrint('Erro ao alertar em primeiro plano: $e');
     }
+  }
+
+  /// Espera a Home montar (o login acabou de terminar) antes de empilhar a tela.
+  static void _abrirTocada(Object? id, NotificacaoProvider provider) {
+    if (id is! String || id.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => abrirNotificacaoPorId(id, provider));
   }
 
   static Future<void> _salvarToken() async {
