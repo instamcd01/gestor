@@ -8,6 +8,7 @@ import '../providers/produto_provider.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'avaliacoes_disputas_screen.dart';
 import 'campanhas_ativacao_screen.dart';
+import 'catalogo_online_hub_screen.dart';
 import 'cliente_screen.dart';
 import 'despesas_screen.dart';
 import 'editar_produto_screen.dart';
@@ -42,6 +43,8 @@ Widget? _telaRelacionada(String tipo) {
       return ClientesScreen();
     case TipoNotificacao.nfePendente:
       return const ImportarNotaFiscalScreen();
+    case TipoNotificacao.guiaRascunho:
+      return const CatalogoOnlineHubScreen(abaInicial: CatalogoOnlineHubScreen.abaDicas);
     case TipoNotificacao.erroSistema:
       // Sem tela própria — a mensagem já vem com a rota do site onde o
       // erro aconteceu; investigar é olhar o código, não navegar no app.
@@ -86,6 +89,8 @@ Widget? _telaRelacionada(String tipo) {
       return (Icons.error_outline, Colors.red);
     case TipoNotificacao.nfePendente:
       return (Icons.receipt_long_outlined, Colors.blue);
+    case TipoNotificacao.guiaRascunho:
+      return (Icons.menu_book_outlined, Colors.blue);
     default:
       return (Icons.notifications_outlined, colorScheme.primary);
   }

@@ -5,7 +5,8 @@
 /// `notificar_balanco_acoes_estoque_parado` (cron diário, 14 e 30 dias),
 /// `notificar_carrinhos_abandonados`, `notificar_disputas_proximas_do_prazo`
 /// — cron `*/5 * * * *`, `trigger_notificacao_nfe_pendente` em
-/// `nfe_cache_distribuicao`) e, pra `erroSistema`,
+/// `nfe_cache_distribuicao`), a Edge Function `guias-rascunho` (`guiaRascunho`)
+/// e, pra `erroSistema`,
 /// `registrarErroSistema` no site (gestor-loja/src/lib/erros.ts) — insere
 /// direto na tabela via service role, sem RPC própria.
 /// São as únicas fontes que gravam nessa tabela.
@@ -28,6 +29,7 @@ class TipoNotificacao {
   static const clienteAtivoNoSite = 'cliente_ativo_no_site';
   static const erroSistema = 'erro_sistema';
   static const nfePendente = 'nfe_pendente';
+  static const guiaRascunho = 'guia_rascunho';
 }
 
 /// Chaves de preferência de alerta (som/vibração) por categoria — não ligam/
@@ -125,6 +127,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.clienteAtivoNoSite,
     titulo: 'Cliente entrou no site',
     descricao: 'Quando um cliente com conversa recente no WhatsApp (últimas 48h) entra ou se cadastra no site.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.guiaRascunho,
+    titulo: 'Dica nova pro site',
+    descricao: 'Quando um Reel educativo da loja vira rascunho de página no site, esperando você revisar e publicar.',
   ),
   CategoriaNotificacao(
     chave: TipoNotificacao.erroSistema,
