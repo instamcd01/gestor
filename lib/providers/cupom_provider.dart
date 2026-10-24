@@ -78,6 +78,7 @@ class CupomProvider with ChangeNotifier {
         vendedorNome: cupom.vendedorNome,
         origem: cupom.origem,
         valorMinimoPedido: cupom.valorMinimoPedido,
+        descontoMaximo: cupom.descontoMaximo,
         usoMaximo: cupom.usoMaximo,
         usos: cupom.usos,
         usoMaximoPorCliente: cupom.usoMaximoPorCliente,

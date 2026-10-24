@@ -41,6 +41,8 @@ class Cupom {
   final String? vendedorNome;
   final String origem; // manual | auto_cliente | auto_vendedor
   final double? valorMinimoPedido;
+  /// Teto em R$ do desconto percentual (null = sem teto).
+  final double? descontoMaximo;
   final int? usoMaximo;
   final int usos;
   final int? usoMaximoPorCliente;
@@ -62,6 +64,7 @@ class Cupom {
     this.vendedorNome,
     this.origem = 'manual',
     this.valorMinimoPedido,
+    this.descontoMaximo,
     this.usoMaximo,
     this.usos = 0,
     this.usoMaximoPorCliente,
@@ -85,6 +88,7 @@ class Cupom {
       vendedorNome: row['usuarios'] is Map ? (row['usuarios']['nome']?.toString()) : null,
       origem: row['origem']?.toString() ?? 'manual',
       valorMinimoPedido: (row['valor_minimo_pedido'] as num?)?.toDouble(),
+      descontoMaximo: (row['desconto_maximo'] as num?)?.toDouble(),
       usoMaximo: row['uso_maximo'] as int?,
       usos: row['usos'] as int? ?? 0,
       usoMaximoPorCliente: row['uso_maximo_por_cliente'] as int?,
@@ -106,6 +110,7 @@ class Cupom {
       'vendedor_id': vendedorId,
       'origem': origem,
       'valor_minimo_pedido': valorMinimoPedido,
+      'desconto_maximo': tipoDesconto == TipoDescontoCupom.percentual ? descontoMaximo : null,
       'uso_maximo': usoMaximo,
       'uso_maximo_por_cliente': usoMaximoPorCliente,
       'data_inicio': dataInicio?.toIso8601String(),

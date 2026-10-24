@@ -65,7 +65,7 @@ class _CuponsScreenState extends State<CuponsScreen> {
 
   String _resumoLinha(Cupom c) {
     final valor = c.tipoDesconto == TipoDescontoCupom.percentual
-        ? '${c.valor.toStringAsFixed(0)}%'
+        ? '${c.valor.toStringAsFixed(0)}%${c.descontoMaximo != null ? ' (até R\$ ${c.descontoMaximo!.toStringAsFixed(2)})' : ''}'
         : 'R\$ ${c.valor.toStringAsFixed(2)}';
     final escopo = switch (c.escopoTipo) {
       EscopoCupom.pedido => 'pedido todo',
@@ -182,6 +182,7 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
   late final TextEditingController _valorController;
   late final TextEditingController _escopoValorController;
   late final TextEditingController _valorMinimoController;
+  late final TextEditingController _descontoMaximoController;
   late final TextEditingController _usoMaximoController;
   late final TextEditingController _usoMaximoPorClienteController;
   late final TextEditingController _descricaoController;
@@ -205,6 +206,9 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
     _escopoValorController = TextEditingController(text: c?.escopoValor ?? '');
     _valorMinimoController = TextEditingController(
       text: c?.valorMinimoPedido != null ? ProdutoValidators.formatarMoeda(c!.valorMinimoPedido!) : '',
+    );
+    _descontoMaximoController = TextEditingController(
+      text: c?.descontoMaximo != null ? ProdutoValidators.formatarMoeda(c!.descontoMaximo!) : '',
     );
     _usoMaximoController = TextEditingController(text: c?.usoMaximo?.toString() ?? '');
     _usoMaximoPorClienteController = TextEditingController(text: c?.usoMaximoPorCliente?.toString() ?? '');
@@ -241,6 +245,7 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
     _valorController.dispose();
     _escopoValorController.dispose();
     _valorMinimoController.dispose();
+    _descontoMaximoController.dispose();
     _usoMaximoController.dispose();
     _usoMaximoPorClienteController.dispose();
     _descricaoController.dispose();
@@ -354,6 +359,7 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
       vendedorId: widget.cupom?.vendedorId,
       origem: widget.cupom?.origem ?? 'manual',
       valorMinimoPedido: ProdutoValidators.parseNumero(_valorMinimoController.text),
+      descontoMaximo: ProdutoValidators.parseNumero(_descontoMaximoController.text),
       usoMaximo: int.tryParse(_usoMaximoController.text.trim()),
       usoMaximoPorCliente: int.tryParse(_usoMaximoPorClienteController.text.trim()),
       dataExpiracao: _dataExpiracao,
@@ -449,6 +455,17 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
                       ),
                     ],
                   ),
+                  if (_tipoDesconto == TipoDescontoCupom.percentual)
+                    TextFormField(
+                      controller: _descontoMaximoController,
+                      decoration: const InputDecoration(
+                        labelText: 'Desconto máximo (opcional)',
+                        prefixText: 'R\$ ',
+                        helperText: 'Em pedido grande o percentual para nesse valor. Vazio = sem limite.',
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [DecimalInputFormatter()],
+                    ),
                 ],
               ),
               const SizedBox(height: 16),
