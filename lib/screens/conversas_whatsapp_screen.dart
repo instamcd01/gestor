@@ -22,6 +22,7 @@ class ConversasWhatsappScreen extends StatefulWidget {
 
 class _ConversasWhatsappScreenState extends State<ConversasWhatsappScreen> {
   late Future<List<ConversaWhatsappResumo>> _future;
+  bool _incluirTestes = false;
 
   @override
   void initState() {
@@ -30,14 +31,27 @@ class _ConversasWhatsappScreenState extends State<ConversasWhatsappScreen> {
   }
 
   Future<void> _recarregar() async {
-    setState(() => _future = ConversaWhatsappRepository().listarRecentes());
+    setState(() => _future = ConversaWhatsappRepository().listarRecentes(incluirTestes: _incluirTestes));
     await _future;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Conversas do WhatsApp')),
+      appBar: AppBar(
+        title: const Text('Conversas do WhatsApp'),
+        actions: [
+          // Conversas do simulador de testes do atendente virtual (números 55219000000xx).
+          IconButton(
+            tooltip: _incluirTestes ? 'Esconder conversas de teste' : 'Mostrar conversas de teste',
+            icon: Icon(_incluirTestes ? Icons.science : Icons.science_outlined),
+            onPressed: () {
+              _incluirTestes = !_incluirTestes;
+              _recarregar();
+            },
+          ),
+        ],
+      ),
       body: FutureBuilder<List<ConversaWhatsappResumo>>(
         future: _future,
         builder: (context, snapshot) {

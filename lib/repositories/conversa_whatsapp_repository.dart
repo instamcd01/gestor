@@ -86,8 +86,9 @@ class ConversaWhatsappDetalhe {
 }
 
 class ConversaWhatsappRepository {
-  Future<List<ConversaWhatsappResumo>> listarRecentes({int dias = 7}) async {
-    final data = await supabase.rpc('whatsapp_conversas_recentes', params: {'p_dias': dias});
+  /// [incluirTestes]: conversas do simulador de testes (números 55219000000xx).
+  Future<List<ConversaWhatsappResumo>> listarRecentes({int dias = 7, bool incluirTestes = false}) async {
+    final data = await supabase.rpc('whatsapp_conversas_recentes', params: {'p_dias': dias, 'p_incluir_testes': incluirTestes});
     return (data as List).map((e) => ConversaWhatsappResumo.fromJson(e as Map<String, dynamic>)).toList();
   }
 
