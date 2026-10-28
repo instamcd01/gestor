@@ -10,6 +10,7 @@ import '../repositories/notificacao_repository.dart';
 import '../screens/avaliacoes_disputas_screen.dart';
 import '../screens/campanhas_ativacao_screen.dart';
 import '../screens/cliente_screen.dart';
+import '../screens/conversas_whatsapp_screen.dart';
 import '../screens/despesas_screen.dart';
 import '../screens/dicas_site_screen.dart';
 import '../screens/editar_produto_screen.dart';
@@ -84,6 +85,14 @@ Future<void> abrirNotificacao({required String tipo, String? entidadeId}) async 
       navegador.push(MaterialPageRoute(builder: (_) => DicaDetalheScreen(guia: guia)));
       return;
     }
+  }
+
+  // Atendente virtual chamou o dono: abre a conversa (resumo do pedido + rascunho).
+  if (tipo == TipoNotificacao.whatsappAtendimento) {
+    navegador.push(MaterialPageRoute(
+      builder: (_) => entidadeId != null ? ConversaWhatsappScreen(conversaId: entidadeId) : const ConversasWhatsappScreen(),
+    ));
+    return;
   }
 
   final tela = _telaRelacionada(tipo);

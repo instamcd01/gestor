@@ -6,6 +6,7 @@
 /// `notificar_carrinhos_abandonados`, `notificar_disputas_proximas_do_prazo`
 /// — cron `*/5 * * * *`, `trigger_notificacao_nfe_pendente` em
 /// `nfe_cache_distribuicao`), a Edge Function `guias-rascunho` (`guiaRascunho`)
+/// o atendente virtual do WhatsApp (`whatsapp_atendente_chamar_dono`, `whatsappAtendimento`)
 /// e, pra `erroSistema`,
 /// `registrarErroSistema` no site (gestor-loja/src/lib/erros.ts) — insere
 /// direto na tabela via service role, sem RPC própria.
@@ -30,6 +31,7 @@ class TipoNotificacao {
   static const erroSistema = 'erro_sistema';
   static const nfePendente = 'nfe_pendente';
   static const guiaRascunho = 'guia_rascunho';
+  static const whatsappAtendimento = 'whatsapp_atendimento';
 }
 
 /// Chaves de preferência de alerta (som/vibração) por categoria — não ligam/
@@ -117,6 +119,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.resultadoAjustePreco,
     titulo: 'Balanço das ações do estoque parado',
     descricao: '14 e 30 dias depois de um ajuste de preço, promoção ou aviso a clientes: quantos venderam e o lucro.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.whatsappAtendimento,
+    titulo: 'WhatsApp: cliente chamando você',
+    descricao: 'Quando o atendente virtual do WhatsApp passa um pedido pra você confirmar ou um cliente precisa de uma pessoa.',
   ),
   CategoriaNotificacao(
     chave: TipoNotificacao.carrinhoAbandonado,

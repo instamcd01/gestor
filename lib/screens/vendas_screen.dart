@@ -12,6 +12,7 @@ import '../widgets/preco_com_desconto.dart';
 import 'cadastro_produto_screen.dart';
 import 'carrinho_screen.dart';
 import 'carrinhos_do_dia_screen.dart';
+import 'conversas_whatsapp_screen.dart';
 
 /// Categoria sintética (não vem do banco) pra alternar a grade pra kits —
 /// distinto de um nome de categoria real que o lojista possa ter cadastrado
@@ -129,6 +130,15 @@ class _VendasScreenState extends State<VendasScreen> {
       appBar: AppBar(
         title: const Text('Venda de Produtos'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.chat_outlined),
+            tooltip: 'Conversas do WhatsApp',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (ctx) => const ConversasWhatsappScreen(),
+              ));
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.shopping_bag_outlined),
             tooltip: 'Carrinhos do dia',
