@@ -67,6 +67,7 @@ class MovimentacaoEstoque {
   String get tipoLegivel => switch (tipo) {
         'venda' => 'Venda',
         'cancelamento_venda' => 'Venda cancelada (devolvido)',
+        'edicao_venda' => 'Pedido editado',
         'ajuste_pedido_ifood' => 'Ajuste de pedido iFood',
         'entrada_nota' => 'Entrada de nota fiscal',
         'entrada_manual' => 'Entrada manual',

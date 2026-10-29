@@ -115,6 +115,30 @@ String mensagemPedidoAvaliacaoGoogle(String link) => [
       'Muito obrigada! ❤️',
     ].join('\n\n');
 
+/// Aviso de pedido editado depois de recebido (`EditarPedidoScreen`): a
+/// lista como ficou e o total novo. Sem pedir desculpa nem explicar
+/// bastidor, fechando com pergunta (tom do atendimento, 28/10). Quem manda
+/// revisa antes — é ali que entra o motivo, se quiser contar.
+/// [estornado] = diferença que já voltou pelo Mercado Pago.
+String mensagemPedidoAlterado(Venda venda, {double? estornado}) {
+  final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+  final primeiroNome = venda.cliente.nome.trim().isEmpty ? '' : venda.cliente.nome.trim().split(' ').first;
+  final saudacao = primeiroNome.isEmpty ? 'Oi!' : 'Oi, $primeiroNome!';
+  final numero = venda.numeroSequencial != null ? ' #${venda.numeroSequencial}' : '';
+  final itens = venda.itens
+      .map((i) => '${i.quantidade}x ${i.produto.nome} — ${moeda.format(i.precoUnitario * i.quantidade)}')
+      .join('\n');
+  return [
+    '$saudacao Seu pedido$numero ficou assim:',
+    itens,
+    '*Novo total: ${moeda.format(venda.valorTotal)}*',
+    if (estornado != null && estornado > 0)
+      'A diferença de ${moeda.format(estornado)} volta pra você pelo Mercado Pago, no mesmo cartão/conta do pagamento.',
+    _lembretePagamentoNaEntrega(venda),
+    'Fica bom assim pra você?',
+  ].where((p) => p != null && p.trim().isNotEmpty).join('\n\n');
+}
+
 String _nomeLoja(String? nome) => (nome == null || nome.trim().isEmpty || nome == 'Gestor' || nome == 'INARI') ? 'nossa loja' : nome.trim();
 
 String _previsaoParaPendente(Venda venda) {

@@ -98,6 +98,7 @@ class Venda {
   final String? mercadoPagoPaymentId; // id do pagamento na API do Mercado Pago — referência pra consultar/disputar no painel deles
   final String? mercadoPagoRefundId; // id do estorno na API do Mercado Pago, só existe se `estornarPagamentoOnline` já rodou
   final DateTime? mercadoPagoEstornadoEm;
+  final double? estornoParcialPendente; // metadata.estornoParcialPendente — diferença de pedido pago online editado (editar_itens_pedido) que ainda não voltou pro cliente
   final double? mercadoPagoTaxa; // quanto o PRÓPRIO Mercado Pago descontou da loja (split direto na conta dela, não é comissão do Gestor)
   final int? parcelasCartao; // parcelas do cartão pago na entrega/retirada (site) — diferente de mercadoPagoInstallments (pagamento online)
   final double? jurosParcelamento; // juros já cobrado e somado no valorTotal, calculado no servidor a partir de empresas.taxas_parcelamento
@@ -193,6 +194,7 @@ class Venda {
     this.mercadoPagoRefundId,
     this.mercadoPagoEstornadoEm,
     this.mercadoPagoTaxa,
+    this.estornoParcialPendente,
     this.parcelasCartao,
     this.jurosParcelamento,
     this.custoEmbalagem,
@@ -281,6 +283,7 @@ class Venda {
     String? mercadoPagoRefundId,
     DateTime? mercadoPagoEstornadoEm,
     double? mercadoPagoTaxa,
+    double? estornoParcialPendente,
     int? parcelasCartao,
     double? jurosParcelamento,
     double? custoEmbalagem,
@@ -360,6 +363,7 @@ class Venda {
       mercadoPagoRefundId: mercadoPagoRefundId ?? this.mercadoPagoRefundId,
       mercadoPagoEstornadoEm: mercadoPagoEstornadoEm ?? this.mercadoPagoEstornadoEm,
       mercadoPagoTaxa: mercadoPagoTaxa ?? this.mercadoPagoTaxa,
+      estornoParcialPendente: estornoParcialPendente ?? this.estornoParcialPendente,
       parcelasCartao: parcelasCartao ?? this.parcelasCartao,
       jurosParcelamento: jurosParcelamento ?? this.jurosParcelamento,
       custoEmbalagem: custoEmbalagem ?? this.custoEmbalagem,
@@ -527,6 +531,12 @@ class Venda {
   bool get emAndamento => StatusPedido.emAndamento.contains(status);
   bool get temEntrega => valorEntrega > 0 || entregaSelecionada.isNotEmpty;
   bool get ehMarketplace => canalVenda == 'ifood';
+
+  /// Trocar/tirar item depois de recebido (editar_itens_pedido): só pedido
+  /// em andamento — aguardando pagamento online ainda não tem cobrança
+  /// fechada, entregue já saiu, e iFood/99Food só o marketplace altera.
+  bool get podeEditarItens =>
+      emAndamento && !ehMarketplace && canalVenda != '99food' && canalVenda != 'kyte_historico' && idVenda != null;
   bool get temRastreio => rastreioLatitude != null && rastreioLongitude != null;
 
   /// true = cliente retira na loja (não precisa entrar em rota nenhuma).

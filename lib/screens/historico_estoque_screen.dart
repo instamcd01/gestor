@@ -158,6 +158,7 @@ class _HistoricoEstoqueScreenState extends State<HistoricoEstoqueScreen> {
   IconData _icone(MovimentacaoEstoque m) => switch (m.tipo) {
         'venda' || 'ajuste_pedido_ifood' => Icons.shopping_bag_outlined,
         'cancelamento_venda' => Icons.undo,
+        'edicao_venda' => Icons.edit_note,
         'entrada_nota' || 'entrada_manual' => Icons.local_shipping_outlined,
         'ajuste_manual' => Icons.edit_note,
         'inicio_historico' => Icons.flag_outlined,

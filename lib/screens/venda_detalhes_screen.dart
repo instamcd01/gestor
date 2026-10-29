@@ -21,6 +21,7 @@ import '../utils/previsao_entrega_utils.dart';
 import '../utils/telefone_utils.dart';
 import 'alterar_forma_pagamento_screen.dart';
 import 'cliente_detalhes_screen.dart';
+import 'editar_pedido_screen.dart';
 import 'recibo_screen.dart';
 import 'separacao_pedido_screen.dart';
 
@@ -474,6 +475,74 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     setState(() => _venda = atualizada);
   }
 
+  /// Editar itens (faltou produto, cliente trocou): salva, devolve a
+  /// diferença no Mercado Pago se foi pago online e oferece avisar o
+  /// cliente com a lista nova.
+  Future<void> _editarPedido() async {
+    final atualizada = await Navigator.push<Venda>(
+      context,
+      MaterialPageRoute(builder: (_) => EditarPedidoScreen(venda: _venda)),
+    );
+    if (atualizada == null || !mounted) return;
+    setState(() {
+      _venda = atualizada;
+      _historicoFuture = VendaRepository().historicoStatus(_venda.idVenda!);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pedido atualizado.')));
+
+    double? estornado;
+    if ((atualizada.estornoParcialPendente ?? 0) > 0) {
+      estornado = await _estornarDiferenca();
+      if (!mounted) return;
+    }
+    await enviarMensagemStatusWhatsApp(context, _venda, mensagemPedidoAlterado(_venda, estornado: estornado));
+  }
+
+  /// Devolve no Mercado Pago a diferença de um pedido pago online editado
+  /// pra menos. Devolve o valor estornado, ou null se não estornou (fica o
+  /// banner com o botão pra tentar depois).
+  Future<double?> _estornarDiferenca() async {
+    final valor = _venda.estornoParcialPendente ?? 0;
+    final auth = context.read<AuthProvider>();
+    if (valor <= 0 || _venda.idVenda == null) return null;
+    if (!(auth.isDono || auth.isGerente)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('A diferença do pagamento online precisa ser devolvida por um dono ou gerente.'),
+      ));
+      return null;
+    }
+    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Devolver a diferença'),
+        content: Text('Devolver ${moeda.format(valor)} pro cliente pelo Mercado Pago? O pedido continua valendo com os itens novos.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Depois')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Devolver')),
+        ],
+      ),
+    );
+    if (confirmou != true || !mounted) return null;
+
+    setState(() => _processando = true);
+    try {
+      await VendaRepository().estornarDiferenca(_venda.idVenda!, valor);
+      final atualizada = await VendaRepository().buscarPorId(_venda.idVenda!);
+      if (!mounted) return valor;
+      setState(() => _venda = atualizada);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${moeda.format(valor)} devolvidos pelo Mercado Pago.')));
+      return valor;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível devolver: $e')));
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
+  }
+
   Future<void> _abrirRastreioNoMapa() async {
     final lat = _venda.rastreioLatitude;
     final lng = _venda.rastreioLongitude;
@@ -539,6 +608,12 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               tooltip: 'Enviar mensagem ao cliente',
               onPressed: () => _enviarMensagemStatus(mensagemStatus),
             ),
+          if (venda.podeEditarItens)
+            IconButton(
+              icon: const Icon(Icons.edit_note),
+              tooltip: 'Editar itens do pedido',
+              onPressed: _processando ? null : _editarPedido,
+            ),
           if (venda.temEntrega && !cancelada)
             IconButton(
               icon: const Icon(Icons.delivery_dining),
@@ -582,6 +657,22 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                       children: [
                         if (cancelada) _bannerCancelada(),
                         if (!cancelada && venda.pagoOnline) _bannerPagoOnline(),
+                        if (!cancelada && (venda.estornoParcialPendente ?? 0) > 0) ...[
+                          AvisoBanner(
+                            tipo: TipoAviso.alerta,
+                            icone: Icons.undo,
+                            texto: 'Pedido editado: ${currencyFormat.format(venda.estornoParcialPendente)} '
+                                'ainda não voltaram pro cliente no Mercado Pago.',
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: _processando ? null : _estornarDiferenca,
+                              icon: const Icon(Icons.undo, size: 16),
+                              label: const Text('Devolver a diferença'),
+                            ),
+                          ),
+                        ],
                         if (!cancelada && venda.aguardandoPagamento) ...[
                           _bannerAguardandoPagamento(),
                           Padding(

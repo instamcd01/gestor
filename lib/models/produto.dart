@@ -98,6 +98,11 @@ class Produto {
 
   bool get foraDaSugestaoCompra => naoSugerirCompra || sugestaoCompraPausada;
 
+  /// Preço que vale numa venda agora — mesma regra do banco em
+  /// editar_itens_pedido: promocional só quando menor que o normal.
+  double get precoVendaAtual =>
+      (precoPromocional != null && precoPromocional! > 0 && precoPromocional! < preco) ? precoPromocional! : preco;
+
   // Cadastro estruturado (variantes de produto) — todos opcionais. Quando
   // nomeComercial está preenchido, o trigger `gerar_nome_produto_estruturado`
   // no banco recompõe `nome` automaticamente a partir destes campos (a menos

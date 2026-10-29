@@ -232,6 +232,42 @@ class VendaRepository {
     return await supabase.from('pedidos').select(_selectComItensECliente).eq('id', idVenda).single();
   }
 
+  /// Edita os itens de um pedido em andamento — tudo em
+  /// `editar_itens_pedido` no banco (atômico): acerta estoque, recalcula o
+  /// total pela diferença dos produtos (desconto/frete/PetCash/cupom ficam
+  /// como estavam) e guarda o antes/depois em metadata.edicoes.
+  /// [itens]: `{'id': itens_pedido.id, 'quantidade': n}` pra item que já
+  /// existia (0 = tirar) e `{'produto_id': id, 'quantidade': n}` pra produto
+  /// novo, com preço e custo vindos do cadastro.
+  Future<Venda> editarItens(String idVenda, List<Map<String, dynamic>> itens, {String? motivo}) async {
+    await supabase.rpc('editar_itens_pedido', params: {
+      'p_pedido_id': idVenda,
+      'p_itens': itens,
+      'p_motivo': motivo,
+    });
+    return buscarPorId(idVenda);
+  }
+
+  /// Devolve no Mercado Pago só a diferença de um pedido pago online que
+  /// foi editado pra menos (metadata.estornoParcialPendente) — mesmo
+  /// endpoint do estorno total, com `valor`; o site confere o valor contra
+  /// o pendente gravado pelo banco.
+  Future<void> estornarDiferenca(String idVenda, double valor) async {
+    final sessao = supabase.auth.currentSession;
+    if (sessao == null) throw Exception('Sessão expirada — entre de novo.');
+
+    final resposta = await http.post(
+      Uri.parse('$kSiteBaseUrl/api/mercadopago/estornar'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ${sessao.accessToken}'},
+      body: jsonEncode({'pedidoId': idVenda, 'valor': valor}),
+    );
+
+    if (resposta.statusCode != 200) {
+      final corpo = jsonDecode(resposta.body) as Map<String, dynamic>;
+      throw Exception(corpo['erro']?.toString() ?? 'Não foi possível estornar a diferença.');
+    }
+  }
+
   /// Cancela uma venda já registrada: devolve estoque, devolve saldo do
   /// cliente usado como pagamento e recalcula as métricas do cliente —
   /// tudo dentro da função `cancelar_pedido` no banco (atômico). Pedidos
@@ -473,6 +509,7 @@ class VendaRepository {
       mercadoPagoRefundId: metadata['mercadoPagoRefundId']?.toString(),
       mercadoPagoEstornadoEm: DateTime.tryParse(metadata['estornadoEm']?.toString() ?? '')?.toLocal(),
       mercadoPagoTaxa: (metadata['mercadoPagoTaxa'] as num?)?.toDouble(),
+      estornoParcialPendente: (metadata['estornoParcialPendente'] as num?)?.toDouble(),
       parcelasCartao: (metadata['parcelas'] as num?)?.toInt(),
       jurosParcelamento: (metadata['jurosParcelamento'] as num?)?.toDouble(),
       custoEmbalagem: (row['custo_embalagem_valor'] as num?)?.toDouble(),

@@ -15,7 +15,16 @@ class BuscaProdutoSheet extends StatefulWidget {
   final List<Produto> produtos;
   final bool permiteCadastrarNovo;
 
-  const BuscaProdutoSheet({super.key, required this.produtos, this.permiteCadastrarNovo = true});
+  /// Mostra preço de venda + estoque em vez do custo (escolher produto pra
+  /// um pedido de cliente, não pra uma compra).
+  final bool mostrarPrecoVenda;
+
+  const BuscaProdutoSheet({
+    super.key,
+    required this.produtos,
+    this.permiteCadastrarNovo = true,
+    this.mostrarPrecoVenda = false,
+  });
 
   @override
   State<BuscaProdutoSheet> createState() => _BuscaProdutoSheetState();
@@ -86,7 +95,9 @@ class _BuscaProdutoSheetState extends State<BuscaProdutoSheet> {
                   final produto = filtrados[index];
                   return ListTile(
                     title: Text(produto.nome),
-                    subtitle: Text('R\$ ${ProdutoValidators.formatarMoeda(produto.custo)}'),
+                    subtitle: Text(widget.mostrarPrecoVenda
+                        ? 'R\$ ${ProdutoValidators.formatarMoeda(produto.precoVendaAtual)} · ${produto.estoqueAtual} em estoque'
+                        : 'R\$ ${ProdutoValidators.formatarMoeda(produto.custo)}'),
                     onTap: () => Navigator.pop(context, produto),
                   );
                 },
