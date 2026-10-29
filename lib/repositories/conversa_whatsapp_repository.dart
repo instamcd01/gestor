@@ -138,4 +138,33 @@ class ConversaWhatsappRepository {
     final ate = await supabase.rpc('whatsapp_pausar_robo', params: {'p_conversa_id': conversaId, 'p_horas': horas});
     return ate == null ? null : DateTime.parse(ate as String).toLocal();
   }
+
+  Future<PlantaoWhatsapp> plantao() async =>
+      PlantaoWhatsapp.fromJson(Map<String, dynamic>.from(await supabase.rpc('whatsapp_plantao_status') as Map));
+
+  /// [emEntregaMin]: >0 = "estou em entrega" por N minutos; 0 = voltei.
+  Future<PlantaoWhatsapp> definirPlantao({String? modo, int? esperaMin, int? emEntregaMin}) async {
+    final r = await supabase.rpc('whatsapp_plantao_definir',
+        params: {'p_modo': modo, 'p_espera_min': esperaMin, 'p_em_entrega_min': emEntregaMin});
+    return PlantaoWhatsapp.fromJson(Map<String, dynamic>.from(r as Map));
+  }
+}
+
+/// Quando o atendente virtual responde: 'plantao' (só se a loja não respondeu
+/// em [esperaMin]; na hora com a loja fechada ou o dono em entrega),
+/// 'sempre' ou 'desligado'.
+class PlantaoWhatsapp {
+  final String modo;
+  final int esperaMin;
+  final DateTime? emEntregaAte;
+
+  PlantaoWhatsapp({required this.modo, required this.esperaMin, this.emEntregaAte});
+
+  bool get emEntrega => emEntregaAte != null && emEntregaAte!.isAfter(DateTime.now());
+
+  factory PlantaoWhatsapp.fromJson(Map<String, dynamic> j) => PlantaoWhatsapp(
+        modo: j['modo'] as String? ?? 'plantao',
+        esperaMin: (j['espera_min'] as num?)?.toInt() ?? 5,
+        emEntregaAte: j['em_entrega_ate'] == null ? null : DateTime.parse(j['em_entrega_ate'] as String).toLocal(),
+      );
 }

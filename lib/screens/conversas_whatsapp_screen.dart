@@ -23,11 +23,79 @@ class ConversasWhatsappScreen extends StatefulWidget {
 class _ConversasWhatsappScreenState extends State<ConversasWhatsappScreen> {
   late Future<List<ConversaWhatsappResumo>> _future;
   bool _incluirTestes = false;
+  PlantaoWhatsapp? _plantao;
+  bool _salvandoPlantao = false;
 
   @override
   void initState() {
     super.initState();
     _future = ConversaWhatsappRepository().listarRecentes();
+    ConversaWhatsappRepository().plantao().then((p) {
+      if (mounted) setState(() => _plantao = p);
+    }).catchError((_) {});
+  }
+
+  Future<void> _mudarPlantao({String? modo, int? emEntregaMin}) async {
+    setState(() => _salvandoPlantao = true);
+    try {
+      final p = await ConversaWhatsappRepository().definirPlantao(modo: modo, emEntregaMin: emEntregaMin);
+      if (mounted) setState(() => _plantao = p);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível: $e')));
+    } finally {
+      if (mounted) setState(() => _salvandoPlantao = false);
+    }
+  }
+
+  Widget _cartaoPlantao(BuildContext context) {
+    final p = _plantao;
+    if (p == null) return const SizedBox.shrink();
+    final tema = Theme.of(context);
+    final explicacao = switch (p.modo) {
+      'sempre' => 'Responde todo cliente em segundos.',
+      'desligado' => 'Desligado: só você responde.',
+      _ => p.emEntrega
+          ? 'Você está em entrega até ${_hora(p.emEntregaAte!)}: ele responde na hora.'
+          : 'Responde só se você não responder em ${p.esperaMin} min (na hora com a loja fechada).',
+    };
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Atendente virtual', style: tema.textTheme.titleSmall),
+            const SizedBox(height: 8),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'plantao', label: Text('Plantão')),
+                ButtonSegment(value: 'sempre', label: Text('Sempre')),
+                ButtonSegment(value: 'desligado', label: Text('Desligado')),
+              ],
+              selected: {p.modo},
+              onSelectionChanged: _salvandoPlantao ? null : (s) => _mudarPlantao(modo: s.first),
+            ),
+            const SizedBox(height: 8),
+            Text(explicacao, style: tema.textTheme.bodySmall),
+            if (p.modo == 'plantao') ...[
+              const SizedBox(height: 8),
+              p.emEntrega
+                  ? OutlinedButton.icon(
+                      icon: const Icon(Icons.storefront_outlined),
+                      label: const Text('Voltei da entrega'),
+                      onPressed: _salvandoPlantao ? null : () => _mudarPlantao(emEntregaMin: 0),
+                    )
+                  : FilledButton.tonalIcon(
+                      icon: const Icon(Icons.delivery_dining),
+                      label: const Text('Estou em entrega (1h)'),
+                      onPressed: _salvandoPlantao ? null : () => _mudarPlantao(emEntregaMin: 60),
+                    ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _recarregar() async {
@@ -63,15 +131,19 @@ class _ConversasWhatsappScreenState extends State<ConversasWhatsappScreen> {
           }
           final conversas = snapshot.data ?? [];
           if (conversas.isEmpty) {
-            return const Center(child: Text('Nenhuma conversa nos últimos 7 dias.'));
+            return ListView(children: [
+              _cartaoPlantao(context),
+              const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('Nenhuma conversa nos últimos 7 dias.'))),
+            ]);
           }
           return RefreshIndicator(
             onRefresh: _recarregar,
             child: ListView.separated(
-              itemCount: conversas.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemCount: conversas.length + 1,
+              separatorBuilder: (_, i) => i == 0 ? const SizedBox.shrink() : const Divider(height: 1),
               itemBuilder: (context, i) {
-                final c = conversas[i];
+                if (i == 0) return _cartaoPlantao(context);
+                final c = conversas[i - 1];
                 final cor = Theme.of(context).colorScheme;
                 return ListTile(
                   leading: Icon(
