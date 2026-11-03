@@ -460,6 +460,15 @@ class _AbaCatalogo extends StatefulWidget {
 }
 
 class _AbaCatalogoState extends State<_AbaCatalogo> {
+  static String _motivo(Object? m) => switch (m) {
+        'dados_produto' => 'cadastro/dados do produto',
+        'preco_disponibilidade' => 'preço, promoção e disponibilidade',
+        'estoque' => 'estoque',
+        'completo' => 'preço, promoção e estoque',
+        null => '',
+        _ => '$m',
+      };
+
   final _repo = IfoodMerchantRepository();
   RespostaIfood? _carga;
   List<Map<String, dynamic>> _envios = [];
@@ -551,7 +560,7 @@ class _AbaCatalogoState extends State<_AbaCatalogo> {
               subtitle: Text(
                 'EAN ${p['codigo_barras'] ?? '-'} · ${moeda.format((e['preco'] as num?) ?? (p['preco'] as num?) ?? 0)}'
                 '${promo != null ? ' · promo ${moeda.format(promo)}' : ''} · estoque $estoque\n'
-                '${quando != null ? f.format(quando) : '-'} · ${e['sincronizacao_motivo_disparo'] ?? ''} · ${e['sincronizacao_status'] ?? ''}'
+                '${quando != null ? f.format(quando) : '-'} · ${_motivo(e['sincronizacao_motivo_disparo'])} · ${e['sincronizacao_status'] ?? ''}'
                 '${erro != null ? '\n$erro' : ''}',
               ),
               isThreeLine: true,
