@@ -428,13 +428,13 @@ class _AbaHorarioState extends State<_AbaHorario> {
                   ),
                 ]),
                 for (final t in _turnos[d.$1]!)
-                  Row(children: [
+                  Padding(padding: const EdgeInsets.only(top: 10), child: Row(children: [
                     const SizedBox(width: 80),
-                    SizedBox(width: 80, child: TextField(controller: t.inicio, decoration: const InputDecoration(hintText: '00:00', labelText: 'Abre'))),
+                    SizedBox(width: 110, child: TextField(controller: t.inicio, decoration: const InputDecoration(hintText: '00:00', labelText: 'Abre'))),
                     const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: Text('às')),
-                    SizedBox(width: 80, child: TextField(controller: t.fim, decoration: const InputDecoration(hintText: '00:00', labelText: 'Fecha'))),
+                    SizedBox(width: 110, child: TextField(controller: t.fim, decoration: const InputDecoration(hintText: '00:00', labelText: 'Fecha'))),
                     IconButton(onPressed: () => setState(() => _turnos[d.$1]!.remove(t)), icon: const Icon(Icons.close, size: 18)),
-                  ]),
+                  ])),
               ]),
             ),
           ),
