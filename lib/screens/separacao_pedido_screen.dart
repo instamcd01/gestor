@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import '../models/produto.dart';
 import '../models/venda.dart';
+import '../repositories/ifood_merchant_repository.dart';
 import '../repositories/produto_repository.dart';
 import '../repositories/separacao_pedido_repository.dart';
 import '../utils/busca_utils.dart';
@@ -41,6 +43,83 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
   List<Produto> _catalogo = [];
 
   bool get _ehIfood => widget.venda.canalVenda == 'ifood';
+
+  final _ifoodRepository = IfoodMerchantRepository();
+  RespostaIfood? _virtualBag;
+  bool _consultandoBag = false;
+
+  /// GET virtual-bag na hora: o pedido como o iFood tem agora (itens e
+  /// quantidades), pra conferir antes de separar e depois de finalizar.
+  Future<void> _consultarVirtualBag() async {
+    setState(() => _consultandoBag = true);
+    final r = await _ifoodRepository.consultarPedido(widget.venda.marketplacePedidoId!);
+    if (mounted) setState(() { _virtualBag = r; _consultandoBag = false; });
+  }
+
+  /// Acha a lista de itens dentro da resposta da virtual bag, onde quer
+  /// que ela esteja (bag.items / items / orders[].items).
+  List<Map> _itensDaBag(dynamic d) {
+    if (d is Map) {
+      for (final k in ['items', 'bag', 'orders', 'order']) {
+        final v = d[k];
+        if (k == 'items' && v is List) return v.whereType<Map>().toList();
+        final achou = _itensDaBag(v);
+        if (achou.isNotEmpty) return achou;
+      }
+    } else if (d is List) {
+      for (final x in d) {
+        final achou = _itensDaBag(x);
+        if (achou.isNotEmpty) return achou;
+      }
+    }
+    return const [];
+  }
+
+  Widget _cardVirtualBag() {
+    final r = _virtualBag;
+    final hora = r == null ? '' : '${r.em.day.toString().padLeft(2, '0')}/${r.em.month.toString().padLeft(2, '0')} '
+        '${r.em.hour.toString().padLeft(2, '0')}:${r.em.minute.toString().padLeft(2, '0')}:${r.em.second.toString().padLeft(2, '0')}';
+    final itens = r == null ? const <Map>[] : _itensDaBag(r.dados);
+    String corpo = '';
+    if (r != null) {
+      try {
+        corpo = const JsonEncoder.withIndent('  ').convert(r.dados);
+      } catch (_) {
+        corpo = '${r.dados}';
+      }
+    }
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          OutlinedButton.icon(
+            onPressed: _consultandoBag ? null : _consultarVirtualBag,
+            icon: _consultandoBag
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.manage_search),
+            label: const Text('Consultar pedido no iFood (virtual bag)'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
+          ),
+          if (r != null) ...[
+            const SizedBox(height: 8),
+            Text(r.ok ? 'Pedido no iFood agora ($hora):' : 'O iFood respondeu ${r.status} ($hora): ${r.erro ?? ''}',
+                style: TextStyle(fontWeight: FontWeight.w600, color: r.ok ? null : Colors.red)),
+            ...itens.map((i) => Text('• ${i['quantity'] ?? i['quantidade'] ?? '?'}x ${i['name'] ?? i['description'] ?? i['ean'] ?? '-'}',
+                style: const TextStyle(fontSize: 13))),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('Resposta completa (GET /orders/{id}/virtual-bag)', style: TextStyle(fontSize: 12)),
+              children: [
+                SelectableText(corpo.length > 6000 ? '${corpo.substring(0, 6000)} …' : corpo,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+              ],
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
 
   /// Motivo real quando o iFood recusou finalizar (gravado pelo n8n).
   String? _erroFinalizacao;
@@ -477,6 +556,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                     texto: 'O iFood recusou finalizar: $_erroFinalizacao',
                   ),
                 ),
+              if (_ehIfood) _cardVirtualBag(),
               if (_status == null)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),

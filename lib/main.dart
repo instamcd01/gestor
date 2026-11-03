@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SemanticsBinding;
 import 'package:gestor/providers/carrinho_provider.dart';
 import 'package:gestor/providers/historico_vendas_provider.dart';
 import 'package:gestor/screens/historico_vendas_screen.dart';
@@ -33,6 +35,12 @@ import 'services/navegacao_notificacao.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Web com ?semantica=1: liga a árvore de acessibilidade desde o início
+  // (leitores de tela e gravação automatizada dos vídeos de homologação).
+  if (kIsWeb && Uri.base.queryParameters['semantica'] == '1') {
+    SemanticsBinding.instance.ensureSemantics();
+  }
 
   // Backend único do app (auth, dados multi-tenant com RLS, storage).
   await SupabaseConfig.inicializar();

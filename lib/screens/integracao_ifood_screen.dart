@@ -23,6 +23,7 @@ import '../repositories/reconciliacao_historico_repository.dart';
 import '../widgets/marketplace_config_card.dart';
 import 'cancelamentos_ifood_screen.dart';
 import 'historico_reconciliacao_screen.dart';
+import 'ifood_loja_api_screen.dart';
 import 'qualidade_ifood_screen.dart';
 import 'recebiveis_ifood_screen.dart';
 import 'ruptura_ifood_screen.dart';
@@ -724,6 +725,16 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
               padding: const EdgeInsets.all(12),
               children: [
                 _cardPausaLoja(),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: const Icon(Icons.store_mall_directory_outlined, color: Colors.red),
+                    title: const Text('Loja no iFood'),
+                    subtitle: const Text('Lojas vinculadas, pausas, horário de funcionamento e catálogo, direto no iFood'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IfoodLojaApiScreen())),
+                  ),
+                ),
                 _cardReconciliacao(),
                 _cardEnviarRelatorio(),
                 Card(
