@@ -18,7 +18,14 @@ import '../utils/produto_validators.dart';
 class CanaisMarketplaceSection extends StatefulWidget {
   final String? produtoId;
 
-  const CanaisMarketplaceSection({super.key, this.produtoId});
+  /// Painel rápido do PC: sem o título grande e mostrando só os canais em
+  /// que o produto já está ligado; os outros ficam atrás de "+ outros".
+  final bool compacto;
+
+  /// Chamado quando o usuário liga/desliga um canal ou muda um preço.
+  final VoidCallback? onAlterado;
+
+  const CanaisMarketplaceSection({super.key, this.produtoId, this.compacto = false, this.onAlterado});
 
   @override
   State<CanaisMarketplaceSection> createState() => CanaisMarketplaceSectionState();
@@ -35,6 +42,16 @@ class CanaisMarketplaceSectionState extends State<CanaisMarketplaceSection> {
   // n8n depois de cada tentativa) — só pra exibição, não é editado aqui.
   final Map<String, Map<String, dynamic>> _statusSincronizacao = {};
   bool _carregando = true;
+  bool _mostrarTodos = false;
+
+  // Como estava ao abrir, pra saber se o usuário mudou alguma coisa.
+  final Map<String, bool> _disponivelInicial = {};
+  final Map<String, String> _precoInicial = {};
+
+  /// Algum canal ligado/desligado ou preço mudado desde que abriu.
+  bool get alterado => _marketplaces.any((m) =>
+      (_disponivel[m.id] ?? false) != (_disponivelInicial[m.id] ?? false) ||
+      (_precoControllers[m.id]?.text ?? '') != (_precoInicial[m.id] ?? ''));
 
   @override
   void initState() {
@@ -68,6 +85,12 @@ class CanaisMarketplaceSectionState extends State<CanaisMarketplaceSection> {
             'erro': existente['sincronizacao_erro'] as String?,
           };
         }
+      }
+
+      for (final marketplace in marketplaces) {
+        _disponivelInicial[marketplace.id] = _disponivel[marketplace.id] ?? false;
+        _precoInicial[marketplace.id] = _precoControllers[marketplace.id]!.text;
+        _precoControllers[marketplace.id]!.addListener(() => widget.onAlterado?.call());
       }
 
       if (mounted) {
@@ -186,20 +209,31 @@ class CanaisMarketplaceSectionState extends State<CanaisMarketplaceSection> {
       return const SizedBox.shrink();
     }
 
+    // Compacto: só os que estavam ligados ao abrir (e os que o usuário
+    // acabou de ligar), a menos que peça pra ver todos.
+    final visiveis = widget.compacto && !_mostrarTodos
+        ? _marketplaces
+            .where((m) => (_disponivelInicial[m.id] ?? false) || (_disponivel[m.id] ?? false))
+            .toList()
+        : _marketplaces;
+    final escondidos = _marketplaces.length - visiveis.length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Disponibilidade em Marketplaces',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Ative os canais em que este produto deve aparecer. Deixe o preço em branco pra usar o preço de venda padrão.',
-          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-        ),
-        const SizedBox(height: 8),
-        ..._marketplaces.map((marketplace) {
+        if (!widget.compacto) ...[
+          const Text(
+            'Disponibilidade em Marketplaces',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Ative os canais em que este produto deve aparecer. Deixe o preço em branco pra usar o preço de venda padrão.',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 8),
+        ],
+        ...visiveis.map((marketplace) {
           final disponivel = _disponivel[marketplace.id] ?? false;
           return Padding(
             padding: const EdgeInsets.only(bottom: 4),
@@ -215,7 +249,10 @@ class CanaisMarketplaceSectionState extends State<CanaisMarketplaceSection> {
                         contentPadding: EdgeInsets.zero,
                         title: Text(marketplace.nome),
                         value: disponivel,
-                        onChanged: (value) => setState(() => _disponivel[marketplace.id] = value),
+                        onChanged: (value) {
+                          setState(() => _disponivel[marketplace.id] = value);
+                          widget.onAlterado?.call();
+                        },
                       ),
                     ),
                     Expanded(
@@ -240,6 +277,12 @@ class CanaisMarketplaceSectionState extends State<CanaisMarketplaceSection> {
             ),
           );
         }),
+        if (escondidos > 0)
+          TextButton.icon(
+            onPressed: () => setState(() => _mostrarTodos = true),
+            icon: const Icon(Icons.add, size: 18),
+            label: Text('Outros canais ($escondidos)'),
+          ),
       ],
     );
   }

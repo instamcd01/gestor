@@ -29,11 +29,16 @@ class ProdutoEdicaoRapida extends StatefulWidget {
   /// Depois de salvar (pra a tela recarregar os canais da tabela).
   final VoidCallback onSalvo;
 
+  /// true enquanto há alteração não salva — a tela consulta antes de trocar
+  /// de produto, pra perguntar em vez de perder o que foi digitado.
+  final ValueNotifier<bool> temAlteracoes;
+
   const ProdutoEdicaoRapida({
     super.key,
     required this.produto,
     required this.onAbrirFicha,
     required this.onSalvo,
+    required this.temAlteracoes,
   });
 
   @override
@@ -52,11 +57,29 @@ class _ProdutoEdicaoRapidaState extends State<ProdutoEdicaoRapida> {
   late bool _site = widget.produto.exibirNoCatalogo;
   late int _estoqueBase = widget.produto.estoqueAtual;
   bool _salvando = false;
+  late final Map<TextEditingController, String> _textoInicial = {
+    for (final c in [_preco, _promocional, _custo, _estoque, _codigoBarras]) c: c.text,
+  };
 
   @override
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_atalho);
+    widget.temAlteracoes.value = false;
+    for (final c in _textoInicial.keys) {
+      c.addListener(_conferirAlteracoes);
+    }
+  }
+
+  /// Compara com o que abriu (não só "digitou algo"): apagar e redigitar o
+  /// mesmo valor não conta como alteração.
+  void _conferirAlteracoes() {
+    final alterado = _textoInicial.entries.any((e) => e.key.text != e.value) ||
+        _site != widget.produto.exibirNoCatalogo ||
+        (_canaisKey.currentState?.alterado ?? false);
+    if (alterado != widget.temAlteracoes.value && mounted) {
+      setState(() => widget.temAlteracoes.value = alterado);
+    }
   }
 
   /// Ctrl+S salva. Ouvinte global (enquanto o painel está aberto) porque no
@@ -135,6 +158,7 @@ class _ProdutoEdicaoRapidaState extends State<ProdutoEdicaoRapida> {
       await provider.atualizarCampos(produto.id!, campos);
       await _canaisKey.currentState?.salvar(produto.id!, preco);
       mensageiro.showSnackBar(const SnackBar(content: Text('Produto salvo.')));
+      widget.temAlteracoes.value = false;
       widget.onSalvo();
     } catch (e) {
       mensageiro.showSnackBar(SnackBar(content: Text('Erro ao salvar: $e')));
@@ -283,13 +307,34 @@ class _ProdutoEdicaoRapidaState extends State<ProdutoEdicaoRapida> {
                     style: apagado,
                   ),
                   value: _site,
-                  onChanged: (v) => setState(() => _site = v),
+                  onChanged: (v) {
+                    setState(() => _site = v);
+                    _conferirAlteracoes();
+                  },
                 ),
-                CanaisMarketplaceSection(key: _canaisKey, produtoId: produto.id),
+                CanaisMarketplaceSection(
+                  key: _canaisKey,
+                  produtoId: produto.id,
+                  compacto: true,
+                  onAlterado: _conferirAlteracoes,
+                ),
               ],
             ),
           ),
           const Divider(height: 1),
+          if (widget.temAlteracoes.value)
+            Container(
+              width: double.infinity,
+              color: cores.tertiaryContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+              child: Row(
+                children: [
+                  Icon(Icons.edit_note, size: 18, color: cores.onTertiaryContainer),
+                  const SizedBox(width: 8),
+                  Text('Alterações não salvas', style: TextStyle(fontSize: 13, color: cores.onTertiaryContainer)),
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
             child: Row(

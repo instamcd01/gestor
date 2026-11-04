@@ -49,6 +49,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   final _tabelaScroll = ScrollController();
   String? _selecionadoId;
   int _versaoPainel = 0;
+  final _painelTemAlteracoes = ValueNotifier<bool>(false);
   _ColunaOrdem _ordem = _ColunaOrdem.nome;
   bool _ordemCrescente = true;
 
@@ -62,6 +63,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     _buscaFoco.dispose();
     _tabelaFoco.dispose();
     _tabelaScroll.dispose();
+    _painelTemAlteracoes.dispose();
     super.dispose();
   }
 
@@ -122,6 +124,34 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     ));
   }
 
+  /// Antes de sair do produto aberto no painel: se tem alteração não
+  /// salva, pergunta. true = pode sair.
+  Future<bool> _podeSairDoPainel() async {
+    if (!_painelTemAlteracoes.value) return true;
+    final descartar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Alterações não salvas'),
+        content: const Text('Você mudou este produto e ainda não salvou. Descartar as alterações?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Continuar editando')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Descartar')),
+        ],
+      ),
+    );
+    if (descartar == true) _painelTemAlteracoes.value = false;
+    return descartar == true;
+  }
+
+  /// Troca o produto do painel (clique, setas, Esc) respeitando o aviso.
+  Future<void> _selecionar(String? id, {int? indiceParaMostrar}) async {
+    if (id == _selecionadoId) return;
+    if (!await _podeSairDoPainel() || !mounted) return;
+    setState(() => _selecionadoId = id);
+    if (indiceParaMostrar != null) _mostrarLinha(indiceParaMostrar);
+    _tabelaFoco.requestFocus();
+  }
+
   void _novoProduto() {
     Navigator.of(context).push(MaterialPageRoute(builder: (ctx) => CadastroProdutoScreen()));
   }
@@ -152,7 +182,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     final tecla = evento.logicalKey;
     if (tecla == LogicalKeyboardKey.escape) {
       if (_selecionadoId == null) return KeyEventResult.ignored;
-      setState(() => _selecionadoId = null);
+      _selecionar(null);
       return KeyEventResult.handled;
     }
     final passo = tecla == LogicalKeyboardKey.arrowDown
@@ -163,8 +193,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     if (passo == 0 || lista.isEmpty) return KeyEventResult.ignored;
     final atual = lista.indexWhere((p) => p.id == _selecionadoId);
     final novo = atual < 0 ? 0 : (atual + passo).clamp(0, lista.length - 1);
-    setState(() => _selecionadoId = lista[novo].id);
-    _mostrarLinha(novo);
+    _selecionar(lista[novo].id, indiceParaMostrar: novo);
     return KeyEventResult.handled;
   }
 
@@ -463,10 +492,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                     produto: produto,
                     canais: _canais[produto.id] ?? const {},
                     selecionado: produto.id == _selecionadoId,
-                    onTap: () {
-                      _tabelaFoco.requestFocus();
-                      setState(() => _selecionadoId = produto.id);
-                    },
+                    onTap: () => _selecionar(produto.id),
                   );
                 },
               ),
@@ -681,11 +707,14 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     return ProdutoEdicaoRapida(
       key: chave,
       produto: produto,
+      temAlteracoes: _painelTemAlteracoes,
       onSalvo: () {
         _carregarCanais(ids: [produto.id!]);
         if (mounted) setState(() => _versaoPainel++);
       },
       onAbrirFicha: () async {
+        // A ficha lê do banco: o que foi digitado aqui e não salvo se perderia.
+        if (!await _podeSairDoPainel() || !mounted) return;
         await Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: produto)));
         if (!mounted) return;
         _carregarCanais(ids: [produto.id!]);
