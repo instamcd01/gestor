@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/historico_vendas_provider.dart';
 import '../models/venda.dart';
 import '../widgets/estado_erro_lista.dart';
+import 'historico_vendas_pc.dart';
 import 'venda_detalhes_screen.dart';
 
 class HistoricoVendasScreen extends StatefulWidget {
@@ -126,6 +127,12 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
     final totaisMes = _calcularTotais(todasVendas);
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
     final carregando = historicoProvider.carregando;
+
+    // PC (janela larga): tabela + venda aberta ao lado. Mesmas vendas (o
+    // corte do vendedor acima vale pros dois).
+    if (MediaQuery.sizeOf(context).width >= 1200) {
+      return HistoricoVendasPc(vendas: todasVendas, recarregar: _carregarVendas);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -279,7 +286,13 @@ class _HistoricoVendasScreenState extends State<HistoricoVendasScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: ExpansionTile(
         title: Text(
-          DateFormat('EEEE, dd/MM/yyyy').format(DateFormat('dd/MM/yyyy').parse(data)),
+          // Dia da semana à mão: sem initializeDateFormatting('pt_BR') o
+          // DateFormat('EEEE') saía em inglês ("Wednesday").
+          () {
+            final dia = DateFormat('dd/MM/yyyy').parse(data);
+            const semana = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
+            return '${semana[dia.weekday - 1]}, $data';
+          }(),
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
