@@ -80,9 +80,21 @@ class _CarrinhosDoDiaScreenState extends State<CarrinhosDoDiaScreen> {
       final ignorados = carrinhoProvider.mesclarItensRemotos(catalogo, carrinhoCliente.itens);
 
       if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const CarrinhoScreen(idVenda: '')),
-      );
+      // No PC o carrinho fica fixo na própria tela de Vender: só volta pra ela.
+      if (MediaQuery.sizeOf(context).width >= 1200) {
+        final avisos = ScaffoldMessenger.of(context);
+        Navigator.of(context).pop();
+        if (ignorados.isNotEmpty) {
+          avisos.showSnackBar(SnackBar(
+            content: Text('${ignorados.length} item(ns) não puderam ser trazidos: ${ignorados.join(", ")}'),
+          ));
+        }
+        return;
+      } else {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const CarrinhoScreen(idVenda: '')),
+        );
+      }
       if (ignorados.isNotEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${ignorados.length} item(ns) não puderam ser trazidos: ${ignorados.join(", ")}')),

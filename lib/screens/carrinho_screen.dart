@@ -60,6 +60,70 @@ Future<void> resolverZonaEntregaParaCliente(
   carrinhoProvider.selecionarZonaEntrega(zonaProvider.zonaParaDistancia(distanciaKm));
 }
 
+/// Abre a tela de Entrega (cliente, zona, retirada, agendamento) e aplica o
+/// resultado no carrinho, já mesclando o que o cliente tinha no carrinho
+/// compartilhado (WhatsApp/site/orçamento salvo). Usada pelo Carrinho do
+/// celular e pelo Vender do PC — uma regra só.
+///
+/// `comoJanela`: no PC abre por cima da venda, numa janela, em vez de cobrir
+/// a tela toda (a venda continua visível atrás).
+Future<void> escolherClienteEEntrega(BuildContext context, CarrinhoProvider carrinhoProvider,
+    {bool comoJanela = false}) async {
+  final tela = OpcaoEntregaScreen(subtotal: carrinhoProvider.subtotal);
+  final resultado = comoJanela
+      ? await showDialog(
+          context: context,
+          builder: (ctx) => Dialog(
+            clipBehavior: Clip.antiAlias,
+            insetPadding: const EdgeInsets.all(40),
+            child: SizedBox(
+              width: 760,
+              height: (MediaQuery.sizeOf(ctx).height - 80).clamp(400, 860).toDouble(),
+              child: tela,
+            ),
+          ),
+        )
+      : await Navigator.push(context, MaterialPageRoute(builder: (context) => tela));
+  if (resultado == null || resultado is! Map<String, dynamic>) return;
+  final Cliente cliente = resultado['cliente'];
+  final ZonaEntrega? zona = resultado['zona'];
+  final JanelaHorarioAgendamento? agendamento = resultado['agendamento'];
+  carrinhoProvider.selecionarCliente(cliente);
+  carrinhoProvider.selecionarZonaEntrega(zona);
+  carrinhoProvider.selecionarAgendamento(agendamento);
+  if (cliente.idCliente == null || !context.mounted) return;
+
+  // Se o cliente já tem algo no carrinho compartilhado, mescla com o que
+  // está sendo montado — evita ir procurar em "Carrinhos do dia".
+  try {
+    final carrinhoExistente = await CarrinhoClienteRepository().consultar(cliente.idCliente!);
+    if (carrinhoExistente.vazio || !context.mounted) return;
+    final catalogo = Provider.of<ProdutoProvider>(context, listen: false).produtos;
+    final ignorados = carrinhoProvider.mesclarItensRemotos(catalogo, carrinhoExistente.itens);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(
+        ignorados.isEmpty
+            ? 'Itens que esse cliente já tinha no carrinho foram adicionados aqui.'
+            : 'Itens do carrinho anterior adicionados (${ignorados.length} não puderam ser trazidos: ${ignorados.join(", ")}).',
+      )),
+    );
+  } catch (e) {
+    debugPrint('Erro ao carregar carrinho existente do cliente: $e');
+  }
+}
+
+/// Salva o carrinho ativo no cliente selecionado (mesma tabela do
+/// WhatsApp/site) e esvazia o carrinho pra começar outro atendimento.
+Future<void> salvarOrcamentoNoCliente(CarrinhoProvider carrinhoProvider) async {
+  final cliente = carrinhoProvider.clienteSelecionado;
+  if (cliente?.idCliente == null) return;
+  final itensPayload =
+      carrinhoProvider.itens.map((i) => {'produto_id': i.produto.id, 'quantidade': i.quantidade}).toList();
+  await CarrinhoClienteRepository().salvarComoStaff(cliente!.idCliente!, itensPayload);
+  carrinhoProvider.limparCarrinho();
+}
+
 class CarrinhoScreen extends StatefulWidget {
   final String idVenda;
 
@@ -107,49 +171,8 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
     }
   }
 
-  Future<void> selecionarCliente(CarrinhoProvider carrinhoProvider) async {
-    final resultado = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => OpcaoEntregaScreen(
-          subtotal: carrinhoProvider.subtotal,
-        ),
-      ),
-    );
-
-    if (resultado != null && resultado is Map<String, dynamic>) {
-      final Cliente cliente = resultado['cliente'];
-      final ZonaEntrega? zona = resultado['zona'];
-      final JanelaHorarioAgendamento? agendamento = resultado['agendamento'];
-      carrinhoProvider.selecionarCliente(cliente);
-      carrinhoProvider.selecionarZonaEntrega(zona);
-      carrinhoProvider.selecionarAgendamento(agendamento);
-      if (cliente.idCliente != null) await _carregarCarrinhoExistente(cliente.idCliente!, carrinhoProvider);
-    }
-  }
-
-  /// Se o cliente recém-selecionado já tem algo no carrinho compartilhado
-  /// (WhatsApp/site, ou um orçamento que você mesmo salvou antes pra ele),
-  /// já mescla com o que estiver sendo montado agora — evita ter que ir
-  /// procurar em "Carrinhos do dia" quando é só continuar direto daqui.
-  Future<void> _carregarCarrinhoExistente(String clienteId, CarrinhoProvider carrinhoProvider) async {
-    try {
-      final carrinhoExistente = await CarrinhoClienteRepository().consultar(clienteId);
-      if (carrinhoExistente.vazio || !mounted) return;
-      final catalogo = Provider.of<ProdutoProvider>(context, listen: false).produtos;
-      final ignorados = carrinhoProvider.mesclarItensRemotos(catalogo, carrinhoExistente.itens);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(
-          ignorados.isEmpty
-              ? 'Itens que esse cliente já tinha no carrinho foram adicionados aqui.'
-              : 'Itens do carrinho anterior adicionados (${ignorados.length} não puderam ser trazidos: ${ignorados.join(", ")}).',
-        )),
-      );
-    } catch (e) {
-      debugPrint('Erro ao carregar carrinho existente do cliente: $e');
-    }
-  }
+  Future<void> selecionarCliente(CarrinhoProvider carrinhoProvider) =>
+      escolherClienteEEntrega(context, carrinhoProvider);
 
   Future<void> _salvarOrcamento(CarrinhoProvider carrinhoProvider) async {
     final cliente = carrinhoProvider.clienteSelecionado;
@@ -157,14 +180,10 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
 
     setState(() => _salvandoOrcamento = true);
     try {
-      final itensPayload = carrinhoProvider.itens
-          .map((i) => {'produto_id': i.produto.id, 'quantidade': i.quantidade})
-          .toList();
-      await CarrinhoClienteRepository().salvarComoStaff(cliente!.idCliente!, itensPayload);
-      carrinhoProvider.limparCarrinho();
+      await salvarOrcamentoNoCliente(carrinhoProvider);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Orçamento salvo pra ${cliente.nome} — retome em "Carrinhos do dia".')),
+        SnackBar(content: Text('Orçamento salvo pra ${cliente!.nome} — retome em "Carrinhos do dia".')),
       );
       Navigator.of(context).pop();
     } catch (e) {

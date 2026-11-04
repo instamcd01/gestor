@@ -11,6 +11,99 @@ import '../providers/historico_vendas_provider.dart';
 import '../utils/agendamento_utils.dart';
 import 'recibo_screen.dart';
 
+/// Mensagem pronta pra tela. PostgrestException.message já vem limpa — a
+/// função `registrar_pedido_completo` lista os produtos exatos que ficaram
+/// sem estoque nela; e.toString() mostraria o wrapper inteiro da exceção.
+String mensagemErroRegistroVenda(Object e) => e is PostgrestException ? e.message : e.toString();
+
+/// Registra a venda montada no checkout — a MESMA regra pra conclusão do
+/// celular (`ConclusaoVendaScreen`) e pro painel do Vender no PC. Monta o
+/// `Venda`, grava, recarrega os produtos (o estoque é baixado no banco pelo
+/// trigger trg_baixar_estoque) e esvazia o carrinho.
+Future<Venda> registrarVendaDoCheckout(
+  BuildContext context, {
+  required List<Map<String, dynamic>> carrinho,
+  required Cliente cliente,
+  required String metodoPagamento,
+  required double valorTotal,
+  double? valorPago,
+  double? troco,
+  required double desconto,
+  String? cupomId,
+  required double valorEntrega,
+  required String entregaSelecionada,
+  required double saldoUsado,
+  Map<String, double>? pagamentosDetalhados,
+  ZonaEntrega? zonaEntrega,
+  JanelaHorarioAgendamento? agendamento,
+  int? parcelasCartao,
+  double? jurosParcelamento,
+}) async {
+  final historicoProvider = Provider.of<HistoricoVendasProvider>(context, listen: false);
+  final produtoProvider = Provider.of<ProdutoProvider>(context, listen: false);
+  final carrinhoProvider = Provider.of<CarrinhoProvider>(context, listen: false);
+
+  final itensVenda = carrinho.map((item) {
+    final produto = item['produto'] as Produto;
+    final quantidade = item['quantidade'] as int;
+    final precoUnitario = (item['precoUnitario'] ?? produto.preco) as double;
+    return ItemVenda(
+      produto: produto,
+      quantidade: quantidade,
+      precoUnitario: precoUnitario,
+      grupoKitId: item['grupoKitId'] as String?,
+    );
+  }).toList();
+
+  final subtotal = itensVenda.fold<double>(0, (soma, i) => soma + i.precoTotal);
+  final custoTotal = itensVenda.fold<double>(0, (soma, i) => soma + i.custoTotal);
+  final lucroTotal = itensVenda.fold<double>(0, (soma, i) => soma + i.lucroTotal);
+  final totalItens = itensVenda.fold<int>(0, (soma, i) => soma + i.quantidade);
+  final dataVenda = DateTime.now();
+
+  // Previsão automática: zona escolhida no checkout + faixa de minutos
+  // configurada nela, ancorada no exato momento do pedido — só quando
+  // a zona tem faixa configurada (não é obrigatório). Sobrescrita pela
+  // janela explícita quando o vendedor agendou (tela de Entrega).
+  final previsaoInicio = agendamento?.inicio ??
+      (zonaEntrega?.estimativaMinMin != null ? dataVenda.add(Duration(minutes: zonaEntrega!.estimativaMinMin!)) : null);
+  final previsaoFim = agendamento?.fim ??
+      (zonaEntrega?.estimativaMinMax != null ? dataVenda.add(Duration(minutes: zonaEntrega!.estimativaMinMax!)) : null);
+
+  final venda = Venda(
+    cliente: cliente,
+    dataVenda: dataVenda,
+    subtotal: subtotal,
+    desconto: desconto,
+    cupomId: cupomId,
+    saldoUsado: saldoUsado,
+    valorEntrega: valorEntrega,
+    entregaSelecionada: entregaSelecionada,
+    valorTotal: valorTotal,
+    valorPago: valorPago ?? valorTotal,
+    troco: troco ?? 0.0,
+    metodoPagamento: metodoPagamento,
+    pagamentosDetalhados: pagamentosDetalhados,
+    totalItens: totalItens,
+    custoTotal: custoTotal,
+    lucroTotal: lucroTotal,
+    itens: itensVenda,
+    previsaoEntregaInicio: previsaoInicio,
+    previsaoEntregaFim: previsaoFim,
+    agendadoManualmente: agendamento != null,
+    parcelasCartao: parcelasCartao,
+    jurosParcelamento: jurosParcelamento,
+  );
+
+  final vendaRegistrada = await historicoProvider.registrarVenda(venda);
+  await produtoProvider.carregarProdutos();
+  // Limpa o carrinho — sem isso, um item que ficou sem estoque nessa venda
+  // continuava no carrinho global e reaparecia na próxima venda, levando ao
+  // mesmo erro de estoque negativo na tentativa seguinte.
+  carrinhoProvider.limparCarrinho();
+  return vendaRegistrada;
+}
+
 class ConclusaoVendaScreen extends StatefulWidget {
   final double valorTotal;
   final List<Map<String, dynamic>> carrinho; // Cada item: {produto, quantidade, precoUnitario, precoTotalItem}
@@ -69,76 +162,25 @@ class _ConclusaoVendaScreenState extends State<ConclusaoVendaScreen> {
     setState(() => _erro = null);
 
     try {
-      final itensVenda = widget.carrinho.map((item) {
-        final produto = item['produto'] as Produto;
-        final quantidade = item['quantidade'] as int;
-        final precoUnitario = (item['precoUnitario'] ?? produto.preco) as double;
-        return ItemVenda(
-          produto: produto,
-          quantidade: quantidade,
-          precoUnitario: precoUnitario,
-          grupoKitId: item['grupoKitId'] as String?,
-        );
-      }).toList();
-
-      final subtotal = itensVenda.fold<double>(0, (soma, i) => soma + i.precoTotal);
-      final custoTotal = itensVenda.fold<double>(0, (soma, i) => soma + i.custoTotal);
-      final lucroTotal = itensVenda.fold<double>(0, (soma, i) => soma + i.lucroTotal);
-      final totalItens = itensVenda.fold<int>(0, (soma, i) => soma + i.quantidade);
-      final dataVenda = DateTime.now();
-
-      // Previsão automática: zona escolhida no checkout + faixa de minutos
-      // configurada nela, ancorada no exato momento do pedido — só quando
-      // a zona tem faixa configurada (não é obrigatório). Sobrescrita pela
-      // janela explícita quando o vendedor agendou (tela de Entrega).
-      final agendamento = widget.agendamento;
-      final zona = widget.zonaEntrega;
-      final previsaoInicio = agendamento?.inicio ??
-          (zona?.estimativaMinMin != null ? dataVenda.add(Duration(minutes: zona!.estimativaMinMin!)) : null);
-      final previsaoFim = agendamento?.fim ??
-          (zona?.estimativaMinMax != null ? dataVenda.add(Duration(minutes: zona!.estimativaMinMax!)) : null);
-
-      final venda = Venda(
+      final vendaRegistrada = await registrarVendaDoCheckout(
+        context,
+        carrinho: widget.carrinho,
         cliente: widget.cliente,
-        dataVenda: dataVenda,
-        subtotal: subtotal,
+        metodoPagamento: widget.metodoPagamento,
+        valorTotal: widget.valorTotal,
+        valorPago: widget.valorPago,
+        troco: widget.troco,
         desconto: widget.desconto,
         cupomId: widget.cupomId,
-        saldoUsado: widget.saldoUsado,
         valorEntrega: widget.valorEntrega,
         entregaSelecionada: widget.entregaSelecionada,
-        valorTotal: widget.valorTotal,
-        valorPago: widget.valorPago ?? widget.valorTotal,
-        troco: widget.troco ?? 0.0,
-        metodoPagamento: widget.metodoPagamento,
+        saldoUsado: widget.saldoUsado,
         pagamentosDetalhados: widget.pagamentosDetalhados,
-        totalItens: totalItens,
-        custoTotal: custoTotal,
-        lucroTotal: lucroTotal,
-        itens: itensVenda,
-        previsaoEntregaInicio: previsaoInicio,
-        previsaoEntregaFim: previsaoFim,
-        agendadoManualmente: agendamento != null,
+        zonaEntrega: widget.zonaEntrega,
+        agendamento: widget.agendamento,
         parcelasCartao: widget.parcelasCartao,
         jurosParcelamento: widget.jurosParcelamento,
       );
-
-      final historicoProvider = Provider.of<HistoricoVendasProvider>(context, listen: false);
-      final vendaRegistrada = await historicoProvider.registrarVenda(venda);
-
-      // O estoque já é debitado automaticamente no banco (trigger
-      // trg_baixar_estoque ao inserir os itens do pedido) — aqui só
-      // recarregamos os produtos pra refletir o novo saldo na UI.
-      if (!mounted) return;
-      await Provider.of<ProdutoProvider>(context, listen: false).carregarProdutos();
-
-      // Limpa o carrinho — sem isso, um item que ficou sem estoque nessa
-      // venda continuava salvo no carrinho global e reaparecia intacto na
-      // próxima venda, sem chance de ser selecionado de novo mas ainda
-      // presente, levando ao mesmo erro de estoque negativo na tentativa
-      // seguinte.
-      if (!mounted) return;
-      Provider.of<CarrinhoProvider>(context, listen: false).limparCarrinho();
 
       if (!mounted) return;
       setState(() {
@@ -154,13 +196,7 @@ class _ConclusaoVendaScreenState extends State<ConclusaoVendaScreen> {
       }
     } catch (e) {
       debugPrint('Erro ao registrar venda: $e');
-      // PostgrestException.message já vem pronto pra exibir — a função
-      // `registrar_pedido_completo` lista os produtos exatos que ficaram
-      // sem estoque nessa mensagem (ver migração no banco). e.toString()
-      // como fallback mostraria o wrapper inteiro da exceção, sujo demais
-      // pra tela.
-      final mensagem = e is PostgrestException ? e.message : e.toString();
-      if (mounted) setState(() => _erro = mensagem);
+      if (mounted) setState(() => _erro = mensagemErroRegistroVenda(e));
     }
   }
 

@@ -13,6 +13,7 @@ import 'cadastro_produto_screen.dart';
 import 'carrinho_screen.dart';
 import 'carrinhos_do_dia_screen.dart';
 import 'conversas_whatsapp_screen.dart';
+import 'vender_pc_screen.dart';
 
 /// Categoria sintética (não vem do banco) pra alternar a grade pra kits —
 /// distinto de um nome de categoria real que o lojista possa ter cadastrado
@@ -124,6 +125,8 @@ class _VendasScreenState extends State<VendasScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // PC (janela larga): produtos + carrinho + pagamento numa tela só.
+    if (MediaQuery.sizeOf(context).width >= VenderPcScreen.larguraPc) return const VenderPcScreen();
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
