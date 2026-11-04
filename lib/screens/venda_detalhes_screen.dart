@@ -763,7 +763,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: (!cancelada && venda.proximoStatus != null)
+      bottomNavigationBar: (!widget.embutido && !cancelada && venda.proximoStatus != null)
           ? SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),

@@ -9,12 +9,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/venda.dart';
 import '../providers/branding_provider.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../utils/busca_utils.dart';
 import '../utils/canal_venda_utils.dart';
 import '../utils/mensagem_status_dialog.dart';
 import '../utils/mensagens_status_pedido.dart';
 import '../widgets/categoria_cliente_badge.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'alterar_forma_pagamento_screen.dart';
+import 'separacao_pedido_screen.dart';
 import 'venda_detalhes_screen.dart';
 
 /// Urgência do pedido em relação à previsão de entrega calculada pela
@@ -47,6 +49,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   // Layout largo (PC): fila à esquerda + pedido aberto à direita.
   static const larguraPc = 1200.0;
   String? _selecionadoId;
+  String _busca = '';
+  final _buscaController = TextEditingController();
   final _filaFoco = FocusNode();
   final _chaveSelecionado = GlobalKey();
 
@@ -70,6 +74,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   void dispose() {
     _timerUrgencia?.cancel();
     _filaFoco.dispose();
+    _buscaController.dispose();
     super.dispose();
   }
 
@@ -389,6 +394,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       if (mensagem != null) enviarMensagemStatusWhatsApp(context, selecionado, mensagem);
       return KeyEventResult.handled;
     }
+    if (tecla == LogicalKeyboardKey.keyS && evento is KeyDownEvent && selecionado != null && _podeSeparar(selecionado)) {
+      _abrirSeparacao(selecionado);
+      return KeyEventResult.handled;
+    }
     final passo = tecla == LogicalKeyboardKey.arrowDown
         ? 1
         : tecla == LogicalKeyboardKey.arrowUp
@@ -434,18 +443,362 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
               // A própria tela de detalhes, embutida (cancelar, estornar,
               // editar itens, separação: tudo igual). A chave muda quando o
               // pedido muda no tempo real, pra não mostrar dado velho.
-              : ClipRect(
-                  child: VendaDetalhesScreen(
-                    key: ValueKey('${selecionado.idVenda}|${selecionado.status}|${selecionado.valorTotal}|'
-                        '${selecionado.itens.length}|${selecionado.separacaoStatus}'),
-                    venda: selecionado,
-                    embutido: true,
-                  ),
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _cabecalhoPainel(selecionado),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: ClipRect(
+                        child: VendaDetalhesScreen(
+                          key: ValueKey('${selecionado.idVenda}|${selecionado.status}|${selecionado.valorTotal}|'
+                              '${selecionado.itens.length}|${selecionado.separacaoStatus}'),
+                          venda: selecionado,
+                          embutido: true,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
         ),
       ],
     );
   }
+
+  bool _podeSeparar(Venda venda) =>
+      venda.ehMarketplace && venda.marketplacePedidoId != null && !venda.cancelada && !venda.finalizada;
+
+  void _abrirSeparacao(Venda venda) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => SeparacaoPedidoScreen(venda: venda)));
+  }
+
+  /// "#12 • iFood • há 8 min • 2º pedido" — mesma linha do cartão do celular.
+  Widget _linhaNumeroCanal(Venda venda, String tempoDecorrido) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Text.rich(
+      TextSpan(
+        text: '#${venda.numeroSequencial ?? '-'} • ${rotuloCanalVenda(venda.canalVenda)} • $tempoDecorrido',
+        children: [
+          if (_ordemPedidoCliente(venda) case final ordem?)
+            TextSpan(
+              text: ' • $ordemº pedido',
+              style: ordem == 1 ? TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold) : null,
+            ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12.5),
+    );
+  }
+
+  Widget? _linhaAgendado(Venda venda) {
+    final inicio = _agendadoInicio(venda);
+    final fim = _agendadoFim(venda);
+    if (!(venda.agendado || venda.agendadoManualmente) || inicio == null || fim == null) return null;
+    final cor = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.event_outlined, size: 14, color: cor),
+        const SizedBox(width: 4),
+        Text(
+          'Agendado: ${DateFormat('dd/MM HH:mm').format(inicio)} - ${DateFormat('HH:mm').format(fim)}',
+          style: TextStyle(fontSize: 12, color: cor),
+        ),
+      ],
+    );
+  }
+
+  /// Linha compacta da fila no PC: tudo o que o cartão do celular mostra
+  /// pra decidir qual pedido atender, sem os botões (que ficam no painel).
+  Widget _linhaPc({
+    required Venda venda,
+    required bool selecionado,
+    required String tempoDecorrido,
+    required _Urgencia urgencia,
+    required bool ifoodEstourado,
+    required Color corUrgencia,
+    required List<Widget> chipsInfo,
+    required NumberFormat currencyFormat,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final corBarra = selecionado
+        ? colorScheme.primary
+        : urgencia != _Urgencia.neutro
+            ? corUrgencia
+            : ifoodEstourado
+                ? Colors.red.shade900
+                : Colors.transparent;
+    final agendado = _linhaAgendado(venda);
+
+    return Material(
+      key: selecionado ? _chaveSelecionado : null,
+      color: selecionado ? colorScheme.primary.withValues(alpha: 0.14) : Colors.transparent,
+      child: InkWell(
+        onTap: () => _selecionar(venda),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(color: corBarra, width: 3),
+              bottom: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(11, 10, 12, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(iconeCanalVenda(venda.canalVenda), size: 18, color: colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(venda.cliente.nome,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
+                  const SizedBox(width: 6),
+                  CategoriaClienteBadge(categoria: venda.cliente.categoriaCliente),
+                  if (venda.cliente.recebePush) ...[
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: 'Recebe notificação do pedido no celular',
+                      child: Icon(Icons.notifications_active, size: 14, color: colorScheme.primary),
+                    ),
+                  ],
+                  const Spacer(),
+                  if (venda.observacao.isNotEmpty) ...[
+                    Tooltip(
+                      message: 'Observação: "${venda.observacao}"',
+                      child: Icon(Icons.sticky_note_2_outlined, size: 17, color: Colors.amber.shade400),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _corStatus(venda.status).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      StatusPedido.rotulo(venda.status),
+                      style: TextStyle(color: _corStatus(venda.status), fontWeight: FontWeight.bold, fontSize: 11.5),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              _linhaNumeroCanal(venda, tempoDecorrido),
+              Text(
+                '${venda.itens.length} itens • ${currencyFormat.format(venda.valorTotal)}',
+                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12.5),
+              ),
+              if (chipsInfo.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 4, children: chipsInfo),
+              ],
+              if (agendado != null) ...[
+                const SizedBox(height: 4),
+                agendado,
+              ],
+              if (urgencia != _Urgencia.neutro || ifoodEstourado) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    if (urgencia == _Urgencia.atrasado) _selo('Atrasado', Colors.red),
+                    if (urgencia == _Urgencia.atencao) _selo('Atenção', Colors.orange),
+                    if (ifoodEstourado) _selo('Prazo iFood estourado', Colors.red.shade900),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Topo do pedido aberto no PC: etapas, ações e o que não pode passar
+  /// batido (observação, modalidade/entrega). O resto fica nas abas abaixo.
+  Widget _cabecalhoPainel(Venda venda) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final mensagemStatus = venda.ehMarketplace
+        ? null
+        : mensagemPadraoStatus(venda, venda.status, nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
+    final chips = _chipsInfo(context, venda);
+    final agendado = _linhaAgendado(venda);
+
+    final etapas = [
+      StatusPedido.pendente,
+      StatusPedido.preparando,
+      StatusPedido.pronto,
+      if (venda.temEntrega) StatusPedido.saiuParaEntrega,
+      StatusPedido.entregue,
+    ];
+    final atual = etapas.indexOf(venda.status);
+
+    Widget barraEtapas;
+    if (atual < 0) {
+      // Cancelado, aguardando pagamento/conciliação: fora do fluxo normal.
+      barraEtapas = Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: _corStatus(venda.status).withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(StatusPedido.rotulo(venda.status),
+              style: TextStyle(color: _corStatus(venda.status), fontWeight: FontWeight.bold)),
+        ),
+      );
+    } else {
+      final concluido = venda.status == StatusPedido.entregue;
+      barraEtapas = Row(
+        children: [
+          for (var i = 0; i < etapas.length; i++) ...[
+            Builder(builder: (_) {
+              final feita = i < atual || concluido;
+              final agora = i == atual && !concluido;
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: feita
+                          ? Colors.green.withValues(alpha: 0.25)
+                          : agora
+                              ? colorScheme.primary
+                              : Colors.transparent,
+                      border: feita || agora ? null : Border.all(color: colorScheme.outlineVariant),
+                    ),
+                    child: feita
+                        ? Icon(Icons.check, size: 14, color: Colors.green.shade300)
+                        : Text('${i + 1}',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: agora ? colorScheme.onPrimary : colorScheme.onSurfaceVariant)),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    StatusPedido.rotulo(etapas[i]),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: agora ? FontWeight.w700 : FontWeight.w400,
+                      color: agora
+                          ? colorScheme.onSurface
+                          : feita
+                              ? Colors.green.shade300
+                              : colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              );
+            }),
+            if (i < etapas.length - 1)
+              Expanded(
+                child: Container(
+                  height: 2,
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  color: i < atual || concluido ? Colors.green.withValues(alpha: 0.35) : colorScheme.outlineVariant,
+                ),
+              ),
+          ],
+        ],
+      );
+    }
+
+    final acoes = <Widget>[
+      if (_podeSeparar(venda))
+        OutlinedButton.icon(
+          onPressed: () => _abrirSeparacao(venda),
+          icon: const Icon(Icons.checklist, size: 18),
+          label: Text(venda.separacaoStatus == null ? 'Separar pedido  (S)' : 'Ver separação  (S)'),
+        ),
+      if (mensagemStatus != null)
+        OutlinedButton.icon(
+          onPressed: () => enviarMensagemStatusWhatsApp(context, venda, mensagemStatus),
+          icon: const Icon(Icons.message, size: 18, color: Colors.green),
+          label: const Text('WhatsApp  (W)'),
+        ),
+      if (venda.status == StatusPedido.saiuParaEntrega && venda.formaPagamentoEditavel)
+        OutlinedButton.icon(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => AlterarFormaPagamentoScreen(venda: venda)),
+          ),
+          icon: const Icon(Icons.payments_outlined, size: 18),
+          label: const Text('Forma de pagamento'),
+        ),
+      if (venda.proximoStatus != null)
+        FilledButton.icon(
+          onPressed: () => _avancarStatus(venda),
+          icon: const Icon(Icons.arrow_forward, size: 18),
+          label: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!)}  (Enter)'),
+        ),
+    ];
+
+    return Container(
+      color: colorScheme.surfaceContainerLow,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          barraEtapas,
+          if (acoes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: acoes),
+          ],
+          if (chips.isNotEmpty || agendado != null) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [...chips, if (agendado != null) agendado],
+            ),
+          ],
+          if (venda.observacao.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.10),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.45)),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.sticky_note_2_outlined, size: 18, color: Colors.amber.shade400),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(
+                            text: 'Observação do cliente: ',
+                            style: TextStyle(fontWeight: FontWeight.w700, color: Colors.amber.shade300)),
+                        TextSpan(text: '"${venda.observacao}"', style: const TextStyle(fontStyle: FontStyle.italic)),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -483,6 +836,15 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     }
 
     final largo = MediaQuery.sizeOf(context).width >= larguraPc;
+    if (largo && _busca.trim().isNotEmpty) {
+      final termo = normalizarBusca(_busca.trim().replaceAll('#', ''));
+      pedidos = pedidos
+          .where((v) =>
+              '${v.numeroSequencial ?? ''}'.contains(termo) ||
+              (v.numeroExibicaoMarketplace ?? '').toLowerCase().contains(termo) ||
+              contemTodasPalavras(v.cliente.nome, _busca.trim()))
+          .toList();
+    }
     int contarAtivos(String? status) =>
         status == null ? provider.pedidosAtivos.length : provider.pedidosAtivos.where((v) => v.status == status).length;
     int contarHoje(String status) =>
@@ -493,6 +855,29 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       appBar: AppBar(
         title: const Text('Fila de Pedidos'),
         actions: [
+          if (largo)
+            SizedBox(
+              width: 260,
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: 'Buscar nº ou cliente nesta lista',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  isDense: true,
+                  suffixIcon: _busca.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Limpar busca',
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () {
+                            _buscaController.clear();
+                            setState(() => _busca = '');
+                          },
+                        ),
+                ),
+                controller: _buscaController,
+                onChanged: (v) => setState(() => _busca = v),
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => provider.atualizarFila(),
@@ -630,7 +1015,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                 : RefreshIndicator(
                     onRefresh: provider.atualizarFila,
                     child: ListView.builder(
-                      padding: const EdgeInsets.all(12),
+                      padding: largo ? EdgeInsets.zero : const EdgeInsets.all(12),
                       itemCount: pedidos.length,
                       itemBuilder: (context, index) {
                         final venda = pedidos[index];
@@ -643,18 +1028,25 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                         final corUrgencia = _corUrgencia(urgencia);
                         final chipsInfo = _chipsInfo(context, venda);
 
-                        final selecionado = largo && venda.idVenda == _selecionadoId;
+                        if (largo) {
+                          return _linhaPc(
+                            venda: venda,
+                            selecionado: venda.idVenda == _selecionadoId,
+                            tempoDecorrido: tempoDecorrido,
+                            urgencia: urgencia,
+                            ifoodEstourado: ifoodEstourado,
+                            corUrgencia: corUrgencia,
+                            chipsInfo: chipsInfo,
+                            currencyFormat: currencyFormat,
+                          );
+                        }
                         return Card(
-                          key: selecionado ? _chaveSelecionado : null,
                           margin: const EdgeInsets.only(bottom: 10),
-                          color: selecionado ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14) : null,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
-                            side: selecionado
-                                ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 2)
-                                : urgencia == _Urgencia.neutro
-                                    ? BorderSide.none
-                                    : BorderSide(color: corUrgencia, width: 1.5),
+                            side: urgencia == _Urgencia.neutro
+                                ? BorderSide.none
+                                : BorderSide(color: corUrgencia, width: 1.5),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
@@ -662,12 +1054,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 InkWell(
-                                  onTap: () => largo
-                                      ? _selecionar(venda)
-                                      : Navigator.push(
-                                          context,
-                                          MaterialPageRoute(builder: (_) => VendaDetalhesScreen(venda: venda)),
-                                        ),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => VendaDetalhesScreen(venda: venda)),
+                                  ),
                                   child: Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -872,7 +1262,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               alignment: Alignment.centerLeft,
               child: Text(
-                '↑ ↓ trocar de pedido     ·     Enter avançar status     ·     W WhatsApp     ·     Esc fechar',
+                '↑ ↓ trocar de pedido     ·     Enter avançar status     ·     S separar     ·     W WhatsApp     ·     Esc fechar',
                 style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ),
