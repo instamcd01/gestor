@@ -31,6 +31,13 @@ bool _produtoComEstoqueBaixo(Produto p) =>
 /// Um destino de navegação principal do app (usado tanto pelo shell de
 /// Drawer quanto pelo de Sidebar) — fonte única, evita a lista duplicada
 /// que existia manualmente entre o Grid e o Drawer da Home.
+/// Troca a seção da barra lateral (PC/tablet) pelo título do destino, ex.
+/// 'Vender'. Quem preenche é o `SidebarHomeShell` enquanto a barra está na
+/// tela; null no celular. Devolve false se o destino não está no menu.
+/// Usado pelos atalhos do Início: abrir a tela por cima cobria a barra e,
+/// no Vender do PC (sem seta de voltar), não dava pra sair.
+bool Function(String titulo)? irParaSecaoDoMenu;
+
 class AppDestino {
   final String titulo;
   final IconData icone;

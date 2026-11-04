@@ -53,8 +53,17 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
     });
   }
 
+  bool _irParaSecao(String titulo) {
+    if (!mounted || !_barraVisivel) return false;
+    final destino = _destinos.where((d) => d.titulo == titulo).firstOrNull;
+    if (destino == null) return false;
+    _irPara(destino);
+    return true;
+  }
+
   @override
   void dispose() {
+    if (irParaSecaoDoMenu == _irParaSecao) irParaSecaoDoMenu = null;
     HardwareKeyboard.instance.removeHandler(_atalho);
     super.dispose();
   }
@@ -99,9 +108,11 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
       builder: (context, constraints) {
         if (constraints.maxWidth < 600 && !barraSempreFixa) {
           _barraVisivel = false;
+          if (irParaSecaoDoMenu == _irParaSecao) irParaSecaoDoMenu = null;
           return const DrawerHomeShell();
         }
         _barraVisivel = true;
+        irParaSecaoDoMenu = _irParaSecao;
         final extended = !barraSempreFixa && constraints.maxWidth >= 900;
         return _buildLayoutLargo(context, extended: extended);
       },

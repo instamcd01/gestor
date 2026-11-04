@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/app_destinos.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -86,6 +87,14 @@ class _InicioScreenState extends State<InicioScreen> {
 
   void _abrir(Widget tela) => Navigator.push(context, MaterialPageRoute(builder: (_) => tela));
 
+  /// Com a barra lateral na tela (PC/tablet), vai pra seção do menu em vez
+  /// de abrir outra cópia da tela por cima (que escondia a barra; no Vender
+  /// do PC nem tinha como voltar). No celular abre a tela como sempre.
+  void _abrirSecao(String titulo, Widget tela) {
+    if (irParaSecaoDoMenu?.call(titulo) == true) return;
+    _abrir(tela);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Center + maxWidth: em telas largas (desktop, sidebar sempre visível) o
@@ -167,7 +176,7 @@ class _InicioScreenState extends State<InicioScreen> {
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: () => _abrir(const FilaPedidosScreen()),
+          onTap: () => _abrirSecao('Pedidos', const FilaPedidosScreen()),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
@@ -199,7 +208,7 @@ class _InicioScreenState extends State<InicioScreen> {
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: () => _abrir(VendasScreen()),
+        onTap: () => _abrirSecao('Vender', VendasScreen()),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
           child: Row(
@@ -320,7 +329,7 @@ class _InicioScreenState extends State<InicioScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _tituloSecao(context, 'Estoque', onVerTudo: () => _abrir(ProdutosScreen())),
+        _tituloSecao(context, 'Estoque', onVerTudo: () => _abrirSecao('Produtos', ProdutosScreen())),
         const SizedBox(height: 12),
         MetricGrid(
           cartoes: [
@@ -328,21 +337,21 @@ class _InicioScreenState extends State<InicioScreen> {
               icone: Icons.inventory_2_outlined,
               titulo: 'Produtos ativos',
               valor: '${produtos.length}',
-              onTap: () => _abrir(ProdutosScreen()),
+              onTap: () => _abrirSecao('Produtos', ProdutosScreen()),
             ),
             MetricCard(
               icone: Icons.warning_amber_outlined,
               titulo: 'Estoque baixo',
               valor: '$baixo',
               corIcone: baixo > 0 ? Colors.orange : null,
-              onTap: () => _abrir(ProdutosScreen()),
+              onTap: () => _abrirSecao('Produtos', ProdutosScreen()),
             ),
             MetricCard(
               icone: Icons.remove_shopping_cart_outlined,
               titulo: 'Sem estoque',
               valor: '$zerado',
               corIcone: zerado > 0 ? Colors.red : null,
-              onTap: () => _abrir(ProdutosScreen()),
+              onTap: () => _abrirSecao('Produtos', ProdutosScreen()),
             ),
           ],
         ),
@@ -360,7 +369,7 @@ class _InicioScreenState extends State<InicioScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _tituloSecao(context, 'Pedidos', onVerTudo: () => _abrir(const FilaPedidosScreen())),
+        _tituloSecao(context, 'Pedidos', onVerTudo: () => _abrirSecao('Pedidos', const FilaPedidosScreen())),
         const SizedBox(height: 12),
         MetricGrid(
           cartoes: [
@@ -369,28 +378,28 @@ class _InicioScreenState extends State<InicioScreen> {
               titulo: 'Pendentes',
               valor: '$pendente',
               corIcone: pendente > 0 ? Colors.orange : null,
-              onTap: () => _abrir(const FilaPedidosScreen()),
+              onTap: () => _abrirSecao('Pedidos', const FilaPedidosScreen()),
             ),
             MetricCard(
               icone: Icons.soup_kitchen_outlined,
               titulo: 'Em preparo',
               valor: '$preparando',
               corIcone: Colors.blue,
-              onTap: () => _abrir(const FilaPedidosScreen()),
+              onTap: () => _abrirSecao('Pedidos', const FilaPedidosScreen()),
             ),
             MetricCard(
               icone: Icons.check_circle_outline,
               titulo: 'Pronto',
               valor: '$pronto',
               corIcone: Colors.teal,
-              onTap: () => _abrir(const FilaPedidosScreen()),
+              onTap: () => _abrirSecao('Pedidos', const FilaPedidosScreen()),
             ),
             MetricCard(
               icone: Icons.delivery_dining_outlined,
               titulo: 'Saiu p/ entrega',
               valor: '$saiuEntrega',
               corIcone: Colors.purple,
-              onTap: () => _abrir(const FilaPedidosScreen()),
+              onTap: () => _abrirSecao('Pedidos', const FilaPedidosScreen()),
             ),
           ],
         ),

@@ -754,6 +754,16 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     void cadastrar() => Navigator.push(context, MaterialPageRoute(builder: (_) => CadastroProdutoScreen()));
     return Row(
       children: [
+        // Aberta por cima de outra tela (não pela barra lateral): sem isso
+        // não tinha como voltar.
+        if (ModalRoute.of(context)?.canPop ?? false) ...[
+          IconButton(
+            tooltip: 'Voltar',
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: 4),
+        ],
         Expanded(
             child: Text('Vender',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: colorScheme.onSurface))),
