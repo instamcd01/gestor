@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -62,6 +63,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   final _recebidoFoco = FocusNode(debugLabel: 'recebido-pdv');
   final _painelFoco = FocusNode(debugLabel: 'painel-pdv');
   final _listaScroll = ScrollController();
+  final _categoriasScroll = ScrollController();
 
   bool _carregando = true;
   bool _modoGrade = false;
@@ -119,6 +121,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     _recebidoFoco.dispose();
     _painelFoco.dispose();
     _listaScroll.dispose();
+    _categoriasScroll.dispose();
     super.dispose();
   }
 
@@ -530,7 +533,9 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     switch (_fase) {
       case _Fase.concluida:
         if (repetida) return false;
-        if (tecla == LogicalKeyboardKey.enter || tecla == LogicalKeyboardKey.numpadEnter || tecla == LogicalKeyboardKey.f2) {
+        if (tecla == LogicalKeyboardKey.enter ||
+            tecla == LogicalKeyboardKey.numpadEnter ||
+            tecla == LogicalKeyboardKey.f2) {
           _novaVenda();
           return true;
         }
@@ -547,7 +552,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
           return true;
         }
         if (tecla == LogicalKeyboardKey.f9 ||
-            ((tecla == LogicalKeyboardKey.enter || tecla == LogicalKeyboardKey.numpadEnter) && !_recebidoFoco.hasFocus)) {
+            ((tecla == LogicalKeyboardKey.enter || tecla == LogicalKeyboardKey.numpadEnter) &&
+                !_recebidoFoco.hasFocus)) {
           _concluir();
           return true;
         }
@@ -616,7 +622,9 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     final c = evento.character;
     if (c == null || c.length != 1 || c.codeUnitAt(0) < 32 || c.codeUnitAt(0) == 127) return false;
     final foco = FocusManager.instance.primaryFocus;
-    if (_buscaFoco.hasFocus || (foco != null && foco != _painelFoco && foco.context?.findAncestorWidgetOfExactType<EditableText>() != null)) return false;
+    if (_buscaFoco.hasFocus ||
+        (foco != null && foco != _painelFoco && foco.context?.findAncestorWidgetOfExactType<EditableText>() != null))
+      return false;
     final texto = _buscaController.text + c;
     _buscaController.value = TextEditingValue(text: texto, selection: TextSelection.collapsed(offset: texto.length));
     _buscaFoco.requestFocus();
@@ -676,7 +684,12 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   Widget _ladoProdutos(ColorScheme colorScheme, CarrinhoProvider carrinho) {
     final produtos = context.watch<ProdutoProvider>().produtos;
     final kits = context.watch<KitProdutoProvider>().kits;
-    final categorias = ['Tudo', ...{for (final p in produtos) p.categoria}.where((c) => c.isNotEmpty).toList()..sort(), _categoriaKits];
+    // Kits logo depois de "Tudo": no fim da faixa ficava escondido.
+    final categorias = [
+      'Tudo',
+      _categoriaKits,
+      ...{for (final p in produtos) p.categoria}.where((c) => c.isNotEmpty).toList()..sort()
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -691,16 +704,34 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 const SizedBox(height: 14),
                 _campoBusca(colorScheme),
                 const SizedBox(height: 14),
-                SizedBox(
-                  height: 32,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: categorias.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (_, i) => _chipCategoria(colorScheme, categorias[i]),
+                // Roda do mouse rola a faixa pro lado (no PC não dá pra arrastar).
+                Listener(
+                  onPointerSignal: (sinal) {
+                    if (sinal is PointerScrollEvent && _categoriasScroll.hasClients) {
+                      final pos = _categoriasScroll.position;
+                      final delta = sinal.scrollDelta.dy != 0 ? sinal.scrollDelta.dy : sinal.scrollDelta.dx;
+                      _categoriasScroll.jumpTo((pos.pixels + delta).clamp(0, pos.maxScrollExtent).toDouble());
+                    }
+                  },
+                  child: Scrollbar(
+                    controller: _categoriasScroll,
+                    thumbVisibility: true,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: SizedBox(
+                        height: 32,
+                        child: ListView.separated(
+                          controller: _categoriasScroll,
+                          scrollDirection: Axis.horizontal,
+                          itemCount: categorias.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (_, i) => _chipCategoria(colorScheme, categorias[i]),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 6),
                 Expanded(
                   child: Container(
                     clipBehavior: Clip.antiAlias,
@@ -729,7 +760,9 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   Widget _barraTopo(ColorScheme colorScheme) {
     return Row(
       children: [
-        Expanded(child: Text('Vender', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: colorScheme.onSurface))),
+        Expanded(
+            child: Text('Vender',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: colorScheme.onSurface))),
         _botaoContorno(
           colorScheme,
           rotulo: 'Conversas do WhatsApp',
@@ -982,7 +1015,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   String _imagemUrl(Produto p) =>
       p.imagemUrl.isNotEmpty ? p.imagemUrlExibicao : 'http://imagens.lukz.com.br/produtos/${p.codigoBarras}.png';
 
-  Widget _foto(ColorScheme colorScheme, String url, {double tamanho = 40, IconData icone = Icons.image_not_supported_outlined}) {
+  Widget _foto(ColorScheme colorScheme, String url,
+      {double tamanho = 40, IconData icone = Icons.image_not_supported_outlined}) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -1004,7 +1038,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
 
   Widget _linhaProduto(ColorScheme colorScheme, Produto p, int indice, bool destacado, int? noCarrinho) {
     final semEstoque = p.estoqueAtual <= 0;
-    final sub = [if ((p.empresa ?? '').isNotEmpty) p.empresa!, if (p.codigoBarras.isNotEmpty) p.codigoBarras].join(' · ');
+    final sub =
+        [if ((p.empresa ?? '').isNotEmpty) p.empresa!, if (p.codigoBarras.isNotEmpty) p.codigoBarras].join(' · ');
     return Material(
       color: destacado ? _tinta : Colors.transparent,
       child: InkWell(
@@ -1029,9 +1064,15 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(p.nome, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                  Text(p.nome,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                   if (sub.isNotEmpty)
-                    Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                    Text(sub,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
                 ],
               ),
               preco: Column(
@@ -1040,8 +1081,10 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 children: [
                   if (_temPromo(p))
                     Text('R\$ ${_moeda(p.preco)}',
-                        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant, decoration: TextDecoration.lineThrough)),
-                  Text('R\$ ${_moeda(p.precoVendaAtual)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                        style: TextStyle(
+                            fontSize: 12, color: colorScheme.onSurfaceVariant, decoration: TextDecoration.lineThrough)),
+                  Text('R\$ ${_moeda(p.precoVendaAtual)}',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                 ],
               ),
               estoque: Text(
@@ -1094,16 +1137,24 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                       child: CachedNetworkImage(
                         imageUrl: _imagemUrl(p),
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => Icon(Icons.image_not_supported_outlined, color: colorScheme.onSurfaceVariant),
+                        errorWidget: (_, __, ___) =>
+                            Icon(Icons.image_not_supported_outlined, color: colorScheme.onSurfaceVariant),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(p.nome, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                Text('R\$ ${_moeda(p.precoVendaAtual)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                Text(p.nome,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                Text('R\$ ${_moeda(p.precoVendaAtual)}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                 Text(
-                  semEstoque ? 'Sem estoque' : '${p.estoqueAtual} em estoque${noCarrinho == null ? '' : ' · $noCarrinho no carrinho'}',
+                  semEstoque
+                      ? 'Sem estoque'
+                      : '${p.estoqueAtual} em estoque${noCarrinho == null ? '' : ' · $noCarrinho no carrinho'}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11, color: semEstoque ? _vermelho : colorScheme.onSurfaceVariant),
@@ -1166,12 +1217,17 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(kit.nome, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                            Text('Kit · ${kit.componentes.length} produtos', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                            Text(kit.nome,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            Text('Kit · ${kit.componentes.length} produtos',
+                                style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
                           ],
                         ),
                         preco: Text('R\$ ${_moeda(kit.precoPromocional ?? kit.preco)}',
-                            textAlign: TextAlign.right, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                         estoque: Text(
                           semEstoque ? 'Sem estoque' : '${kit.estoqueDisponivel} kits',
                           textAlign: TextAlign.right,
@@ -1245,7 +1301,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
           ),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: Text(tecla, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        child:
+            Text(tecla, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
       );
 
   // ───── direita: carrinho ─────
@@ -1308,12 +1365,14 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                   padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
                   itemCount: itens.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 6),
-                  itemBuilder: (_, i) => _itemCarrinho(colorScheme, itens[i], itens[i].produto.id == selecionado?.produto.id),
+                  itemBuilder: (_, i) =>
+                      _itemCarrinho(colorScheme, itens[i], itens[i].produto.id == selecionado?.produto.id),
                 ),
         ),
         Container(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
-          decoration: BoxDecoration(border: Border(top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.6)))),
+          decoration:
+              BoxDecoration(border: Border(top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.6)))),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1329,13 +1388,17 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
               _linhaResumo(
                 cliente == null
                     ? 'Entrega'
-                    : (carrinho.zonaEntregaSelecionada == null ? 'Retirada na loja' : 'Entrega · ${carrinho.zonaEntregaSelecionada!.nome}'),
+                    : (carrinho.zonaEntregaSelecionada == null
+                        ? 'Retirada na loja'
+                        : 'Entrega · ${carrinho.zonaEntregaSelecionada!.nome}'),
                 cliente == null
                     ? 'A calcular'
                     : (carrinho.valorEntregaCalculado == 0
                         ? (carrinho.zonaEntregaSelecionada == null ? 'R\$ 0,00' : 'Frete grátis')
                         : 'R\$ ${_moeda(carrinho.valorEntregaCalculado)}'),
-                cor: cliente != null && carrinho.zonaEntregaSelecionada != null && carrinho.valorEntregaCalculado == 0 ? _verde : null,
+                cor: cliente != null && carrinho.zonaEntregaSelecionada != null && carrinho.valorEntregaCalculado == 0
+                    ? _verde
+                    : null,
               ),
               if (carrinho.valorFaltanteParaFreteGratis > 0)
                 Padding(
@@ -1349,7 +1412,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 textBaseline: TextBaseline.alphabetic,
                 children: [
                   const Expanded(child: Text('Total', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-                  Text('R\$ ${_moeda(carrinho.totalCarrinho)}', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
+                  Text('R\$ ${_moeda(carrinho.totalCarrinho)}',
+                      style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
                 ],
               ),
               if (abaixoDoMinimo && itens.isNotEmpty)
@@ -1434,8 +1498,14 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(cliente.nome, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                    Text(endereco, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                    Text(cliente.nome,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text(endereco,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
                   ],
                 ),
               ),
@@ -1448,10 +1518,12 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                child: const Text.rich(TextSpan(children: [
-                  TextSpan(text: 'Trocar '),
-                  TextSpan(text: 'F8', style: TextStyle(fontWeight: FontWeight.w700)),
-                ]), style: TextStyle(fontSize: 12)),
+                child: const Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: 'Trocar '),
+                      TextSpan(text: 'F8', style: TextStyle(fontWeight: FontWeight.w700)),
+                    ]),
+                    style: TextStyle(fontSize: 12)),
               ),
             ],
           ),
@@ -1463,15 +1535,19 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
             children: [
               _pilula(
                 colorScheme,
-                carrinho.zonaEntregaSelecionada != null ? 'Entrega · ${carrinho.zonaEntregaSelecionada!.nome}' : 'Entrega',
+                carrinho.zonaEntregaSelecionada != null
+                    ? 'Entrega · ${carrinho.zonaEntregaSelecionada!.nome}'
+                    : 'Entrega',
                 !retirada,
                 () => retirada ? resolverZonaEntregaParaCliente(context, cliente, carrinho) : null,
               ),
               _pilula(colorScheme, 'Retirar na loja', retirada, () => carrinho.selecionarZonaEntrega(null)),
               _pilula(colorScheme, 'Quero agora', agendamento == null, () => carrinho.selecionarAgendamento(null)),
-              _pilula(colorScheme, agendamento == null ? 'Agendar' : 'Agendado · ${agendamento.label}', agendamento != null, _escolherCliente),
+              _pilula(colorScheme, agendamento == null ? 'Agendar' : 'Agendado · ${agendamento.label}',
+                  agendamento != null, _escolherCliente),
               if (cliente.saldo > 0)
-                Text('Saldo R\$ ${_moeda(cliente.saldo)}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _verde)),
+                Text('Saldo R\$ ${_moeda(cliente.saldo)}',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _verde)),
             ],
           ),
         ],
@@ -1517,8 +1593,20 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.produto.nome, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                    Text('R\$ ${_moeda(item.precoUnitario)} un.', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                    Text(item.produto.nome,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                    Text.rich(
+                      TextSpan(children: [
+                        if (item.grupoKitId == null && _temPromo(item.produto))
+                          TextSpan(
+                              text: 'R\$ ${_moeda(item.produto.preco)} ',
+                              style: const TextStyle(decoration: TextDecoration.lineThrough)),
+                        TextSpan(text: 'R\$ ${_moeda(item.precoUnitario)} un.'),
+                      ]),
+                      style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                    ),
                   ],
                 ),
               ),
@@ -1531,7 +1619,9 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                     _botaoQtd(Icons.remove, 'Menos um', () => _mudarQuantidade(item, item.quantidade - 1)),
                     SizedBox(
                       width: 22,
-                      child: Text('${item.quantidade}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                      child: Text('${item.quantidade}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                     ),
                     _botaoQtd(Icons.add, 'Mais um', () => _mudarQuantidade(item, item.quantidade + 1)),
                   ],
@@ -1542,6 +1632,10 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 child: Text('R\$ ${_moeda(item.precoTotalItem)}',
                     textAlign: TextAlign.right, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
               ),
+              _botaoQtd(Icons.close, 'Tirar do carrinho (Del)', () {
+                context.read<CarrinhoProvider>().removerProduto(item.produto.id!);
+                if (_itemSelecionadoId == item.produto.id) setState(() => _itemSelecionadoId = null);
+              }),
             ],
           ),
         ),
@@ -1565,7 +1659,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     if (cupom != null) {
       esquerda = _caixaVerde(colorScheme, 'Cupom "${cupom.codigo}" aplicado', carrinho.removerCupom);
     } else if (descontoManual) {
-      esquerda = _caixaVerde(colorScheme, 'Desconto de R\$ ${_moeda(carrinho.desconto)}', () => carrinho.aplicarDesconto(0));
+      esquerda =
+          _caixaVerde(colorScheme, 'Desconto de R\$ ${_moeda(carrinho.desconto)}', () => carrinho.aplicarDesconto(0));
     } else {
       esquerda = SizedBox(
         height: 34,
@@ -1595,10 +1690,11 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
           children: [
             Expanded(child: esquerda),
             const SizedBox(width: 8),
-            _botaoContorno(colorScheme, rotulo: 'Desconto %', altura: 34, onPressed: carrinho.itens.isEmpty ? null : _aplicarDesconto),
+            _botaoContorno(colorScheme,
+                rotulo: 'Desconto %', altura: 34, onPressed: carrinho.itens.isEmpty ? null : _aplicarDesconto),
           ],
         ),
-        if (carrinho.erroCupom != null && cupom == null)
+        if (carrinho.erroCupom != null && cupom == null && !descontoManual)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(carrinho.erroCupom!, style: TextStyle(fontSize: 12, color: _vermelho)),
@@ -1630,11 +1726,14 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
         children: [
           Expanded(
             child: Text(texto,
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _verde)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _verde)),
           ),
           TextButton(
             onPressed: onRemover,
-            style: TextButton.styleFrom(minimumSize: const Size(0, 30), padding: const EdgeInsets.symmetric(horizontal: 8)),
+            style: TextButton.styleFrom(
+                minimumSize: const Size(0, 30), padding: const EdgeInsets.symmetric(horizontal: 8)),
             child: const Text('Remover', style: TextStyle(fontSize: 12)),
           ),
         ],
@@ -1662,10 +1761,13 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     final metodos = _metodosAtivos();
     final modalidade = carrinho.zonaEntregaSelecionada == null
         ? 'retira na loja'
-        : (carrinho.agendamentoSelecionado == null ? 'entrega agora' : 'entrega ${carrinho.agendamentoSelecionado!.label}');
+        : (carrinho.agendamentoSelecionado == null
+            ? 'entrega agora'
+            : 'entrega ${carrinho.agendamentoSelecionado!.label}');
     final detalhe = [
       'Subtotal R\$ ${_moeda(carrinho.subtotal)}',
-      if (carrinho.desconto > 0) '${carrinho.cupomAplicado != null ? 'cupom' : 'desconto'} − R\$ ${_moeda(carrinho.desconto)}',
+      if (carrinho.desconto > 0)
+        '${carrinho.cupomAplicado != null ? 'cupom' : 'desconto'} − R\$ ${_moeda(carrinho.desconto)}',
       if (carrinho.zonaEntregaSelecionada != null)
         carrinho.valorEntregaCalculado == 0 ? 'frete grátis' : 'entrega R\$ ${_moeda(carrinho.valorEntregaCalculado)}',
       if (_saldoUsado > 0) 'saldo − R\$ ${_moeda(_saldoUsado)}',
@@ -1680,7 +1782,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
             children: [
               _botaoContorno(colorScheme, rotulo: '← Carrinho  Esc', altura: 32, onPressed: _voltarAoCarrinho),
               const Expanded(
-                child: Text('Pagamento', textAlign: TextAlign.right, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                child: Text('Pagamento',
+                    textAlign: TextAlign.right, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -1688,13 +1791,16 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 20),
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor, borderRadius: BorderRadius.circular(10)),
+          decoration:
+              BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor, borderRadius: BorderRadius.circular(10)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
-                  Expanded(child: Text('${cliente.nome} · $modalidade', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+                  Expanded(
+                      child: Text('${cliente.nome} · $modalidade',
+                          maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
                   Text('${carrinho.totalUnidades} ite${carrinho.totalUnidades == 1 ? 'm' : 'ns'}',
                       style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant)),
                 ],
@@ -1717,7 +1823,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
           Container(
             margin: const EdgeInsets.fromLTRB(20, 10, 20, 0),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(border: Border.all(color: colorScheme.outlineVariant), borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(
+                border: Border.all(color: colorScheme.outlineVariant), borderRadius: BorderRadius.circular(10)),
             child: Row(
               children: [
                 Expanded(
@@ -1725,7 +1832,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                     TextSpan(children: [
                       const TextSpan(text: 'Saldo do cliente: ', style: TextStyle(fontWeight: FontWeight.w700)),
                       TextSpan(text: 'R\$ ${_moeda(cliente.saldo)}'),
-                      if (_saldoUsado > 0) TextSpan(text: '  (usando R\$ ${_moeda(_saldoUsado)})', style: TextStyle(color: _verde)),
+                      if (_saldoUsado > 0)
+                        TextSpan(text: '  (usando R\$ ${_moeda(_saldoUsado)})', style: TextStyle(color: _verde)),
                     ]),
                     style: const TextStyle(fontSize: 13),
                   ),
@@ -1752,36 +1860,69 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
             children: [
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 8),
+                dense: true,
+                shape: const Border(),
+                collapsedShape: const Border(),
+                title: Text('Itens da compra (${carrinho.totalUnidades})',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                children: [
+                  for (final i in carrinho.itens)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text('${i.quantidade}× ${i.produto.nome}',
+                                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                          ),
+                          Text('R\$ ${_moeda(i.precoTotalItem)}', style: const TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
               Text.rich(
                 TextSpan(children: [
                   const TextSpan(text: 'Forma de pagamento ', style: TextStyle(fontWeight: FontWeight.w700)),
-                  TextSpan(text: '(teclas 1 a ${metodos.length})', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                  TextSpan(
+                      text: '(teclas 1 a ${metodos.length})', style: TextStyle(color: colorScheme.onSurfaceVariant)),
                 ]),
                 style: const TextStyle(fontSize: 13),
               ),
               const SizedBox(height: 8),
-              GridView.count(
-                crossAxisCount: 3,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 128 / 58,
-                children: [
-                  for (final (i, m) in metodos.indexed) _botaoMetodo(colorScheme, i + 1, m),
-                ],
-              ),
+              // Sem a lista da loja ainda (1ª vez neste aparelho): espera, como no celular.
+              if (context.watch<MetodosPagamentoProvider>().metodos == null)
+                const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator()))
+              else
+                GridView.count(
+                  crossAxisCount: 3,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 128 / 58,
+                  children: [
+                    for (final (i, m) in metodos.indexed) _botaoMetodo(colorScheme, i + 1, m),
+                  ],
+                ),
               const SizedBox(height: 14),
               if (_metodo.isNotEmpty) _detalheMetodo(colorScheme, total),
               if (_erro != null) ...[
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: _vermelho.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
+                  decoration:
+                      BoxDecoration(color: _vermelho.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('Não foi possível registrar a venda.', style: TextStyle(fontWeight: FontWeight.w700, color: _vermelho)),
+                      Text('Não foi possível registrar a venda.',
+                          style: TextStyle(fontWeight: FontWeight.w700, color: _vermelho)),
                       const SizedBox(height: 4),
                       Text(_erro!, style: const TextStyle(fontSize: 13)),
                       if (_erro!.toLowerCase().contains('estoque')) ...[
@@ -1798,7 +1939,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
         ),
         Container(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
-          decoration: BoxDecoration(border: Border(top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.6)))),
+          decoration:
+              BoxDecoration(border: Border(top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.6)))),
           child: _botaoPrincipal(
             colorScheme,
             rotulo: _registrando
@@ -1917,10 +2059,12 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 children: [
                   Expanded(
                     child: Text(troco >= -0.001 ? 'Troco' : 'Falta',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: troco >= -0.001 ? _verde : _vermelho)),
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w600, color: troco >= -0.001 ? _verde : _vermelho)),
                   ),
                   Text('R\$ ${_moeda(troco.abs() < 0.001 ? 0 : troco.abs())}',
-                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: troco >= -0.001 ? _verde : _vermelho)),
+                      style: TextStyle(
+                          fontSize: 26, fontWeight: FontWeight.w800, color: troco >= -0.001 ? _verde : _vermelho)),
                 ],
               ),
             ),
@@ -1971,21 +2115,29 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor, borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(
+                      color: Theme.of(context).scaffoldBackgroundColor, borderRadius: BorderRadius.circular(12)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('R\$ ${_moeda(venda.valorTotal)}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
-                      if (venda.desconto > 0) _linhaConcluida(colorScheme, 'Desconto aplicado', '− R\$ ${_moeda(venda.desconto)}'),
-                      if (venda.saldoUsado > 0) _linhaConcluida(colorScheme, 'Saldo do cliente', '− R\$ ${_moeda(venda.saldoUsado)}'),
+                      Text('R\$ ${_moeda(venda.valorTotal)}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
+                      if (venda.desconto > 0)
+                        _linhaConcluida(colorScheme, 'Desconto aplicado', '− R\$ ${_moeda(venda.desconto)}'),
+                      if (venda.saldoUsado > 0)
+                        _linhaConcluida(colorScheme, 'Saldo do cliente', '− R\$ ${_moeda(venda.saldoUsado)}'),
                       if (venda.metodoPagamento == 'Dinheiro') ...[
                         _linhaConcluida(colorScheme, 'Valor pago', 'R\$ ${_moeda(venda.valorPago)}'),
                         Padding(
                           padding: const EdgeInsets.only(top: 3),
                           child: Row(
                             children: [
-                              Expanded(child: Text('Troco', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _verde))),
-                              Text('R\$ ${_moeda(venda.troco)}', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _verde)),
+                              Expanded(
+                                  child: Text('Troco',
+                                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _verde))),
+                              Text('R\$ ${_moeda(venda.troco)}',
+                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _verde)),
                             ],
                           ),
                         ),
