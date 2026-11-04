@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
@@ -39,12 +40,55 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
   // passaria a apontar pra outro destino.
   String? _tituloSelecionado;
 
+  /// Destinos visíveis no último build — usados pelo atalho de teclado.
+  List<AppDestino> _destinos = const [];
+  bool _barraVisivel = false;
+
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_atalho);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<PreferenciasProvider>().carregar();
     });
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_atalho);
+    super.dispose();
+  }
+
+  /// F2 Vender, F3 Pedidos, F4 Produtos (ver `AppDestino.atalho`). Ouvinte
+  /// global porque campo de texto em foco seguraria a tecla; só vale com a
+  /// barra lateral na tela e nada aberto por cima (diálogo, tela de edição).
+  bool _atalho(KeyEvent evento) {
+    if (evento is! KeyDownEvent || !_barraVisivel) return false;
+    if (ModalRoute.of(context)?.isCurrent != true) return false;
+    final destino = _destinos.where((d) => d.atalho == evento.logicalKey).firstOrNull;
+    if (destino == null) return false;
+    _irPara(destino);
+    return true;
+  }
+
+  void _irPara(AppDestino destino) {
+    final atual = _destinos.where((d) => d.titulo == _tituloSelecionado).firstOrNull ??
+        (_destinos.isEmpty ? null : _destinos.first);
+    if (atual == null || atual.titulo == destino.titulo) return;
+    // Nada se perde (a tela fica guardada por trás), mas é fácil esquecer.
+    final pendente = atual.pendente?.value == true;
+    // Tira o cursor do campo da tela que vai ficar escondida: senão o que
+    // se digita na tela nova ia parar, sem ninguém ver, naquele campo.
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _tituloSelecionado = destino.titulo);
+    if (pendente) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${atual.titulo} tem alterações não salvas — continuam lá quando você voltar.'),
+        ));
+      });
+    }
   }
 
   @override
@@ -54,8 +98,10 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 600 && !barraSempreFixa) {
+          _barraVisivel = false;
           return const DrawerHomeShell();
         }
+        _barraVisivel = true;
         final extended = !barraSempreFixa && constraints.maxWidth >= 900;
         return _buildLayoutLargo(context, extended: extended);
       },
@@ -70,6 +116,7 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
     // desinstalado), volta pro primeiro em vez de estourar.
     final indiceAtual = destinos.indexWhere((d) => d.titulo == _tituloSelecionado);
     final indiceSeguro = indiceAtual >= 0 ? indiceAtual : 0;
+    _destinos = destinos;
 
     return Scaffold(
       body: Row(
@@ -110,11 +157,21 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
             // só decoração.
             trailing: _rodapeConta(context),
             trailingAtBottom: true,
-            onDestinationSelected: (index) => setState(() => _tituloSelecionado = destinos[index].titulo),
+            onDestinationSelected: (index) => _irPara(destinos[index]),
             destinations: destinos
                 .map((destino) => NavigationRailDestination(
                       icon: destino.construirIcone(context),
-                      label: Text(destino.titulo),
+                      label: destino.rotuloAtalho == null
+                          ? Text(destino.titulo)
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(destino.titulo),
+                                const SizedBox(width: 10),
+                                Text(destino.rotuloAtalho!,
+                                    style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                              ],
+                            ),
                       // Espaçamento extra entre os ícones — sem isso ficavam
                       // muito colados um no outro, mesmo depois de centralizar
                       // o grupo (groupAlignment acima).
@@ -127,8 +184,14 @@ class _SidebarHomeShellState extends State<SidebarHomeShell> {
             child: IndexedStack(
               index: indiceSeguro,
               children: [
-                for (final destino in destinos)
-                  KeyedSubtree(key: ValueKey(destino.titulo), child: destino.builder(context)),
+                // TickerMode: as seções guardadas por trás ficam "pausadas"
+                // (animações e atalhos de teclado delas param de valer).
+                for (final (i, destino) in destinos.indexed)
+                  TickerMode(
+                    key: ValueKey(destino.titulo),
+                    enabled: i == indiceSeguro,
+                    child: destino.builder(context),
+                  ),
               ],
             ),
           ),

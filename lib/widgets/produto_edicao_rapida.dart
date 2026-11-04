@@ -90,6 +90,9 @@ class _ProdutoEdicaoRapidaState extends State<ProdutoEdicaoRapida> {
     if (evento is! KeyDownEvent || evento.logicalKey != LogicalKeyboardKey.keyS) return false;
     if (!HardwareKeyboard.instance.isControlPressed && !HardwareKeyboard.instance.isMetaPressed) return false;
     if (ModalRoute.of(context)?.isCurrent != true) return false;
+    // Guardada por trás de outra seção do menu lateral (ver
+    // SidebarHomeShell): o atalho não pode salvar o que não está à vista.
+    if (!TickerMode.valuesOf(context).enabled) return false;
     _salvar();
     return true;
   }

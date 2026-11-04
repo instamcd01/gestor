@@ -21,6 +21,12 @@ import 'fracionamento_lote_screen.dart';
 import 'kit_produto_form_screen.dart';
 import 'produtos_excluidos_screen.dart';
 
+/// true enquanto o painel de edição rápida tem alteração não salva. Global
+/// porque o menu lateral também mostra (pontinho no ícone de Produtos): a
+/// tela fica guardada por trás quando se troca de seção, nada se perde,
+/// mas é fácil esquecer.
+final produtosAlteracaoPendente = ValueNotifier<bool>(false);
+
 class ProdutosScreen extends StatefulWidget {
   const ProdutosScreen({super.key});
 
@@ -49,7 +55,6 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   final _tabelaScroll = ScrollController();
   String? _selecionadoId;
   int _versaoPainel = 0;
-  final _painelTemAlteracoes = ValueNotifier<bool>(false);
   _ColunaOrdem _ordem = _ColunaOrdem.nome;
   bool _ordemCrescente = true;
 
@@ -63,7 +68,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     _buscaFoco.dispose();
     _tabelaFoco.dispose();
     _tabelaScroll.dispose();
-    _painelTemAlteracoes.dispose();
+    produtosAlteracaoPendente.value = false;
     super.dispose();
   }
 
@@ -127,7 +132,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   /// Antes de sair do produto aberto no painel: se tem alteração não
   /// salva, pergunta. true = pode sair.
   Future<bool> _podeSairDoPainel() async {
-    if (!_painelTemAlteracoes.value) return true;
+    if (!produtosAlteracaoPendente.value) return true;
     final descartar = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -139,7 +144,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
         ],
       ),
     );
-    if (descartar == true) _painelTemAlteracoes.value = false;
+    if (descartar == true) produtosAlteracaoPendente.value = false;
     return descartar == true;
   }
 
@@ -707,7 +712,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     return ProdutoEdicaoRapida(
       key: chave,
       produto: produto,
-      temAlteracoes: _painelTemAlteracoes,
+      temAlteracoes: produtosAlteracaoPendente,
       onSalvo: () {
         _carregarCanais(ids: [produto.id!]);
         if (mounted) setState(() => _versaoPainel++);

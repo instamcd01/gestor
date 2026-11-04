@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/modulo.dart';
@@ -49,6 +51,12 @@ class AppDestino {
   /// "base", toda loja tem. Com mais de um, basta QUALQUER um estar ativo.
   final List<String>? modulos;
 
+  /// Tecla que abre este destino no PC (barra lateral), ex. F2 = Vender.
+  final LogicalKeyboardKey? atalho;
+
+  /// true = a tela tem alteração não salva (pontinho no ícone).
+  final ValueListenable<bool>? pendente;
+
   const AppDestino({
     required this.titulo,
     required this.icone,
@@ -56,7 +64,11 @@ class AppDestino {
     this.contador,
     this.papeisPermitidos,
     this.modulos,
+    this.atalho,
+    this.pendente,
   });
+
+  String? get rotuloAtalho => atalho?.keyLabel;
 
   bool visivelPara(String? papel, ModuloProvider moduloProvider) =>
       (papeisPermitidos == null || papeisPermitidos!.contains(papel)) &&
@@ -65,8 +77,20 @@ class AppDestino {
   Widget construirIcone(BuildContext context, {Color? color}) {
     final n = contador?.call(context) ?? 0;
     final icone_ = Icon(icone, color: color);
-    if (n <= 0) return icone_;
-    return Badge(label: Text(n > 99 ? '99+' : '$n'), child: icone_);
+    final comContagem = n <= 0 ? icone_ : Badge(label: Text(n > 99 ? '99+' : '$n'), child: icone_);
+    if (pendente == null) return comContagem;
+    return ValueListenableBuilder<bool>(
+      valueListenable: pendente!,
+      builder: (context, temPendencia, child) => temPendencia
+          ? Badge(
+              smallSize: 9,
+              alignment: AlignmentDirectional.bottomEnd,
+              backgroundColor: Theme.of(context).colorScheme.tertiary,
+              child: child,
+            )
+          : child!,
+      child: comContagem,
+    );
   }
 }
 
@@ -78,12 +102,18 @@ final List<AppDestino> appDestinos = [
     builder: (_) => const NotificacoesScreen(),
     contador: (context) => context.watch<NotificacaoProvider>().totalNaoLidas,
   ),
-  AppDestino(titulo: 'Vender', icone: Icons.shopping_cart_outlined, builder: (_) => VendasScreen()),
+  AppDestino(
+    titulo: 'Vender',
+    icone: Icons.shopping_cart_outlined,
+    builder: (_) => VendasScreen(),
+    atalho: LogicalKeyboardKey.f2,
+  ),
   AppDestino(
     titulo: 'Pedidos',
     icone: Icons.pets,
     builder: (_) => const FilaPedidosScreen(),
     contador: (context) => context.watch<HistoricoVendasProvider>().pedidosAtivos.length,
+    atalho: LogicalKeyboardKey.f3,
   ),
   AppDestino(
     titulo: 'Planejamento',
@@ -102,6 +132,8 @@ final List<AppDestino> appDestinos = [
     titulo: 'Produtos',
     icone: Icons.local_mall,
     builder: (_) => ProdutosScreen(),
+    atalho: LogicalKeyboardKey.f4,
+    pendente: produtosAlteracaoPendente,
     contador: (context) =>
         context.watch<ProdutoProvider>().produtos.where(_produtoComEstoqueBaixo).length,
   ),
