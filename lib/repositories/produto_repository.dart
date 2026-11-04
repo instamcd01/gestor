@@ -298,6 +298,13 @@ class ProdutoRepository {
     });
   }
 
+  /// Grava só os [campos] informados (edição rápida no PC) e devolve o
+  /// produto relido do banco. Nunca manda o produto inteiro da memória.
+  Future<Produto> atualizarCampos(String produtoId, Map<String, dynamic> campos) async {
+    await supabase.from('produtos').update(campos).eq('id', produtoId);
+    return (await buscarPorIds([produtoId])).first;
+  }
+
   Future<List<Produto>> buscarPorIds(List<String> ids) async {
     final data = await supabase.from('produtos').select(_selectComEstoque).inFilter('id', ids);
     return (data as List).map((row) => Produto.fromSupabase(row as Map<String, dynamic>)).toList();

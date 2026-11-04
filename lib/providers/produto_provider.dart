@@ -105,6 +105,14 @@ class ProdutoProvider with ChangeNotifier {
     }
   }
 
+  /// Ver `ProdutoRepository.atualizarCampos`.
+  Future<void> atualizarCampos(String produtoId, Map<String, dynamic> campos) async {
+    final produto = await _repository.atualizarCampos(produtoId, campos);
+    final index = _produtos.indexWhere((p) => p.id == produtoId);
+    if (index != -1) _produtos[index] = produto;
+    notifyListeners();
+  }
+
   /// Ver `ProdutoRepository.ajustarEstoque`. Recarrega o produto do banco
   /// depois (granel/kit podem ter mudado junto, por trigger).
   Future<int> ajustarEstoque({

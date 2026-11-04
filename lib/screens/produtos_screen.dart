@@ -5,8 +5,10 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/kit_produto_provider.dart';
 import '../providers/produto_provider.dart';
+import '../repositories/produto_canal_repository.dart';
 import '../utils/busca_utils.dart';
 import '../widgets/importar_produtos_planilha.dart';
+import '../widgets/produto_edicao_rapida.dart';
 import '../models/produto.dart';
 import 'adicionar_imagens_lote_screen.dart';
 import 'analise_produtos_screen.dart';
@@ -31,6 +33,15 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   String _busca = '';
   bool _filtroEstoqueBaixo = false;
   String? _filtroCategoria;
+
+  /// Filtro "Canal" (PC): [_canalSite], [_canalNenhum] ou o nome do
+  /// marketplace (iFood, 99Food...). null = todos.
+  String? _filtroCanal;
+  static const _canalSite = 'Site';
+  static const _canalNenhum = '__nenhum';
+
+  /// Marketplaces em que cada produto está à venda (`produto_canal`).
+  Map<String, Set<String>> _canais = {};
 
   // Layout largo (PC): tabela + painel de edição ao lado.
   final _buscaFoco = FocusNode();
@@ -59,8 +70,36 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ProdutoProvider>().carregarProdutos();
+      _carregarCanais();
     });
   }
+
+  Future<void> _carregarCanais({List<String>? ids}) async {
+    try {
+      final novos = await ProdutoCanalRepository().canaisDisponiveis(produtoIds: ids);
+      if (!mounted) return;
+      setState(() {
+        if (ids == null) {
+          _canais = novos;
+        } else {
+          for (final id in ids) {
+            _canais[id] = novos[id] ?? <String>{};
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('Erro ao carregar canais dos produtos: $e');
+    }
+  }
+
+  bool _noSite(Produto p) => p.ativo && p.exibirNoCatalogo;
+
+  bool _passaCanal(Produto p) => switch (_filtroCanal) {
+        null => true,
+        _canalSite => _noSite(p),
+        _canalNenhum => !_noSite(p) && (_canais[p.id] ?? const {}).isEmpty,
+        final nome => p.ativo && (_canais[p.id] ?? const {}).contains(nome),
+      };
 
   /// Abre o produto em tela cheia (celular, ou kit em qualquer tamanho).
   Future<void> _abrirProduto(Produto produto, bool isVendedor) async {
@@ -173,6 +212,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
       if (!passaBusca) return false;
       if (_filtroEstoqueBaixo && p.estoqueAtual > p.estoqueMinimo) return false;
       if (_filtroCategoria != null && p.categoria != _filtroCategoria) return false;
+      if (!_passaCanal(p)) return false;
       return true;
     }).toList();
 
@@ -319,14 +359,15 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                   onSelected: (v) => setState(() => _filtroEstoqueBaixo = v),
                 ),
                 const SizedBox(width: 8),
-                PopupMenuButton<String?>(
+                PopupMenuButton<String>(
                   tooltip: 'Filtrar por categoria',
-                  initialValue: _filtroCategoria,
-                  onSelected: (v) => setState(() => _filtroCategoria = v),
+                  initialValue: _filtroCategoria ?? '',
+                  // '' = todas (o menu trata null como "cancelou").
+                  onSelected: (v) => setState(() => _filtroCategoria = v.isEmpty ? null : v),
                   itemBuilder: (context) => [
-                    const PopupMenuItem<String?>(value: null, child: Text('Todas as categorias')),
+                    const PopupMenuItem<String>(value: '', child: Text('Todas as categorias')),
                     for (final categoria in categoriasDisponiveis)
-                      PopupMenuItem<String?>(value: categoria, child: Text(categoria)),
+                      PopupMenuItem<String>(value: categoria, child: Text(categoria)),
                   ],
                   child: Chip(
                     avatar: const Icon(Icons.filter_list, size: 18),
@@ -379,7 +420,8 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     );
   }
 
-  bool get _temFiltro => _busca.isNotEmpty || _filtroEstoqueBaixo || _filtroCategoria != null;
+  bool get _temFiltroDeChip => _filtroEstoqueBaixo || _filtroCategoria != null || _filtroCanal != null;
+  bool get _temFiltro => _busca.isNotEmpty || _temFiltroDeChip;
 
   Widget _layoutPc({
     required ProdutoProvider produtoProvider,
@@ -419,6 +461,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                   final produto = produtos[i];
                   return _LinhaProduto(
                     produto: produto,
+                    canais: _canais[produto.id] ?? const {},
                     selecionado: produto.id == _selecionadoId,
                     onTap: () {
                       _tabelaFoco.requestFocus();
@@ -481,27 +524,50 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                       selected: _filtroEstoqueBaixo,
                       onSelected: (v) => setState(() => _filtroEstoqueBaixo = v),
                     ),
-                    PopupMenuButton<String?>(
+                    PopupMenuButton<String>(
                       tooltip: 'Filtrar por categoria',
-                      initialValue: _filtroCategoria,
-                      onSelected: (v) => setState(() => _filtroCategoria = v),
+                      initialValue: _filtroCategoria ?? '',
+                      onSelected: (v) => setState(() => _filtroCategoria = v.isEmpty ? null : v),
                       itemBuilder: (context) => [
-                        const PopupMenuItem<String?>(value: null, child: Text('Todas as categorias')),
+                        const PopupMenuItem<String>(value: '', child: Text('Todas as categorias')),
                         for (final categoria in categorias)
-                          PopupMenuItem<String?>(value: categoria, child: Text(categoria)),
+                          PopupMenuItem<String>(value: categoria, child: Text(categoria)),
                       ],
                       child: Chip(
                         avatar: const Icon(Icons.filter_list, size: 18),
                         label: Text(_filtroCategoria ?? 'Categoria'),
                       ),
                     ),
-                    if (_filtroEstoqueBaixo || _filtroCategoria != null)
+                    PopupMenuButton<String>(
+                      tooltip: 'Filtrar por canal de venda',
+                      initialValue: _filtroCanal ?? '',
+                      onSelected: (v) => setState(() => _filtroCanal = v.isEmpty ? null : v),
+                      itemBuilder: (context) => [
+                        const PopupMenuItem<String>(value: '', child: Text('Todos os canais')),
+                        const PopupMenuItem<String>(value: _canalSite, child: Text('No site')),
+                        for (final nome in ({for (final c in _canais.values) ...c}.toList()..sort()))
+                          PopupMenuItem<String>(value: nome, child: Text('No $nome')),
+                        const PopupMenuItem<String>(
+                            value: _canalNenhum, child: Text('Em nenhum canal online')),
+                      ],
+                      child: Chip(
+                        avatar: const Icon(Icons.storefront_outlined, size: 18),
+                        label: Text(switch (_filtroCanal) {
+                          null => 'Canal',
+                          _canalSite => 'No site',
+                          _canalNenhum => 'Em nenhum canal',
+                          final nome => 'No $nome',
+                        }),
+                      ),
+                    ),
+                    if (_temFiltroDeChip)
                       ActionChip(
                         avatar: const Icon(Icons.close, size: 16),
                         label: const Text('Limpar filtros'),
                         onPressed: () => setState(() {
                           _filtroEstoqueBaixo = false;
                           _filtroCategoria = null;
+                          _filtroCanal = null;
                         }),
                       ),
                     if (_temFiltro)
@@ -605,20 +671,26 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
         ),
       );
     }
-    // A própria tela de edição, embutida: mesmo salvar (estoque com motivo e
-    // trava, canais, variantes). Ao concluir, reabre com os dados novos — ou
-    // some, se o produto foi excluído.
+    // Edição rápida (o do dia a dia); o resto na "Ficha completa", a tela
+    // de edição de sempre. A chave muda depois de salvar, pra reabrir com
+    // os dados novos.
     final chave = ValueKey('${produto.id}-$_versaoPainel');
-    return ClipRect(
-      child: isVendedor
-          ? DetalhesProdutoScreen(key: chave, produto: produto, embutido: true)
-          : EditarProdutoScreen(
-              key: chave,
-              produto: produto,
-              aoConcluir: () {
-                if (mounted) setState(() => _versaoPainel++);
-              },
-            ),
+    if (isVendedor) {
+      return ClipRect(child: DetalhesProdutoScreen(key: chave, produto: produto, embutido: true));
+    }
+    return ProdutoEdicaoRapida(
+      key: chave,
+      produto: produto,
+      onSalvo: () {
+        _carregarCanais(ids: [produto.id!]);
+        if (mounted) setState(() => _versaoPainel++);
+      },
+      onAbrirFicha: () async {
+        await Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditarProdutoScreen(produto: produto)));
+        if (!mounted) return;
+        _carregarCanais(ids: [produto.id!]);
+        setState(() => _versaoPainel++);
+      },
     );
   }
 }
@@ -628,7 +700,7 @@ enum _ColunaOrdem { nome, categoria, preco, estoque }
 const _larguraCategoria = 170.0;
 const _larguraPreco = 110.0;
 const _larguraEstoque = 110.0;
-const _larguraSituacao = 100.0;
+const _larguraSituacao = 150.0;
 
 String _reais(double v) => 'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
 
@@ -674,7 +746,7 @@ class _CabecalhoTabela extends StatelessWidget {
             width: _larguraSituacao,
             child: Padding(
               padding: const EdgeInsets.only(left: 20),
-              child: Text('SITE',
+              child: Text('CANAIS',
                   style: TextStyle(
                       fontSize: 11,
                       letterSpacing: 0.5,
@@ -690,21 +762,21 @@ class _CabecalhoTabela extends StatelessWidget {
 
 class _LinhaProduto extends StatelessWidget {
   final Produto produto;
+  final Set<String> canais;
   final bool selecionado;
   final VoidCallback onTap;
 
-  const _LinhaProduto({required this.produto, required this.selecionado, required this.onTap});
+  const _LinhaProduto({required this.produto, required this.canais, required this.selecionado, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final estoqueBaixo = produto.estoqueAtual <= produto.estoqueMinimo;
     final emPromocao = produto.precoVendaAtual < produto.preco;
-    final situacao = !produto.ativo
-        ? 'Inativo'
-        : produto.exibirNoCatalogo
-            ? 'Visível'
-            : 'Oculto';
+    // Onde o cliente encontra o produto. Inativo não aparece em lugar nenhum.
+    final selos = !produto.ativo
+        ? const <String>[]
+        : [if (produto.exibirNoCatalogo) 'Site', ...(canais.toList()..sort())];
 
     return Material(
       color: selecionado ? colorScheme.primary.withValues(alpha: 0.14) : Colors.transparent,
@@ -787,13 +859,27 @@ class _LinhaProduto extends StatelessWidget {
                 width: _larguraSituacao,
                 child: Padding(
                   padding: const EdgeInsets.only(left: 20),
-                  child: Text(
-                    situacao,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: situacao == 'Visível' ? colorScheme.onSurface : colorScheme.onSurfaceVariant,
-                    ),
-                  ),
+                  child: selos.isEmpty
+                      ? Text(produto.ativo ? 'Só na loja' : 'Inativo',
+                          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant))
+                      : Wrap(
+                          spacing: 4,
+                          runSpacing: 2,
+                          children: [
+                            for (final selo in selos.take(3))
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(4),
+                                  color: colorScheme.surfaceContainerHighest,
+                                ),
+                                child: Text(selo, style: const TextStyle(fontSize: 11)),
+                              ),
+                            if (selos.length > 3)
+                              Text('+${selos.length - 3}',
+                                  style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                          ],
+                        ),
                 ),
               ),
             ],

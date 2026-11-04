@@ -13,6 +13,27 @@ class ProdutoCanalRepository {
     return (data as List).cast<Map<String, dynamic>>();
   }
 
+  /// Nomes dos marketplaces em que cada produto da empresa está à venda
+  /// (`disponivel`), pra coluna e filtro "Canais" da tabela no PC. Paginado:
+  /// o Supabase corta em 1000 linhas e só o iFood já passa disso.
+  /// [produtoIds] limita a alguns produtos (recarregar depois de salvar).
+  Future<Map<String, Set<String>>> canaisDisponiveis({List<String>? produtoIds}) async {
+    const pagina = 1000;
+    final resultado = <String, Set<String>>{};
+    for (var inicio = 0;; inicio += pagina) {
+      var consulta = supabase.from('produto_canal').select('produto_id, marketplaces(nome)').eq('disponivel', true);
+      if (produtoIds != null) consulta = consulta.inFilter('produto_id', produtoIds);
+      final data = await consulta.order('produto_id').order('marketplace_id').range(inicio, inicio + pagina - 1);
+      for (final row in (data as List).cast<Map<String, dynamic>>()) {
+        final nome = (row['marketplaces'] as Map<String, dynamic>?)?['nome'] as String?;
+        if (nome == null) continue;
+        resultado.putIfAbsent(row['produto_id'] as String, () => <String>{}).add(nome);
+      }
+      if (data.length < pagina) break;
+    }
+    return resultado;
+  }
+
   Future<void> salvar({
     required String produtoId,
     required String marketplaceId,
