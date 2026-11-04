@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +19,7 @@ import '../theme/app_theme.dart';
 import '../utils/busca_utils.dart';
 import '../utils/cliente_validators.dart';
 import '../utils/formatadores_input.dart';
+import '../widgets/faixa_rolavel.dart';
 import 'cadastro_produto_screen.dart';
 import 'carrinho_screen.dart';
 import 'carrinhos_do_dia_screen.dart';
@@ -63,7 +63,6 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   final _recebidoFoco = FocusNode(debugLabel: 'recebido-pdv');
   final _painelFoco = FocusNode(debugLabel: 'painel-pdv');
   final _listaScroll = ScrollController();
-  final _categoriasScroll = ScrollController();
 
   bool _carregando = true;
   bool _modoGrade = false;
@@ -82,6 +81,11 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   Venda? _vendaRegistrada;
 
   static const _alturaLinha = 57.0;
+
+  /// Calculados no build pela largura disponível (ver LayoutBuilder).
+  double _larguraPainel = 440;
+  bool _compacto = false;
+  bool get _painelEstreito => _larguraPainel < 420;
 
   @override
   void initState() {
@@ -121,7 +125,6 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     _recebidoFoco.dispose();
     _painelFoco.dispose();
     _listaScroll.dispose();
-    _categoriasScroll.dispose();
     super.dispose();
   }
 
@@ -646,36 +649,42 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     final carrinho = context.watch<CarrinhoProvider>();
 
     return Scaffold(
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: IgnorePointer(
-              ignoring: _fase != _Fase.montando,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 150),
-                opacity: _fase == _Fase.montando ? 1 : 0.4,
-                child: _ladoProdutos(colorScheme, carrinho),
+      body: LayoutBuilder(builder: (context, limites) {
+        // Janela perto do mínimo do PC (1200 px, com o menu aberto sobra
+        // ~990): painel um pouco mais estreito e a esquerda mais enxuta.
+        _larguraPainel = (limites.maxWidth * 0.34).clamp(360.0, 440.0).toDouble();
+        _compacto = limites.maxWidth - _larguraPainel < 780;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: IgnorePointer(
+                ignoring: _fase != _Fase.montando,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 150),
+                  opacity: _fase == _Fase.montando ? 1 : 0.4,
+                  child: _ladoProdutos(colorScheme, carrinho),
+                ),
               ),
             ),
-          ),
-          Container(
-            width: 440,
-            decoration: BoxDecoration(
-              color: colorScheme.surface,
-              border: Border(left: BorderSide(color: colorScheme.outlineVariant)),
+            Container(
+              width: _larguraPainel,
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                border: Border(left: BorderSide(color: colorScheme.outlineVariant)),
+              ),
+              child: Focus(
+                focusNode: _painelFoco,
+                child: switch (_fase) {
+                  _Fase.montando => _painelCarrinho(colorScheme, carrinho),
+                  _Fase.pagando => _painelPagamento(colorScheme, carrinho),
+                  _Fase.concluida => _painelConcluida(colorScheme),
+                },
+              ),
             ),
-            child: Focus(
-              focusNode: _painelFoco,
-              child: switch (_fase) {
-                _Fase.montando => _painelCarrinho(colorScheme, carrinho),
-                _Fase.pagando => _painelPagamento(colorScheme, carrinho),
-                _Fase.concluida => _painelConcluida(colorScheme),
-              },
-            ),
-          ),
-        ],
-      ),
+          ],
+        );
+      }),
     );
   }
 
@@ -704,31 +713,14 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 const SizedBox(height: 14),
                 _campoBusca(colorScheme),
                 const SizedBox(height: 14),
-                // Roda do mouse rola a faixa pro lado (no PC não dá pra arrastar).
-                Listener(
-                  onPointerSignal: (sinal) {
-                    if (sinal is PointerScrollEvent && _categoriasScroll.hasClients) {
-                      final pos = _categoriasScroll.position;
-                      final delta = sinal.scrollDelta.dy != 0 ? sinal.scrollDelta.dy : sinal.scrollDelta.dx;
-                      _categoriasScroll.jumpTo((pos.pixels + delta).clamp(0, pos.maxScrollExtent).toDouble());
-                    }
-                  },
-                  child: Scrollbar(
-                    controller: _categoriasScroll,
-                    thumbVisibility: true,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: SizedBox(
-                        height: 32,
-                        child: ListView.separated(
-                          controller: _categoriasScroll,
-                          scrollDirection: Axis.horizontal,
-                          itemCount: categorias.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 8),
-                          itemBuilder: (_, i) => _chipCategoria(colorScheme, categorias[i]),
-                        ),
-                      ),
-                    ),
+                FaixaRolavel(
+                  child: Row(
+                    children: [
+                      for (final (i, c) in categorias.indexed) ...[
+                        if (i > 0) const SizedBox(width: 8),
+                        _chipCategoria(colorScheme, c),
+                      ],
+                    ],
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -758,40 +750,59 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   }
 
   Widget _barraTopo(ColorScheme colorScheme) {
+    void abrirWhatsapp() => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConversasWhatsappScreen()));
+    void cadastrar() => Navigator.push(context, MaterialPageRoute(builder: (_) => CadastroProdutoScreen()));
     return Row(
       children: [
         Expanded(
             child: Text('Vender',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: colorScheme.onSurface))),
-        _botaoContorno(
-          colorScheme,
-          rotulo: 'Conversas do WhatsApp',
-          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ConversasWhatsappScreen())),
-        ),
-        const SizedBox(width: 12),
-        _botaoContorno(
-          colorScheme,
-          rotulo: 'Carrinhos do dia',
-          contador: _carrinhosDoDia,
-          onPressed: _abrirCarrinhosDoDia,
-        ),
-        const SizedBox(width: 12),
-        _botaoContorno(
-          colorScheme,
-          rotulo: '+ Cadastrar produto',
-          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CadastroProdutoScreen())),
-        ),
+        if (_compacto) ...[
+          // Sem espaço pro texto: só o ícone (o nome aparece ao parar o mouse).
+          _botaoIcone(colorScheme, Icons.chat_outlined, 'Conversas do WhatsApp', abrirWhatsapp),
+          const SizedBox(width: 8),
+          Badge(
+            isLabelVisible: (_carrinhosDoDia ?? 0) > 0,
+            label: Text('${_carrinhosDoDia ?? 0}'),
+            child: _botaoIcone(colorScheme, Icons.shopping_bag_outlined, 'Carrinhos do dia', _abrirCarrinhosDoDia),
+          ),
+          const SizedBox(width: 8),
+          _botaoIcone(colorScheme, Icons.add, 'Cadastrar produto', cadastrar),
+        ] else ...[
+          _botaoContorno(colorScheme, rotulo: 'Conversas do WhatsApp', onPressed: abrirWhatsapp),
+          const SizedBox(width: 12),
+          _botaoContorno(colorScheme,
+              rotulo: 'Carrinhos do dia', contador: _carrinhosDoDia, onPressed: _abrirCarrinhosDoDia),
+          const SizedBox(width: 12),
+          _botaoContorno(colorScheme, rotulo: '+ Cadastrar produto', onPressed: cadastrar),
+        ],
       ],
     );
   }
 
+  Widget _botaoIcone(ColorScheme colorScheme, IconData icone, String dica, VoidCallback? onPressed) =>
+      IconButton.outlined(
+        onPressed: onPressed,
+        tooltip: dica,
+        icon: Icon(icone, size: 18),
+        style: IconButton.styleFrom(
+          side: BorderSide(color: colorScheme.outlineVariant),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          minimumSize: const Size(36, 36),
+        ),
+      );
+
   Widget _botaoContorno(ColorScheme colorScheme,
-      {required String rotulo, required VoidCallback? onPressed, int? contador, double altura = 36}) {
+      {required String rotulo,
+      required VoidCallback? onPressed,
+      int? contador,
+      double altura = 36,
+      double folga = 14}) {
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         minimumSize: Size(0, altura),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: EdgeInsets.symmetric(horizontal: folga),
         foregroundColor: colorScheme.onSurface,
         backgroundColor: colorScheme.surface,
         side: BorderSide(color: colorScheme.outlineVariant),
@@ -801,7 +812,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(rotulo),
+          // Flexible: num espaço estreito o texto encolhe com "..." em vez de estourar.
+          Flexible(child: Text(rotulo, maxLines: 1, overflow: TextOverflow.ellipsis)),
           if (contador != null && contador > 0) ...[
             const SizedBox(width: 6),
             Container(
@@ -838,8 +850,8 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                     focusNode: _buscaFoco,
                     autofocus: true,
                     style: const TextStyle(fontSize: 18),
-                    decoration: const InputDecoration(
-                      hintText: 'Buscar produto ou bipar o código de barras',
+                    decoration: InputDecoration(
+                      hintText: _compacto ? 'Buscar ou bipar o código' : 'Buscar produto ou bipar o código de barras',
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       focusedBorder: InputBorder.none,
@@ -851,9 +863,15 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                     onSubmitted: (_) => _enterNaBusca(),
                   ),
                 ),
-                Icon(Icons.qr_code_scanner, size: 18, color: colorScheme.onSurfaceVariant),
-                const SizedBox(width: 6),
-                Text('bipou, entrou no carrinho', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                Tooltip(
+                  message: 'Bipou, entrou no carrinho',
+                  child: Icon(Icons.qr_code_scanner, size: 18, color: colorScheme.onSurfaceVariant),
+                ),
+                if (!_compacto) ...[
+                  const SizedBox(width: 6),
+                  Text('bipou, entrou no carrinho',
+                      style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                ],
               ],
             ),
           ),
@@ -964,7 +982,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
           nome: _textoCab(colorScheme, 'Produto'),
           preco: _textoCab(colorScheme, 'Preço', direita: true),
           estoque: _textoCab(colorScheme, 'Estoque', direita: true),
-          noCarrinho: _textoCab(colorScheme, 'No carrinho', direita: true),
+          noCarrinho: _textoCab(colorScheme, _compacto ? 'Carrinho' : 'No carrinho', direita: true),
         ),
         Divider(height: 1, color: colorScheme.outlineVariant),
         Expanded(
@@ -1002,11 +1020,11 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
           const SizedBox(width: 12),
           Expanded(child: nome),
           const SizedBox(width: 12),
-          SizedBox(width: 140, child: preco),
+          SizedBox(width: _compacto ? 100 : 140, child: preco),
           const SizedBox(width: 12),
-          SizedBox(width: 110, child: estoque),
+          SizedBox(width: _compacto ? 84 : 110, child: estoque),
           const SizedBox(width: 12),
-          SizedBox(width: 90, child: noCarrinho),
+          SizedBox(width: _compacto ? 70 : 90, child: noCarrinho),
         ],
       ),
     );
@@ -1064,11 +1082,13 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Estreito: nome em 2 linhas no lugar do código (o código
+                  // continua valendo na busca e no leitor).
                   Text(p.nome,
-                      maxLines: 1,
+                      maxLines: _compacto ? 2 : 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                  if (sub.isNotEmpty)
+                      style: TextStyle(fontSize: _compacto ? 13 : 14, height: 1.2, fontWeight: FontWeight.w500)),
+                  if (sub.isNotEmpty && !_compacto)
                     Text(sub,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1268,21 +1288,29 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
           ('R', 'recibo'),
         ],
     };
+    // Wrap: numa janela estreita os atalhos descem pra 2ª linha em vez de
+    // passar da borda.
     return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      constraints: const BoxConstraints(minHeight: 44),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
       ),
-      child: Row(
+      child: Wrap(
+        spacing: 18,
+        runSpacing: 6,
         children: [
-          for (final (tecla, texto) in atalhos) ...[
-            _teclaVisual(colorScheme, tecla),
-            const SizedBox(width: 5),
-            Text(texto, style: TextStyle(fontSize: 12, color: colorScheme.onSurface)),
-            const SizedBox(width: 18),
-          ],
+          for (final (tecla, texto) in atalhos)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _teclaVisual(colorScheme, tecla),
+                const SizedBox(width: 5),
+                Text(texto, style: TextStyle(fontSize: 12, color: colorScheme.onSurface)),
+              ],
+            ),
         ],
       ),
     );
@@ -1328,20 +1356,29 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
               ),
+              // Painel estreito: só ícone (o nome aparece ao parar o mouse).
               if (itens.isNotEmpty && cliente != null) ...[
-                _botaoContorno(
-                  colorScheme,
-                  rotulo: _salvandoOrcamento ? 'Salvando...' : 'Salvar orçamento',
-                  altura: 32,
-                  onPressed: _salvandoOrcamento ? null : _salvarOrcamento,
-                ),
+                _painelEstreito
+                    ? _botaoIcone(colorScheme, Icons.bookmark_add_outlined, 'Salvar orçamento',
+                        _salvandoOrcamento ? null : _salvarOrcamento)
+                    : _botaoContorno(
+                        colorScheme,
+                        rotulo: _salvandoOrcamento ? 'Salvando...' : 'Salvar orçamento',
+                        altura: 32,
+                        onPressed: _salvandoOrcamento ? null : _salvarOrcamento,
+                      ),
                 const SizedBox(width: 8),
               ],
               if (itens.isNotEmpty)
-                _botaoContorno(colorScheme, rotulo: 'Esvaziar', altura: 32, onPressed: () {
-                  carrinho.limparCarrinho();
-                  _buscaFoco.requestFocus();
-                }),
+                _painelEstreito
+                    ? _botaoIcone(colorScheme, Icons.delete_outline, 'Esvaziar carrinho', () {
+                        carrinho.limparCarrinho();
+                        _buscaFoco.requestFocus();
+                      })
+                    : _botaoContorno(colorScheme, rotulo: 'Esvaziar', altura: 32, onPressed: () {
+                        carrinho.limparCarrinho();
+                        _buscaFoco.requestFocus();
+                      }),
             ],
           ),
         ),
@@ -1594,7 +1631,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(item.produto.nome,
-                        maxLines: 1,
+                        maxLines: _painelEstreito ? 2 : 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                     Text.rich(
@@ -1899,13 +1936,17 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator()))
               else
-                GridView.count(
-                  crossAxisCount: 3,
+                // Altura fixa: com proporção, num painel mais estreito o
+                // botão ficava baixo demais pro número + nome.
+                GridView(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 128 / 58,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    mainAxisExtent: 58,
+                  ),
                   children: [
                     for (final (i, m) in metodos.indexed) _botaoMetodo(colorScheme, i + 1, m),
                   ],
@@ -2034,8 +2075,9 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                   Expanded(
                     child: _botaoContorno(
                       colorScheme,
-                      rotulo: v == null ? 'Valor exato' : 'R\$ ${v.toStringAsFixed(0)}',
+                      rotulo: v == null ? (_painelEstreito ? 'Exato' : 'Valor exato') : 'R\$ ${v.toStringAsFixed(0)}',
                       altura: 32,
+                      folga: 4,
                       onPressed: () {
                         _recebidoController.text = ClienteValidators.formatarMoeda(v ?? total);
                         setState(() {});

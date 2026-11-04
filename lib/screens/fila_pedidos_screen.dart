@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../widgets/faixa_rolavel.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -415,11 +417,15 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     if (!largo) return lista;
     final colorScheme = Theme.of(context).colorScheme;
     final selecionado = _selecionadoId == null ? null : pedidos.where((v) => v.idVenda == _selecionadoId).firstOrNull;
+    return LayoutBuilder(builder: (context, limites) {
+    // Janela perto do mínimo do PC: fila um pouco mais estreita pra sobrar
+    // espaço pro pedido aberto.
+    final larguraFila = (limites.maxWidth * 0.36).clamp(340.0, 440.0).toDouble();
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          width: 440,
+          width: larguraFila,
           child: Focus(
             focusNode: _filaFoco,
             onKeyEvent: (_, evento) => _teclaNaFila(evento, pedidos),
@@ -448,6 +454,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         ),
       ],
     );
+    });
   }
 
   bool _podeSeparar(Venda venda) =>
@@ -606,14 +613,14 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
-                        color: pagamento.pago ? Colors.green.shade300 : Colors.amber.shade300,
+                        color: pagamento.pago ? _tom(Colors.green) : _tom(Colors.amber),
                       ),
                     ),
                   if (venda.observacao.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     Tooltip(
                       message: 'Observação: "${venda.observacao}"',
-                      child: Icon(Icons.sticky_note_2_outlined, size: 16, color: Colors.amber.shade400),
+                      child: Icon(Icons.sticky_note_2_outlined, size: 16, color: _tom(Colors.amber)),
                     ),
                   ],
                 ],
@@ -640,6 +647,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       ),
     );
   }
+
+  /// Tom legível no tema claro e no escuro (os .shade300 fixos só serviam
+  /// no escuro: no claro ficavam apagados demais).
+  Color _tom(MaterialColor cor) => AppTheme.tomAdaptavel(cor, Theme.of(context).brightness);
 
   Widget _pilulaStatus(String status) {
     return Container(
@@ -717,6 +728,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       return Align(alignment: Alignment.centerLeft, child: _pilulaStatus(venda.status));
     }
     final concluido = venda.status == StatusPedido.entregue;
+    // Estreito: só a etapa atual mostra o nome (as outras, número ou ✓ com
+    // o nome ao parar o mouse) — os 5 nomes juntos estouravam a linha.
+    return LayoutBuilder(builder: (context, limites) {
+    final estreito = limites.maxWidth < 620;
     return Row(
       children: [
         for (var i = 0; i < etapas.length; i++) ...[
@@ -726,7 +741,9 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
+                Tooltip(
+                  message: StatusPedido.rotulo(etapas[i]),
+                  child: Container(
                   width: 24,
                   height: 24,
                   alignment: Alignment.center,
@@ -740,26 +757,29 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                     border: feita || agora ? null : Border.all(color: colorScheme.outlineVariant),
                   ),
                   child: feita
-                      ? Icon(Icons.check, size: 14, color: Colors.green.shade300)
+                      ? Icon(Icons.check, size: 14, color: _tom(Colors.green))
                       : Text('${i + 1}',
                           style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
                               color: agora ? colorScheme.onPrimary : colorScheme.onSurfaceVariant)),
                 ),
-                const SizedBox(width: 7),
-                Text(
-                  StatusPedido.rotulo(etapas[i]),
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: agora ? FontWeight.w700 : FontWeight.w400,
-                    color: agora
-                        ? colorScheme.onSurface
-                        : feita
-                            ? Colors.green.shade300
-                            : colorScheme.onSurfaceVariant,
-                  ),
                 ),
+                if (!estreito || agora) ...[
+                  const SizedBox(width: 7),
+                  Text(
+                    StatusPedido.rotulo(etapas[i]),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: agora ? FontWeight.w700 : FontWeight.w400,
+                      color: agora
+                          ? colorScheme.onSurface
+                          : feita
+                              ? _tom(Colors.green)
+                              : colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ],
             );
           }),
@@ -774,6 +794,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         ],
       ],
     );
+    });
   }
 
   /// Pedido aberto no PC, no desenho do mockup: cada dado aparece uma vez.
@@ -954,7 +975,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                             if ((item.observacaoCliente ?? '').isNotEmpty)
                               Text('"${item.observacaoCliente}"',
                                   style: TextStyle(
-                                      fontSize: 12, fontStyle: FontStyle.italic, color: Colors.amber.shade300)),
+                                      fontSize: 12, fontStyle: FontStyle.italic, color: _tom(Colors.amber))),
                           ],
                         ),
                       ),
@@ -1110,15 +1131,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(flex: 3, child: itensCartao),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 2,
-                  child: ListView(
-                    children: [
+            child: LayoutBuilder(builder: (context, limites) {
+            final cartoes = <Widget>[
                       _cartaoPc(titulo: venda.retirada ? 'Retirada' : 'Entrega', filhos: entrega),
                       const SizedBox(height: 12),
                       _cartaoPc(titulo: 'Pagamento', filhos: pagamento),
@@ -1128,7 +1142,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                           titulo: 'Observação do cliente',
                           fundo: Colors.amber.withValues(alpha: 0.08),
                           borda: Colors.amber.withValues(alpha: 0.45),
-                          corTitulo: Colors.amber.shade300,
+                          corTitulo: _tom(Colors.amber),
                           filhos: [_textoCartao('"${venda.observacao}"', estilo: FontStyle.italic)],
                         ),
                       ],
@@ -1137,11 +1151,28 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                         titulo: 'Histórico',
                         filhos: [_HistoricoPedidoPc(key: ValueKey('${venda.idVenda}|${venda.status}'), venda: venda)],
                       ),
-                    ],
-                  ),
-                ),
+            ];
+            // Estreito: itens em cima e os cartões embaixo, tudo rolando
+            // junto — lado a lado, o nome do item quebrava a cada palavra.
+            if (limites.maxWidth < 640) {
+              final alturaItens = (110 + venda.itens.length * 64.0 + venda.desconto.sign * 24).clamp(200.0, 460.0).toDouble();
+              return ListView(
+                children: [
+                  SizedBox(height: alturaItens, child: itensCartao),
+                  const SizedBox(height: 12),
+                  ...cartoes,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 3, child: itensCartao),
+                const SizedBox(width: 16),
+                Expanded(flex: 2, child: ListView(children: cartoes)),
               ],
-            ),
+            );
+            }),
           ),
         ),
       ],
@@ -1166,9 +1197,11 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       padding: const EdgeInsets.only(left: 8, right: 12),
       child: Row(
         children: [
+          // Rola com a roda do mouse: numa janela estreita as últimas abas
+          // (Concluídos, Cancelados, Aguardando pagamento) ficavam escondidas.
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            child: FaixaRolavel(
+              espacoBarra: 4,
               child: Row(
                 children: [
                   for (final aba in abas)

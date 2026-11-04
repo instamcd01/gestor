@@ -99,6 +99,13 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
       _todosClientesKyte = kyte;
       _carregandoClientes = false;
     });
+    // Quem digitou antes da lista terminar de carregar via só o cadastro
+    // antigo do Kyte (o cliente de verdade não aparecia, risco de criar
+    // duplicado): refaz a busca com a lista completa.
+    final textoDigitado = _buscaClienteController.text;
+    if (textoDigitado.trim().isNotEmpty) {
+      _filtrarClientes(textoDigitado, Provider.of<ClientProvider>(context, listen: false).clientes);
+    }
 
     final clienteJaSelecionado =
         Provider.of<ClientProvider>(context, listen: false).clienteSelecionado;
@@ -349,6 +356,9 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
             children: [
               TextField(
                 controller: _buscaClienteController,
+                // No PC (janela do Vender) já abre pronto pra digitar; no
+                // celular não, pra não subir o teclado por cima da tela.
+                autofocus: MediaQuery.sizeOf(context).width >= 1200,
                 decoration: const InputDecoration(
                   labelText: 'Buscar cliente (nome, celular ou endereço)',
                   prefixIcon: Icon(Icons.search),

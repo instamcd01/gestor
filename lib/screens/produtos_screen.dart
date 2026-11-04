@@ -514,7 +514,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
           child: Row(
             children: [
               SizedBox(
-                width: 420,
+                width: MediaQuery.sizeOf(context).width < 1400 ? 300 : 420,
                 child: TextField(
                   controller: _searchController,
                   focusNode: _buscaFoco,
@@ -626,17 +626,23 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
         ),
         const Divider(height: 1),
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: conteudoTabela),
-              const VerticalDivider(width: 1),
-              SizedBox(
-                width: 500,
-                child: _painel(selecionado, isVendedor),
-              ),
-            ],
-          ),
+          // Janela perto do mínimo do PC: painel um pouco mais estreito e a
+          // tabela sem a coluna Categoria (ela aparece no painel).
+          child: LayoutBuilder(builder: (context, limites) {
+            final larguraPainel = (limites.maxWidth * 0.42).clamp(380.0, 500.0).toDouble();
+            final compacto = limites.maxWidth - larguraPainel < 760;
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(child: _ColunasCompactas(compacto: compacto, child: conteudoTabela)),
+                const VerticalDivider(width: 1),
+                SizedBox(
+                  width: larguraPainel,
+                  child: _painel(selecionado, isVendedor),
+                ),
+              ],
+            );
+          }),
         ),
         const Divider(height: 1),
         Container(
@@ -731,6 +737,18 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
 
 enum _ColunaOrdem { nome, categoria, preco, estoque }
 
+/// Avisa cabeçalho e linhas da tabela que falta largura (sem coluna Categoria).
+class _ColunasCompactas extends InheritedWidget {
+  final bool compacto;
+  const _ColunasCompactas({required this.compacto, required super.child});
+
+  static bool de(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_ColunasCompactas>()?.compacto ?? false;
+
+  @override
+  bool updateShouldNotify(_ColunasCompactas antigo) => antigo.compacto != compacto;
+}
+
 const _larguraCategoria = 170.0;
 const _larguraPreco = 110.0;
 const _larguraEstoque = 110.0;
@@ -773,11 +791,12 @@ class _CabecalhoTabela extends StatelessWidget {
         children: [
           const SizedBox(width: 52),
           Expanded(child: titulo('Produto', _ColunaOrdem.nome)),
-          SizedBox(width: _larguraCategoria, child: titulo('Categoria', _ColunaOrdem.categoria)),
-          SizedBox(width: _larguraPreco, child: titulo('Preço', _ColunaOrdem.preco, direita: true)),
-          SizedBox(width: _larguraEstoque, child: titulo('Estoque', _ColunaOrdem.estoque, direita: true)),
+          if (!_ColunasCompactas.de(context))
+            SizedBox(width: _larguraCategoria, child: titulo('Categoria', _ColunaOrdem.categoria)),
+          SizedBox(width: _ColunasCompactas.de(context) ? 96 : _larguraPreco, child: titulo('Preço', _ColunaOrdem.preco, direita: true)),
+          SizedBox(width: _ColunasCompactas.de(context) ? 70 : _larguraEstoque, child: titulo('Estoque', _ColunaOrdem.estoque, direita: true)),
           SizedBox(
-            width: _larguraSituacao,
+            width: _ColunasCompactas.de(context) ? 112 : _larguraSituacao,
             child: Padding(
               padding: const EdgeInsets.only(left: 20),
               child: Text('CANAIS',
@@ -848,11 +867,16 @@ class _LinhaProduto extends StatelessWidget {
               Expanded(
                 child: Text(
                   produto.nome,
-                  maxLines: 1,
+                  // Estreito: nome em 2 linhas (numa só não dava pra ler).
+                  maxLines: _ColunasCompactas.de(context) ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 14, fontWeight: selecionado ? FontWeight.w600 : FontWeight.w500),
+                  style: TextStyle(
+                      fontSize: _ColunasCompactas.de(context) ? 13 : 14,
+                      height: 1.2,
+                      fontWeight: selecionado ? FontWeight.w600 : FontWeight.w500),
                 ),
               ),
+              if (!_ColunasCompactas.de(context))
               SizedBox(
                 width: _larguraCategoria,
                 child: Padding(
@@ -866,7 +890,7 @@ class _LinhaProduto extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                width: _larguraPreco,
+                width: _ColunasCompactas.de(context) ? 96 : _larguraPreco,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -883,16 +907,16 @@ class _LinhaProduto extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                width: _larguraEstoque,
+                width: _ColunasCompactas.de(context) ? 70 : _larguraEstoque,
                 child: Align(
                   alignment: Alignment.centerRight,
                   child: _BadgeEstoque(quantidade: produto.estoqueAtual, baixo: estoqueBaixo, curto: true),
                 ),
               ),
               SizedBox(
-                width: _larguraSituacao,
+                width: _ColunasCompactas.de(context) ? 112 : _larguraSituacao,
                 child: Padding(
-                  padding: const EdgeInsets.only(left: 20),
+                  padding: EdgeInsets.only(left: _ColunasCompactas.de(context) ? 10 : 20),
                   child: selos.isEmpty
                       ? Text(produto.ativo ? 'Só na loja' : 'Inativo',
                           style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant))
