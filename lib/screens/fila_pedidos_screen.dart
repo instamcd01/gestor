@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/venda.dart';
 import '../providers/branding_provider.dart';
 import '../providers/historico_vendas_provider.dart';
+import '../repositories/venda_repository.dart';
 import '../utils/busca_utils.dart';
 import '../utils/canal_venda_utils.dart';
 import '../utils/mensagem_status_dialog.dart';
@@ -440,26 +442,9 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                     ],
                   ),
                 )
-              // A própria tela de detalhes, embutida (cancelar, estornar,
-              // editar itens, separação: tudo igual). A chave muda quando o
-              // pedido muda no tempo real, pra não mostrar dado velho.
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _cabecalhoPainel(selecionado),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: ClipRect(
-                        child: VendaDetalhesScreen(
-                          key: ValueKey('${selecionado.idVenda}|${selecionado.status}|${selecionado.valorTotal}|'
-                              '${selecionado.itens.length}|${selecionado.separacaoStatus}'),
-                          venda: selecionado,
-                          embutido: true,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              // Desenhado pro PC; ações delicadas abrem a tela completa de
+              // sempre (ver `_painelPc`). Muda sozinho com o tempo real.
+              : _painelPc(selecionado),
         ),
       ],
     );
@@ -470,26 +455,6 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
 
   void _abrirSeparacao(Venda venda) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => SeparacaoPedidoScreen(venda: venda)));
-  }
-
-  /// "#12 • iFood • há 8 min • 2º pedido" — mesma linha do cartão do celular.
-  Widget _linhaNumeroCanal(Venda venda, String tempoDecorrido) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Text.rich(
-      TextSpan(
-        text: '#${venda.numeroSequencial ?? '-'} • ${rotuloCanalVenda(venda.canalVenda)} • $tempoDecorrido',
-        children: [
-          if (_ordemPedidoCliente(venda) case final ordem?)
-            TextSpan(
-              text: ' • $ordemº pedido',
-              style: ordem == 1 ? TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold) : null,
-            ),
-        ],
-      ),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12.5),
-    );
   }
 
   Widget? _linhaAgendado(Venda venda) {
@@ -510,8 +475,36 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     );
   }
 
-  /// Linha compacta da fila no PC: tudo o que o cartão do celular mostra
-  /// pra decidir qual pedido atender, sem os botões (que ficam no painel).
+  String _rotuloModalidade(Venda venda) {
+    if (venda.retirada) return 'Retirada';
+    return switch (venda.modalidade) {
+      'agendada' => 'Agendada',
+      'economica' => 'Econômica',
+      _ => 'Expressa',
+    };
+  }
+
+  /// Mesmos casos do selo de pagamento do cartão do celular (`_chipsInfo`).
+  ({String texto, bool pago})? _pagamentoCurto(Venda venda) {
+    if (venda.ehMarketplace) {
+      return venda.pagoPeloMarketplace ? (texto: 'Pago', pago: true) : (texto: 'Cobrar na entrega', pago: false);
+    }
+    if (venda.aguardandoPagamento) return (texto: 'Aguardando pagamento', pago: false);
+    if (venda.pagoOnline) return (texto: 'Pago online', pago: true);
+    return null;
+  }
+
+  String _tempoDesde(DateTime data) {
+    final minutos = DateTime.now().difference(data).inMinutes;
+    return minutos < 60 ? 'há $minutos min' : 'há ${(minutos / 60).floor()}h${minutos % 60}min';
+  }
+
+  void _abrirCompleto(Venda venda) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => VendaDetalhesScreen(venda: venda)));
+  }
+
+  /// Linha da fila no PC: o que serve pra decidir qual pedido atender. O
+  /// resto (zona, rota, troco, cupom, parcelas) fica nos cartões do painel.
   Widget _linhaPc({
     required Venda venda,
     required bool selecionado,
@@ -519,10 +512,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     required _Urgencia urgencia,
     required bool ifoodEstourado,
     required Color corUrgencia,
-    required List<Widget> chipsInfo,
     required NumberFormat currencyFormat,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+    final apagado = colorScheme.onSurfaceVariant;
     final corBarra = selecionado
         ? colorScheme.primary
         : urgencia != _Urgencia.neutro
@@ -530,33 +523,42 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
             : ifoodEstourado
                 ? Colors.red.shade900
                 : Colors.transparent;
+    final ordem = _ordemPedidoCliente(venda);
+    final partes = [
+      rotuloCanalVenda(venda.canalVenda),
+      _rotuloModalidade(venda),
+      if (!venda.retirada && venda.cliente.bairro.isNotEmpty) venda.cliente.bairro,
+      tempoDecorrido,
+    ];
+    final pagamento = _pagamentoCurto(venda);
     final agendado = _linhaAgendado(venda);
 
     return Material(
       key: selecionado ? _chaveSelecionado : null,
-      color: selecionado ? colorScheme.primary.withValues(alpha: 0.14) : Colors.transparent,
+      color: selecionado ? colorScheme.primary.withValues(alpha: 0.12) : Colors.transparent,
       child: InkWell(
         onTap: () => _selecionar(venda),
         child: Container(
           decoration: BoxDecoration(
             border: Border(
               left: BorderSide(color: corBarra, width: 3),
-              bottom: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+              bottom: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.35)),
             ),
           ),
-          padding: const EdgeInsets.fromLTRB(11, 10, 12, 10),
+          padding: const EdgeInsets.fromLTRB(13, 12, 14, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(iconeCanalVenda(venda.canalVenda), size: 18, color: colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 6),
+                  Text('#${venda.numeroSequencial ?? '-'}',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: apagado)),
+                  const SizedBox(width: 8),
                   Flexible(
                     child: Text(venda.cliente.nome,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                   ),
                   const SizedBox(width: 6),
                   CategoriaClienteBadge(categoria: venda.cliente.categoriaCliente),
@@ -568,36 +570,54 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                     ),
                   ],
                   const Spacer(),
-                  if (venda.observacao.isNotEmpty) ...[
-                    Tooltip(
-                      message: 'Observação: "${venda.observacao}"',
-                      child: Icon(Icons.sticky_note_2_outlined, size: 17, color: Colors.amber.shade400),
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: _corStatus(venda.status).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      StatusPedido.rotulo(venda.status),
-                      style: TextStyle(color: _corStatus(venda.status), fontWeight: FontWeight.bold, fontSize: 11.5),
-                    ),
-                  ),
+                  const SizedBox(width: 8),
+                  _pilulaStatus(venda.status),
                 ],
               ),
-              const SizedBox(height: 3),
-              _linhaNumeroCanal(venda, tempoDecorrido),
-              Text(
-                '${venda.itens.length} itens • ${currencyFormat.format(venda.valorTotal)}',
-                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12.5),
+              const SizedBox(height: 4),
+              Text.rich(
+                TextSpan(
+                  text: partes.join(' · '),
+                  children: [
+                    if (ordem != null)
+                      TextSpan(
+                        text: ' · $ordemº pedido',
+                        style: ordem == 1 ? TextStyle(color: colorScheme.primary, fontWeight: FontWeight.w700) : null,
+                      ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12.5, color: apagado),
               ),
-              if (chipsInfo.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Wrap(spacing: 6, runSpacing: 4, children: chipsInfo),
-              ],
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text('${venda.itens.length} itens · ${currencyFormat.format(venda.valorTotal)}',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  if (venda.ehMarketplace && venda.numeroExibicaoMarketplace != null) ...[
+                    Text('iFood #${venda.numeroExibicaoMarketplace}', style: TextStyle(fontSize: 11.5, color: apagado)),
+                    const SizedBox(width: 10),
+                  ],
+                  if (pagamento != null)
+                    Text(
+                      pagamento.texto,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: pagamento.pago ? Colors.green.shade300 : Colors.amber.shade300,
+                      ),
+                    ),
+                  if (venda.observacao.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: 'Observação: "${venda.observacao}"',
+                      child: Icon(Icons.sticky_note_2_outlined, size: 16, color: Colors.amber.shade400),
+                    ),
+                  ],
+                ],
+              ),
               if (agendado != null) ...[
                 const SizedBox(height: 4),
                 agendado,
@@ -621,16 +641,69 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     );
   }
 
-  /// Topo do pedido aberto no PC: etapas, ações e o que não pode passar
-  /// batido (observação, modalidade/entrega). O resto fica nas abas abaixo.
-  Widget _cabecalhoPainel(Venda venda) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final mensagemStatus = venda.ehMarketplace
-        ? null
-        : mensagemPadraoStatus(venda, venda.status, nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
-    final chips = _chipsInfo(context, venda);
-    final agendado = _linhaAgendado(venda);
+  Widget _pilulaStatus(String status) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        border: Border.all(color: _corStatus(status).withValues(alpha: 0.7)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        StatusPedido.rotulo(status),
+        style: TextStyle(color: _corStatus(status), fontWeight: FontWeight.w700, fontSize: 11.5),
+      ),
+    );
+  }
 
+  /// Cartão padrão do painel do PC (título em caixa alta + conteúdo).
+  Widget _cartaoPc({required String titulo, Widget? acao, required List<Widget> filhos, Color? fundo, Color? borda, Color? corTitulo}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+      decoration: BoxDecoration(
+        color: fundo,
+        border: Border.all(color: borda ?? colorScheme.outlineVariant.withValues(alpha: 0.6)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(titulo.toUpperCase(),
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      letterSpacing: 0.6,
+                      fontWeight: FontWeight.w700,
+                      color: corTitulo ?? colorScheme.onSurfaceVariant)),
+              const Spacer(),
+              if (acao != null) acao,
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...filhos,
+        ],
+      ),
+    );
+  }
+
+  Widget _textoCartao(String texto, {bool apagado = false, FontStyle? estilo}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        texto,
+        style: TextStyle(
+          fontSize: 13.5,
+          height: 1.35,
+          fontStyle: estilo,
+          color: apagado ? Theme.of(context).colorScheme.onSurfaceVariant : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _barraEtapas(Venda venda) {
+    final colorScheme = Theme.of(context).colorScheme;
     final etapas = [
       StatusPedido.pendente,
       StatusPedido.preparando,
@@ -639,95 +712,93 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       StatusPedido.entregue,
     ];
     final atual = etapas.indexOf(venda.status);
-
-    Widget barraEtapas;
     if (atual < 0) {
       // Cancelado, aguardando pagamento/conciliação: fora do fluxo normal.
-      barraEtapas = Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: _corStatus(venda.status).withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(StatusPedido.rotulo(venda.status),
-              style: TextStyle(color: _corStatus(venda.status), fontWeight: FontWeight.bold)),
-        ),
-      );
-    } else {
-      final concluido = venda.status == StatusPedido.entregue;
-      barraEtapas = Row(
-        children: [
-          for (var i = 0; i < etapas.length; i++) ...[
-            Builder(builder: (_) {
-              final feita = i < atual || concluido;
-              final agora = i == atual && !concluido;
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 22,
-                    height: 22,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: feita
-                          ? Colors.green.withValues(alpha: 0.25)
-                          : agora
-                              ? colorScheme.primary
-                              : Colors.transparent,
-                      border: feita || agora ? null : Border.all(color: colorScheme.outlineVariant),
-                    ),
-                    child: feita
-                        ? Icon(Icons.check, size: 14, color: Colors.green.shade300)
-                        : Text('${i + 1}',
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: agora ? colorScheme.onPrimary : colorScheme.onSurfaceVariant)),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    StatusPedido.rotulo(etapas[i]),
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: agora ? FontWeight.w700 : FontWeight.w400,
-                      color: agora
-                          ? colorScheme.onSurface
-                          : feita
-                              ? Colors.green.shade300
-                              : colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              );
-            }),
-            if (i < etapas.length - 1)
-              Expanded(
-                child: Container(
-                  height: 2,
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  color: i < atual || concluido ? Colors.green.withValues(alpha: 0.35) : colorScheme.outlineVariant,
-                ),
-              ),
-          ],
-        ],
-      );
+      return Align(alignment: Alignment.centerLeft, child: _pilulaStatus(venda.status));
     }
+    final concluido = venda.status == StatusPedido.entregue;
+    return Row(
+      children: [
+        for (var i = 0; i < etapas.length; i++) ...[
+          Builder(builder: (_) {
+            final feita = i < atual || concluido;
+            final agora = i == atual && !concluido;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: feita
+                        ? Colors.green.withValues(alpha: 0.22)
+                        : agora
+                            ? colorScheme.primary
+                            : Colors.transparent,
+                    border: feita || agora ? null : Border.all(color: colorScheme.outlineVariant),
+                  ),
+                  child: feita
+                      ? Icon(Icons.check, size: 14, color: Colors.green.shade300)
+                      : Text('${i + 1}',
+                          style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: agora ? colorScheme.onPrimary : colorScheme.onSurfaceVariant)),
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  StatusPedido.rotulo(etapas[i]),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: agora ? FontWeight.w700 : FontWeight.w400,
+                    color: agora
+                        ? colorScheme.onSurface
+                        : feita
+                            ? Colors.green.shade300
+                            : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            );
+          }),
+          if (i < etapas.length - 1)
+            Expanded(
+              child: Container(
+                height: 2,
+                margin: const EdgeInsets.symmetric(horizontal: 10),
+                color: i < atual || concluido ? Colors.green.withValues(alpha: 0.35) : colorScheme.outlineVariant,
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  /// Pedido aberto no PC, no desenho do mockup: cada dado aparece uma vez.
+  /// Ações delicadas (cancelar, estornar, editar itens, financeiro, recibo)
+  /// abrem a tela completa de sempre — mesmas regras, nada duplicado.
+  Widget _painelPc(Venda venda) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final mensagemStatus = venda.ehMarketplace
+        ? null
+        : mensagemPadraoStatus(venda, venda.status, nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
+    final ordem = _ordemPedidoCliente(venda);
+
+    final subtitulo = [
+      rotuloCanalVenda(venda.canalVenda),
+      'feito às ${DateFormat('HH:mm').format(venda.dataVenda)} (${_tempoDesde(venda.dataVenda)})',
+      if (venda.ehMarketplace && venda.numeroExibicaoMarketplace != null) 'iFood #${venda.numeroExibicaoMarketplace}',
+    ].join(' · ');
 
     final acoes = <Widget>[
       if (_podeSeparar(venda))
         OutlinedButton.icon(
           onPressed: () => _abrirSeparacao(venda),
           icon: const Icon(Icons.checklist, size: 18),
-          label: Text(venda.separacaoStatus == null ? 'Separar pedido  (S)' : 'Ver separação  (S)'),
-        ),
-      if (mensagemStatus != null)
-        OutlinedButton.icon(
-          onPressed: () => enviarMensagemStatusWhatsApp(context, venda, mensagemStatus),
-          icon: const Icon(Icons.message, size: 18, color: Colors.green),
-          label: const Text('WhatsApp  (W)'),
+          label: Text(venda.separacaoStatus == null ? 'Separar pedido  ·  S' : 'Ver separação  ·  S'),
         ),
       if (venda.status == StatusPedido.saiuParaEntrega && venda.formaPagamentoEditavel)
         OutlinedButton.icon(
@@ -742,63 +813,340 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         FilledButton.icon(
           onPressed: () => _avancarStatus(venda),
           icon: const Icon(Icons.arrow_forward, size: 18),
-          label: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!)}  (Enter)'),
+          label: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!)}  ·  Enter'),
         ),
     ];
 
-    return Container(
-      color: colorScheme.surfaceContainerLow,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+    // --- Entrega ---
+    final entrega = <Widget>[];
+    if (venda.retirada) {
+      entrega.add(_textoCartao('Retirada na loja'));
+      if (venda.codigoRetiradaExibicao != null) {
+        entrega.add(_textoCartao('Código de retirada: ${venda.codigoRetiradaExibicao}', apagado: true));
+      }
+    } else {
+      final linhaModalidade = [
+        _rotuloModalidade(venda),
+        if (venda.entregaSelecionada.isNotEmpty) 'zona ${venda.entregaSelecionada}',
+      ].join(' · ');
+      entrega.add(_textoCartao(linhaModalidade));
+      if (venda.modalidade == 'economica' && venda.previsaoEntregaFim != null) {
+        entrega.add(_textoCartao('Até ${DateFormat('dd/MM').format(venda.previsaoEntregaFim!)}', apagado: true));
+      } else if (venda.modalidade == 'expressa' && venda.previsaoEntregaInicio != null && venda.previsaoEntregaFim != null) {
+        final min = venda.previsaoEntregaInicio!.difference(venda.dataVenda).inMinutes;
+        final max = venda.previsaoEntregaFim!.difference(venda.dataVenda).inMinutes;
+        entrega.add(_textoCartao('Prazo da zona: $min-$max min', apagado: true));
+      }
+      final agendado = _linhaAgendado(venda);
+      if (agendado != null) entrega.add(Padding(padding: const EdgeInsets.only(bottom: 4), child: agendado));
+      if (venda.cliente.enderecoCompleto.isNotEmpty) entrega.add(_textoCartao(venda.cliente.enderecoExibicao));
+      final distancia = venda.cliente.rangeDistancia;
+      final estimativa = venda.cliente.estimativaEntrega;
+      if (distancia != null && estimativa != null) {
+        entrega.add(_textoCartao('${distancia.toStringAsFixed(1)} km · $estimativa min de rota', apagado: true));
+      }
+      if (venda.freteGratisIfood) entrega.add(_textoCartao('Frete grátis (iFood)', apagado: true));
+    }
+
+    // --- Pagamento ---
+    final pagamento = <Widget>[
+      _textoCartao(venda.resumoFormaPagamento),
+      if (venda.valorPago > 0 && venda.valorPago != venda.valorTotal)
+        _textoCartao('Valor pago: ${moeda.format(venda.valorPago)}', apagado: true),
+    ];
+    if (venda.aguardandoPagamento) {
+      pagamento.add(_textoCartao('Aguardando confirmação do pagamento', apagado: true));
+    }
+    if (venda.troco > 0) {
+      final pagaraCom = venda.valorPago > venda.valorTotal ? ' (pagará com ${moeda.format(venda.valorPago)})' : '';
+      pagamento.add(_textoCartao('Troco: ${moeda.format(venda.troco)}$pagaraCom'));
+    }
+    if (venda.valorParcelaCartao != null) {
+      pagamento.add(_textoCartao('${venda.parcelasCartao}x de ${moeda.format(venda.valorParcelaCartao!)} na maquininha'));
+    }
+
+    Widget linhaTotal(String rotulo, String valor, {bool forte = false}) => Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(
+            children: [
+              Text(rotulo,
+                  style: TextStyle(
+                      fontSize: forte ? 16 : 13,
+                      fontWeight: forte ? FontWeight.w700 : FontWeight.w400,
+                      color: forte ? null : colorScheme.onSurfaceVariant)),
+              const Spacer(),
+              Text(valor,
+                  style: TextStyle(
+                      fontSize: forte ? 16 : 13,
+                      fontWeight: forte ? FontWeight.w700 : FontWeight.w500,
+                      color: forte ? null : colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        );
+
+    final itensCartao = Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.6)),
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          barraEtapas,
-          if (acoes.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: acoes),
-          ],
-          if (chips.isNotEmpty || agendado != null) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [...chips, if (agendado != null) agendado],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+            child: Row(
+              children: [
+                Text('ITENS (${venda.itens.length})',
+                    style: TextStyle(
+                        fontSize: 11.5,
+                        letterSpacing: 0.6,
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onSurfaceVariant)),
+                const Spacer(),
+                if (venda.podeEditarItens)
+                  TextButton(onPressed: () => _abrirCompleto(venda), child: const Text('Editar itens')),
+              ],
             ),
-          ],
-          if (venda.observacao.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.10),
-                border: Border.all(color: Colors.amber.withValues(alpha: 0.45)),
-                borderRadius: BorderRadius.circular(10),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.separated(
+              itemCount: venda.itens.length,
+              separatorBuilder: (_, __) => Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.35)),
+              itemBuilder: (_, i) {
+                final item = venda.itens[i];
+                final produto = item.produto;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          color: colorScheme.surfaceContainerHighest,
+                          child: produto.imagemUrl.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: produto.imagemUrlExibicao,
+                                  fit: BoxFit.cover,
+                                  memCacheWidth: 96,
+                                  errorWidget: (_, __, ___) =>
+                                      Icon(Icons.inventory_2_outlined, size: 18, color: colorScheme.onSurfaceVariant),
+                                )
+                              : Icon(Icons.inventory_2_outlined, size: 18, color: colorScheme.onSurfaceVariant),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 40,
+                        child: Text('${item.quantidade}×',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: colorScheme.primary)),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(produto.nome, style: const TextStyle(fontSize: 14, height: 1.3)),
+                            if (item.quantidade > 1)
+                              Text('${moeda.format(item.precoUnitario)} cada',
+                                  style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                            if ((item.observacaoCliente ?? '').isNotEmpty)
+                              Text('"${item.observacaoCliente}"',
+                                  style: TextStyle(
+                                      fontSize: 12, fontStyle: FontStyle.italic, color: Colors.amber.shade300)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(moeda.format(item.precoTotal), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Column(
+              children: [
+                linhaTotal('Subtotal', moeda.format(venda.subtotal)),
+                if (venda.desconto > 0)
+                  linhaTotal(
+                      venda.cupomCodigo != null
+                          ? 'Cupom ${venda.cupomCodigo}${venda.cupomRegra != null ? ' (${venda.cupomRegra})' : ''}'
+                          : venda.campanhaMarketplace != null
+                              ? 'Desconto (${venda.campanhaMarketplace})'
+                              : venda.canalVenda == 'loja_fisica'
+                                  ? 'Desconto manual'
+                                  : 'Desconto',
+                      '− ${moeda.format(venda.desconto)}'),
+                if (venda.desconto > 0 && venda.ehMarketplace)
+                  for (final (rotulo, valor) in [
+                    ('Custeado pela iFood', venda.promocaoReembolsadaIfood),
+                    ('Custeado pela loja', venda.custoPromocaoPropriaIfood),
+                    ('Custeado por patrocinador externo', venda.custoPromocaoExterna),
+                    ('Custeado pela rede de lojas', venda.custoPromocaoRede),
+                  ])
+                    if ((valor ?? 0) > 0)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 12, top: 2),
+                          child: Text('$rotulo: ${moeda.format(valor)}',
+                              style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                        ),
+                      ),
+                if (venda.saldoUsado > 0) linhaTotal('Saldo usado', '− ${moeda.format(venda.saldoUsado)}'),
+                if (venda.petcashUsado > 0) linhaTotal('PetCash usado', '− ${moeda.format(venda.petcashUsado)}'),
+                if (venda.temEntrega)
+                  linhaTotal('Entrega', venda.freteGratisIfood ? 'Grátis' : moeda.format(venda.valorEntrega)),
+                if ((venda.jurosParcelamento ?? 0) > 0)
+                  linhaTotal('Juros do parcelamento (${venda.parcelasCartao}x)', moeda.format(venda.jurosParcelamento!)),
+                if ((venda.taxaServicoCliente ?? 0) > 0)
+                  linhaTotal('Taxa de serviço iFood (fica com o iFood)', moeda.format(venda.taxaServicoCliente!)),
+                const SizedBox(height: 2),
+                linhaTotal('Total', moeda.format(venda.valorTotal), forte: true),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 18, 12, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text('#${venda.numeroSequencial ?? '-'} · ${venda.cliente.nome}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
+                        ),
+                        const SizedBox(width: 8),
+                        CategoriaClienteBadge(categoria: venda.cliente.categoriaCliente),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text.rich(
+                      TextSpan(
+                        text: subtitulo,
+                        children: [
+                          if (ordem != null)
+                            TextSpan(
+                              text: ' · $ordemº pedido',
+                              style: TextStyle(
+                                  color: ordem == 1 ? colorScheme.primary : null, fontWeight: FontWeight.w700),
+                            ),
+                        ],
+                      ),
+                      style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.sticky_note_2_outlined, size: 18, color: Colors.amber.shade400),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text.rich(
-                      TextSpan(children: [
-                        TextSpan(
-                            text: 'Observação do cliente: ',
-                            style: TextStyle(fontWeight: FontWeight.w700, color: Colors.amber.shade300)),
-                        TextSpan(text: '"${venda.observacao}"', style: const TextStyle(fontStyle: FontStyle.italic)),
-                      ]),
+              if (mensagemStatus != null) ...[
+                OutlinedButton.icon(
+                  onPressed: () => enviarMensagemStatusWhatsApp(context, venda, mensagemStatus),
+                  icon: const Icon(Icons.message, size: 18, color: Colors.green),
+                  label: const Text('WhatsApp  ·  W'),
+                ),
+                const SizedBox(width: 4),
+              ],
+              PopupMenuButton<VoidCallback>(
+                tooltip: 'Mais ações',
+                icon: const Icon(Icons.more_vert),
+                onSelected: (acao) => acao(),
+                itemBuilder: (_) => [
+                  PopupMenuItem<VoidCallback>(
+                    value: () => _abrirCompleto(venda),
+                    child: const ListTile(
+                      leading: Icon(Icons.open_in_full),
+                      title: Text('Abrir pedido completo'),
+                      subtitle: Text('Cancelar, estornar, editar itens, cliente, financeiro e recibo'),
+                      contentPadding: EdgeInsets.zero,
                     ),
                   ),
                 ],
               ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerLow,
+              border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.6)),
+              borderRadius: BorderRadius.circular(10),
             ),
-          ],
-        ],
-      ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _barraEtapas(venda),
+                if (acoes.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Wrap(alignment: WrapAlignment.end, spacing: 10, runSpacing: 8, children: acoes),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 3, child: itensCartao),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: ListView(
+                    children: [
+                      _cartaoPc(titulo: venda.retirada ? 'Retirada' : 'Entrega', filhos: entrega),
+                      const SizedBox(height: 12),
+                      _cartaoPc(titulo: 'Pagamento', filhos: pagamento),
+                      if (venda.observacao.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _cartaoPc(
+                          titulo: 'Observação do cliente',
+                          fundo: Colors.amber.withValues(alpha: 0.08),
+                          borda: Colors.amber.withValues(alpha: 0.45),
+                          corTitulo: Colors.amber.shade300,
+                          filhos: [_textoCartao('"${venda.observacao}"', estilo: FontStyle.italic)],
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      _cartaoPc(
+                        titulo: 'Histórico',
+                        filhos: [_HistoricoPedidoPc(key: ValueKey('${venda.idVenda}|${venda.status}'), venda: venda)],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -1036,7 +1384,6 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                             urgencia: urgencia,
                             ifoodEstourado: ifoodEstourado,
                             corUrgencia: corUrgencia,
-                            chipsInfo: chipsInfo,
                             currencyFormat: currencyFormat,
                           );
                         }
@@ -1269,6 +1616,56 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Histórico de status do pedido aberto no PC (mesma consulta da aba
+/// Histórico da tela completa). A chave inclui o status, então recarrega
+/// sozinho quando o pedido avança.
+class _HistoricoPedidoPc extends StatefulWidget {
+  final Venda venda;
+
+  const _HistoricoPedidoPc({super.key, required this.venda});
+
+  @override
+  State<_HistoricoPedidoPc> createState() => _HistoricoPedidoPcState();
+}
+
+class _HistoricoPedidoPcState extends State<_HistoricoPedidoPc> {
+  late final Future<List<EventoStatusPedido>> _eventos = widget.venda.idVenda == null
+      ? Future.value(const <EventoStatusPedido>[])
+      : VendaRepository().historicoStatus(widget.venda.idVenda!);
+
+  @override
+  Widget build(BuildContext context) {
+    final apagado = Theme.of(context).colorScheme.onSurfaceVariant;
+    final hoje = DateTime.now();
+    return FutureBuilder<List<EventoStatusPedido>>(
+      future: _eventos,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const LinearProgressIndicator(minHeight: 2);
+        }
+        if (snapshot.hasError) {
+          return Text('Não foi possível carregar o histórico.', style: TextStyle(fontSize: 13, color: apagado));
+        }
+        final eventos = snapshot.data ?? const [];
+        if (eventos.isEmpty) return Text('Sem histórico.', style: TextStyle(fontSize: 13, color: apagado));
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final e in eventos)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '${DateFormat(e.dataHora.year == hoje.year && e.dataHora.month == hoje.month && e.dataHora.day == hoje.day ? 'HH:mm' : 'dd/MM HH:mm').format(e.dataHora.toLocal())} · ${StatusPedido.rotulo(e.status)}',
+                  style: TextStyle(fontSize: 13, color: apagado),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

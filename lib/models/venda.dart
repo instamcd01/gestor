@@ -525,6 +525,22 @@ class Venda {
     }
   }
 
+  /// Texto da forma de pagamento — o mesmo no detalhe do pedido e no painel
+  /// da Fila no PC (um lugar só pra não desalinhar).
+  String get resumoFormaPagamento {
+    if (ehMarketplace) {
+      return '$metodoPagamento — ${pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}';
+    }
+    if (pagoOnline) {
+      // "Pagamento Online" sozinho não dizia se foi crédito/débito/Pix nem
+      // quantas parcelas — usa o detalhe real quando disponível (pedidos
+      // antigos, de antes dessa informação ser gravada, caem no rótulo
+      // genérico mesmo).
+      return '${detalheFormaPagamentoOnline ?? metodoPagamento} — já pago, NÃO cobrar na entrega';
+    }
+    return metodoPagamento;
+  }
+
   bool get cancelada => status == StatusPedido.cancelado;
   bool get finalizada => status == StatusPedido.entregue;
   bool get aguardandoPagamento => status == StatusPedido.aguardandoPagamento;

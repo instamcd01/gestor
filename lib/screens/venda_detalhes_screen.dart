@@ -28,10 +28,7 @@ import 'separacao_pedido_screen.dart';
 class VendaDetalhesScreen extends StatefulWidget {
   final Venda venda;
 
-  /// Painel embutido (Fila de Pedidos no PC): sem seta de voltar.
-  final bool embutido;
-
-  const VendaDetalhesScreen({super.key, required this.venda, this.embutido = false});
+  const VendaDetalhesScreen({super.key, required this.venda});
 
   @override
   State<VendaDetalhesScreen> createState() => _VendaDetalhesScreenState();
@@ -103,19 +100,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
 
   /// Usado tanto no resumo fixo (topo) quanto no card "Pagamento" da aba —
   /// mesmo texto nos dois lugares, um método só pra não desalinhar depois.
-  String _resumoFormaPagamento(Venda venda) {
-    if (venda.ehMarketplace) {
-      return '${venda.metodoPagamento} — ${venda.pagoPeloMarketplace ? "já pago pelo iFood" : "cobrar na entrega"}';
-    }
-    if (venda.pagoOnline) {
-      // "Pagamento Online" sozinho não dizia se foi crédito/débito/Pix nem
-      // quantas parcelas — usa o detalhe real quando disponível (pedidos
-      // antigos, de antes dessa informação ser gravada, caem no rótulo
-      // genérico mesmo).
-      return '${venda.detalheFormaPagamentoOnline ?? venda.metodoPagamento} — já pago, NÃO cobrar na entrega';
-    }
-    return venda.metodoPagamento;
-  }
+  String _resumoFormaPagamento(Venda venda) => venda.resumoFormaPagamento;
 
   void _verRecibo() {
     Navigator.push(context, MaterialPageRoute(builder: (_) => ReciboScreen(venda: _venda)));
@@ -603,7 +588,6 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: !widget.embutido,
         title: Text('Venda - ${venda.cliente.nome}'),
         actions: [
           if (mensagemStatus != null)
@@ -763,7 +747,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: (!widget.embutido && !cancelada && venda.proximoStatus != null)
+      bottomNavigationBar: (!cancelada && venda.proximoStatus != null)
           ? SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
