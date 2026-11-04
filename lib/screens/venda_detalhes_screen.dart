@@ -28,7 +28,10 @@ import 'separacao_pedido_screen.dart';
 class VendaDetalhesScreen extends StatefulWidget {
   final Venda venda;
 
-  const VendaDetalhesScreen({super.key, required this.venda});
+  /// Painel embutido (Fila de Pedidos no PC): sem seta de voltar.
+  final bool embutido;
+
+  const VendaDetalhesScreen({super.key, required this.venda, this.embutido = false});
 
   @override
   State<VendaDetalhesScreen> createState() => _VendaDetalhesScreenState();
@@ -600,6 +603,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !widget.embutido,
         title: Text('Venda - ${venda.cliente.nome}'),
         actions: [
           if (mensagemStatus != null)

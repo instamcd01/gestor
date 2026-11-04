@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -43,6 +44,12 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   String? _filtroModalidade; // null = todas — ver `Venda.modalidade`
   Timer? _timerUrgencia;
 
+  // Layout largo (PC): fila à esquerda + pedido aberto à direita.
+  static const larguraPc = 1200.0;
+  String? _selecionadoId;
+  final _filaFoco = FocusNode();
+  final _chaveSelecionado = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +69,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   @override
   void dispose() {
     _timerUrgencia?.cancel();
+    _filaFoco.dispose();
     super.dispose();
   }
 
@@ -346,6 +354,99 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     }
   }
 
+  void _selecionar(Venda venda) {
+    _filaFoco.requestFocus();
+    setState(() => _selecionadoId = venda.idVenda);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _chaveSelecionado.currentContext;
+      if (ctx != null) Scrollable.ensureVisible(ctx, alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+      final ctx2 = _chaveSelecionado.currentContext;
+      if (ctx2 != null) Scrollable.ensureVisible(ctx2, alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart);
+    });
+  }
+
+  /// ↑ ↓ trocam de pedido, Enter avança o status, W abre o WhatsApp e Esc
+  /// fecha — só com o foco na fila, pra não brigar com os campos do painel.
+  KeyEventResult _teclaNaFila(KeyEvent evento, List<Venda> pedidos) {
+    if (evento is! KeyDownEvent && evento is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final tecla = evento.logicalKey;
+    final atual = pedidos.indexWhere((v) => v.idVenda == _selecionadoId);
+    final selecionado = atual < 0 ? null : pedidos[atual];
+    if (tecla == LogicalKeyboardKey.escape && selecionado != null) {
+      setState(() => _selecionadoId = null);
+      return KeyEventResult.handled;
+    }
+    if ((tecla == LogicalKeyboardKey.enter || tecla == LogicalKeyboardKey.numpadEnter) &&
+        evento is KeyDownEvent &&
+        selecionado != null &&
+        selecionado.proximoStatus != null) {
+      _avancarStatus(selecionado);
+      return KeyEventResult.handled;
+    }
+    if (tecla == LogicalKeyboardKey.keyW && evento is KeyDownEvent && selecionado != null && !selecionado.ehMarketplace) {
+      final mensagem = mensagemPadraoStatus(selecionado, selecionado.status,
+          nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
+      if (mensagem != null) enviarMensagemStatusWhatsApp(context, selecionado, mensagem);
+      return KeyEventResult.handled;
+    }
+    final passo = tecla == LogicalKeyboardKey.arrowDown
+        ? 1
+        : tecla == LogicalKeyboardKey.arrowUp
+            ? -1
+            : 0;
+    if (passo == 0 || pedidos.isEmpty) return KeyEventResult.ignored;
+    final novo = atual < 0 ? 0 : (atual + passo).clamp(0, pedidos.length - 1);
+    _selecionar(pedidos[novo]);
+    return KeyEventResult.handled;
+  }
+
+  Widget _comPainel({required bool largo, required List<Venda> pedidos, required Widget lista}) {
+    if (!largo) return lista;
+    final colorScheme = Theme.of(context).colorScheme;
+    final selecionado = _selecionadoId == null ? null : pedidos.where((v) => v.idVenda == _selecionadoId).firstOrNull;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: 440,
+          child: Focus(
+            focusNode: _filaFoco,
+            onKeyEvent: (_, evento) => _teclaNaFila(evento, pedidos),
+            child: lista,
+          ),
+        ),
+        const VerticalDivider(width: 1),
+        Expanded(
+          child: selecionado == null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.touch_app_outlined, size: 40, color: colorScheme.onSurfaceVariant),
+                      const SizedBox(height: 12),
+                      const Text('Clique num pedido pra abrir aqui'),
+                      const SizedBox(height: 6),
+                      Text('↑ ↓ trocam de pedido · Enter avança o status',
+                          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                )
+              // A própria tela de detalhes, embutida (cancelar, estornar,
+              // editar itens, separação: tudo igual). A chave muda quando o
+              // pedido muda no tempo real, pra não mostrar dado velho.
+              : ClipRect(
+                  child: VendaDetalhesScreen(
+                    key: ValueKey('${selecionado.idVenda}|${selecionado.status}|${selecionado.valorTotal}|'
+                        '${selecionado.itens.length}|${selecionado.separacaoStatus}'),
+                    venda: selecionado,
+                    embutido: true,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<HistoricoVendasProvider>();
@@ -381,6 +482,13 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       pedidos = pedidos.where((v) => v.modalidade == _filtroModalidade).toList();
     }
 
+    final largo = MediaQuery.sizeOf(context).width >= larguraPc;
+    int contarAtivos(String? status) =>
+        status == null ? provider.pedidosAtivos.length : provider.pedidosAtivos.where((v) => v.status == status).length;
+    int contarHoje(String status) =>
+        provider.vendas.where((v) => v.status == status && _mesmoDia(v.dataVenda, agora)).length;
+    final aguardandoPagamento = provider.vendas.where((v) => v.status == StatusPedido.aguardandoPagamento).length;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Fila de Pedidos'),
@@ -400,7 +508,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
               child: Row(
                 children: [
                   ChoiceChip(
-                    label: const Text('Em andamento'),
+                    label: Text('Em andamento · ${contarAtivos(null)}'),
                     selected: _filtroStatus == null,
                     onSelected: (_) => setState(() => _filtroStatus = null),
                   ),
@@ -408,7 +516,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                   ...StatusPedido.emAndamento.map((status) => Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: ChoiceChip(
-                          label: Text(StatusPedido.rotulo(status)),
+                          label: Text('${StatusPedido.rotulo(status)} · ${contarAtivos(status)}'),
                           selected: _filtroStatus == status,
                           onSelected: (_) => setState(() => _filtroStatus = status),
                         ),
@@ -416,7 +524,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: const Text('Concluídos'),
+                      label: Text('Concluídos hoje · ${contarHoje(StatusPedido.entregue)}'),
                       selected: _filtroStatus == StatusPedido.entregue,
                       onSelected: (_) => setState(() => _filtroStatus = StatusPedido.entregue),
                     ),
@@ -424,13 +532,13 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: const Text('Cancelados'),
+                      label: Text('Cancelados hoje · ${contarHoje(StatusPedido.cancelado)}'),
                       selected: _filtroStatus == StatusPedido.cancelado,
                       onSelected: (_) => setState(() => _filtroStatus = StatusPedido.cancelado),
                     ),
                   ),
                   ChoiceChip(
-                    label: const Text('Aguardando pagamento'),
+                    label: Text('Aguardando pagamento${aguardandoPagamento > 0 ? ' · $aguardandoPagamento' : ''}'),
                     selected: _filtroStatus == StatusPedido.aguardandoPagamento,
                     onSelected: (_) => setState(() => _filtroStatus = StatusPedido.aguardandoPagamento),
                   ),
@@ -483,7 +591,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
           ),
           if (provider.carregando || provider.atualizandoFila) const LinearProgressIndicator(),
           Expanded(
-            child: provider.erro != null && pedidos.isEmpty
+            child: _comPainel(
+              largo: largo,
+              pedidos: pedidos,
+              lista: provider.erro != null && pedidos.isEmpty
                 ? EstadoErroLista(mensagem: provider.erro!, onTentarNovamente: provider.atualizarFila)
                 : pedidos.isEmpty
                 ? RefreshIndicator(
@@ -532,13 +643,18 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                         final corUrgencia = _corUrgencia(urgencia);
                         final chipsInfo = _chipsInfo(context, venda);
 
+                        final selecionado = largo && venda.idVenda == _selecionadoId;
                         return Card(
+                          key: selecionado ? _chaveSelecionado : null,
                           margin: const EdgeInsets.only(bottom: 10),
+                          color: selecionado ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.14) : null,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
-                            side: urgencia == _Urgencia.neutro
-                                ? BorderSide.none
-                                : BorderSide(color: corUrgencia, width: 1.5),
+                            side: selecionado
+                                ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 2)
+                                : urgencia == _Urgencia.neutro
+                                    ? BorderSide.none
+                                    : BorderSide(color: corUrgencia, width: 1.5),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.all(12),
@@ -546,10 +662,12 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 InkWell(
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(builder: (_) => VendaDetalhesScreen(venda: venda)),
-                                  ),
+                                  onTap: () => largo
+                                      ? _selecionar(venda)
+                                      : Navigator.push(
+                                          context,
+                                          MaterialPageRoute(builder: (_) => VendaDetalhesScreen(venda: venda)),
+                                        ),
                                   child: Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -745,7 +863,20 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                       },
                     ),
                   ),
+            ),
           ),
+          if (largo) ...[
+            const Divider(height: 1),
+            Container(
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '↑ ↓ trocar de pedido     ·     Enter avançar status     ·     W WhatsApp     ·     Esc fechar',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ),
+          ],
         ],
       ),
     );
