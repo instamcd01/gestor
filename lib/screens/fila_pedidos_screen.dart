@@ -1148,6 +1148,93 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     );
   }
 
+  /// Filtros no PC: status em abas numa linha só (como no desenho) e a
+  /// modalidade num seletor compacto à direita. Mesmos filtros do celular.
+  Widget _abasPc(List<({String rotulo, String? valor})> abas) {
+    final tema = Theme.of(context);
+    final cores = tema.colorScheme;
+    const modalidades = <(String?, String, IconData)>[
+      (null, 'Todas modalidades', Icons.local_shipping_outlined),
+      ('expressa', 'Expressa', Icons.bolt_outlined),
+      ('economica', 'Econômica', Icons.savings_outlined),
+      ('agendada', 'Agendada', Icons.event_outlined),
+      ('retirada', 'Retirada', Icons.storefront),
+    ];
+    final modalidadeAtual = modalidades.firstWhere((m) => m.$1 == _filtroModalidade);
+    return Container(
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: cores.outlineVariant))),
+      padding: const EdgeInsets.only(left: 8, right: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final aba in abas)
+                    InkWell(
+                      onTap: () => setState(() => _filtroStatus = aba.valor),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(
+                              width: 3,
+                              color: _filtroStatus == aba.valor ? cores.primary : Colors.transparent,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          aba.rotulo,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: _filtroStatus == aba.valor ? FontWeight.w600 : FontWeight.w400,
+                            color: _filtroStatus == aba.valor ? cores.primary : cores.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Menu do Flutter trata valor null como "cancelou"; por isso
+          // "Todas" usa '' e vira null aqui.
+          PopupMenuButton<String>(
+            tooltip: 'Filtrar por modalidade',
+            initialValue: _filtroModalidade ?? '',
+            onSelected: (v) => setState(() => _filtroModalidade = v.isEmpty ? null : v),
+            itemBuilder: (_) => [
+              for (final m in modalidades)
+                PopupMenuItem<String>(
+                  value: m.$1 ?? '',
+                  child: Row(children: [Icon(m.$3, size: 18), const SizedBox(width: 10), Text(m.$2)]),
+                ),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _filtroModalidade == null ? cores.outlineVariant : cores.primary),
+                color: _filtroModalidade == null ? null : cores.primaryContainer,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(modalidadeAtual.$3, size: 18),
+                  const SizedBox(width: 8),
+                  Text(modalidadeAtual.$2, style: const TextStyle(fontSize: 14)),
+                  const Icon(Icons.arrow_drop_down, size: 20),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<HistoricoVendasProvider>();
@@ -1198,6 +1285,17 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     int contarHoje(String status) =>
         provider.vendas.where((v) => v.status == status && _mesmoDia(v.dataVenda, agora)).length;
     final aguardandoPagamento = provider.vendas.where((v) => v.status == StatusPedido.aguardandoPagamento).length;
+    final abasStatus = <({String rotulo, String? valor})>[
+      (rotulo: 'Em andamento · ${contarAtivos(null)}', valor: null),
+      for (final status in StatusPedido.emAndamento)
+        (rotulo: '${StatusPedido.rotulo(status)} · ${contarAtivos(status)}', valor: status),
+      (rotulo: 'Concluídos hoje · ${contarHoje(StatusPedido.entregue)}', valor: StatusPedido.entregue),
+      (rotulo: 'Cancelados hoje · ${contarHoje(StatusPedido.cancelado)}', valor: StatusPedido.cancelado),
+      (
+        rotulo: 'Aguardando pagamento${aguardandoPagamento > 0 ? ' · $aguardandoPagamento' : ''}',
+        valor: StatusPedido.aguardandoPagamento
+      ),
+    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -1234,7 +1332,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       ),
       body: Column(
         children: [
-          Padding(
+          if (largo) _abasPc(abasStatus),
+          if (!largo) Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -1279,7 +1378,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
               ),
             ),
           ),
-          Padding(
+          if (!largo) Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
