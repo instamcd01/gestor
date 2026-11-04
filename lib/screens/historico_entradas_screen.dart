@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -163,10 +164,21 @@ class _HistoricoEntradasScreenState extends State<HistoricoEntradasScreen> {
   }
 
   @override
+  void dispose() {
+    _conferenciaAlterada.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final entradaProvider = context.watch<EntradaProvider>();
     final despesas = context.watch<DespesaProvider>().despesas;
     final carregandoPrimeiraVez = _carregandoPainel && _chegaram.isEmpty && entradaProvider.entradas.isEmpty;
+
+    // PC: lista de notas + conferência ao lado (ver `_layoutPc`).
+    if (MediaQuery.sizeOf(context).width >= 1200) {
+      return _layoutPc(context, entradaProvider, despesas, carregandoPrimeiraVez);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -198,6 +210,504 @@ class _HistoricoEntradasScreenState extends State<HistoricoEntradasScreen> {
                     ],
                   ),
                 ),
+    );
+  }
+
+
+  // ───────────────────────── PC (janela ≥ 1200 px) ─────────────────────────
+  //
+  // Lista de notas à esquerda e a conferência da nota escolhida ao lado — a
+  // conferência é a própria ImportarNotaFiscalScreen (embutida), então
+  // custo, estoque, boletos e bonificação seguem a regra de sempre.
+
+  String? _chaveSelecionada;
+  final _conferenciaAlterada = ValueNotifier<bool>(false);
+  final Set<String> _mesesAbertos = {};
+
+  /// Muda a cada cancelar/concluir: a conferência é recriada do zero (sem
+  /// isso, cancelar voltava pra mesma nota com o que tinha sido digitado).
+  int _versaoConferencia = 0;
+
+  _NotaChegou? get _notaSelecionada =>
+      _chegaram.where((n) => n.pendente.chave == _chaveSelecionada).firstOrNull;
+
+  Future<bool> _podeTrocarDeNota() async {
+    if (!_conferenciaAlterada.value) return true;
+    final sair = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Conferência não confirmada'),
+        content: const Text('Você mexeu nesta nota e ainda não confirmou a entrada. Trocar de nota descarta o que foi feito.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Continuar nesta')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Trocar de nota')),
+        ],
+      ),
+    );
+    if (sair == true) _conferenciaAlterada.value = false;
+    return sair == true;
+  }
+
+  Future<void> _selecionarNota(_NotaChegou? nota) async {
+    if (nota?.pendente.chave == _chaveSelecionada) return;
+    if (!await _podeTrocarDeNota() || !mounted) return;
+    setState(() => _chaveSelecionada = nota?.pendente.chave);
+  }
+
+  void _trocarNotaPorTeclado(int passo) {
+    if (_chegaram.isEmpty) return;
+    final atual = _chegaram.indexWhere((n) => n.pendente.chave == _chaveSelecionada);
+    final novo = atual < 0 ? 0 : (atual + passo).clamp(0, _chegaram.length - 1);
+    _selecionarNota(_chegaram[novo]);
+  }
+
+  Widget _layoutPc(BuildContext context, EntradaProvider entradaProvider, List<Despesa> despesas, bool carregandoPrimeiraVez) {
+    final cores = Theme.of(context).colorScheme;
+    // Escolhe a primeira nota sozinho (e a próxima depois de dar entrada).
+    if (_chaveSelecionada == null && _chegaram.isNotEmpty && !_carregandoPainel) {
+      _chaveSelecionada = _chegaram.first.pendente.chave;
+    }
+    final selecionada = _notaSelecionada;
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): () => _trocarNotaPorTeclado(1),
+        const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): () => _trocarNotaPorTeclado(-1),
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Notas Fiscais'),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              // Na barra colorida: texto e borda na cor do título (o padrão
+              // saía na cor da barra e sumia).
+              child: Builder(builder: (context) {
+                final cor = AppBarTheme.of(context).foregroundColor ?? Theme.of(context).colorScheme.onPrimary;
+                return OutlinedButton.icon(
+                  onPressed: _importarManual,
+                  style: OutlinedButton.styleFrom(foregroundColor: cor, side: BorderSide(color: cor.withValues(alpha: 0.7))),
+                  icon: const Icon(Icons.upload_file_outlined, size: 18),
+                  label: const Text('Importar XML ou chave'),
+                );
+              }),
+            ),
+            IconButton(tooltip: 'Atualizar', icon: const Icon(Icons.refresh), onPressed: _carregar),
+          ],
+          bottom: _carregandoPainel && !carregandoPrimeiraVez
+              ? const PreferredSize(preferredSize: Size.fromHeight(2), child: LinearProgressIndicator(minHeight: 2))
+              : null,
+        ),
+        body: carregandoPrimeiraVez
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _resumoPc(context, entradaProvider.entradas, despesas),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: LayoutBuilder(builder: (context, limites) {
+                      final larguraLista = (limites.maxWidth * 0.24).clamp(250.0, 360.0).toDouble();
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(width: larguraLista, child: _listaPc(context, entradaProvider.entradas)),
+                          const VerticalDivider(width: 1),
+                          Expanded(
+                            child: selecionada == null
+                                ? _conferenciaVazia(cores)
+                                : selecionada.nfe == null
+                                    ? _notaIlegivel(cores, selecionada)
+                                    : ImportarNotaFiscalScreen(
+                                        key: ValueKey('${selecionada.pendente.chave}-$_versaoConferencia'),
+                                        xmlInicial: selecionada.pendente.xml,
+                                        embutida: true,
+                                        alterada: _conferenciaAlterada,
+                                        onConcluida: () {
+                                          setState(() {
+                                            _chaveSelecionada = null;
+                                            _versaoConferencia++;
+                                          });
+                                          _carregar();
+                                        },
+                                        onCancelar: () => setState(() => _versaoConferencia++),
+                                      ),
+                          ),
+                        ],
+                      );
+                    }),
+                  ),
+                  const Divider(height: 1),
+                  Container(
+                    constraints: const BoxConstraints(minHeight: 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      [
+                        'Tab próximo campo',
+                        'Enter desce na mesma coluna',
+                        'Ctrl Enter confirmar entrada',
+                        'Alt ↑ ↓ trocar de nota',
+                      ].join('     ·     '),
+                      style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _conferenciaVazia(ColorScheme cores) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_chegaram.isEmpty ? Icons.check_circle_outline : Icons.touch_app_outlined,
+                  size: 44, color: _chegaram.isEmpty ? cores.primary : cores.onSurfaceVariant),
+              const SizedBox(height: 12),
+              Text(
+                _chegaram.isEmpty ? 'Tudo em dia — nenhuma nota esperando entrada.' : 'Escolha uma nota à esquerda pra conferir.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text('Nota nova emitida pro CNPJ da loja aparece na lista sozinha.',
+                  textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant)),
+            ],
+          ),
+        ),
+      );
+
+  Widget _notaIlegivel(ColorScheme cores, _NotaChegou nota) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 40, color: cores.error),
+              const SizedBox(height: 12),
+              const Text('Não foi possível ler os detalhes desta nota.'),
+              const SizedBox(height: 4),
+              SelectableText('Chave ${nota.pendente.chave}', style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant)),
+            ],
+          ),
+        ),
+      );
+
+  Widget _resumoPc(BuildContext context, List<Entrada> entradas, List<Despesa> despesas) {
+    final cores = Theme.of(context).colorScheme;
+    final agora = DateTime.now();
+    final hoje = DateTime(agora.year, agora.month, agora.day);
+    final limite = hoje.add(const Duration(days: 7));
+    // Mesmas contas do resumo do celular (`_resumoDoMes`).
+    final doMes = entradas.where((e) {
+      final data = e.dataEntrada.toLocal();
+      return data.year == agora.year && data.month == agora.month;
+    }).toList();
+    final comprado = doMes.fold<double>(0, (s, e) => s + (e.valorTotalNota ?? e.valorTotalProdutos ?? 0));
+    final deFornecedor = despesas.where((d) => d.fornecedor != null && d.status == StatusDespesa.pendente);
+    final aVencer = deFornecedor
+        .where((d) => !d.dataVencimento.isBefore(hoje) && !d.dataVencimento.isAfter(limite))
+        .fold<double>(0, (s, d) => s + d.valor);
+    final atrasado = deFornecedor.where((d) => d.atrasada).fold<double>(0, (s, d) => s + d.valor);
+
+    Widget bloco({
+      required String rotulo,
+      required String valor,
+      String? complemento,
+      Color? corComplemento,
+      VoidCallback? onTap,
+    }) {
+      return Expanded(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
+              decoration: BoxDecoration(
+                border: Border.all(color: cores.outlineVariant),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(rotulo, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant)),
+                  Text(valor, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                  if (complemento != null)
+                    Text('$complemento${onTap != null ? ' ›' : ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: corComplemento ?? cores.onSurfaceVariant)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Row(
+        children: [
+          bloco(
+            rotulo: 'Comprado em ${_meses[agora.month - 1]}',
+            valor: _moeda.format(comprado),
+            complemento: '${doMes.length} ${doMes.length == 1 ? 'nota lançada' : 'notas lançadas'}',
+          ),
+          const SizedBox(width: 12),
+          bloco(
+            rotulo: 'Boletos de fornecedor · próximos 7 dias',
+            valor: _moeda.format(aVencer),
+            complemento: atrasado > 0 ? '${_moeda.format(atrasado)} em atraso' : 'Ver boletos',
+            corComplemento: atrasado > 0 ? cores.error : null,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DespesasScreen(
+                  filtroInicial: atrasado > 0 ? 'Atrasadas' : 'Pendentes',
+                  periodoVencimento: atrasado > 0 ? null : DateTimeRange(start: hoje, end: limite),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          bloco(
+            rotulo: 'Custo subiu, preço ainda não revisado',
+            valor: _produtosMaisCaros.isEmpty
+                ? 'Nenhum produto'
+                : '${_produtosMaisCaros.length} ${_produtosMaisCaros.length == 1 ? 'produto' : 'produtos'}',
+            complemento: _produtosMaisCaros.isEmpty ? null : 'A margem desses produtos caiu',
+            onTap: _produtosMaisCaros.isEmpty
+                ? null
+                : () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => AnaliseProdutosScreen(produtosRevisarPreco: _produtosMaisCaros)),
+                    );
+                    if (mounted) _carregar();
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tituloPc(ColorScheme cores, String titulo, {String? detalhe}) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+        child: Text.rich(
+          TextSpan(
+            text: titulo.toUpperCase(),
+            style: const TextStyle(fontSize: 11, letterSpacing: 0.5, fontWeight: FontWeight.w700),
+            children: [
+              if (detalhe != null)
+                TextSpan(
+                  text: ' · $detalhe',
+                  style: TextStyle(fontWeight: FontWeight.w400, letterSpacing: 0, color: cores.onSurfaceVariant),
+                ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _listaPc(BuildContext context, List<Entrada> entradas) {
+    final cores = Theme.of(context).colorScheme;
+    final agora = DateTime.now();
+
+    final porMes = <String, List<Entrada>>{};
+    for (final e in entradas) {
+      final data = e.dataEntrada.toLocal();
+      porMes.putIfAbsent('${data.year}-${data.month.toString().padLeft(2, '0')}', () => []).add(e);
+    }
+    final chaves = porMes.keys.toList()..sort((a, b) => b.compareTo(a));
+    final mesAtual = '${agora.year}-${agora.month.toString().padLeft(2, '0')}';
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: [
+        _tituloPc(cores, 'Chegou da Sefaz', detalhe: _chegaram.isEmpty ? 'tudo em dia' : 'falta dar entrada (${_chegaram.length})'),
+        if (_erroPainel != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(_erroPainel!, style: TextStyle(fontSize: 12, color: cores.error)),
+          ),
+        for (final nota in _chegaram) _linhaNotaPc(context, nota),
+        if (_aCaminho.isNotEmpty) ...[
+          _tituloPc(cores, 'A caminho', detalhe: 'pedido enviado, nota ainda não chegou (${_aCaminho.length})'),
+          for (final pedido in _aCaminho)
+            Builder(builder: (context) {
+              final enviadoEm = pedido.dataEnvio ?? pedido.dataConfirmacao ?? pedido.createdAt;
+              final dias = enviadoEm == null ? null : agora.difference(enviadoEm.toLocal()).inDays;
+              final previsao = pedido.dataPrevistaEntrega?.toLocal();
+              final atrasado = previsao != null && previsao.isBefore(DateTime(agora.year, agora.month, agora.day));
+              return ListTile(
+                dense: true,
+                title: Text(pedido.fornecedor.nome, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(
+                  [
+                    'Pedido #${pedido.numeroSequencial ?? ''}',
+                    if (dias != null) dias == 0 ? 'enviado hoje' : 'enviado há $dias ${dias == 1 ? 'dia' : 'dias'}',
+                    if (atrasado) 'atrasado (previsto ${_dataCurta.format(previsao)})',
+                  ].join(' · '),
+                  style: atrasado ? TextStyle(color: cores.error) : null,
+                ),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => PedidoCompraDetalheScreen(pedidoId: pedido.id!)),
+                  );
+                  if (mounted) _carregar();
+                },
+              );
+            }),
+        ],
+        _tituloPc(cores, 'Já lançadas'),
+        if (entradas.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text('Nenhuma nota lançada ainda.', style: TextStyle(color: cores.onSurfaceVariant)),
+          ),
+        for (final chave in chaves) ...[
+          Builder(builder: (context) {
+            final ano = int.parse(chave.substring(0, 4));
+            final mes = int.parse(chave.substring(5));
+            final total = porMes[chave]!.fold<double>(0, (s, e) => s + (e.valorTotalNota ?? e.valorTotalProdutos ?? 0));
+            final rotulo = ano == agora.year ? _meses[mes - 1] : '${_meses[mes - 1]} de $ano';
+            final aberto = chave == mesAtual ? !_mesesAbertos.contains('-$chave') : _mesesAbertos.contains(chave);
+            return InkWell(
+              onTap: () => setState(() {
+                // Mês atual começa aberto (marca '-chave' pra fechar); os outros, fechados.
+                if (chave == mesAtual) {
+                  _mesesAbertos.contains('-$chave') ? _mesesAbertos.remove('-$chave') : _mesesAbertos.add('-$chave');
+                } else {
+                  _mesesAbertos.contains(chave) ? _mesesAbertos.remove(chave) : _mesesAbertos.add(chave);
+                }
+              }),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+                child: Row(
+                  children: [
+                    Icon(aberto ? Icons.expand_more : Icons.chevron_right, size: 18, color: cores.onSurfaceVariant),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text('${rotulo[0].toUpperCase()}${rotulo.substring(1)} (${porMes[chave]!.length})',
+                          style: TextStyle(fontWeight: FontWeight.w600, color: cores.onSurfaceVariant)),
+                    ),
+                    Text(_moeda.format(total), style: TextStyle(color: cores.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            );
+          }),
+          if (chave == mesAtual ? !_mesesAbertos.contains('-$chave') : _mesesAbertos.contains(chave))
+            for (final entrada in porMes[chave]!)
+              ListTile(
+                dense: true,
+                title: Text(entrada.fornecedor?.nome ?? 'Fornecedor não informado', maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(
+                  [
+                    if (entrada.nfeNumero != null) 'NF ${entrada.nfeNumero}',
+                    _dataCurta.format(entrada.dataEntrada.toLocal()),
+                    if (entrada.pedidoCompraNumero != null) 'Pedido #${entrada.pedidoCompraNumero}',
+                  ].join(' · '),
+                ),
+                trailing: Text(
+                  _moeda.format(entrada.valorTotalNota ?? entrada.valorTotalProdutos ?? 0),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+        ],
+      ],
+    );
+  }
+
+  Widget _linhaNotaPc(BuildContext context, _NotaChegou nota) {
+    final cores = Theme.of(context).colorScheme;
+    final nfe = nota.nfe;
+    final pedido = nota.pedidoAberto;
+    final selecionada = nota.pendente.chave == _chaveSelecionada;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 3, 10, 3),
+      child: Material(
+        color: selecionada ? cores.primary.withValues(alpha: 0.10) : Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: selecionada ? cores.primary : cores.outlineVariant),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => _selecionarNota(nota),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(nfe?.fornecedorDetectado.nome ?? 'Nota ${nota.pendente.chave}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                          ),
+                          if (nfe != null)
+                            Text(_moeda.format(nfe.valorTotalNota),
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                        ],
+                      ),
+                      Text(
+                        nfe == null
+                            ? 'Não foi possível ler os detalhes desta nota.'
+                            : [
+                                'NF ${nfe.numero ?? '?'}',
+                                if (nfe.dataEmissao != null) 'emitida ${_dataCurta.format(nfe.dataEmissao!)}',
+                                '${nfe.itens.length} ${nfe.itens.length == 1 ? 'item' : 'itens'}',
+                              ].join(' · '),
+                        style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant),
+                      ),
+                      if (pedido != null)
+                        Text('Bate com o Pedido #${pedido.numeroSequencial ?? ''}, em aberto',
+                            style: TextStyle(fontSize: 12, color: cores.primary, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+                if (nfe != null)
+                  PopupMenuButton<String>(
+                    tooltip: 'Mais opções',
+                    iconSize: 18,
+                    padding: EdgeInsets.zero,
+                    onSelected: (_) async {
+                      if (!await _podeTrocarDeNota() || !mounted) return;
+                      if (await dispensarNotaNaoMercadoria(context, nota.pendente, nfe) && mounted) {
+                        if (_chaveSelecionada == nota.pendente.chave) setState(() => _chaveSelecionada = null);
+                        _carregar();
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'nao_mercadoria',
+                        child: ListTile(
+                          leading: Icon(Icons.receipt_long_outlined),
+                          title: Text('Não é mercadoria'),
+                          subtitle: Text('Lançar como despesa ou dispensar'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 

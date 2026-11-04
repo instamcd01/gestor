@@ -93,7 +93,26 @@ class ImportarNotaFiscalScreen extends StatefulWidget {
   /// confirmar ou cancelar, volta pra tela de origem.
   final String? xmlInicial;
 
-  const ImportarNotaFiscalScreen({super.key, this.pedidoCompra, this.xmlInicial});
+  /// PC: a conferência aparece ao lado da lista de notas (tela de Notas
+  /// Fiscais), sem barra de título própria. Concluir/cancelar chamam os
+  /// callbacks em vez de fechar a tela.
+  final bool embutida;
+  final VoidCallback? onConcluida;
+  final VoidCallback? onCancelar;
+
+  /// Fica true quando o usuário mexe em algo desta conferência (pra quem
+  /// embute avisar antes de trocar de nota e perder o que foi feito).
+  final ValueNotifier<bool>? alterada;
+
+  const ImportarNotaFiscalScreen({
+    super.key,
+    this.pedidoCompra,
+    this.xmlInicial,
+    this.embutida = false,
+    this.onConcluida,
+    this.onCancelar,
+    this.alterada,
+  });
 
   @override
   State<ImportarNotaFiscalScreen> createState() => _ImportarNotaFiscalScreenState();
@@ -218,8 +237,16 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     await _processarXml(xml);
   }
 
+  /// Campos da tabela do PC por coluna+linha — Enter desce pra mesma coluna.
+  final Map<String, FocusNode> _focosPc = {};
+  FocusNode _focoPc(String coluna, int linha) =>
+      _focosPc.putIfAbsent('$coluna-$linha', () => FocusNode(debugLabel: 'nfe-$coluna-$linha'));
+
   @override
   void dispose() {
+    for (final f in _focosPc.values) {
+      f.dispose();
+    }
     _limparControllers();
     _fatorController.dispose();
     _chaveAcessoController.dispose();
@@ -303,9 +330,12 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   /// gravar/comparar. Ajustar aqui vale só pra essa importação, não
   /// sobrescreve o padrão salvo no cadastro do fornecedor. Itens com
   /// quantidade/custo editados à mão ficam de fora do recálculo.
+  void _marcarAlterada() => widget.alterada?.value = true;
+
   void _reaplicarFator(double novoFator) {
     final nfe = _nfe;
     if (nfe == null || novoFator <= 0) return;
+    _marcarAlterada();
     setState(() {
       for (var i = 0; i < _itensResolvidos.length; i++) {
         if (_itensComValorManual.contains(i)) continue;
@@ -563,6 +593,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       await produtoProvider.atualizarProduto(escolhido);
     }
 
+    _marcarAlterada();
     setState(() {
       _itensResolvidos[index] = item.copyWith(produtoId: escolhido.id, produtoIdDefinir: true);
     });
@@ -606,6 +637,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     // Só grava quando a data digitada é completa e válida — dígitos
     // parciais não mexem no item (nem apagam uma validade já preenchida).
     if (data == null) return;
+    _marcarAlterada();
     _itensResolvidos[index] = item.copyWith(dataValidade: data, dataValidadeDefinir: true);
   }
 
@@ -618,6 +650,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final nfe = _nfe;
     final unidades = int.tryParse(texto.trim());
     if (nfe == null || unidades == null || unidades < 1) return;
+    _marcarAlterada();
     final fator = ProdutoValidators.parseNumero(_fatorController.text) ?? 1.0;
     setState(() {
       _embalagemPorItem[index] = unidades;
@@ -636,6 +669,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final quantidade = ProdutoValidators.parseNumero(_controllerQuantidade(index).text);
     final custo = ProdutoValidators.parseNumero(_controllerCusto(index).text);
     if (quantidade == null || custo == null) return;
+    _marcarAlterada();
 
     setState(() {
       _itensComValorManual.add(index);
@@ -931,6 +965,15 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         duration: const Duration(seconds: 6),
       );
 
+      // Embutida ao lado da lista (PC): avisa quem embute, que recarrega a lista.
+      if (widget.embutida) {
+        widget.alterada?.value = false;
+        messenger.showSnackBar(avisoImportada);
+        widget.onConcluida?.call();
+        if (revisarPrecos) abrirRevisaoPrecos();
+        return;
+      }
+
       // Aberta a partir de uma nota de "Chegou da Sefaz": volta pra lista.
       if (widget.xmlInicial != null) {
         navigator.pop(true);
@@ -963,6 +1006,33 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // PC (janela larga): conferência em tabela, uma linha por item, com os
+    // mesmos campos e regras da versão em cartões (ver `_previaPc`).
+    final largo = MediaQuery.sizeOf(context).width >= 1200;
+    if (largo && (widget.embutida || _temPreVia)) {
+      return CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
+            if (!_processando && _temPreVia) _confirmar();
+          },
+        },
+        child: Scaffold(
+          appBar: widget.embutida
+              ? null
+              : AppBar(
+                  title: Text(widget.pedidoCompra != null
+                      ? 'Receber Pedido #${widget.pedidoCompra!.numeroSequencial ?? ''}'
+                      : 'Importar Nota Fiscal'),
+                ),
+          body: _processando
+              ? const Center(child: CircularProgressIndicator())
+              : _temPreVia
+                  ? _previaPc(context)
+                  : _estadoInicial(context),
+          bottomNavigationBar: !_processando && _temPreVia ? _barraConfirmarPc(context) : null,
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -1363,6 +1433,11 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   }
 
   void _cancelarPrevia() {
+    if (widget.embutida) {
+      widget.alterada?.value = false;
+      widget.onCancelar?.call();
+      return;
+    }
     // Veio de uma nota da lista "Chegou da Sefaz": cancelar volta pra lá.
     if (widget.xmlInicial != null) {
       Navigator.pop(context);
@@ -1468,6 +1543,574 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       item.custoUnitario > 0 &&
       _custosDivergem(produto.custo, item.custoUnitario) &&
       item.custoUnitario > produto.custo;
+
+
+  // ───────────────────────── PC: conferência em tabela ─────────────────────────
+  //
+  // Mesmos campos (controllers), mesmas funções (_digitarQuantidadeOuCusto,
+  // _definirEmbalagem, _digitarValidade, _vincularProduto, _cadastrarNovoProduto,
+  // _reaplicarFator, _confirmar) e mesmos avisos da versão em cartões — só o
+  // desenho muda. A coluna Margem é só informativa (preço de venda atual).
+
+  Widget _previaPc(BuildContext context) {
+    final nfe = _nfe!;
+    final cores = Theme.of(context).colorScheme;
+    final produtos = _produtosPorId;
+    final bonificacao = _ehBonificacao ? _custosMediosBonificacao(produtos) : null;
+
+    final indicesVinculo = <int>[];
+    final indicesCustoMaior = <int>{};
+    for (var i = 0; i < _itensResolvidos.length; i++) {
+      final item = _itensResolvidos[i];
+      if (!item.casado) indicesVinculo.add(i);
+      if (_custoSubiu(item, produtos[item.produtoId])) indicesCustoMaior.add(i);
+    }
+    var filtro = _filtroItens;
+    if ((filtro == _FiltroItens.vinculo && indicesVinculo.isEmpty) ||
+        (filtro == _FiltroItens.custoMaior && indicesCustoMaior.isEmpty)) {
+      filtro = _FiltroItens.todos;
+    }
+    bool passa(int i) => switch (filtro) {
+          _FiltroItens.todos => true,
+          _FiltroItens.vinculo => !_itensResolvidos[i].casado,
+          _FiltroItens.custoMaior => indicesCustoMaior.contains(i),
+          _FiltroItens.prontos => _itensResolvidos[i].casado,
+        };
+    final visiveis = <int>[for (var i = 0; i < _itensResolvidos.length; i++) if (passa(i)) i];
+    // Sem vínculo primeiro (é o que trava o estoque), depois a ordem da nota.
+    visiveis.sort((a, b) {
+      final x = (_itensResolvidos[a].casado ? 1 : 0).compareTo(_itensResolvidos[b].casado ? 1 : 0);
+      return x != 0 ? x : a.compareTo(b);
+    });
+
+    Widget chip(_FiltroItens valor, String rotulo, {Color? cor}) => ChoiceChip(
+          label: Text(rotulo, style: cor != null && filtro != valor ? TextStyle(color: cor) : null),
+          selected: filtro == valor,
+          showCheckmark: false,
+          onSelected: (_) => setState(() => _filtroItens = valor),
+        );
+
+    return LayoutBuilder(builder: (context, limites) {
+      final compacto = limites.maxWidth < 1000;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 12, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            'NF ${nfe.numero ?? "?"} / série ${nfe.serie ?? "?"} · '
+                            '${_fornecedorExistente?.nome ?? nfe.fornecedorDetectado.nome}',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                          ),
+                          if (_pedidoDaNota != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: cores.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text('Pedido #${_pedidoDaNota!.numeroSequencial ?? ''}',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: cores.primary)),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        [
+                          if (nfe.dataEmissao != null) 'Emitida em ${_data.format(nfe.dataEmissao!)}',
+                          _fornecedorExistente != null ? 'fornecedor já cadastrado' : 'fornecedor novo, será cadastrado',
+                          '${_itensResolvidos.length} ${_itensResolvidos.length == 1 ? 'item' : 'itens'}',
+                        ].join(' · '),
+                        style: TextStyle(fontSize: 13, color: cores.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!_ehBonificacao) ...[
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 150,
+                    child: Tooltip(
+                      message: 'Ajusta o custo unitário dos itens (não muda o valor dos boletos). '
+                          'Vale só pra essa nota — o padrão do fornecedor fica em Fornecedores.',
+                      child: TextFormField(
+                        controller: _fatorController,
+                        decoration: const InputDecoration(labelText: 'Fator de custo', isDense: true),
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [DecimalInputFormatter()],
+                        onChanged: (texto) {
+                          final valor = ProdutoValidators.parseNumero(texto);
+                          if (valor != null && valor > 0) _reaplicarFator(valor);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(width: 16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('Total da nota', style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant)),
+                    Text(_moeda.format(nfe.valorTotalNota),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (widget.pedidoCompra != null)
+            Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), child: _bannerPedidoVinculado(context))
+          else if (_pedidosAbertos.isNotEmpty)
+            Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), child: _cardEscolherPedido(context)),
+          if (_ehBonificacao)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: AvisoBanner(
+                texto: 'Nota de bonificação: os itens entram no estoque sem custo e nenhum boleto é criado. '
+                    'O custo de cada produto vira a média com o estoque já pago — importe antes a nota de compra, se houver.',
+                tipo: TipoAviso.info,
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                chip(_FiltroItens.todos, 'Todos (${_itensResolvidos.length})'),
+                if (indicesVinculo.isNotEmpty)
+                  chip(_FiltroItens.vinculo, 'Precisam de vínculo (${indicesVinculo.length})', cor: cores.error),
+                if (indicesCustoMaior.isNotEmpty)
+                  chip(_FiltroItens.custoMaior, 'Custo maior (${indicesCustoMaior.length})'),
+                chip(_FiltroItens.prontos, 'Prontos (${_itensResolvidos.length - indicesVinculo.length})'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                border: Border.all(color: cores.outlineVariant),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    color: cores.surfaceContainer,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: _linhaPc(
+                      compacto: compacto,
+                      icone: const SizedBox(),
+                      nota: _cabPc(cores, 'Item na nota'),
+                      produto: _cabPc(cores, 'Produto no sistema'),
+                      qtd: _cabPc(cores, 'Qtd', direita: true),
+                      cx: _cabPc(cores, 'Un/cx', direita: true),
+                      custo: _cabPc(cores, 'Custo un.'),
+                      margem: _cabPc(cores, 'Margem'),
+                      validade: _cabPc(cores, 'Validade'),
+                      total: _cabPc(cores, 'Total', direita: true),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: visiveis.isEmpty
+                        ? Center(child: Text('Nenhum item nesse filtro.', style: TextStyle(color: cores.onSurfaceVariant)))
+                        : ListView.builder(
+                            itemCount: visiveis.length,
+                            itemBuilder: (_, pos) =>
+                                _linhaItemPc(context, visiveis, pos, produtos, bonificacao, indicesCustoMaior, compacto),
+                          ),
+                  ),
+                  const Divider(height: 1),
+                  Container(
+                    width: double.infinity,
+                    color: cores.surfaceContainer,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    child: Wrap(
+                      spacing: 18,
+                      runSpacing: 4,
+                      children: [
+                        Text('Boletos (${nfe.parcelas.length})',
+                            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                        if (nfe.parcelas.isEmpty)
+                          Text(
+                            _ehBonificacao
+                                ? 'Bonificação: nenhum boleto é criado.'
+                                : 'Nenhuma parcela/duplicata na nota — nenhuma despesa será criada.',
+                            style: TextStyle(fontSize: 12.5, color: cores.onSurfaceVariant),
+                          ),
+                        for (var i = 0; i < nfe.parcelas.length; i++)
+                          Text(
+                            '${nfe.parcelas[i].numero}/${nfe.parcelas.length} · vence ${_data.format(nfe.parcelas[i].vencimento)} · '
+                            '${_moeda.format(nfe.parcelas[i].valor)}',
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      );
+    });
+  }
+
+  Widget _cabPc(ColorScheme cores, String texto, {bool direita = false}) => Text(
+        texto.toUpperCase(),
+        textAlign: direita ? TextAlign.right : TextAlign.left,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 10.5, letterSpacing: 0.5, fontWeight: FontWeight.w700, color: cores.onSurfaceVariant),
+      );
+
+  Widget _linhaPc({
+    required bool compacto,
+    required Widget icone,
+    required Widget nota,
+    required Widget produto,
+    required Widget qtd,
+    required Widget cx,
+    required Widget custo,
+    required Widget margem,
+    required Widget validade,
+    required Widget total,
+  }) {
+    const gap = SizedBox(width: 10);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(width: 22, child: icone),
+        gap,
+        Expanded(flex: 5, child: nota),
+        gap,
+        Expanded(flex: 5, child: produto),
+        gap,
+        SizedBox(width: compacto ? 54 : 62, child: qtd),
+        gap,
+        SizedBox(width: compacto ? 44 : 56, child: cx),
+        gap,
+        SizedBox(width: compacto ? 104 : 132, child: custo),
+        // Estreito: a margem vai pra linha de baixo do custo.
+        if (!compacto) ...[gap, SizedBox(width: 104, child: margem)],
+        gap,
+        SizedBox(width: compacto ? 98 : 108, child: validade),
+        gap,
+        SizedBox(width: compacto ? 78 : 86, child: total),
+      ],
+    );
+  }
+
+  String _pct(double v) => '${(v * 100).toStringAsFixed(1).replaceAll('.', ',')}%';
+
+  Widget _campoPc({
+    required TextEditingController controller,
+    required FocusNode foco,
+    required VoidCallback proximo,
+    required ValueChanged<String> onChanged,
+    List<TextInputFormatter>? formatos,
+    bool habilitado = true,
+    String? dica,
+    TextAlign alinhamento = TextAlign.right,
+    TextStyle? estilo,
+  }) {
+    return TextFormField(
+      controller: controller,
+      focusNode: foco,
+      enabled: habilitado,
+      textAlign: alinhamento,
+      style: (estilo ?? const TextStyle()).copyWith(fontSize: 13),
+      inputFormatters: formatos,
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: dica,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+      ),
+      onChanged: onChanged,
+      onFieldSubmitted: (_) => proximo(),
+    );
+  }
+
+  Widget _linhaItemPc(
+    BuildContext context,
+    List<int> visiveis,
+    int posicao,
+    Map<String, Produto> produtos,
+    ({Map<String, double> medios, Set<String> semEstoquePago})? bonificacao,
+    Set<int> indicesCustoMaior,
+    bool compacto,
+  ) {
+    final cores = Theme.of(context).colorScheme;
+    final i = visiveis[posicao];
+    final item = _itensResolvidos[i];
+    final produto = item.casado ? produtos[item.produtoId] : null;
+    final semVinculo = !item.casado;
+    final custoMaior = indicesCustoMaior.contains(i);
+    final embalagem = _embalagemPorItem[i] ?? 1;
+    final laranja = Colors.orange.shade800;
+    final apagado = TextStyle(fontSize: 11.5, color: cores.onSurfaceVariant);
+
+    // Enter desce pra mesma coluna na próxima linha visível.
+    void descer(String coluna) {
+      if (posicao + 1 < visiveis.length) _focoPc(coluna, visiveis[posicao + 1]).requestFocus();
+    }
+
+    // Custo: o que vale + o "antes" quando muda (mesmos avisos dos cartões).
+    String? custoAntes;
+    Color? corCusto;
+    String? avisoCusto;
+    if (produto != null && bonificacao != null) {
+      final medio = bonificacao.medios[produto.id];
+      avisoCusto = medio != null
+          ? 'grátis · médio ${_moeda.format(produto.custo)} → ${_moeda.format(medio)}'
+          : 'grátis · sem estoque pago, fica ${_moeda.format(produto.custo)}';
+      corCusto = medio == null ? cores.error : null;
+    } else if (produto != null) {
+      if (item.custoUnitario <= 0) {
+        avisoCusto = 'nota sem custo: mantém ${_moeda.format(produto.custo)}';
+      } else if (_custosDivergem(produto.custo, item.custoUnitario)) {
+        custoAntes = 'antes ${_moeda.format(produto.custo)}';
+        corCusto = item.custoUnitario > produto.custo ? laranja : cores.primary;
+      }
+    }
+
+    // Margem (informativa): preço de venda atual × custo antes e depois.
+    String margem = '—';
+    Color? corMargem;
+    if (produto != null && produto.precoVendaAtual > 0) {
+      final preco = produto.precoVendaAtual;
+      final custoNovo = bonificacao != null
+          ? (bonificacao.medios[produto.id] ?? produto.custo)
+          : (item.custoUnitario > 0 ? item.custoUnitario : produto.custo);
+      final antes = (preco - produto.custo) / preco;
+      final depois = (preco - custoNovo) / preco;
+      margem = _custosDivergem(produto.custo, custoNovo) ? '${_pct(antes)} → ${_pct(depois)}' : _pct(depois);
+      if (depois < antes - 0.0001) corMargem = laranja;
+      if (depois < 0) corMargem = cores.error;
+    }
+
+    final fundo = semVinculo
+        ? cores.error.withValues(alpha: 0.06)
+        : custoMaior
+            ? Colors.orange.withValues(alpha: 0.07)
+            : null;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: fundo,
+        border: Border(bottom: BorderSide(color: cores.outlineVariant.withValues(alpha: 0.4))),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: _linhaPc(
+        compacto: compacto,
+        icone: Tooltip(
+          message: semVinculo ? 'Sem vínculo: não soma no estoque' : 'Vinculado',
+          child: Icon(semVinculo ? Icons.error : Icons.check_circle,
+              size: 18, color: semVinculo ? cores.error : Colors.green.shade600),
+        ),
+        nota: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(item.descricaoNfe, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5)),
+            Text(
+              [
+                item.eanNfe.isEmpty ? 'sem código de barras' : 'EAN ${item.eanNfe}',
+                if ((item.codigoFornecedor ?? '').isNotEmpty) 'cód. ${item.codigoFornecedor}',
+                if (embalagem > 1 && _nfe != null) '${_formatarQuantidade(_nfe!.itens[i].quantidade)} cx de $embalagem',
+              ].join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: apagado,
+            ),
+          ],
+        ),
+        produto: semVinculo && compacto
+            ? Row(
+                children: [
+                  IconButton.outlined(
+                    tooltip: 'Vincular a um produto existente',
+                    onPressed: () => _vincularProduto(i),
+                    icon: Icon(Icons.link, size: 18, color: cores.error),
+                    style: IconButton.styleFrom(side: BorderSide(color: cores.error), visualDensity: VisualDensity.compact),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton.outlined(
+                    tooltip: 'Cadastrar produto novo',
+                    onPressed: () => _cadastrarNovoProduto(i),
+                    icon: const Icon(Icons.add_box_outlined, size: 18),
+                    style: IconButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+                ],
+              )
+            : semVinculo
+            ? Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => _vincularProduto(i),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: cores.error,
+                      side: BorderSide(color: cores.error),
+                    ),
+                    child: const Text('Vincular'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _cadastrarNovoProduto(i),
+                    style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                    child: const Text('Cadastrar novo'),
+                  ),
+                ],
+              )
+            : produto == null
+                ? Text('Produto vinculado não encontrado (pode ter sido excluído) — vincule novamente.',
+                    style: TextStyle(fontSize: 12, color: cores.error))
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(produto.nome,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                      InkWell(
+                        onTap: () => _vincularProduto(i),
+                        child: Text('trocar vínculo', style: TextStyle(fontSize: 11.5, color: cores.primary)),
+                      ),
+                    ],
+                  ),
+        qtd: _campoPc(
+          controller: _controllerQuantidade(i),
+          foco: _focoPc('qtd', i),
+          proximo: () => descer('qtd'),
+          formatos: [DecimalInputFormatter()],
+          onChanged: (_) => _digitarQuantidadeOuCusto(i),
+        ),
+        cx: _campoPc(
+          controller: _controllerEmbalagem(i),
+          foco: _focoPc('cx', i),
+          proximo: () => descer('cx'),
+          formatos: [FilteringTextInputFormatter.digitsOnly],
+          onChanged: (texto) => _definirEmbalagem(i, texto),
+        ),
+        custo: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _campoPc(
+              controller: _controllerCusto(i),
+              foco: _focoPc('custo', i),
+              proximo: () => descer('custo'),
+              habilitado: !_ehBonificacao,
+              formatos: [MoedaInputFormatter()],
+              estilo: TextStyle(color: corCusto, fontWeight: corCusto != null ? FontWeight.w700 : null),
+              onChanged: (_) => _digitarQuantidadeOuCusto(i),
+            ),
+            if (custoAntes != null || avisoCusto != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(avisoCusto ?? custoAntes!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: corCusto ?? cores.onSurfaceVariant)),
+              ),
+            if (compacto && margem != '—')
+              Text('margem $margem',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 11, color: corMargem ?? cores.onSurfaceVariant, fontWeight: corMargem != null ? FontWeight.w700 : null)),
+          ],
+        ),
+        margem: Text(margem,
+            style: TextStyle(fontSize: 12.5, color: corMargem, fontWeight: corMargem != null ? FontWeight.w700 : null)),
+        validade: _campoPc(
+          controller: _controllerValidade(i),
+          foco: _focoPc('validade', i),
+          proximo: () => descer('validade'),
+          alinhamento: TextAlign.left,
+          dica: 'DD/MM/AAAA',
+          formatos: [DataInputFormatter()],
+          onChanged: (texto) => _digitarValidade(i, texto),
+        ),
+        total: Text(_moeda.format(item.valorTotal),
+            textAlign: TextAlign.right, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+
+  Widget _barraConfirmarPc(BuildContext context) {
+    final cores = Theme.of(context).colorScheme;
+    final produtos = _produtosPorId;
+    final total = _itensResolvidos.length;
+    final semVinculo = _itensResolvidos.where((i) => !i.casado).length;
+    final custoMaior = _itensResolvidos.where((i) => _custoSubiu(i, produtos[i.produtoId])).length;
+    return Material(
+      elevation: 6,
+      color: cores.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                          text: '${total - semVinculo} ${total - semVinculo == 1 ? 'item pronto' : 'itens prontos'}',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const TextSpan(text: ' pra dar entrada'),
+                    ]),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  if (semVinculo > 0)
+                    Text('$semVinculo sem vínculo: não ${semVinculo == 1 ? 'vai' : 'vão'} somar no estoque até vincular',
+                        style: TextStyle(fontSize: 12.5, color: cores.error)),
+                  if (custoMaior > 0)
+                    Text('$custoMaior com custo maior: a margem cai (revisar preço depois de confirmar)',
+                        style: TextStyle(fontSize: 12.5, color: Colors.orange.shade800)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            OutlinedButton(
+              onPressed: _cancelarPrevia,
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              child: const Text('Cancelar'),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: FilledButton(
+                onPressed: _confirmar,
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 44), padding: const EdgeInsets.symmetric(horizontal: 20)),
+                child: Text('Confirmar entrada · ${_moeda.format(_nfe?.valorTotalNota ?? 0)} · Ctrl Enter',
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _itemCompacto(BuildContext context, int index, Produto? produto) {
     final item = _itensResolvidos[index];
