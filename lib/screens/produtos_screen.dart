@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/kit_produto_provider.dart';
@@ -31,12 +32,113 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
   bool _filtroEstoqueBaixo = false;
   String? _filtroCategoria;
 
+  // Layout largo (PC): tabela + painel de edição ao lado.
+  final _buscaFoco = FocusNode();
+  final _tabelaFoco = FocusNode();
+  final _tabelaScroll = ScrollController();
+  String? _selecionadoId;
+  int _versaoPainel = 0;
+  _ColunaOrdem _ordem = _ColunaOrdem.nome;
+  bool _ordemCrescente = true;
+
+  /// Largura da janela a partir da qual a tela vira tabela + painel.
+  static const larguraPc = 1200.0;
+  static const _alturaLinha = 56.0;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _buscaFoco.dispose();
+    _tabelaFoco.dispose();
+    _tabelaScroll.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ProdutoProvider>().carregarProdutos();
     });
+  }
+
+  /// Abre o produto em tela cheia (celular, ou kit em qualquer tamanho).
+  Future<void> _abrirProduto(Produto produto, bool isVendedor) async {
+    // Kit entrou na lista de Produtos (09/09) só pra cupom/alerta
+    // de estoque enxergarem ele — editar continua exigindo a tela
+    // própria (escolha de componentes), nunca o formulário normal.
+    if (produto.ehKit) {
+      final kitProvider = context.read<KitProdutoProvider>();
+      await kitProvider.carregarKits();
+      if (!mounted) return;
+      final kit = kitProvider.kits.where((k) => k.id == produto.id).firstOrNull;
+      if (kit == null) return;
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => KitProdutoFormScreen(kitInicial: kit)));
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (context) => isVendedor
+          ? DetalhesProdutoScreen(produto: produto)
+          : EditarProdutoScreen(produto: produto),
+    ));
+  }
+
+  void _novoProduto() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (ctx) => CadastroProdutoScreen()));
+  }
+
+  List<Produto> _ordenar(List<Produto> lista) {
+    int compara(Produto a, Produto b) => switch (_ordem) {
+          _ColunaOrdem.nome => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()),
+          _ColunaOrdem.categoria => a.categoria.toLowerCase().compareTo(b.categoria.toLowerCase()),
+          _ColunaOrdem.preco => a.precoVendaAtual.compareTo(b.precoVendaAtual),
+          _ColunaOrdem.estoque => a.estoqueAtual.compareTo(b.estoqueAtual),
+        };
+    return [...lista]..sort((a, b) => _ordemCrescente ? compara(a, b) : compara(b, a));
+  }
+
+  void _trocarOrdem(_ColunaOrdem coluna) => setState(() {
+        if (_ordem == coluna) {
+          _ordemCrescente = !_ordemCrescente;
+        } else {
+          _ordem = coluna;
+          _ordemCrescente = true;
+        }
+      });
+
+  /// ↑ ↓ trocam de produto, Esc fecha o painel — só com o foco na tabela,
+  /// pra não brigar com as setas dentro dos campos do painel.
+  KeyEventResult _teclaNaTabela(KeyEvent evento, List<Produto> lista) {
+    if (evento is! KeyDownEvent && evento is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final tecla = evento.logicalKey;
+    if (tecla == LogicalKeyboardKey.escape) {
+      if (_selecionadoId == null) return KeyEventResult.ignored;
+      setState(() => _selecionadoId = null);
+      return KeyEventResult.handled;
+    }
+    final passo = tecla == LogicalKeyboardKey.arrowDown
+        ? 1
+        : tecla == LogicalKeyboardKey.arrowUp
+            ? -1
+            : 0;
+    if (passo == 0 || lista.isEmpty) return KeyEventResult.ignored;
+    final atual = lista.indexWhere((p) => p.id == _selecionadoId);
+    final novo = atual < 0 ? 0 : (atual + passo).clamp(0, lista.length - 1);
+    setState(() => _selecionadoId = lista[novo].id);
+    _mostrarLinha(novo);
+    return KeyEventResult.handled;
+  }
+
+  void _mostrarLinha(int indice) {
+    if (!_tabelaScroll.hasClients) return;
+    final pos = _tabelaScroll.position;
+    final topo = indice * _alturaLinha;
+    final base = topo + _alturaLinha;
+    if (topo < pos.pixels) {
+      _tabelaScroll.jumpTo(topo);
+    } else if (base > pos.pixels + pos.viewportDimension) {
+      _tabelaScroll.jumpTo((base - pos.viewportDimension).clamp(0, pos.maxScrollExtent));
+    }
   }
 
   Future<void> _importarProdutos() async {
@@ -74,7 +176,16 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
       return true;
     }).toList();
 
-    return Scaffold(
+    final largo = MediaQuery.sizeOf(context).width >= larguraPc;
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () => _buscaFoco.requestFocus(),
+        if (!isVendedor) const SingleActivator(LogicalKeyboardKey.keyN, control: true): _novoProduto,
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
       appBar: AppBar(
         title: Text('Produtos (${produtoProvider.produtos.length})'),
         actions: [
@@ -159,23 +270,28 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
           ),
         ],
       ),
-      floatingActionButton: isVendedor
+      floatingActionButton: isVendedor || largo
           ? null
           : FloatingActionButton.extended(
-              onPressed: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (ctx) => CadastroProdutoScreen(),
-                ));
-              },
+              onPressed: _novoProduto,
               icon: const Icon(Icons.add),
               label: const Text('Novo produto'),
             ),
-      body: Column(
+      body: largo
+          ? _layoutPc(
+              produtoProvider: produtoProvider,
+              produtos: _ordenar(produtosFiltrados),
+              categorias: categoriasDisponiveis,
+              totalEstoqueBaixo: totalEstoqueBaixo,
+              isVendedor: isVendedor,
+            )
+          : Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: TextField(
               controller: _searchController,
+              focusNode: _buscaFoco,
               decoration: InputDecoration(
                 hintText: 'Buscar por nome, categoria ou código de barras',
                 prefixIcon: const Icon(Icons.search),
@@ -251,31 +367,438 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
                               return _ProdutoCard(
                                 produto: produto,
                                 isVendedor: isVendedor,
-                                onTap: () async {
-                                  // Kit entrou na lista de Produtos (09/09) só pra cupom/alerta
-                                  // de estoque enxergarem ele — editar continua exigindo a tela
-                                  // própria (escolha de componentes), nunca o formulário normal.
-                                  if (produto.ehKit) {
-                                    final kitProvider = context.read<KitProdutoProvider>();
-                                    await kitProvider.carregarKits();
-                                    if (!context.mounted) return;
-                                    final kit = kitProvider.kits.where((k) => k.id == produto.id).firstOrNull;
-                                    if (kit == null) return;
-                                    Navigator.of(context)
-                                        .push(MaterialPageRoute(builder: (_) => KitProdutoFormScreen(kitInicial: kit)));
-                                    return;
-                                  }
-                                  Navigator.of(context).push(MaterialPageRoute(
-                                    builder: (context) => isVendedor
-                                        ? DetalhesProdutoScreen(produto: produto)
-                                        : EditarProdutoScreen(produto: produto),
-                                  ));
-                                },
+                                onTap: () => _abrirProduto(produto, isVendedor),
                               );
                             },
                           ),
           ),
         ],
+      ),
+        ),
+      ),
+    );
+  }
+
+  bool get _temFiltro => _busca.isNotEmpty || _filtroEstoqueBaixo || _filtroCategoria != null;
+
+  Widget _layoutPc({
+    required ProdutoProvider produtoProvider,
+    required List<Produto> produtos,
+    required List<String> categorias,
+    required int totalEstoqueBaixo,
+    required bool isVendedor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selecionado =
+        _selecionadoId == null ? null : produtoProvider.produtos.where((p) => p.id == _selecionadoId).firstOrNull;
+
+    Widget conteudoTabela;
+    if (produtoProvider.carregando) {
+      conteudoTabela = const Center(child: CircularProgressIndicator());
+    } else if (produtoProvider.erro != null) {
+      conteudoTabela = _EstadoErro(
+        mensagem: produtoProvider.erro!,
+        onTentarNovamente: () => produtoProvider.carregarProdutos(),
+      );
+    } else if (produtos.isEmpty) {
+      conteudoTabela = _EstadoVazio(temBusca: _temFiltro);
+    } else {
+      conteudoTabela = Focus(
+        focusNode: _tabelaFoco,
+        onKeyEvent: (_, evento) => _teclaNaTabela(evento, produtos),
+        child: Column(
+          children: [
+            _CabecalhoTabela(ordem: _ordem, crescente: _ordemCrescente, onOrdenar: _trocarOrdem),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                controller: _tabelaScroll,
+                itemExtent: _alturaLinha,
+                itemCount: produtos.length,
+                itemBuilder: (ctx, i) {
+                  final produto = produtos[i];
+                  return _LinhaProduto(
+                    produto: produto,
+                    selecionado: produto.id == _selecionadoId,
+                    onTap: () {
+                      _tabelaFoco.requestFocus();
+                      setState(() => _selecionadoId = produto.id);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 420,
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _buscaFoco,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar produto ou código de barras',
+                    prefixIcon: const Icon(Icons.search),
+                    isDense: true,
+                    suffixIcon: _busca.isNotEmpty
+                        ? IconButton(
+                            tooltip: 'Limpar busca',
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _busca = '');
+                            },
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: Center(
+                              widthFactor: 1,
+                              child: Text('Ctrl F',
+                                  style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                            ),
+                          ),
+                  ),
+                  onChanged: (v) => setState(() => _busca = v),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    FilterChip(
+                      label: Text('Estoque baixo ($totalEstoqueBaixo)'),
+                      selected: _filtroEstoqueBaixo,
+                      onSelected: (v) => setState(() => _filtroEstoqueBaixo = v),
+                    ),
+                    PopupMenuButton<String?>(
+                      tooltip: 'Filtrar por categoria',
+                      initialValue: _filtroCategoria,
+                      onSelected: (v) => setState(() => _filtroCategoria = v),
+                      itemBuilder: (context) => [
+                        const PopupMenuItem<String?>(value: null, child: Text('Todas as categorias')),
+                        for (final categoria in categorias)
+                          PopupMenuItem<String?>(value: categoria, child: Text(categoria)),
+                      ],
+                      child: Chip(
+                        avatar: const Icon(Icons.filter_list, size: 18),
+                        label: Text(_filtroCategoria ?? 'Categoria'),
+                      ),
+                    ),
+                    if (_filtroEstoqueBaixo || _filtroCategoria != null)
+                      ActionChip(
+                        avatar: const Icon(Icons.close, size: 16),
+                        label: const Text('Limpar filtros'),
+                        onPressed: () => setState(() {
+                          _filtroEstoqueBaixo = false;
+                          _filtroCategoria = null;
+                        }),
+                      ),
+                    if (_temFiltro)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Text('${produtos.length} encontrados',
+                            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+                      ),
+                  ],
+                ),
+              ),
+              if (!isVendedor) ...[
+                const SizedBox(width: 12),
+                Tooltip(
+                  message: 'Ctrl N',
+                  child: FilledButton.icon(
+                    onPressed: _novoProduto,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Novo produto'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: conteudoTabela),
+              const VerticalDivider(width: 1),
+              SizedBox(
+                width: 500,
+                child: _painel(selecionado, isVendedor),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.centerLeft,
+          child: Text(
+            [
+              '↑ ↓ trocar de produto',
+              'Esc fechar',
+              'Ctrl F buscar',
+              if (!isVendedor) 'Ctrl N novo produto',
+              'Clique no título da coluna pra ordenar',
+            ].join('     ·     '),
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _painel(Produto? produto, bool isVendedor) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (produto == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.touch_app_outlined, size: 40, color: colorScheme.onSurfaceVariant),
+              const SizedBox(height: 12),
+              const Text('Clique num produto pra ver e editar aqui', textAlign: TextAlign.center),
+              const SizedBox(height: 6),
+              Text('As setas ↑ ↓ passam pro próximo.',
+                  style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+      );
+    }
+    if (produto.ehKit) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.card_giftcard_outlined, size: 40, color: colorScheme.onSurfaceVariant),
+              const SizedBox(height: 12),
+              Text(produto.nome, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Text('Kit tem editor próprio (escolha dos itens).',
+                  style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => _abrirProduto(produto, isVendedor),
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Abrir kit'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    // A própria tela de edição, embutida: mesmo salvar (estoque com motivo e
+    // trava, canais, variantes). Ao concluir, reabre com os dados novos — ou
+    // some, se o produto foi excluído.
+    final chave = ValueKey('${produto.id}-$_versaoPainel');
+    return ClipRect(
+      child: isVendedor
+          ? DetalhesProdutoScreen(key: chave, produto: produto, embutido: true)
+          : EditarProdutoScreen(
+              key: chave,
+              produto: produto,
+              aoConcluir: () {
+                if (mounted) setState(() => _versaoPainel++);
+              },
+            ),
+    );
+  }
+}
+
+enum _ColunaOrdem { nome, categoria, preco, estoque }
+
+const _larguraCategoria = 170.0;
+const _larguraPreco = 110.0;
+const _larguraEstoque = 110.0;
+const _larguraSituacao = 100.0;
+
+String _reais(double v) => 'R\$ ${v.toStringAsFixed(2).replaceAll('.', ',')}';
+
+class _CabecalhoTabela extends StatelessWidget {
+  final _ColunaOrdem ordem;
+  final bool crescente;
+  final ValueChanged<_ColunaOrdem> onOrdenar;
+
+  const _CabecalhoTabela({required this.ordem, required this.crescente, required this.onOrdenar});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    Widget titulo(String texto, _ColunaOrdem coluna, {bool direita = false}) {
+      final ativa = ordem == coluna;
+      final cor = ativa ? colorScheme.primary : colorScheme.onSurfaceVariant;
+      return InkWell(
+        onTap: () => onOrdenar(coluna),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            mainAxisAlignment: direita ? MainAxisAlignment.end : MainAxisAlignment.start,
+            children: [
+              Text(texto.toUpperCase(),
+                  style: TextStyle(fontSize: 11, letterSpacing: 0.5, fontWeight: FontWeight.w600, color: cor)),
+              if (ativa) Icon(crescente ? Icons.arrow_upward : Icons.arrow_downward, size: 14, color: cor),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          const SizedBox(width: 52),
+          Expanded(child: titulo('Produto', _ColunaOrdem.nome)),
+          SizedBox(width: _larguraCategoria, child: titulo('Categoria', _ColunaOrdem.categoria)),
+          SizedBox(width: _larguraPreco, child: titulo('Preço', _ColunaOrdem.preco, direita: true)),
+          SizedBox(width: _larguraEstoque, child: titulo('Estoque', _ColunaOrdem.estoque, direita: true)),
+          SizedBox(
+            width: _larguraSituacao,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 20),
+              child: Text('SITE',
+                  style: TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurfaceVariant)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LinhaProduto extends StatelessWidget {
+  final Produto produto;
+  final bool selecionado;
+  final VoidCallback onTap;
+
+  const _LinhaProduto({required this.produto, required this.selecionado, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final estoqueBaixo = produto.estoqueAtual <= produto.estoqueMinimo;
+    final emPromocao = produto.precoVendaAtual < produto.preco;
+    final situacao = !produto.ativo
+        ? 'Inativo'
+        : produto.exibirNoCatalogo
+            ? 'Visível'
+            : 'Oculto';
+
+    return Material(
+      color: selecionado ? colorScheme.primary.withValues(alpha: 0.14) : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(color: selecionado ? colorScheme.primary : Colors.transparent, width: 3),
+              bottom: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+            ),
+          ),
+          padding: const EdgeInsets.only(left: 13, right: 16),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  color: colorScheme.surfaceContainerHighest,
+                  child: produto.imagemUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: produto.imagemUrlExibicao,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 96,
+                          errorWidget: (_, __, ___) =>
+                              Icon(Icons.inventory_2_outlined, size: 18, color: colorScheme.onSurfaceVariant),
+                        )
+                      : Icon(produto.ehKit ? Icons.card_giftcard_outlined : Icons.inventory_2_outlined,
+                          size: 18, color: colorScheme.onSurfaceVariant),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  produto.nome,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, fontWeight: selecionado ? FontWeight.w600 : FontWeight.w500),
+                ),
+              ),
+              SizedBox(
+                width: _larguraCategoria,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Text(
+                    produto.categoria.isNotEmpty ? produto.categoria : 'Sem categoria',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: _larguraPreco,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(_reais(produto.precoVendaAtual),
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colorScheme.primary)),
+                    if (emPromocao)
+                      Text(_reais(produto.preco),
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: colorScheme.onSurfaceVariant,
+                              decoration: TextDecoration.lineThrough)),
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: _larguraEstoque,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _BadgeEstoque(quantidade: produto.estoqueAtual, baixo: estoqueBaixo, curto: true),
+                ),
+              ),
+              SizedBox(
+                width: _larguraSituacao,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 20),
+                  child: Text(
+                    situacao,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: situacao == 'Visível' ? colorScheme.onSurface : colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -382,8 +905,9 @@ class _ProdutoCard extends StatelessWidget {
 class _BadgeEstoque extends StatelessWidget {
   final int quantidade;
   final bool baixo;
+  final bool curto;
 
-  const _BadgeEstoque({required this.quantidade, required this.baixo});
+  const _BadgeEstoque({required this.quantidade, required this.baixo, this.curto = false});
 
   @override
   Widget build(BuildContext context) {
@@ -407,7 +931,7 @@ class _BadgeEstoque extends StatelessWidget {
           const SizedBox(width: 4),
           Flexible(
             child: Text(
-              '$quantidade em estoque',
+              curto ? '$quantidade' : '$quantidade em estoque',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: cor),

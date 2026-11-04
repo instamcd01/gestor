@@ -35,7 +35,11 @@ import 'historico_precos_screen.dart';
 class EditarProdutoScreen extends StatefulWidget {
   final Produto produto;
 
-  EditarProdutoScreen({required this.produto});
+  /// Painel embutido (lista de Produtos no PC): sem seta de voltar, e salvar,
+  /// excluir ou tirar da família chama isto em vez de fechar a tela.
+  final VoidCallback? aoConcluir;
+
+  EditarProdutoScreen({super.key, required this.produto, this.aoConcluir});
 
   @override
   _EditarProdutoScreenState createState() => _EditarProdutoScreenState();
@@ -567,6 +571,15 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   }
 
   // Salva as alterações do produto no Supabase.
+  void _concluir() {
+    final aoConcluir = widget.aoConcluir;
+    if (aoConcluir != null) {
+      aoConcluir();
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
   Future<void> _salvarEdicao() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -730,7 +743,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Produto atualizado com sucesso!')));
-      Navigator.of(context).pop();
+      _concluir();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -802,7 +815,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Produto removido da família de variantes.')));
-      Navigator.of(context).pop();
+      _concluir();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -841,7 +854,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       await Provider.of<ProdutoProvider>(context, listen: false).deletarProduto(widget.produto.id!);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Produto excluído.')));
-      Navigator.of(context).pop();
+      _concluir();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao excluir produto: $e')));
@@ -939,6 +952,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: widget.aoConcluir == null,
         title: Text('Editar Produto'),
         actions: [
           _excluindo

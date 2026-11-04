@@ -15,7 +15,10 @@ import 'historico_estoque_screen.dart';
 class DetalhesProdutoScreen extends StatelessWidget {
   final Produto produto;
 
-  const DetalhesProdutoScreen({super.key, required this.produto});
+  /// Painel embutido (lista de Produtos no PC): sem seta de voltar.
+  final bool embutido;
+
+  const DetalhesProdutoScreen({super.key, required this.produto, this.embutido = false});
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +30,7 @@ class DetalhesProdutoScreen extends StatelessWidget {
     final temPromocao = produto.precoPromocional != null && produto.precoPromocional! < produto.preco;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Produto')),
+      appBar: AppBar(automaticallyImplyLeading: !embutido, title: const Text('Produto')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
