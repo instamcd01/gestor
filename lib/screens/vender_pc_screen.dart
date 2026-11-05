@@ -32,6 +32,7 @@ import 'pagamento_link_screen.dart';
 import 'pagamento_outros_screen.dart';
 import 'pagamento_pix_screen.dart';
 import 'recibo_screen.dart';
+import '../widgets/enviar_orcamento_dialog.dart';
 
 const _categoriaKits = '__kits__';
 
@@ -1521,6 +1522,21 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                   ),
                 ),
               const SizedBox(height: 10),
+              if (itens.isNotEmpty && cliente != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: _botaoContorno(
+                    colorScheme,
+                    rotulo: 'Enviar orçamento no WhatsApp',
+                    altura: 36,
+                    onPressed: () async {
+                      await mostrarEnviarOrcamento(context, carrinho);
+                      if (mounted) _buscaFoco.requestFocus();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               _botaoPrincipal(
                 colorScheme,
                 rotulo: itens.isNotEmpty && cliente == null ? 'Escolher cliente · F8' : 'Pagar · F9',

@@ -19,6 +19,7 @@ import '../repositories/carrinho_cliente_repository.dart';
 import '../repositories/cliente_repository.dart';
 import '../services/distancia_service.dart';
 import '../utils/agendamento_utils.dart';
+import '../widgets/enviar_orcamento_dialog.dart';
 
 /// Resolve e já seleciona a zona de entrega do cliente no `CarrinhoProvider`
 /// — usa a distância já salva no cadastro dele (mesmo campo que
@@ -377,6 +378,13 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                   ),
 
                 const SizedBox(height: 12),
+                if (carrinhoProvider.itens.isNotEmpty && carrinhoProvider.clienteSelecionado != null) ...[
+                  OutlinedButton(
+                    onPressed: () => mostrarEnviarOrcamento(context, carrinhoProvider),
+                    child: const Text('Enviar orçamento no WhatsApp'),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 ElevatedButton(
                   onPressed: !podeAvancar
                       ? null
