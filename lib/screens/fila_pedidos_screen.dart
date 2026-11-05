@@ -19,6 +19,7 @@ import '../utils/mensagem_status_dialog.dart';
 import '../utils/mensagens_status_pedido.dart';
 import '../widgets/categoria_cliente_badge.dart';
 import '../widgets/estado_erro_lista.dart';
+import '../utils/app_destinos.dart';
 import 'alterar_forma_pagamento_screen.dart';
 import 'separacao_pedido_screen.dart';
 import 'venda_detalhes_screen.dart';
@@ -64,8 +65,12 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Só o que a Fila mostra (em andamento + hoje) — pedido novo e mudança
       // de status depois disso chegam sozinhos pelo tempo real do provider.
-      if (mounted) context.read<HistoricoVendasProvider>().atualizarFila();
+      if (!mounted) return;
+      context.read<HistoricoVendasProvider>().atualizarFila();
+      // O pedido pode ter chegado antes desta tela existir.
+      _abrirPedidoPedido();
     });
+    pedidoParaAbrir.addListener(_abrirPedidoPedido);
     // Os selos de urgência dependem só da hora atual (não de dado novo do
     // servidor) — atualiza sozinho pra não precisar puxar pra atualizar só
     // pra ver um pedido virar "atrasado".
@@ -76,6 +81,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
 
   @override
   void dispose() {
+    pedidoParaAbrir.removeListener(_abrirPedidoPedido);
     _timerUrgencia?.cancel();
     _filaFoco.dispose();
     _buscaController.dispose();
@@ -108,7 +114,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     }
     final fim = venda.previsaoEntregaFim;
     if (fim == null) return _Urgencia.neutro;
-    if (agora.isAfter(fim)) return _Urgencia.atrasado;
+    if (venda.atrasadoEm(agora)) return _Urgencia.atrasado;
 
     // "Atenção" quando o tempo que falta até o prazo da zona é só o
     // suficiente pra rodar a rota real até esse cliente (Google Maps,
@@ -363,9 +369,23 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     }
   }
 
-  void _selecionar(Venda venda) {
+  /// Pedido clicado no Início: tira os filtros que poderiam escondê-lo e abre.
+  void _abrirPedidoPedido() {
+    final id = pedidoParaAbrir.value;
+    if (id == null || !mounted) return;
+    pedidoParaAbrir.value = null;
+    _filtroStatus = null;
+    _filtroModalidade = null;
+    _busca = '';
+    _buscaController.clear();
+    _selecionarId(id);
+  }
+
+  void _selecionar(Venda venda) => _selecionarId(venda.idVenda);
+
+  void _selecionarId(String? id) {
     _filaFoco.requestFocus();
-    setState(() => _selecionadoId = venda.idVenda);
+    setState(() => _selecionadoId = id);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = _chaveSelecionado.currentContext;
       if (ctx != null) Scrollable.ensureVisible(ctx, alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);

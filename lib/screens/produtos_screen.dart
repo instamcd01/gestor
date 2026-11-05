@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../providers/kit_produto_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/produto_canal_repository.dart';
+import '../utils/app_destinos.dart';
 import '../utils/busca_utils.dart';
 import '../widgets/importar_produtos_planilha.dart';
 import '../widgets/produto_edicao_rapida.dart';
@@ -64,6 +65,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
 
   @override
   void dispose() {
+    produtoParaAbrir.removeListener(_abrirProdutoPedido);
     _searchController.dispose();
     _buscaFoco.dispose();
     _tabelaFoco.dispose();
@@ -78,6 +80,32 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ProdutoProvider>().carregarProdutos();
       _carregarCanais();
+      // O produto pode ter chegado antes desta tela existir.
+      _abrirProdutoPedido();
+    });
+    produtoParaAbrir.addListener(_abrirProdutoPedido);
+  }
+
+  /// Produto clicado no Início: tira os filtros que poderiam escondê-lo, abre
+  /// no painel e rola até ele. Alteração não salva continua perguntando antes.
+  Future<void> _abrirProdutoPedido() async {
+    final id = produtoParaAbrir.value;
+    if (id == null || !mounted) return;
+    produtoParaAbrir.value = null;
+    if (id != _selecionadoId && (!await _podeSairDoPainel() || !mounted)) return;
+    _searchController.clear();
+    setState(() {
+      _busca = '';
+      _filtroEstoqueBaixo = false;
+      _filtroCategoria = null;
+      _filtroCanal = null;
+      _selecionadoId = id;
+    });
+    final indice = _ordenar(context.read<ProdutoProvider>().produtos).indexWhere((p) => p.id == id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (indice >= 0) _mostrarLinha(indice);
+      _tabelaFoco.requestFocus();
     });
   }
 

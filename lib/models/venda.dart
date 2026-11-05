@@ -545,6 +545,14 @@ class Venda {
   bool get finalizada => status == StatusPedido.entregue;
   bool get aguardandoPagamento => status == StatusPedido.aguardandoPagamento;
   bool get emAndamento => StatusPedido.emAndamento.contains(status);
+
+  /// Passou do prazo de entrega. Agendado não atrasa (a janela é escolhida, não
+  /// uma promessa de "o quanto antes"), e pedido encerrado já acabou.
+  bool atrasadoEm(DateTime agora) {
+    if (!emAndamento || agendado || agendadoManualmente || !temEntrega) return false;
+    final fim = previsaoEntregaFim;
+    return fim != null && agora.isAfter(fim);
+  }
   bool get temEntrega => valorEntrega > 0 || entregaSelecionada.isNotEmpty;
   bool get ehMarketplace => canalVenda == 'ifood';
 

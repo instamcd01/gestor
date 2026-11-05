@@ -15,6 +15,7 @@ import '../widgets/metric_card.dart';
 import 'custos_operacao_screen.dart';
 import 'fila_pedidos_screen.dart';
 import 'fluxo_caixa_screen.dart';
+import 'inicio_pc.dart';
 import 'produtos_screen.dart';
 import 'vendas_screen.dart';
 
@@ -38,6 +39,8 @@ class InicioScreen extends StatefulWidget {
 }
 
 class _InicioScreenState extends State<InicioScreen> {
+  static const larguraPc = 1200.0;
+
   // Lucro líquido real do mês (obter_resumo_custos_operacao) — ao contrário
   // das outras métricas desta tela, não vem de um provider já carregado em
   // outro lugar, então é buscado à parte só quando o papel pode ver
@@ -83,8 +86,6 @@ class _InicioScreenState extends State<InicioScreen> {
     ]);
   }
 
-  bool _mesmoDia(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
-
   void _abrir(Widget tela) => Navigator.push(context, MaterialPageRoute(builder: (_) => tela));
 
   /// Com a barra lateral na tela (PC/tablet), vai pra seção do menu em vez
@@ -102,6 +103,25 @@ class _InicioScreenState extends State<InicioScreen> {
     // as seções ficam "coladas" no canto esquerdo. Em telas estreitas o
     // ConstrainedBox nunca chega a limitar nada (maxWidth > largura real).
     final auth = context.watch<AuthProvider>();
+    if (MediaQuery.sizeOf(context).width >= larguraPc) {
+      return InicioPc(
+        mostrarAppBar: widget.mostrarAppBar,
+        lucroLiquidoReal: _lucroLiquidoReal,
+        recarregar: _recarregarTudo,
+        aoVoltar: () {
+          context.read<DespesaProvider>().carregar();
+          _carregarLucroLiquido();
+        },
+        abrirVender: () => _abrirSecao('Vender', VendasScreen()),
+        abrirPedidos: () => _abrirSecao('Pedidos', const FilaPedidosScreen()),
+        abrirProdutos: () => _abrirSecao('Produtos', ProdutosScreen()),
+        abrirFluxoCaixa: () => _abrir(const FluxoCaixaScreen()),
+        abrirLucro: () => _abrir(context.read<ModuloProvider>().ativo(Modulos.gestaoFinanceira)
+            ? const CustosOperacaoScreen()
+            : const FluxoCaixaScreen()),
+      );
+    }
+
     final corpo = RefreshIndicator(
       onRefresh: _recarregarTudo,
       child: SingleChildScrollView(
@@ -149,14 +169,8 @@ class _InicioScreenState extends State<InicioScreen> {
   }
 
   Widget _cabecalho(BuildContext context) {
-    final hora = DateTime.now().hour;
-    final saudacao = hora < 12 ? 'Bom dia' : (hora < 18 ? 'Boa tarde' : 'Boa noite');
-    final nomeCompleto = context.watch<AuthProvider>().nome;
-    final primeiroNome = (nomeCompleto != null && nomeCompleto.trim().isNotEmpty)
-        ? nomeCompleto.trim().split(' ').first
-        : null;
     return Text(
-      primeiroNome != null ? '$saudacao, $primeiroNome' : saudacao,
+      saudacaoDoInicio(context.watch<AuthProvider>().nome),
       style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
     );
   }
@@ -262,28 +276,12 @@ class _InicioScreenState extends State<InicioScreen> {
   }
 
   Widget _secaoVendas(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    // Vendedor vê só as próprias vendas aqui também — mesma regra já
-    // aplicada no Histórico e em "Meu Desempenho".
-    final todasVendas = context.watch<HistoricoVendasProvider>().vendas;
-    final vendas = (auth.isVendedor
-            ? todasVendas.where((v) => v.vendedorId == auth.usuarioAtual?.id)
-            : todasVendas)
-        .where((v) => v.finalizada)
-        .toList();
-    final hoje = DateTime.now();
-    final ontem = hoje.subtract(const Duration(days: 1));
-
-    final vendasHoje = vendas.where((v) => _mesmoDia(v.dataVenda, hoje)).toList();
-    final vendasOntem = vendas.where((v) => _mesmoDia(v.dataVenda, ontem)).toList();
-    final vendasMes = vendas.where((v) => v.dataVenda.year == hoje.year && v.dataVenda.month == hoje.month).toList();
-
-    double somar(List<Venda> lista) => lista.fold(0.0, (soma, v) => soma + v.valorTotal);
-
-    // Comparação hoje vs ontem só faz sentido se ontem teve alguma venda —
-    // com base 0 a variação percentual dispara pra infinito e não diz nada.
-    final totalOntem = somar(vendasOntem);
-    final variacaoPct = totalOntem > 0 ? ((somar(vendasHoje) - totalOntem) / totalOntem * 100) : null;
+    final resumo = ResumoVendasInicio.de(context.watch<AuthProvider>(), context.watch<HistoricoVendasProvider>().vendas);
+    final vendasHoje = resumo.hoje;
+    final vendasOntem = resumo.ontem;
+    final vendasMes = resumo.mes;
+    double somar(List<Venda> lista) => ResumoVendasInicio.somar(lista);
+    final variacaoPct = resumo.variacaoPct;
     final subtituloHoje = variacaoPct == null
         ? '${vendasHoje.length} venda(s)'
         : '${vendasHoje.length} venda(s) · ${variacaoPct >= 0 ? '▲' : '▼'} ${variacaoPct.abs().toStringAsFixed(0)}% vs ontem';
@@ -413,16 +411,8 @@ class _InicioScreenState extends State<InicioScreen> {
         .watch<HistoricoVendasProvider>()
         .vendas
         .where((v) => v.finalizada && v.dataVenda.year == hoje.year && v.dataVenda.month == hoje.month);
-    final despesasPagasMes = context.watch<DespesaProvider>().despesas.where(
-          (d) =>
-              d.paga &&
-              d.dataPagamento != null &&
-              d.dataPagamento!.year == hoje.year &&
-              d.dataPagamento!.month == hoje.month,
-        );
-
     final receita = vendasMes.fold(0.0, (soma, v) => soma + v.valorTotal);
-    final despesas = despesasPagasMes.fold(0.0, (soma, d) => soma + d.valor);
+    final despesas = despesasPagasDoMes(context.watch<DespesaProvider>().despesas);
     final lucro = _lucroLiquidoReal;
 
     return Column(

@@ -38,6 +38,12 @@ bool _produtoComEstoqueBaixo(Produto p) =>
 /// no Vender do PC (sem seta de voltar), não dava pra sair.
 bool Function(String titulo)? irParaSecaoDoMenu;
 
+/// Abre um item específico na seção do menu (clique na lista do Início no PC):
+/// quem pede preenche o id e leva até a seção; a tela de lá limpa os filtros
+/// que esconderiam o item, seleciona e esvazia.
+final pedidoParaAbrir = ValueNotifier<String?>(null);
+final produtoParaAbrir = ValueNotifier<String?>(null);
+
 class AppDestino {
   final String titulo;
   final IconData icone;

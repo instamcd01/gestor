@@ -13,6 +13,12 @@ class ProdutoProvider with ChangeNotifier {
   String? _erro;
   String? _empresaId;
 
+  @visibleForTesting
+  void definirProdutosParaTeste(List<Produto> produtos) {
+    _produtos = produtos;
+    notifyListeners();
+  }
+
   List<Produto> get produtos => _produtos;
   bool get carregando => _carregando;
   String? get erro => _erro;

@@ -33,6 +33,14 @@ class HistoricoVendasProvider with ChangeNotifier {
     return DateTime(hoje.year, hoje.month - 1, 1);
   }
 
+  @visibleForTesting
+  void definirVendasParaTeste(List<Venda> vendas) {
+    _vendas
+      ..clear()
+      ..addAll(vendas);
+    notifyListeners();
+  }
+
   List<Venda> get vendas => _vendas;
   DateTime? get carregadoDesde => _carregadoDesde;
   bool get carregouTudo => _carregadoDesde == null;
