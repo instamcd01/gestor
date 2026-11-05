@@ -49,6 +49,7 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
   static const _urlWebhookReconciliacao = 'https://n8n.lukz.com.br/webhook/ifood-reconciliacao-relatorios';
 
   MarketplaceConfig? _config;
+  List<ReconciliacaoHistorico> _historicoSemConexao = const [];
   InterrupcaoMarketplace? _interrupcaoAtiva;
   bool _carregando = true;
   bool _exportando = false;
@@ -66,10 +67,23 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
     try {
       final configs = await _configRepository.listar();
       final interrupcao = await _interrupcaoRepository.buscarAtiva();
+      final config = configs.where((c) => c.marketplaceId == widget.marketplace.id).firstOrNull ??
+          MarketplaceConfig(marketplaceId: widget.marketplace.id);
+      // Sem conexão ativa não existem as datas guardadas na configuração: elas
+      // vêm do histórico, que é da loja e não depende da conexão.
+      var historico = const <ReconciliacaoHistorico>[];
+      if (!config.ativo) {
+        try {
+          historico = await _historicoRepository.listar(widget.marketplace.id);
+        } catch (e) {
+          // O cartão só some; o resto da tela (enviar relatório) segue de pé.
+          debugPrint('Erro ao carregar histórico do iFood: $e');
+        }
+      }
       if (mounted) {
         setState(() {
-          _config = configs.where((c) => c.marketplaceId == widget.marketplace.id).firstOrNull ??
-              MarketplaceConfig(marketplaceId: widget.marketplace.id);
+          _config = config;
+          _historicoSemConexao = historico;
           _interrupcaoAtiva = interrupcao;
           _carregando = false;
         });
@@ -211,7 +225,8 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
 
   Widget _cardReconciliacao() {
     final config = _config;
-    if (config == null || !config.ativo) return const SizedBox.shrink();
+    if (config == null) return const SizedBox.shrink();
+    if (!config.ativo) return _cardHistoricoSemConexao();
 
     final checkpoint = config.ultimaReconciliacaoEstoqueEm;
     final hoje = DateTime.now();
@@ -289,18 +304,67 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
             ),
           ),
           const Divider(height: 1),
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.history),
-            title: const Text('Ver histórico de reconciliação'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => HistoricoReconciliacaoScreen(marketplaceId: widget.marketplace.id, nomeMarketplace: 'iFood'),
-              ),
+          _botaoHistorico(),
+        ],
+      ),
+    );
+  }
+
+  Widget _botaoHistorico() => ListTile(
+        dense: true,
+        leading: const Icon(Icons.history),
+        title: const Text('Ver histórico de reconciliação'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HistoricoReconciliacaoScreen(marketplaceId: widget.marketplace.id, nomeMarketplace: 'iFood'),
+          ),
+        ),
+      );
+
+  /// Loja sem a conexão do iFood ativa que já enviou relatórios: o envio e o
+  /// histórico não dependem da conexão, então a tela mostra até onde já foi
+  /// enviado (lista vem da mais recente pra mais antiga).
+  Widget _cardHistoricoSemConexao() {
+    final historico = _historicoSemConexao;
+    if (historico.isEmpty) return const SizedBox.shrink();
+
+    String ate(String tipo, String rotulo) {
+      final periodo = historico.where((h) => h.tipo == tipo && h.periodoAte != null).firstOrNull?.periodoAte;
+      return periodo == null ? '$rotulo: sem envio recente' : '$rotulo: enviado até ${DateFormat('dd/MM').format(periodo)}';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                const Icon(Icons.history, color: Colors.blueGrey),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(ate(TipoReconciliacaoHistorico.estoque, 'Estoque'),
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Text(ate(TipoReconciliacaoHistorico.financeiro, 'Financeiro'),
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Text(
+                        'O envio de relatórios funciona normalmente sem a conexão do iFood.',
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
+          const Divider(height: 1),
+          _botaoHistorico(),
         ],
       ),
     );
