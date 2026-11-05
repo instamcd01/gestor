@@ -119,7 +119,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     if (carrinho.itens.isNotEmpty) {
       final atual = carrinho.clienteSelecionado;
       if (atual?.idCliente == cliente.idCliente) return;
-      final qtd = carrinho.itens.length;
+      final qtd = carrinho.totalUnidades;
       final usar = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -724,6 +724,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 focusNode: _painelFoco,
                 child: switch (_fase) {
                   _Fase.montando => _painelCarrinho(colorScheme, carrinho),
+                  _Fase.pagando when carrinho.clienteSelecionado == null => _painelVendaEncerrada(colorScheme, carrinho),
                   _Fase.pagando => _painelPagamento(colorScheme, carrinho),
                   _Fase.concluida => _painelConcluida(colorScheme),
                 },
@@ -1848,6 +1849,21 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   }
 
   // ───── direita: pagamento ─────
+
+  /// O carrinho foi limpo com o pagamento aberto: Pix, link e "outros" concluem
+  /// em outra tela, com o Vender parado atrás, e a venda gravada esvazia o
+  /// carrinho e o cliente. Volta pra uma venda nova. Durante [_concluir] não
+  /// mexe: quem define a fase ali é ele, logo depois de gravar.
+  Widget _painelVendaEncerrada(ColorScheme colorScheme, CarrinhoProvider carrinho) {
+    if (!_registrando) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _fase == _Fase.pagando && !_registrando && context.read<CarrinhoProvider>().clienteSelecionado == null) {
+          _novaVenda();
+        }
+      });
+    }
+    return _painelCarrinho(colorScheme, carrinho);
+  }
 
   Widget _painelPagamento(ColorScheme colorScheme, CarrinhoProvider carrinho) {
     final cliente = carrinho.clienteSelecionado!;

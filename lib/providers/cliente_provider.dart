@@ -74,7 +74,7 @@ class ClientProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      _clientes = await _repository.listar();
+      _clientes = await _repository.listar(empresaId: _empresaId);
     } catch (e) {
       _erro = 'Erro ao carregar clientes: $e';
       debugPrint(_erro);

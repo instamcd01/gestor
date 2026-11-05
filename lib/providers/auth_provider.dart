@@ -42,9 +42,24 @@ class AuthProvider with ChangeNotifier {
 
   AuthProvider() {
     // Reage a login/logout/refresh de sessão automaticamente.
-    supabase.auth.onAuthStateChange.listen((_) => _verificarUsuario());
+    supabase.auth.onAuthStateChange.listen((evento) {
+      if (precisaRecarregarUsuario(usuarioDaSessao: evento.session?.user.id, usuarioCarregado: _usuarioCarregado)) {
+        _verificarUsuario();
+      }
+    });
     _verificarUsuario();
   }
+
+  /// Quem já tem os dados carregados.
+  String? _usuarioCarregado;
+
+  /// Só recarrega quando o usuário muda (entrou, saiu, trocou de conta). O
+  /// `carregando` troca o app inteiro pela tela de espera e desmonta tudo, e o
+  /// Supabase também avisa quando só renova o login, sozinho e de hora em hora:
+  /// o trabalho aberto sumia e a tela voltava pro Início.
+  @visibleForTesting
+  static bool precisaRecarregarUsuario({required String? usuarioDaSessao, required String? usuarioCarregado}) =>
+      usuarioDaSessao == null || usuarioDaSessao != usuarioCarregado;
 
   Future<void> _verificarUsuario() async {
     _carregando = true;
@@ -54,21 +69,24 @@ class AuthProvider with ChangeNotifier {
       _empresaId = null;
       _papel = null;
       _nome = null;
+      _usuarioCarregado = null;
       _carregando = false;
       notifyListeners();
       return;
     }
 
     try {
+      final id = usuarioAtual!.id;
       final data = await supabase
           .from('usuarios')
           .select('empresa_id, papel, nome')
-          .eq('id', usuarioAtual!.id)
+          .eq('id', id)
           .maybeSingle();
 
       _empresaId = data?['empresa_id'];
       _papel = data?['papel'];
       _nome = data?['nome'];
+      _usuarioCarregado = id;
     } catch (e) {
       debugPrint('Erro ao verificar vínculo empresa/usuário: $e');
       _empresaId = null;

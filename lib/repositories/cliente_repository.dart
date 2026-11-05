@@ -36,11 +36,13 @@ class ClienteRepository {
     return data?['recebe_push'] as bool? ?? false;
   }
 
-  Future<List<Cliente>> listar() async {
-    final data = await supabase
-        .from('clientes')
-        .select(_selectComPets)
-        .isFilter('deleted_at', null)
+  /// [empresaId]: a RLS também libera o próprio cadastro de quem é cliente em
+  /// outra loja (`clientes_cliente_le_proprio`, é o que o site usa). Sem este
+  /// filtro, esse cadastro de fora entrava na lista de clientes do Gestor.
+  Future<List<Cliente>> listar({String? empresaId}) async {
+    var consulta = supabase.from('clientes').select(_selectComPets).isFilter('deleted_at', null);
+    if (empresaId != null) consulta = consulta.eq('empresa_id', empresaId);
+    final data = await consulta
         // Cadastros "consultivos" do histórico do Kyte (sem login, nunca
         // fazem pedido novo) — ficam fora da lista padrão (que alimenta
         // busca de venda/entrega, onde não faz sentido escolher um deles)
