@@ -68,8 +68,8 @@ Future<void> resolverZonaEntregaParaCliente(
 /// `comoJanela`: no PC abre por cima da venda, numa janela, em vez de cobrir
 /// a tela toda (a venda continua visível atrás).
 Future<void> escolherClienteEEntrega(BuildContext context, CarrinhoProvider carrinhoProvider,
-    {bool comoJanela = false}) async {
-  final tela = OpcaoEntregaScreen(subtotal: carrinhoProvider.subtotal);
+    {bool comoJanela = false, Cliente? clienteInicial}) async {
+  final tela = OpcaoEntregaScreen(subtotal: carrinhoProvider.subtotal, clienteInicial: clienteInicial);
   final resultado = comoJanela
       ? await showDialog(
           context: context,

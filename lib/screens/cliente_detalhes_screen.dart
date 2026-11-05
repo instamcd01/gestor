@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -23,10 +25,42 @@ import '../widgets/form_section.dart';
 import 'editar_cliente_screen.dart';
 import 'venda_detalhes_screen.dart';
 
+/// Abre o WhatsApp no telefone real do cliente (ver [Cliente.telefoneContato]).
+/// Usado pela ficha e pelo atalho W da tabela de Clientes no PC.
+Future<void> abrirWhatsAppDoCliente(Cliente cliente) async {
+  final telefone = cliente.telefoneContato;
+  if (normalizarTelefoneBr(telefone).isEmpty) return;
+  final uri = Uri.parse(linkWhatsApp(telefone));
+  if (await canLaunchUrl(uri)) {
+    // Sem isso, em alguns aparelhos o link abre numa webview dentro do
+    // próprio Gestor em vez de abrir o WhatsApp de verdade.
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
 class ClienteDetalhesScreen extends StatefulWidget {
   final Cliente cliente;
 
-  const ClienteDetalhesScreen({super.key, required this.cliente});
+  /// true = painel ao lado da tabela de Clientes no PC: cabeçalho, números e
+  /// abas, sem barra de título. Quem usa precisa dar uma `key` por cliente
+  /// (as abas carregam os dados uma vez só, ao abrir).
+  final bool embutida;
+
+  /// Só no modo embutida: botão "Nova venda" (null esconde o botão).
+  final VoidCallback? onNovaVenda;
+
+  /// Só no modo embutida: o cadastro foi alterado, promovido ou excluído. A
+  /// tela de fora recarrega a lista dela — no modo embutida não há rota pra
+  /// fechar (`Navigator.pop` fecharia a tela de quem está em volta).
+  final VoidCallback? onAlterado;
+
+  const ClienteDetalhesScreen({
+    super.key,
+    required this.cliente,
+    this.embutida = false,
+    this.onNovaVenda,
+    this.onAlterado,
+  });
 
   @override
   State<ClienteDetalhesScreen> createState() => _ClienteDetalhesScreenState();
@@ -35,6 +69,45 @@ class ClienteDetalhesScreen extends StatefulWidget {
 class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
   bool _excluindo = false;
   bool _promovendoKyte = false;
+
+  // Só no modo embutida (cabeçalho e título da aba Carrinho).
+  Timer? _esperaPainel;
+  int? _qtdCarrinho;
+  bool _recebePush = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.cliente.idCliente;
+    if (widget.embutida && id != null) {
+      // Espera um instante: segurando ↑ ↓ na tabela, os clientes que só
+      // passaram pela seleção não vão ao banco.
+      _esperaPainel = Timer(const Duration(milliseconds: 300), () => _carregarResumoPainel(id));
+    }
+  }
+
+  @override
+  void dispose() {
+    _esperaPainel?.cancel();
+    super.dispose();
+  }
+
+  /// Só enfeite do painel (contagem e "recebe aviso"): se falhar, a ficha
+  /// continua inteira e a aba Carrinho mostra o próprio erro.
+  Future<void> _carregarResumoPainel(String id) async {
+    try {
+      final carrinho = await CarrinhoClienteRepository().consultar(id);
+      if (mounted) setState(() => _qtdCarrinho = carrinho.itens.length);
+    } catch (e) {
+      debugPrint('Erro ao contar o carrinho do cliente: $e');
+    }
+    try {
+      final recebe = await ClienteRepository().recebePush(id);
+      if (mounted) setState(() => _recebePush = recebe);
+    } catch (e) {
+      debugPrint('Erro ao consultar aviso no celular do cliente: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +120,8 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
             orElse: () => widget.cliente,
           )
         : widget.cliente;
+
+    if (widget.embutida) return _buildEmbutida(context, cliente);
 
     return DefaultTabController(
       length: 4,
@@ -88,6 +163,455 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
       ),
     );
   }
+
+  // ───────────────── modo embutida (painel do PC) ─────────────────
+
+  Widget _buildEmbutida(BuildContext context, Cliente cliente) {
+    final cores = Theme.of(context).colorScheme;
+    final compras = cliente.quantidadeCompras ?? 0;
+
+    return DefaultTabController(
+      length: 4,
+      child: Material(
+        color: cores.surface,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _cabecalhoEmbutido(context, cliente),
+            _acoesEmbutido(context, cliente),
+            _numerosEmbutido(context, cliente),
+            // Cores à mão: o tema da TabBar é feito pra ficar sobre a barra
+            // colorida do topo e aqui o fundo é claro.
+            TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelColor: cores.primary,
+              unselectedLabelColor: cores.onSurfaceVariant,
+              indicatorColor: cores.primary,
+              dividerColor: cores.outlineVariant,
+              tabs: [
+                const Tab(text: 'Dados'),
+                Tab(text: _qtdCarrinho == null || _qtdCarrinho == 0 ? 'Carrinho' : 'Carrinho ($_qtdCarrinho)'),
+                Tab(text: compras == 0 ? 'Compras' : 'Compras ($compras)'),
+                const Tab(text: 'Conta'),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _dadosEmbutido(context, cliente),
+                  _CarrinhoClienteTab(
+                    clienteId: cliente.idCliente ?? '',
+                    onQuantidade: (n) {
+                      if (mounted) setState(() => _qtdCarrinho = n);
+                    },
+                  ),
+                  _ComprasClienteTab(clienteId: cliente.idCliente),
+                  _ContaClienteTab(cliente: cliente),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _cabecalhoEmbutido(BuildContext context, Cliente cliente) {
+    final cores = Theme.of(context).colorScheme;
+    final auth = context.watch<AuthProvider>();
+    final origem = cliente.canalOrigem;
+    final detalhes = [
+      if (cliente.dataCadastro != null) 'Cliente desde ${DateFormat('MM/yyyy').format(cliente.dataCadastro!.toLocal())}',
+      if (origem != null && origem.isNotEmpty) 'veio por: ${rotuloCanalVenda(origem)}',
+      if (_recebePush) 'recebe aviso no celular',
+    ].join(' · ');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: cores.primaryContainer,
+            child: Text(
+              cliente.nome.isNotEmpty ? cliente.nome[0].toUpperCase() : '?',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: cores.onPrimaryContainer),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        cliente.nome,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    CategoriaClienteBadge(categoria: cliente.categoriaCliente),
+                  ],
+                ),
+                if (detalhes.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(detalhes, style: TextStyle(fontSize: 12.5, color: cores.onSurfaceVariant)),
+                  ),
+              ],
+            ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Mais ações',
+            enabled: !_excluindo,
+            onSelected: (acao) {
+              switch (acao) {
+                case 'editar':
+                  _editarDados(cliente);
+                case 'login':
+                  _confirmarRedefinirAcesso(context, cliente);
+                case 'excluir':
+                  _confirmarDelecao(cliente);
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'editar', child: Text('Editar dados')),
+              if (cliente.authUserId != null)
+                const PopupMenuItem(value: 'login', child: Text('Redefinir acesso ao login')),
+              // Reforça na UI o que já é bloqueado no banco (trigger).
+              if (auth.podeExcluir) const PopupMenuItem(value: 'excluir', child: Text('Excluir cliente')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _acoesEmbutido(BuildContext context, Cliente cliente) {
+    final cores = Theme.of(context).colorScheme;
+    final botao = OutlinedButton.styleFrom(
+      minimumSize: const Size(0, 34),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      textStyle: const TextStyle(fontSize: 13),
+      visualDensity: VisualDensity.compact,
+    );
+    final temTelefone = normalizarTelefoneBr(cliente.telefoneContato).isNotEmpty;
+    final temMapa = cliente.enderecoCompleto.isNotEmpty || cliente.latitude != null;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          if (temTelefone)
+            OutlinedButton(
+              style: botao.copyWith(foregroundColor: WidgetStatePropertyAll(cores.primary)),
+              onPressed: () => abrirWhatsAppDoCliente(cliente),
+              child: const Text('WhatsApp · W'),
+            ),
+          if (cliente.email.isNotEmpty)
+            OutlinedButton(style: botao, onPressed: () => _enviarEmail(cliente.email), child: const Text('E-mail')),
+          if (temMapa)
+            OutlinedButton(
+              style: botao,
+              // Pino exato quando existe, igual à ficha do celular.
+              onPressed: () => _abrirMapa(
+                cliente.latitude != null && cliente.longitude != null
+                    ? '${cliente.latitude},${cliente.longitude}'
+                    : cliente.enderecoCompleto,
+              ),
+              child: const Text('Mapa'),
+            ),
+          if (widget.onNovaVenda != null)
+            FilledButton(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 34),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                visualDensity: VisualDensity.compact,
+              ),
+              onPressed: widget.onNovaVenda,
+              child: const Text('Nova venda · F2'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _numerosEmbutido(BuildContext context, Cliente cliente) {
+    final moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
+    final intervalo = cliente.intervaloMedioRecompraDias;
+    final numeros = [
+      ('Compras', '${cliente.quantidadeCompras ?? 0}'),
+      ('Total gasto', moeda.format(cliente.totalGasto ?? 0)),
+      ('Ticket médio', moeda.format(cliente.ticketMedio ?? 0)),
+      ('Volta a cada', intervalo == null ? '—' : '${intervalo.toStringAsFixed(0)} dias'),
+    ];
+    final cores = Theme.of(context).colorScheme;
+    Widget linha((String, String) n) => Row(
+          children: [
+            Flexible(
+              child: Text(n.$1,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5, color: cores.onSurfaceVariant)),
+            ),
+            const SizedBox(width: 6),
+            Text(n.$2, maxLines: 1, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          ],
+        );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: LayoutBuilder(builder: (context, limites) {
+        // Painel estreito (janela de ~1200 px): 4 cartões lado a lado cortariam
+        // o valor em reais, e empilhados tirariam a altura das abas. Viram duas
+        // linhas de texto, sem cartão.
+        if (limites.maxWidth < 400) {
+          return Column(
+            children: [
+              Row(children: [Expanded(child: linha(numeros[0])), const SizedBox(width: 12), Expanded(child: linha(numeros[1]))]),
+              const SizedBox(height: 4),
+              Row(children: [Expanded(child: linha(numeros[3])), const SizedBox(width: 12), Expanded(child: linha(numeros[2]))]),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            for (final (i, n) in numeros.indexed) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(child: _cartaoNumero(context, n.$1, n.$2)),
+            ],
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _cartaoNumero(BuildContext context, String rotulo, String valor) {
+    final cores = Theme.of(context).colorScheme;
+    return Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        border: Border.all(color: cores.outlineVariant.withValues(alpha: 0.7)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(rotulo, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: cores.onSurfaceVariant)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(valor, maxLines: 1, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Só mostra o que está preenchido (no celular aparece "Não informado").
+  Widget _dadoEmbutido(BuildContext context, String rotulo, String? valor) {
+    if (valor == null || valor.trim().isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 104,
+            child: Text(rotulo, style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: SelectableText(valor, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
+    );
+  }
+
+  Widget _cartaoEmbutido(BuildContext context, String titulo, List<Widget> filhos) {
+    final cores = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: cores.outlineVariant.withValues(alpha: 0.7)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              titulo.toUpperCase(),
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5, color: cores.onSurfaceVariant),
+            ),
+          ),
+          ...filhos,
+        ],
+      ),
+    );
+  }
+
+  Widget _dadosEmbutido(BuildContext context, Cliente cliente) {
+    final cores = Theme.of(context).colorScheme;
+    final data = DateFormat('dd/MM/yyyy');
+    final telefone = cliente.telefoneContato;
+    final entrega = [
+      if (cliente.rangeDistancia != null) '${cliente.rangeDistancia!.toStringAsFixed(1).replaceAll('.', ',')} km',
+      if (cliente.estimativaEntrega != null) '${cliente.estimativaEntrega} min',
+    ].join(', ');
+    final auth = context.watch<AuthProvider>();
+    final ehKyte = cliente.canalOrigem == 'kyte_historico';
+    final botao = OutlinedButton.styleFrom(
+      minimumSize: const Size(0, 34),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      textStyle: const TextStyle(fontSize: 13),
+      visualDensity: VisualDensity.compact,
+    );
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      children: [
+        if (ehKyte || cliente.pessoaId != null || cliente.appUltimoUsoEm != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (ehKyte)
+                  Chip(
+                    avatar: const Icon(Icons.history, size: 16),
+                    label: const Text('Histórico Kyte — cadastro sem login'),
+                    backgroundColor: cores.tertiaryContainer,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                if (cliente.pessoaId != null)
+                  Chip(
+                    avatar: const Icon(Icons.link, size: 16),
+                    label: const Text('Vinculado a outro cadastro'),
+                    backgroundColor: cores.primaryContainer,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                if (cliente.appUltimoUsoEm != null)
+                  Chip(
+                    avatar: const Icon(Icons.phone_iphone, size: 16),
+                    label: Text(
+                      'Tem o app${cliente.appPlataforma == 'iphone' ? ' (iPhone)' : cliente.appPlataforma == 'android' ? ' (Android)' : ''}'
+                      ' · último acesso ${DateFormat('dd/MM').format(cliente.appUltimoUsoEm!.toLocal())}',
+                    ),
+                    backgroundColor: cores.secondaryContainer,
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+          ),
+        // Mesma regra da ficha do celular: só enquanto não houver vínculo.
+        if (ehKyte && cliente.pessoaId == null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                style: botao,
+                onPressed: _promovendoKyte ? null : () => _promoverHistoricoKyte(cliente),
+                icon: _promovendoKyte
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.check_circle_outline, size: 16),
+                label: const Text('Usar este cadastro'),
+              ),
+            ),
+          ),
+        _dadoEmbutido(context, 'Celular', telefone.isEmpty ? null : ClienteValidators.celularParaEdicao(telefone)),
+        _dadoEmbutido(context, 'E-mail', cliente.email),
+        if (cliente.tipoPessoa == 'juridica') ...[
+          _dadoEmbutido(context, 'CNPJ', cliente.cnpj),
+          _dadoEmbutido(context, 'Razão social', cliente.razaoSocial),
+        ] else
+          _dadoEmbutido(context, 'CPF', cliente.cpf),
+        _dadoEmbutido(context, 'Endereço', cliente.enderecoExibicao),
+        if (cliente.pontoAjustadoCliente)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Chip(
+              avatar: const Icon(Icons.push_pin, size: 16),
+              label: const Text('Ponto marcado pelo cliente no mapa — siga o pino'),
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        _dadoEmbutido(context, 'Entrega', entrega),
+        _dadoEmbutido(context, 'Aniversário', cliente.aniversario == null ? null : data.format(cliente.aniversario!)),
+        _dadoEmbutido(context, 'Observação', cliente.observacao),
+        _dadoEmbutido(context, 'Marketing', cliente.aceitaMarketing == true ? 'Aceita' : 'Não aceita'),
+        _dadoEmbutido(context, 'Lembrete', cliente.aceitaLembreteWhatsapp ? 'Aceita lembrete de recompra (WhatsApp)' : 'Não aceita lembrete de recompra'),
+        _cartaoEmbutido(context, 'Pets (${cliente.pets.length})', [
+          if (cliente.pets.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('Nenhum pet registrado.', style: TextStyle(fontSize: 13, color: cores.onSurfaceVariant)),
+            ),
+          for (final pet in cliente.pets)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    [pet.nome, pet.especie, pet.raca, pet.porte].where((s) => s.isNotEmpty).join(' · '),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  if (pet.alergias.isNotEmpty)
+                    Text('Alergias: ${pet.alergias}', style: TextStyle(fontSize: 12, color: cores.error)),
+                ],
+              ),
+            ),
+        ]),
+        if (cliente.idCliente != null && auth.podeExcluir)
+          _CadastrosVinculadosSection(
+            key: ValueKey('${cliente.idCliente}-${cliente.pessoaId}'),
+            cliente: cliente,
+          ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton(style: botao, onPressed: () => _editarDados(cliente), child: const Text('Editar dados')),
+            if (cliente.authUserId != null)
+              OutlinedButton(
+                style: botao,
+                onPressed: () => _confirmarRedefinirAcesso(context, cliente),
+                child: const Text('Redefinir acesso ao login'),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _editarDados(Cliente cliente) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => EditarClienteScreen(clienteSelecionado: cliente)),
+    );
+    // EditarClienteScreen já atualiza o ClientProvider; o cadastro do Kyte não
+    // mora nele, então a lista de fora é que precisa recarregar.
+    if (mounted) widget.onAlterado?.call();
+  }
+
+  // ───────────────── ficha de sempre (celular) ─────────────────
 
   Widget _buildDadosTab(BuildContext context, Cliente cliente) {
     final dateFormat = DateFormat('dd/MM/yyyy');
@@ -445,7 +969,12 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Cadastro liberado — já aparece na lista normal de clientes.')),
       );
-      Navigator.pop(context, true);
+      if (widget.embutida) {
+        setState(() => _promovendoKyte = false);
+        widget.onAlterado?.call();
+      } else {
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _promovendoKyte = false);
@@ -502,7 +1031,15 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
     final clientProvider = Provider.of<ClientProvider>(context, listen: false);
     setState(() => _excluindo = true);
     try {
+      // Pega antes: no painel, a exclusão fecha este widget (a linha some).
+      final aoAlterar = widget.onAlterado;
+      final embutida = widget.embutida;
       await clientProvider.removerClienteDoFirestore(cliente);
+      if (embutida) {
+        aoAlterar?.call();
+        if (mounted) setState(() => _excluindo = false);
+        return;
+      }
       if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
@@ -548,7 +1085,10 @@ class _ClienteDetalhesScreenState extends State<ClienteDetalhesScreen> {
 class _CarrinhoClienteTab extends StatefulWidget {
   final String clienteId;
 
-  const _CarrinhoClienteTab({required this.clienteId});
+  /// Avisa quantos itens há no carrinho (título da aba no painel do PC).
+  final ValueChanged<int>? onQuantidade;
+
+  const _CarrinhoClienteTab({required this.clienteId, this.onQuantidade});
 
   @override
   State<_CarrinhoClienteTab> createState() => _CarrinhoClienteTabState();
@@ -569,7 +1109,10 @@ class _CarrinhoClienteTabState extends State<_CarrinhoClienteTab> {
     if (widget.clienteId.isEmpty) {
       return Future.value(CarrinhoCliente(itens: [], valorTotal: 0));
     }
-    return _repository.consultar(widget.clienteId);
+    return _repository.consultar(widget.clienteId).then((carrinho) {
+      widget.onQuantidade?.call(carrinho.itens.length);
+      return carrinho;
+    });
   }
 
   Future<void> _recarregar() async {
@@ -586,6 +1129,7 @@ class _CarrinhoClienteTabState extends State<_CarrinhoClienteTab> {
         widget.clienteId,
         produtoId: item.produtoId,
       );
+      widget.onQuantidade?.call(novoCarrinho.itens.length);
       setState(() {
         _futureCarrinho = Future.value(novoCarrinho);
         _removendoProdutoId = null;

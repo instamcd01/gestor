@@ -217,6 +217,15 @@ class Cliente {
     );
   }
 
+  /// Telefone de verdade pra mostrar ou chamar: no histórico do Kyte, `celular`
+  /// é só o placeholder `kyte-sem-numero-N` (nunca um número) e o real fica em
+  /// [telefoneKyte]. Vazio quando esse cadastro não tem telefone nenhum.
+  String get telefoneContato {
+    final kyte = telefoneKyte?.trim() ?? '';
+    if (kyte.isNotEmpty) return kyte;
+    return celular.startsWith('kyte-') ? '' : celular;
+  }
+
   /// Endereço estruturado — rua+número, bairro, cidade-UF e CEP, pulando
   /// as partes vazias. NÃO inclui complemento de propósito: é o texto que
   /// alimenta geocodificação/rota (`DistanciaService`, `rota_mapa_screen`,

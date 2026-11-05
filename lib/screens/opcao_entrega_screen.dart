@@ -25,7 +25,10 @@ import 'editar_cliente_screen.dart';
 class OpcaoEntregaScreen extends StatefulWidget {
   final double subtotal;
 
-  const OpcaoEntregaScreen({super.key, required this.subtotal});
+  /// Já abre com este cliente escolhido (ex: "Nova venda" na ficha do cliente).
+  final Cliente? clienteInicial;
+
+  const OpcaoEntregaScreen({super.key, required this.subtotal, this.clienteInicial});
 
   @override
   State<OpcaoEntregaScreen> createState() => _OpcaoEntregaScreenState();
@@ -107,8 +110,12 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
       _filtrarClientes(textoDigitado, Provider.of<ClientProvider>(context, listen: false).clientes);
     }
 
-    final clienteJaSelecionado =
-        Provider.of<ClientProvider>(context, listen: false).clienteSelecionado;
+    final provider = Provider.of<ClientProvider>(context, listen: false);
+    final inicial = widget.clienteInicial;
+    // Versão recém-carregada do cliente (endereço/distância podem ter mudado).
+    final clienteJaSelecionado = inicial == null
+        ? provider.clienteSelecionado
+        : provider.clientes.where((c) => c.idCliente == inicial.idCliente).firstOrNull ?? inicial;
     if (clienteJaSelecionado != null) {
       _selecionarCliente(clienteJaSelecionado);
     }

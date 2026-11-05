@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
+import '../models/cliente.dart';
 import '../models/kit_produto.dart';
 import '../models/produto.dart';
 import '../models/venda.dart';
@@ -35,6 +36,10 @@ import 'recibo_screen.dart';
 const _categoriaKits = '__kits__';
 
 enum _Fase { montando, pagando, concluida }
+
+/// Pedido de "Nova venda" vindo de outra tela (ficha do cliente no PC): quem
+/// pede preenche com o cliente e leva até o Vender; o Vender atende e esvazia.
+final vendaParaCliente = ValueNotifier<Cliente?>(null);
 
 /// Vender no PC (janela ≥ 1200 px): produtos à esquerda e carrinho fixo à
 /// direita, numa tela só — o painel da direita vira o pagamento (F9) e
@@ -91,9 +96,50 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_tecla);
+    vendaParaCliente.addListener(_atenderVendaParaCliente);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _carregar();
+      if (!mounted) return;
+      _carregar();
+      // O pedido pode ter chegado antes desta tela existir.
+      _atenderVendaParaCliente();
     });
+  }
+
+  /// "Nova venda" na ficha do cliente. Passa pela janela de Entrega de sempre:
+  /// é ela que define frete/retirada e junta o carrinho que o cliente já tinha
+  /// (WhatsApp/site/orçamento). Venda em andamento nunca troca de cliente sem
+  /// perguntar — esses itens podem ser de quem está no balcão.
+  Future<void> _atenderVendaParaCliente() async {
+    final cliente = vendaParaCliente.value;
+    if (cliente == null || !mounted) return;
+    vendaParaCliente.value = null;
+
+    final carrinho = context.read<CarrinhoProvider>();
+    if (_fase == _Fase.concluida) _novaVenda();
+    if (carrinho.itens.isNotEmpty) {
+      final atual = carrinho.clienteSelecionado;
+      if (atual?.idCliente == cliente.idCliente) return;
+      final qtd = carrinho.itens.length;
+      final usar = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Já tem uma venda em andamento'),
+          content: Text(
+            '$qtd ${qtd == 1 ? 'item' : 'itens'} no carrinho'
+            '${atual == null ? '' : ', para ${atual.nome}'}. '
+            'O que você quer fazer?',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Continuar a venda atual')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Usar ${cliente.nome} nessa venda')),
+          ],
+        ),
+      );
+      if (usar != true || !mounted) return;
+    }
+    if (_fase == _Fase.pagando) _voltarAoCarrinho();
+    await escolherClienteEEntrega(context, carrinho, comoJanela: true, clienteInicial: cliente);
+    if (mounted && _fase == _Fase.montando) _buscaFoco.requestFocus();
   }
 
   bool _visivel = false;
@@ -117,6 +163,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_tecla);
+    vendaParaCliente.removeListener(_atenderVendaParaCliente);
     _buscaController.dispose();
     _buscaFoco.dispose();
     _cupomController.dispose();

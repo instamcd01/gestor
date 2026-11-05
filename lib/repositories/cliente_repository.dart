@@ -29,6 +29,13 @@ class ClienteRepository {
     return Cliente.fromSupabase(data);
   }
 
+  /// O aviso de status chega sozinho no celular desse cliente? Campo calculado
+  /// (`recebe_push`), caro demais pra vir na lista inteira de `listar()`.
+  Future<bool> recebePush(String id) async {
+    final data = await supabase.from('clientes').select('id, recebe_push').eq('id', id).maybeSingle();
+    return data?['recebe_push'] as bool? ?? false;
+  }
+
   Future<List<Cliente>> listar() async {
     final data = await supabase
         .from('clientes')

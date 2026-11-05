@@ -9,6 +9,7 @@ import '../widgets/categoria_cliente_badge.dart';
 import '../widgets/estado_erro_lista.dart';
 import '../widgets/importar_clientes_planilha.dart';
 import 'cliente_detalhes_screen.dart';
+import 'clientes_pc.dart';
 import '../models/cliente.dart';
 
 class ClientesScreen extends StatefulWidget {
@@ -25,6 +26,9 @@ class _ClientesScreenState extends State<ClientesScreen> with SingleTickerProvid
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     Future.microtask(() {
+      if (!mounted) return;
+      // No PC quem carrega é a ClientesPc.
+      if (MediaQuery.sizeOf(context).width >= ClientesPc.larguraPc) return;
       Provider.of<ClientProvider>(context, listen: false).carregarClientesDoFirestore();
     });
   }
@@ -122,6 +126,9 @@ class _ClientesScreenState extends State<ClientesScreen> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
+    // Vindo de um aviso ("cliente ativo no site") também abre a tabela no PC.
+    if (MediaQuery.sizeOf(context).width >= ClientesPc.larguraPc) return const ClientesPc();
+
     final auth = context.watch<AuthProvider>();
 
     return Scaffold(
