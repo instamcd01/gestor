@@ -130,6 +130,7 @@ class _PagamentoDinheiroScreenState extends State<PagamentoDinheiroScreen> {
               subtotal: subtotal,
               desconto: widget.desconto,
               valorEntrega: widget.valorEntrega,
+              retirada: widget.entregaSelecionada == 'Retirada na Loja',
               saldoUsado: widget.saldoUsado,
               valorTotal: widget.valorTotal,
             ),

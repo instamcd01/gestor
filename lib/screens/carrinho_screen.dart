@@ -340,9 +340,11 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                   carrinhoProvider.clienteSelecionado == null
                       ? 'A calcular'
                       : (carrinhoProvider.valorEntregaCalculado == 0
-                          ? 'Frete Grátis'
+                          ? (carrinhoProvider.zonaEntregaSelecionada == null ? 'Retirada na loja' : 'Frete Grátis')
                           : 'R\$ ${carrinhoProvider.valorEntregaCalculado.toStringAsFixed(2)}'),
-                  cor: carrinhoProvider.clienteSelecionado != null && carrinhoProvider.valorEntregaCalculado == 0
+                  cor: carrinhoProvider.clienteSelecionado != null &&
+                          carrinhoProvider.zonaEntregaSelecionada != null &&
+                          carrinhoProvider.valorEntregaCalculado == 0
                       ? Colors.green
                       : null,
                 ),

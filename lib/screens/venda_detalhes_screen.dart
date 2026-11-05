@@ -543,7 +543,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
   Widget build(BuildContext context) {
     final venda = _venda;
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
-    final temEntrega = venda.valorEntrega > 0 || venda.entregaSelecionada.isNotEmpty;
+    final temEntrega = venda.temEntrega;
     // Custo/lucro/margem — vendedor não vê, nem o card interno nem por item.
     final podeVerFinancas = context.watch<AuthProvider>().podeVerFinancas;
     final authProvider = context.watch<AuthProvider>();
@@ -1051,7 +1051,6 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               // correção pós-entrega. Qualquer canal cobrado na entrega
               // (mesmo critério do botão da Fila), não só loja física.
               if (isDono &&
-                  venda.temEntrega &&
                   venda.status == StatusPedido.entregue &&
                   venda.formaPagamentoEditavel) ...[
                 const SizedBox(height: 8),

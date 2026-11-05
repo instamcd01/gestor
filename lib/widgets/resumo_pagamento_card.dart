@@ -12,6 +12,9 @@ class ResumoPagamentoCard extends StatelessWidget {
   final double valorTotal;
   final double juros;
 
+  /// Cliente retira na loja: não há entrega, muito menos "frete grátis".
+  final bool retirada;
+
   const ResumoPagamentoCard({
     super.key,
     required this.subtotal,
@@ -20,6 +23,7 @@ class ResumoPagamentoCard extends StatelessWidget {
     required this.saldoUsado,
     required this.valorTotal,
     this.juros = 0,
+    this.retirada = false,
   });
 
   static double calcularSubtotal(List<Map<String, dynamic>> carrinho) {
@@ -40,12 +44,18 @@ class ResumoPagamentoCard extends StatelessWidget {
           children: [
             _linha('Subtotal', subtotal),
             if (juros > 0) _linha('Juros do parcelamento', juros),
-            _linha(
-              'Entrega',
-              valorEntrega,
-              textoZero: 'Frete Grátis',
-              corTextoZero: Colors.green,
-            ),
+            if (retirada)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 2),
+                child: Text('Retirada na loja', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+              )
+            else
+              _linha(
+                'Entrega',
+                valorEntrega,
+                textoZero: 'Frete Grátis',
+                corTextoZero: Colors.green,
+              ),
             if (desconto > 0) _linha('Desconto', desconto, negativo: true, cor: Colors.red),
             if (saldoUsado > 0)
               _linha('Saldo do cliente', saldoUsado, negativo: true, cor: Colors.green),

@@ -407,6 +407,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
               subtotal: _subtotal,
               desconto: desconto,
               valorEntrega: _valorEntrega,
+              retirada: _zonaEntrega == null,
               saldoUsado: saldoUsado,
               valorTotal: valorTotal,
             ),

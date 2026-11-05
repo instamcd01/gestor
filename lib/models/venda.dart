@@ -553,7 +553,9 @@ class Venda {
     final fim = previsaoEntregaFim;
     return fim != null && agora.isAfter(fim);
   }
-  bool get temEntrega => valorEntrega > 0 || entregaSelecionada.isNotEmpty;
+  /// Vai até o cliente. `entregaSelecionada` guarda o texto "Retirada na Loja"
+  /// na retirada, então só estar preenchido não basta.
+  bool get temEntrega => valorEntrega > 0 || (entregaSelecionada.isNotEmpty && !retirada);
   bool get ehMarketplace => canalVenda == 'ifood';
 
   /// Trocar/tirar item depois de recebido (editar_itens_pedido): só pedido
@@ -564,9 +566,6 @@ class Venda {
   bool get temRastreio => rastreioLatitude != null && rastreioLongitude != null;
 
   /// true = cliente retira na loja (não precisa entrar em rota nenhuma).
-  /// Não usa `temEntrega` de propósito — esse getter fica true mesmo pra
-  /// retirada, porque `entregaSelecionada` guarda o texto "Retirada na
-  /// Loja" (não vazio) nesse caso.
   bool get retirada {
     if (ehMarketplace) {
       return tipoEntregaMarketplace != null && tipoEntregaMarketplace != 'DELIVERY';

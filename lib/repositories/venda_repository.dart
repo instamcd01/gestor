@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 
 import '../config/mercado_pago_config.dart';
@@ -94,17 +95,17 @@ class VendaRepository {
     final lucroTotal = venda.itens.fold<double>(0, (soma, i) => soma + i.lucroTotal);
     final margemPercentual = venda.valorTotal > 0 ? (lucroTotal / venda.valorTotal * 100) : 0.0;
 
-    // Venda de balcão (sem entrega) já sai como entregue — o cliente leva o
-    // produto na hora. Venda com entrega entra pendente e passa pela Fila
-    // de Pedidos até ser marcada como entregue de fato.
-    final statusInicial = venda.temEntrega ? StatusPedido.pendente : StatusPedido.entregue;
+    // Venda de balcão já sai como entregue: o cliente leva o produto na hora.
+    // Entrega e retirada agendada passam pela Fila de Pedidos. Mesmo o balcão
+    // nasce pendente e avança logo depois do insert: lucro real e intervalo de
+    // recompra só são calculados por trigger de UPDATE do status.
+    final vendaDeBalcao = !venda.temEntrega && !venda.agendadoManualmente;
 
     // Preencher a forma de pagamento na tela não significa que o dinheiro
     // já entrou — o app serve tanto de PDV (balcão/retirada, cobrado na
     // hora) quanto pra montar pedido de entrega (pagamento normalmente só
     // acontece quando o entregador chega). `venda.retirada` distingue os
-    // dois casos (ao contrário de `temEntrega`, que trata "Retirada na
-    // Loja" como entrega pra fins de fila de pedidos). Pra entrega de
+    // dois casos. Pra entrega de
     // verdade, o pagamento é confirmado automaticamente pelo banco no
     // momento em que o pedido é marcado como entregue (trigger
     // `confirmar_pagamento_entrega_loja_fisica`), não aqui.
@@ -135,7 +136,7 @@ class VendaRepository {
         'empresa_id': empresaId,
         'cliente_id': venda.cliente.idCliente,
         'vendedor_id': supabase.auth.currentUser?.id,
-        'status': statusInicial,
+        'status': StatusPedido.pendente,
         'origem': 'app',
         'origem_tipo': 'proprio',
         'canal_venda': 'loja_fisica',
@@ -180,6 +181,18 @@ class VendaRepository {
 
     final pedidoId = pedidoInserido['id'] as String;
 
+    // A venda já está gravada: se o avanço falhar, ela só fica na Fila pra
+    // concluir à mão, sem perder nada.
+    var statusFinal = pedidoInserido['status']?.toString() ?? StatusPedido.pendente;
+    if (vendaDeBalcao) {
+      try {
+        await avancarStatus(pedidoId, StatusPedido.entregue);
+        statusFinal = StatusPedido.entregue;
+      } catch (e) {
+        debugPrint('Venda de balcão $pedidoId ficou pendente: $e');
+      }
+    }
+
     // copyWith (não `Venda(...)` na mão) — um construtor manual esquece
     // silenciosamente qualquer campo que não seja resposta do servidor (já
     // aconteceu: parcelasCartao/jurosParcelamento ficavam null no recibo
@@ -190,7 +203,7 @@ class VendaRepository {
       numeroSequencial: (pedidoInserido['numero_sequencial'] as num?)?.toInt(),
       dataVenda: DateTime.tryParse(pedidoInserido['created_at'].toString())?.toLocal() ?? DateTime.now(),
       lucroTotal: lucroTotal,
-      status: pedidoInserido['status']?.toString() ?? StatusPedido.entregue,
+      status: statusFinal,
       canalVenda: pedidoInserido['canal_venda']?.toString() ?? 'loja_fisica',
       vendedorId: pedidoInserido['vendedor_id'] as String?,
     );

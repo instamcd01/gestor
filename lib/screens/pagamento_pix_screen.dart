@@ -126,6 +126,7 @@ class _PagamentoPixScreenState extends State<PagamentoPixScreen> {
               subtotal: subtotal,
               desconto: widget.desconto,
               valorEntrega: widget.valorEntrega,
+              retirada: widget.entregaSelecionada == 'Retirada na Loja',
               saldoUsado: widget.saldoUsado,
               valorTotal: widget.valorTotal,
             ),

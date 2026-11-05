@@ -174,6 +174,15 @@ void main() {
       expect(nomes, ['Um de cinco', 'Quatro de cinco']);
     });
 
+    test('retirada não é entrega: sem "Saiu para entrega" na fila', () {
+      final retirada = _venda('1', 1, 'X', StatusPedido.pronto, entrega: 'Retirada na Loja');
+      expect(retirada.temEntrega, isFalse);
+      expect(retirada.proximoStatus, StatusPedido.entregue);
+      final entrega = _venda('2', 2, 'Y', StatusPedido.pronto, entrega: 'Zona A');
+      expect(entrega.temEntrega, isTrue);
+      expect(entrega.proximoStatus, StatusPedido.saiuParaEntrega);
+    });
+
     test('agendado e retirada nunca contam como atrasado', () {
       final semPrazo = _venda('1', 1, 'X', StatusPedido.preparando, entrega: 'Zona A');
       expect(semPrazo.atrasadoEm(DateTime.now()), isFalse);

@@ -149,6 +149,7 @@ class _PagamentoCartaoCreditoScreenState extends State<PagamentoCartaoCreditoScr
               subtotal: subtotal,
               desconto: widget.desconto,
               valorEntrega: widget.valorEntrega,
+              retirada: widget.entregaSelecionada == 'Retirada na Loja',
               saldoUsado: widget.saldoUsado,
               valorTotal: _valorFinalComJuros,
               juros: _parcelaEscolhida > 1 ? _jurosCalculado : 0,

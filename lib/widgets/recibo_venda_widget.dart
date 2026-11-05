@@ -266,7 +266,7 @@ class ReciboVendaWidget extends StatelessWidget {
 
   Widget _caixaTotais() {
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
-    final temEntrega = venda.valorEntrega > 0 || venda.entregaSelecionada.isNotEmpty;
+    final temEntrega = venda.temEntrega;
 
     return Container(
       padding: const EdgeInsets.all(14),
