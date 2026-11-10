@@ -905,6 +905,18 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     if (venda.valorParcelaCartao != null) {
       pagamento.add(_textoCartao('${venda.parcelasCartao}x de ${moeda.format(venda.valorParcelaCartao!)} na maquininha'));
     }
+    // Bandeira do cartão e CPF/CNPJ na nota: o iFood exige mostrar os dois
+    // (critérios de homologação do Order).
+    if ((venda.bandeiraCartao ?? '').isNotEmpty) {
+      pagamento.add(_textoCartao('Bandeira: ${venda.bandeiraCartao}'));
+    }
+    if (venda.canalVenda == 'ifood') {
+      if (venda.cliente.cnpj.isNotEmpty) {
+        pagamento.add(_textoCartao('CNPJ informado no iFood: ${venda.cliente.cnpj}'));
+      } else if (venda.cliente.cpf.isNotEmpty) {
+        pagamento.add(_textoCartao('CPF informado no iFood: ${venda.cliente.cpf}'));
+      }
+    }
 
     Widget linhaTotal(String rotulo, String valor, {bool forte = false}) => Padding(
           padding: const EdgeInsets.only(top: 4),
