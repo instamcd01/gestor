@@ -24,6 +24,7 @@ import '../widgets/marketplace_config_card.dart';
 import 'cancelamentos_ifood_screen.dart';
 import 'historico_reconciliacao_screen.dart';
 import 'ifood_loja_api_screen.dart';
+import 'ifood_promocoes_screen.dart';
 import 'qualidade_ifood_screen.dart';
 import 'recebiveis_ifood_screen.dart';
 import 'ruptura_ifood_screen.dart';
@@ -797,6 +798,16 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
                     subtitle: const Text('Lojas vinculadas, pausas, horário de funcionamento e catálogo, direto no iFood'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IfoodLojaApiScreen())),
+                  ),
+                ),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: const Icon(Icons.local_offer_outlined, color: Colors.red),
+                    title: const Text('Promoções iFood'),
+                    subtitle: const Text('Criar e acompanhar promoções no iFood: %, leve X pague Y, preço fixo, atacarejo e mais'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IfoodPromocoesScreen())),
                   ),
                 ),
                 _cardReconciliacao(),
