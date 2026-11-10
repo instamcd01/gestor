@@ -39,6 +39,8 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
   int _tentativasConfirmacao = 0;
   Timer? _pollAcoesTimer;
   Timer? _pollConfirmacaoTimer;
+  Timer? _pollChamadasTimer;
+  List<Map<String, dynamic>> _chamadas = [];
   bool _processando = false;
   List<Produto> _catalogo = [];
 
@@ -54,6 +56,86 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
     setState(() => _consultandoBag = true);
     final r = await _ifoodRepository.consultarPedido(widget.venda.marketplacePedidoId!);
     if (mounted) setState(() { _virtualBag = r; _consultandoBag = false; });
+    _atualizarChamadas();
+  }
+
+  /// Chamadas à API do iFood deste pedido — a "tela de logs" que o iFood
+  /// pede no vídeo de homologação do Picking. Atualiza a cada 3 s enquanto a
+  /// tela está aberta (o n8n grava o resultado de forma assíncrona).
+  Future<void> _atualizarChamadas() async {
+    final id = widget.venda.marketplacePedidoId;
+    if (id == null || !_ehIfood) return;
+    try {
+      final chamadas = await _repository.buscarChamadas(id);
+      if (mounted) setState(() => _chamadas = chamadas);
+    } catch (_) {
+      // Silencioso — a próxima volta do timer tenta de novo.
+    }
+  }
+
+  String _hora(String? iso) {
+    final d = DateTime.tryParse(iso ?? '')?.toLocal();
+    if (d == null) return '--:--:--';
+    String dd(int v) => v.toString().padLeft(2, '0');
+    return '${dd(d.hour)}:${dd(d.minute)}:${dd(d.second)}';
+  }
+
+  Color _corMetodo(String m) => switch (m) {
+        'GET' => Colors.blue,
+        'POST' => Colors.green,
+        'PATCH' => Colors.orange,
+        'DELETE' => Colors.red,
+        _ => Colors.grey,
+      };
+
+  Widget _cardChamadas() {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.receipt_long_outlined, size: 18),
+            const SizedBox(width: 6),
+            const Expanded(child: Text('Chamadas à API do iFood', style: TextStyle(fontWeight: FontWeight.w600))),
+            Text('${_chamadas.length}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ]),
+          const SizedBox(height: 6),
+          if (_chamadas.isEmpty)
+            const Text('Nenhuma chamada ainda neste pedido.', style: TextStyle(fontSize: 12, color: Colors.grey))
+          else
+            ..._chamadas.map((c) {
+              final metodo = c['metodo'] as String? ?? '?';
+              final ok = c['sucesso'] == true;
+              final status = c['http_status'] as int?;
+              final resultado = ok ? (status != null ? '$status OK' : 'Sucesso') : (status != null ? '$status ERRO' : 'Erro');
+              final detalhe = c['detalhe'] as String?;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  SizedBox(width: 62, child: Text(_hora(c['created_at'] as String?), style: const TextStyle(fontFamily: 'monospace', fontSize: 11))),
+                  Container(
+                    width: 52,
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    margin: const EdgeInsets.only(right: 6),
+                    decoration: BoxDecoration(color: _corMetodo(metodo).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
+                    child: Text(metodo, textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _corMetodo(metodo))),
+                  ),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      SelectableText(c['endpoint'] as String? ?? '', style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+                      if (detalhe != null && detalhe.isNotEmpty)
+                        Text(detalhe, style: TextStyle(fontSize: 11, color: ok ? Colors.grey : Colors.red), maxLines: 3, overflow: TextOverflow.ellipsis),
+                    ]),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(resultado, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ok ? Colors.green : Colors.red)),
+                ]),
+              );
+            }),
+        ]),
+      ),
+    );
   }
 
   /// Acha a lista de itens dentro da resposta da virtual bag, onde quer
@@ -142,12 +224,17 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
     _status = widget.venda.separacaoStatus;
     if (_status != null) _atualizarAcoes();
     if (_status == 'finalizada') _atualizarConfirmacao();
+    if (_ehIfood) {
+      _atualizarChamadas();
+      _pollChamadasTimer = Timer.periodic(const Duration(seconds: 3), (_) => _atualizarChamadas());
+    }
   }
 
   @override
   void dispose() {
     _pollAcoesTimer?.cancel();
     _pollConfirmacaoTimer?.cancel();
+    _pollChamadasTimer?.cancel();
     super.dispose();
   }
 
@@ -391,6 +478,27 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
     }
   }
 
+  /// "Separei completo": confirma ao iFood o item com a quantidade do pedido
+  /// (PATCH com a mesma quantidade) — o checklist do Picking pede um item
+  /// confirmado sem mudança, além do alterado e do removido.
+  Future<void> _confirmarCompleto(ItemVenda item) async {
+    if (item.id == null) return;
+    setState(() => _processando = true);
+    try {
+      await _repository.modificarItem(
+        marketplacePedidoId: widget.venda.marketplacePedidoId!,
+        itemPedidoId: item.id!,
+        quantidade: item.quantidade.toDouble(),
+        confirmacaoCompleta: true,
+      );
+      await _atualizarAcoes();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível confirmar o item.')));
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
+  }
+
   Future<void> _adicionarItem() async {
     if (!await _carregarCatalogo()) return;
     if (!mounted) return;
@@ -557,6 +665,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                   ),
                 ),
               if (_ehIfood) _cardVirtualBag(),
+              if (_ehIfood) _cardChamadas(),
               if (_status == null)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -650,6 +759,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
     final status = acao?['status'] as String?;
     final tipoAcao = acao?['tipo_acao'] as String?;
     final removidoAplicado = tipoAcao == 'remover' && status == 'aplicada';
+    final confirmadoCompleto = tipoAcao == 'modificar' && acao?['confirmacao_completa'] == true;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -669,7 +779,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                     ),
                   ),
                   Text(
-                    tipoAcao == 'modificar' && status == 'aplicada'
+                    tipoAcao == 'modificar' && status == 'aplicada' && !confirmadoCompleto
                         ? '${acao?['quantidade']}x (era ${item.quantidade}x)'
                         : '${item.quantidade}x',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
@@ -677,13 +787,19 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                   if (item.observacaoCliente != null && item.observacaoCliente!.isNotEmpty)
                     Text('"${item.observacaoCliente}"',
                         style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.orange)),
-                  if (acao != null) _statusAcaoTexto(acao),
+                  if (acao != null) _statusAcaoTexto(acao, confirmadoCompleto: confirmadoCompleto),
                 ],
               ),
             ),
             if (_status == 'separando' && acao == null && item.id != null && !_edicaoBloqueadaPorPagamento)
               Row(
                 children: [
+                  if (_ehIfood)
+                    IconButton(
+                      icon: const Icon(Icons.check_circle_outline, color: Colors.green),
+                      tooltip: 'Separei completo',
+                      onPressed: _processando ? null : () => _confirmarCompleto(item),
+                    ),
                   IconButton(
                     icon: const Icon(Icons.edit_outlined),
                     tooltip: 'Alterar quantidade',
@@ -710,7 +826,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
   /// Texto real do estado da ação — nunca assume sucesso: `pendente` é só
   /// intenção registrada, `aplicada`/`erro` é o que o n8n confirmou de volta
   /// da iFood (com a mensagem real do erro, quando houver).
-  Widget _statusAcaoTexto(Map<String, dynamic> acao) {
+  Widget _statusAcaoTexto(Map<String, dynamic> acao, {bool confirmadoCompleto = false}) {
     final status = acao['status'] as String? ?? 'pendente';
     if (status == 'pendente') {
       return const Padding(
@@ -738,7 +854,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
     final rotulo = switch (tipo) {
       'remover' => 'Removido ✓',
       'substituir' => 'Substituído por: ${produtoNome ?? '?'} ✓',
-      'modificar' => 'Quantidade alterada ✓',
+      'modificar' => confirmadoCompleto ? 'Separado completo ✓' : 'Quantidade alterada ✓',
       'adicionar' => 'Adicionado ao pedido ✓',
       _ => 'Aplicado ✓',
     };

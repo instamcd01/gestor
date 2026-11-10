@@ -64,12 +64,17 @@ class SeparacaoPedidoRepository {
     required String marketplacePedidoId,
     required String itemPedidoId,
     required double quantidade,
+    bool confirmacaoCompleta = false,
   }) async {
     await supabase.from('marketplace_separacao_acoes').insert({
       'marketplace_pedido_id': marketplacePedidoId,
       'item_pedido_id': itemPedidoId,
       'tipo_acao': 'modificar',
       'quantidade': quantidade,
+      // "Separei completo": PATCH com a mesma quantidade. Marcado à parte
+      // porque depois de finalizar a quantidade do item é acertada pelo que o
+      // iFood confirmou, e comparar quantidades daria falso "completo".
+      'confirmacao_completa': confirmacaoCompleta,
     });
   }
 
@@ -81,6 +86,19 @@ class SeparacaoPedidoRepository {
     final data = await supabase
         .from('marketplace_separacao_acoes')
         .select('*, produtos:produto_substituto_id(nome)')
+        .eq('marketplace_pedido_id', marketplacePedidoId)
+        .order('created_at');
+    return (data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Cada chamada feita à API do iFood para este pedido (start/endSeparation,
+  /// PATCH/DELETE/replace de item, GET virtual-bag), na ordem em que
+  /// aconteceram — gravadas pelo banco quando o n8n devolve o resultado e
+  /// pela Edge Function `ifood-merchant` (com o status HTTP real).
+  Future<List<Map<String, dynamic>>> buscarChamadas(String marketplacePedidoId) async {
+    final data = await supabase
+        .from('marketplace_api_chamadas')
+        .select('metodo, endpoint, http_status, sucesso, detalhe, origem, created_at')
         .eq('marketplace_pedido_id', marketplacePedidoId)
         .order('created_at');
     return (data as List).cast<Map<String, dynamic>>();

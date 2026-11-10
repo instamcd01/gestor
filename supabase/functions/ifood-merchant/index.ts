@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
           .from("marketplace_pedidos").select("marketplace_order_id")
           .eq("id", body.marketplace_pedido_id).eq("marketplace_id", IFOOD_ID).maybeSingle();
         if (!mp?.marketplace_order_id) return json({ erro: "pedido do iFood não encontrado" }, 404);
-        r = await ifood(c, "GET", `/order/v1.0/orders/${mp.marketplace_order_id}/virtual-bag`);
+        r = await ifood(c, "GET", `/order/v1.0/orders/${mp.marketplace_order_id}/virtual-bag`, undefined, body.marketplace_pedido_id);
         break;
       }
       case "carga_completa": {
@@ -145,7 +145,7 @@ async function token(c: Config): Promise<string> {
   return t.accessToken;
 }
 
-async function ifood(c: Config, method: string, path: string, corpo?: unknown): Promise<Resultado> {
+async function ifood(c: Config, method: string, path: string, corpo?: unknown, marketplacePedidoId?: string): Promise<Resultado> {
   const resp = await fetch(API + path, {
     method,
     headers: { Authorization: `Bearer ${await token(c)}`, ...(corpo !== undefined ? { "Content-Type": "application/json" } : {}) },
@@ -154,6 +154,13 @@ async function ifood(c: Config, method: string, path: string, corpo?: unknown): 
   const texto = await resp.text();
   let dados: unknown = null;
   try { dados = texto ? JSON.parse(texto) : null; } catch { dados = texto; }
+  // Tela "Chamadas da integração": cada chamada com o status HTTP real.
+  await admin.from("marketplace_api_chamadas").insert({
+    empresa_id: c.empresa_id, marketplace_id: IFOOD_ID, marketplace_pedido_id: marketplacePedidoId ?? null,
+    metodo: method, endpoint: path.split("?")[0] + (path.includes("reset=true") ? "?reset=true" : ""),
+    http_status: resp.status, sucesso: resp.ok, origem: "gestor",
+    detalhe: resp.ok ? null : texto.slice(0, 1000),
+  }).then(() => {}, () => {});
   return resp.ok ? { ok: true, status: resp.status, dados } : { ok: false, status: resp.status, dados, erro: `iFood respondeu ${resp.status}` };
 }
 
