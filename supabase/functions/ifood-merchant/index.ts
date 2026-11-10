@@ -194,6 +194,91 @@ Deno.serve(async (req) => {
         }
         break;
       }
+      // ── Financial v3.0 ────────────────────────────────────────────────
+      // homologacao=true manda o header x-request-homologation (dados de
+      // teste do iFood, exigido no questionário de homologação).
+      case "fin_vendas": {
+        // Máximo de 8 dias por consulta: quebra o período em janelas e pagina.
+        const vendas: unknown[] = [];
+        let ultima: Resultado = { ok: true, status: 200 };
+        for (const [ini, fim] of janelas(String(body.inicio), String(body.fim), 8)) {
+          for (let page = 1; page <= 30; page++) {
+            ultima = await ifood(c, "GET",
+              `/financial/v3.0/merchants/${loja}/sales?beginSalesDate=${ini}&endSalesDate=${fim}&page=${page}`,
+              undefined, { homologacao: !!body.homologacao });
+            if (!ultima.ok) break;
+            const d = (ultima.dados ?? {}) as Record<string, unknown>;
+            vendas.push(...((d.sales as unknown[]) ?? []));
+            if (page >= Number(d.pageCount ?? 1)) break;
+          }
+          if (!ultima.ok) break;
+        }
+        r = ultima.ok ? { ok: true, status: 200, dados: { sales: vendas, total: vendas.length } } : ultima;
+        break;
+      }
+      case "fin_eventos": {
+        // Máximo de 33 dias por consulta; pagina por hasNextPage.
+        const eventos: unknown[] = [];
+        let ultima: Resultado = { ok: true, status: 200 };
+        for (const [ini, fim] of janelas(String(body.inicio), String(body.fim), 33)) {
+          for (let page = 1; page <= 50; page++) {
+            ultima = await ifood(c, "GET",
+              `/financial/v3.0/merchants/${loja}/financial-events?beginDate=${ini}&endDate=${fim}&page=${page}&size=100`,
+              undefined, { homologacao: !!body.homologacao });
+            if (!ultima.ok) break;
+            const d = (ultima.dados ?? {}) as Record<string, unknown>;
+            eventos.push(...((d.financialEvents as unknown[]) ?? []));
+            if (!d.hasNextPage) break;
+          }
+          if (!ultima.ok) break;
+        }
+        r = ultima.ok ? { ok: true, status: 200, dados: { financialEvents: eventos, total: eventos.length } } : ultima;
+        break;
+      }
+      case "fin_repasses": {
+        r = await ifood(c, "GET",
+          `/financial/v3.0/merchants/${loja}/settlements?beginPaymentDate=${body.inicio}&endPaymentDate=${body.fim}`,
+          undefined, { homologacao: !!body.homologacao });
+        break;
+      }
+      case "fin_antecipacoes": {
+        r = await ifood(c, "GET",
+          `/financial/v3.0/merchants/${loja}/anticipations?beginCalculationDate=${body.inicio}&endCalculationDate=${body.fim}`,
+          undefined, { homologacao: !!body.homologacao });
+        break;
+      }
+      case "fin_conciliacao_pedir": {
+        const competencia = String(body.competencia ?? "");
+        if (!/^\d{4}-\d{2}$/.test(competencia)) return json({ erro: "competência inválida (use AAAA-MM)" }, 400);
+        r = await ifood(c, "POST", `/financial/v3.0/merchants/${loja}/reconciliation/on-demand`,
+          { competence: competencia }, { homologacao: !!body.homologacao });
+        let requestId = (r.dados as Record<string, unknown>)?.requestId as string | undefined;
+        // 409 = já existe pedido pra essa competência: reaproveita o requestId guardado.
+        if (r.status === 409 && !requestId) requestId = (await ultimaConciliacao(c, competencia, !!body.homologacao))?.request_id;
+        if (requestId) {
+          await admin.from("eventos_sistema").insert({
+            tipo_evento: "ifood_conciliacao_on_demand", tabela_origem: "empresa_marketplace_config",
+            dados: { empresa_id: c.empresa_id, competencia, request_id: requestId, homologacao: !!body.homologacao, status: "REQUESTED" },
+          });
+          r = { ...r, ok: true, dados: { ...(r.dados as object ?? {}), requestId, reaproveitado: r.status === 409 } };
+        }
+        break;
+      }
+      case "fin_conciliacao_status": {
+        const competencia = String(body.competencia ?? "");
+        const requestId = String(body.request_id ?? "") || (await ultimaConciliacao(c, competencia, !!body.homologacao))?.request_id;
+        if (!requestId) return json({ erro: "nenhum pedido de conciliação para essa competência" }, 404);
+        r = await ifood(c, "GET", `/financial/v3.0/merchants/${loja}/reconciliation/on-demand/${requestId}`,
+          undefined, { homologacao: !!body.homologacao });
+        break;
+      }
+      case "fin_conciliacao_listar": {
+        const { data } = await admin.from("eventos_sistema").select("dados, created_at")
+          .eq("tipo_evento", "ifood_conciliacao_on_demand").eq("dados->>empresa_id", c.empresa_id)
+          .order("created_at", { ascending: false }).limit(24);
+        r = { ok: true, status: 200, dados: { pedidos: data ?? [] } };
+        break;
+      }
       default:
         return json({ erro: "ação desconhecida" }, 400);
     }
@@ -260,7 +345,32 @@ type Opcoes = {
   corpoBruto?: string;          // envia o texto como está (cenário "JSON malformado")
   tokenInvalido?: boolean;      // cenário "token expirado": 1ª tentativa com token inválido
   semRetentativa?: boolean;     // cenário 429: mostrar o 429 sem esperar
+  homologacao?: boolean;        // Financial: header x-request-homologation (dados de teste)
 };
+
+// Quebra [inicio, fim] (AAAA-MM-DD) em janelas de no máximo `dias` dias.
+function janelas(inicio: string, fim: string, dias: number): [string, string][] {
+  const d = (s: string) => new Date(`${s}T00:00:00Z`);
+  const f = (x: Date) => x.toISOString().slice(0, 10);
+  const saida: [string, string][] = [];
+  let a = d(inicio);
+  const b = d(fim);
+  if (isNaN(a.getTime()) || isNaN(b.getTime()) || a > b) return [[inicio, fim]];
+  while (a <= b && saida.length < 60) {
+    const z = new Date(a.getTime() + (dias - 1) * 86_400_000);
+    saida.push([f(a), f(z < b ? z : b)]);
+    a = new Date(z.getTime() + 86_400_000);
+  }
+  return saida;
+}
+
+async function ultimaConciliacao(c: Config, competencia: string, homologacao: boolean) {
+  const { data } = await admin.from("eventos_sistema").select("dados")
+    .eq("tipo_evento", "ifood_conciliacao_on_demand").eq("dados->>empresa_id", c.empresa_id)
+    .eq("dados->>competencia", competencia).eq("dados->>homologacao", String(homologacao))
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return (data?.dados ?? null) as { request_id?: string } | null;
+}
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -277,7 +387,11 @@ async function ifood(c: Config, method: string, path: string, corpo?: unknown, o
     const temCorpo = o.corpoBruto !== undefined || corpo !== undefined;
     const resp = await fetch(API + path, {
       method,
-      headers: { Authorization: `Bearer ${tokenAtual}`, ...(temCorpo ? { "Content-Type": "application/json" } : {}) },
+      headers: {
+        Authorization: `Bearer ${tokenAtual}`,
+        ...(temCorpo ? { "Content-Type": "application/json" } : {}),
+        ...(o.homologacao ? { "x-request-homologation": "true" } : {}),
+      },
       body: o.corpoBruto !== undefined ? o.corpoBruto : corpo !== undefined ? JSON.stringify(corpo) : undefined,
     });
     const texto = await resp.text();
@@ -341,7 +455,8 @@ async function salvarPromocao(c: Config, promotionId: string, campos: Record<str
 }
 
 async function registrar(empresaId: string, acao: string, r: Resultado) {
-  const dados = r;
+  // Financial devolve listas grandes com dados de pedido: guarda só o resumo.
+  const dados = acao.startsWith("fin_") ? { ok: r.ok, status: r.status, erro: r.erro, tentativas: r.tentativas } : r;
   await admin.from("eventos_sistema").insert({
     tipo_evento: `ifood_merchant_${acao || "desconhecida"}`,
     tabela_origem: "empresa_marketplace_config",

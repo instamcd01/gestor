@@ -142,4 +142,26 @@ class IfoodMerchantRepository {
   Future<RespostaIfood> promoPedidos(String promotionId, {String? startDate, String? endDate}) =>
       _chamar('promo_pedidos', {'promotion_id': promotionId, if (startDate != null) 'startDate': startDate, if (endDate != null) 'endDate': endDate});
   Future<RespostaIfood> promoTeste429() => _chamar('promo_teste_429');
+
+  // ── Financial v3.0 ────────────────────────────────────────────────────
+  // [inicio]/[fim] em AAAA-MM-DD. [homologacao] usa os dados de teste do iFood
+  // (header x-request-homologation), exigidos no questionário de homologação.
+  Future<RespostaIfood> finVendas(String inicio, String fim, {bool homologacao = false}) =>
+      _chamar('fin_vendas', {'inicio': inicio, 'fim': fim, 'homologacao': homologacao});
+  Future<RespostaIfood> finEventos(String inicio, String fim, {bool homologacao = false}) =>
+      _chamar('fin_eventos', {'inicio': inicio, 'fim': fim, 'homologacao': homologacao});
+  Future<RespostaIfood> finRepasses(String inicio, String fim, {bool homologacao = false}) =>
+      _chamar('fin_repasses', {'inicio': inicio, 'fim': fim, 'homologacao': homologacao});
+  Future<RespostaIfood> finAntecipacoes(String inicio, String fim, {bool homologacao = false}) =>
+      _chamar('fin_antecipacoes', {'inicio': inicio, 'fim': fim, 'homologacao': homologacao});
+  /// [competencia] = AAAA-MM. Se o iFood responder 409 (já pedido), reaproveita o requestId.
+  Future<RespostaIfood> finConciliacaoPedir(String competencia, {bool homologacao = false}) =>
+      _chamar('fin_conciliacao_pedir', {'competencia': competencia, 'homologacao': homologacao});
+  Future<RespostaIfood> finConciliacaoStatus(String competencia, {String? requestId, bool homologacao = false}) =>
+      _chamar('fin_conciliacao_status', {
+        'competencia': competencia,
+        if (requestId != null) 'request_id': requestId,
+        'homologacao': homologacao,
+      });
+  Future<RespostaIfood> finConciliacaoListar() => _chamar('fin_conciliacao_listar');
 }

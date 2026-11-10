@@ -24,6 +24,7 @@ import '../widgets/marketplace_config_card.dart';
 import 'cancelamentos_ifood_screen.dart';
 import 'historico_reconciliacao_screen.dart';
 import 'ifood_loja_api_screen.dart';
+import 'ifood_financeiro_screen.dart';
 import 'ifood_promocoes_screen.dart';
 import 'qualidade_ifood_screen.dart';
 import 'recebiveis_ifood_screen.dart';
@@ -856,10 +857,20 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
                   margin: const EdgeInsets.only(bottom: 12),
                   child: ListTile(
                     leading: const Icon(Icons.account_balance_outlined, color: Colors.green),
-                    title: const Text('Recebíveis iFood'),
+                    title: const Text('Recebíveis iFood (relatórios)'),
                     subtitle: const Text('Quando e quanto o iFood deposita, com conferência real vs. estimado'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecebiveisIfoodScreen())),
+                  ),
+                ),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: const Icon(Icons.account_balance_wallet_outlined, color: Colors.green),
+                    title: const Text('Financeiro iFood (API)'),
+                    subtitle: const Text('Vendas, eventos financeiros, repasses, antecipações e arquivo de conciliação, direto do iFood'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IfoodFinanceiroScreen())),
                   ),
                 ),
                 MarketplaceConfigCard(
