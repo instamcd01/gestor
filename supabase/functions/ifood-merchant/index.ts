@@ -177,14 +177,16 @@ Deno.serve(async (req) => {
         break;
       }
       case "promo_teste_429": {
-        // Cenário 29: requisições seguidas (uma por vez, sem paralelismo) até o
-        // iFood responder 429; depois a mesma chamada com backoff até passar.
+        // Cenário 29 (só neste botão do roteiro): rajadas de 15 requisições ao
+        // mesmo tempo, no máximo 6, até o iFood responder 429; depois a mesma
+        // chamada com backoff até passar. O resto do sistema faz uma por vez.
         let n = 0;
         let ultima: Resultado = { ok: true, status: 200 };
-        while (n < 60) {
-          n++;
-          ultima = await ifood(c, "GET", `/promotion/v2.0/merchants/${loja}/promotions?size=1`, undefined, { semRetentativa: true });
-          if (ultima.status === 429) break;
+        for (let rajada = 0; rajada < 6 && ultima.status !== 429; rajada++) {
+          const lote = await Promise.all(Array.from({ length: 15 }, () =>
+            ifood(c, "GET", `/promotion/v2.0/merchants/${loja}/promotions?size=1`, undefined, { semRetentativa: true })));
+          n += lote.length;
+          ultima = lote.find((x) => x.status === 429) ?? lote[lote.length - 1];
         }
         if (ultima.status === 429) {
           r = await ifood(c, "GET", `/promotion/v2.0/merchants/${loja}/promotions?size=1`);
