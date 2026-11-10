@@ -134,6 +134,9 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   /// plataforma.
   bool _prazoIfoodEstourado(Venda venda, DateTime agora) {
     if (!venda.emAndamento) return false;
+    // Retirada imediata: o iFood manda takeoutDateTime = hora do pedido
+    // (visto em 10/11, pedido 2840), não um prazo — o selo acendia na hora.
+    if (venda.retirada && !venda.agendado) return false;
     final prazo = venda.entregaPrevistaFim;
     return venda.ehMarketplace && prazo != null && agora.isAfter(prazo);
   }
