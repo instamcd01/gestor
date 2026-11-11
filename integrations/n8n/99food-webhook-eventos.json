@@ -240,7 +240,7 @@
           "mappingMode": "defineBelow",
           "value": {
             "tipo_evento": "99food_assinatura_invalida",
-            "dados": "={{ JSON.stringify({ rawBody: $json.rawBody, recebida: $json.signature, calculada: $json.assinatura_calculada, app_id: $json.app_id, tem_config: !!$json.api_secret }) }}"
+            "dados": "={{ JSON.stringify({ rawBody: $('Consolidar verificação').item.json.rawBody, recebida: $('Consolidar verificação').item.json.signature, calculada: $('Consolidar verificação').item.json.assinatura_calculada, app_id: $('Consolidar verificação').item.json.app_id, tipo: $('Consolidar verificação').item.json.type }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -1483,6 +1483,144 @@
           "name": "Postgres cloud"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "tp1",
+              "leftValue": "={{ !!($json.data && $json.data.order_id) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "f99_tem_pedido",
+      "name": "Aviso de pedido?",
+      "position": [
+        760,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select errno, errmsg, data from public.food99_token_resposta($1);",
+        "options": {
+          "queryReplacement": "={{ [$('Consolidar verificação').item.json.app_shop_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "f99_tok_conf",
+      "name": "Token 99Food (conferência)",
+      "position": [
+        980,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "https://openapi.99food.com/v1/order/order/detail",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "auth_token",
+              "value": "={{ $json.data.auth_token }}"
+            },
+            {
+              "name": "order_id",
+              "value": "={{ String($('Consolidar verificação').item.json.data.order_id) }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "f99_detail_conf",
+      "name": "Conferir pedido na 99Food",
+      "position": [
+        1200,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ok1",
+              "leftValue": "={{ (() => { const t = String($json.data || ''); const id = String($('Consolidar verificação').item.json.data.order_id); return /\"errno\"\\s*:\\s*0[,}]/.test(t) && t.includes(id); })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "f99_conf_ok",
+      "name": "Pedido confirmado pela 99Food?",
+      "position": [
+        1420,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assinatura não bateu, mas o pedido foi confirmado pela API do 99Food (detail com o nosso token).\nreturn [{ json: { ...$('Consolidar verificação').item.json, assinatura_valida: true, validado_por: 'order_detail' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "f99_retomar",
+      "name": "Seguir com o aviso (conferido)",
+      "position": [
+        1640,
+        240
+      ]
     }
   ],
   "connections": {
@@ -1575,7 +1713,7 @@
         ],
         [
           {
-            "node": "Registrar evento assinatura inválida",
+            "node": "Aviso de pedido?",
             "type": "main",
             "index": 0
           }
@@ -2015,6 +2153,75 @@
         [
           {
             "node": "Registrar evento genérico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aviso de pedido?": {
+      "main": [
+        [
+          {
+            "node": "Token 99Food (conferência)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar evento assinatura inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token 99Food (conferência)": {
+      "main": [
+        [
+          {
+            "node": "Conferir pedido na 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conferir pedido na 99Food": {
+      "main": [
+        [
+          {
+            "node": "Pedido confirmado pela 99Food?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedido confirmado pela 99Food?": {
+      "main": [
+        [
+          {
+            "node": "Seguir com o aviso (conferido)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar evento assinatura inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seguir com o aviso (conferido)": {
+      "main": [
+        [
+          {
+            "node": "Switch por tipo de evento",
             "type": "main",
             "index": 0
           }
