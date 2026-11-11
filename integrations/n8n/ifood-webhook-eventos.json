@@ -175,7 +175,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ev = JSON.parse($json.rawBody);\nreturn [{\n  json: {\n    ...ev,\n    empresa_id: $json.empresa_id,\n    id_loja_plataforma: $json.id_loja_plataforma,\n    api_key: $json.api_key,\n    api_secret: $json.api_secret,\n  },\n}];"
+        "jsCode": "const ev = JSON.parse($json.rawBody);\nreturn [{\n  json: {\n    ...ev,\n    empresa_id: $json.empresa_id,\n    id_loja_plataforma: $json.id_loja_plataforma,\n    api_key: $json.api_key,\n    api_secret: $json.api_secret,\n    reprocesso: $json.reprocesso === true,\n    rawBody: $json.rawBody,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1484,9 +1484,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "with ins as (\n  insert into public.ifood_eventos_recebidos (event_id, full_code, order_id)\n  select $1, $2, nullif($3, '') where $2 <> 'KEEPALIVE'\n  on conflict (event_id) do nothing\n  returning event_id\n)\nselect coalesce((select event_id from ins), case when $2 = 'KEEPALIVE' then $1 end) as event_id_novo;",
+        "query": "with ins as (\n  insert into public.ifood_eventos_recebidos (event_id, full_code, order_id, empresa_id, payload)\n  select $1, $2, nullif($3, ''), nullif($4, '')::uuid, $5 where $2 <> 'KEEPALIVE'\n  on conflict (event_id) do update set event_id = excluded.event_id\n    where $6 = 'true' and public.ifood_eventos_recebidos.status = 'recebido'\n  returning event_id\n)\nselect coalesce((select event_id from ins), case when $2 = 'KEEPALIVE' then $1 end) as event_id_novo;",
         "options": {
-          "queryReplacement": "={{ [$json.id || '', $json.fullCode || '', $json.orderId || ''] }}"
+          "queryReplacement": "={{ [$json.id || '', $json.fullCode || '', $json.orderId || '', $json.empresa_id || '', $json.rawBody || '', String($json.reprocesso === true)] }}"
         }
       },
       "name": "Registrar id do evento (dedup)",
@@ -1702,6 +1702,47 @@
         }
       },
       "id": "salvar_sacola_pos_sep"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ifood-eventos-reprocessar",
+        "responseMode": "onReceived",
+        "responseCode": 202,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "id": "wh_reprocesso",
+      "name": "Webhook reprocesso",
+      "position": [
+        -700,
+        400
+      ],
+      "webhookId": "7be925c5-0452-4eda-921f-59d0130fffb4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select e.payload as \"rawBody\", c.empresa_id, c.id_loja_plataforma, c.api_key, c.api_secret, true as reprocesso\nfrom public.ifood_eventos_recebidos e\njoin public.empresa_marketplace_config c on c.empresa_id = e.empresa_id and c.marketplace_id = 'd4811153-e210-47b0-b910-ee0440914f60' and c.ativo\nwhere e.event_id = $1 and e.status = 'recebido' and e.payload is not null\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{ [String($json.body && $json.body.event_id || '')] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "busca_reprocesso",
+      "name": "Buscar aviso para reprocessar",
+      "position": [
+        -460,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
     }
   ],
   "connections": {
@@ -2394,6 +2435,28 @@
           }
         ],
         []
+      ]
+    },
+    "Webhook reprocesso": {
+      "main": [
+        [
+          {
+            "node": "Buscar aviso para reprocessar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar aviso para reprocessar": {
+      "main": [
+        [
+          {
+            "node": "Parsear evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
