@@ -149,7 +149,12 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   /// de marketplace sem essa contagem (relatório, 99Food) fica sem número.
   int? _ordemPedidoCliente(Venda venda) {
     if (venda.cancelada) return null;
-    if (venda.ehMarketplace || venda.canalVenda == '99food') return venda.pedidosClienteNaPlataforma;
+    // ordersCountOnMerchant do iFood conta os pedidos ANTERIORES (veio 0 no
+    // 1º pedido da cliente em 11/11), então este é o seguinte (+1).
+    if (venda.ehMarketplace || venda.canalVenda == '99food') {
+      final anteriores = venda.pedidosClienteNaPlataforma;
+      return anteriores == null ? null : anteriores + 1;
+    }
     final entregues = venda.cliente.numeroCompras ?? 0;
     return venda.finalizada ? (entregues < 1 ? 1 : entregues) : entregues + 1;
   }
