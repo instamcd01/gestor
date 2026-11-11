@@ -958,30 +958,6 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "=https://merchant-api.ifood.com.br/order/v1.0/orders/{{$('Switch por tipo de evento').item.json.orderId}}/confirm",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{$('Switch por tipo de evento').item.json.access_token}}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "id": "n36",
-      "name": "Confirmar pedido no iFood",
-      "position": [
-        8660,
-        -20
-      ]
-    },
-    {
-      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -1476,7 +1452,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        4820,
+        5260,
         480
       ],
       "id": "rec-vbag-1"
@@ -1493,7 +1469,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        5060,
+        5480,
         480
       ],
       "credentials": {
@@ -1645,6 +1621,86 @@
         }
       },
       "id": "retry-3"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select coalesce((select case\n  when $2 = 'READY_FOR_INVOICE' then mp.separacao_confirmada_em is null\n  when $2 = 'ORDER_PATCHED' then mp.separacao_confirmada_em is not null and mp.separacao_confirmada_em < now() - interval '2 minutes'\n  else true end\n from marketplace_pedidos mp\n where mp.marketplace_order_id = $1 and mp.marketplace_id = 'd4811153-e210-47b0-b910-ee0440914f60'\n limit 1), true) as consultar;",
+        "options": {
+          "queryReplacement": "={{ [$('Switch por tipo de evento').item.json.orderId, $('Switch por tipo de evento').item.json.fullCode] }}"
+        }
+      },
+      "name": "Sacola já consultada?",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4820,
+        700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "id": "chk_sacola_pos_sep"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cs1",
+              "leftValue": "={{ $json.consultar }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Consultar sacola?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        5040,
+        700
+      ],
+      "id": "if_consultar_sacola"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_pedidos\nset itens_confirmados_ifood = $1::jsonb,\n    separacao_confirmada_em = coalesce(separacao_confirmada_em, now())\nwhere marketplace_order_id = $2 and marketplace_id = 'd4811153-e210-47b0-b910-ee0440914f60';",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify(($json.bag?.items || []).filter(i => !i.unavailable)), $('Switch por tipo de evento').item.json.orderId] }}"
+        }
+      },
+      "name": "Salvar sacola pós-separação",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        5480,
+        700
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "id": "salvar_sacola_pos_sep"
     }
   ],
   "connections": {
@@ -2066,17 +2122,6 @@
       "main": [
         [
           {
-            "node": "Confirmar pedido no iFood",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Confirmar pedido no iFood": {
-      "main": [
-        [
-          {
             "node": "Item não catalogado?",
             "type": "main",
             "index": 0
@@ -2229,7 +2274,7 @@
       "main": [
         [
           {
-            "node": "Buscar virtual-bag (reconciliação)",
+            "node": "Sacola já consultada?",
             "type": "main",
             "index": 0
           }
@@ -2242,6 +2287,11 @@
         [
           {
             "node": "Reconciliar itens do pedido",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Salvar sacola pós-separação",
             "type": "main",
             "index": 0
           }
@@ -2321,6 +2371,29 @@
           }
         ]
       ]
+    },
+    "Sacola já consultada?": {
+      "main": [
+        [
+          {
+            "node": "Consultar sacola?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar sacola?": {
+      "main": [
+        [
+          {
+            "node": "Buscar virtual-bag (reconciliação)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
     }
   },
   "settings": {
@@ -2329,5 +2402,5 @@
     "availableInMCP": false
   },
   "active": true,
-  "pinData": {}
+  "pinData": null
 }
