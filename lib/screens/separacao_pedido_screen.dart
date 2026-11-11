@@ -576,11 +576,27 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
   }
 
   Future<void> _finalizar() async {
+    // Não deixa finalizar com troca/remoção ainda a caminho do iFood: depois do
+    // endSeparation o iFood não aceita mais mudança e o item iria no pedido.
+    await _atualizarAcoes();
+    if (!mounted) return;
+    final pendentes = _acoes.where((a) => (a['status'] as String? ?? 'pendente') == 'pendente').length;
+    if (pendentes > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(pendentes == 1
+            ? 'Ainda tem 1 alteração indo pro iFood. Espere ela confirmar pra finalizar.'
+            : 'Ainda tem $pendentes alterações indo pro iFood. Espere confirmarem pra finalizar.'),
+      ));
+      return;
+    }
+    final comErro = _acoes.where((a) => a['status'] == 'erro').length;
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Finalizar separação'),
-        content: const Text('Isso envia todas as trocas/remoções pra iFood definitivamente. Confirmar?'),
+        content: Text(comErro > 0
+            ? '$comErro alteração(ões) não chegaram ao iFood e NÃO vão valer. Faça de novo antes, ou finalize assim mesmo.'
+            : 'Isso envia todas as trocas/remoções pra iFood definitivamente. Confirmar?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Voltar')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Finalizar')),
@@ -791,7 +807,8 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                 ],
               ),
             ),
-            if (_status == 'separando' && acao == null && item.id != null && !_edicaoBloqueadaPorPagamento)
+            // Ação com erro não chegou ao iFood: libera os botões pra fazer de novo.
+            if (_status == 'separando' && (acao == null || status == 'erro') && item.id != null && !_edicaoBloqueadaPorPagamento)
               Row(
                 children: [
                   if (_ehIfood)
