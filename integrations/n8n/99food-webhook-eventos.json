@@ -605,9 +605,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "select (select produto_id from produto_canal where item_externo_id = $1 and marketplace_id = 'e11ec855-6936-410d-a56a-635adebfe595' limit 1) as produto_id;",
+        "query": "with achado as (select pc.produto_id from produto_canal pc join produtos p on p.id = pc.produto_id where pc.item_externo_id = $1 and pc.marketplace_id = 'e11ec855-6936-410d-a56a-635adebfe595' and p.empresa_id = $2::uuid limit 1), ph as (select id from produtos where empresa_id = $2::uuid and sku = '__99FOOD_NAO_CATALOGADO__' limit 1), novo as (insert into produtos (empresa_id, nome, sku, preco, ativo, exibir_no_catalogo) select $2::uuid, 'Item não catalogado (99Food)', '__99FOOD_NAO_CATALOGADO__', $3::numeric, true, false where not exists (select 1 from achado) and not exists (select 1 from ph) returning id) select coalesce((select produto_id from achado), (select id from ph), (select id from novo)) as produto_id, not exists (select 1 from achado) as nao_catalogado;",
         "options": {
-          "queryReplacement": "={{$json.item_externo_id}}"
+          "queryReplacement": "={{ [$json.item_externo_id, $json.empresa_id, $json.preco_unitario] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -627,143 +627,7 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{$json.produto_id}}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true,
-                "name": "filter.operator.notEmpty"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "id": "n10",
-      "name": "Produto mapeado?",
-      "position": [
-        3400,
-        -420
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "select (select id from produtos where empresa_id = $1 and sku = $2 limit 1) as id;",
-        "options": {
-          "queryReplacement": "={{$('Explodir itens do pedido').item.json.empresa_id}}, {{'__99FOOD_NAO_CATALOGADO__'}}"
-        }
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "id": "n11",
-      "name": "Buscar placeholder existente",
-      "position": [
-        3640,
-        -260
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "GEzDAcb9DFtH5ozo",
-          "name": "Postgres cloud"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "c1",
-              "leftValue": "={{$json.id}}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true,
-                "name": "filter.operator.notEmpty"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "id": "n12",
-      "name": "Placeholder existe?",
-      "position": [
-        3880,
-        -260
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "insert",
-        "schema": {
-          "__rl": true,
-          "value": "public",
-          "mode": "list"
-        },
-        "table": {
-          "__rl": true,
-          "value": "produtos",
-          "mode": "list"
-        },
-        "columns": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "empresa_id": "={{$('Explodir itens do pedido').item.json.empresa_id}}",
-            "nome": "Item não catalogado (99Food)",
-            "sku": "__99FOOD_NAO_CATALOGADO__",
-            "preco": "={{$('Explodir itens do pedido').item.json.preco_unitario}}",
-            "ativo": true,
-            "exibir_no_catalogo": false
-          },
-          "matchingColumns": [],
-          "schema": []
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "id": "n13",
-      "name": "Inserir produto placeholder",
-      "position": [
-        4120,
-        -160
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "GEzDAcb9DFtH5ozo",
-          "name": "Postgres cloud"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const direct = $('Resolver produto_id').item.json.produto_id;\nlet produtoId = direct;\nlet naoCatalogado = false;\nif (!produtoId) {\n  naoCatalogado = true;\n  const existing = $('Buscar placeholder existente').item.json.id;\n  produtoId = existing || $json.id;\n}\nreturn [{ json: { ...$('Explodir itens do pedido').item.json, produto_id: produtoId, item_nao_catalogado: naoCatalogado } }];"
+        "jsCode": "// Um item de saída por item do pedido (antes juntava tudo em 1 e perdia os outros).\nconst origem = $('Explodir itens do pedido').all();\nreturn $input.all().map((it, i) => {\n  const idx = it.pairedItem && typeof it.pairedItem.item === 'number' ? it.pairedItem.item : i;\n  return { json: { ...origem[idx].json, produto_id: it.json.produto_id, item_nao_catalogado: !!it.json.nao_catalogado } };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1863,64 +1727,6 @@
       ]
     },
     "Resolver produto_id": {
-      "main": [
-        [
-          {
-            "node": "Produto mapeado?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Produto mapeado?": {
-      "main": [
-        [
-          {
-            "node": "Consolidar produto_id",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Buscar placeholder existente",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Buscar placeholder existente": {
-      "main": [
-        [
-          {
-            "node": "Placeholder existe?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Placeholder existe?": {
-      "main": [
-        [
-          {
-            "node": "Consolidar produto_id",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Inserir produto placeholder",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Inserir produto placeholder": {
       "main": [
         [
           {

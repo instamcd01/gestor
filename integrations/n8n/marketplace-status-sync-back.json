@@ -809,12 +809,12 @@
                 "conditions": [
                   {
                     "id": "sw99-1",
-                    "leftValue": "={{$('Webhook').item.json.body.status_novo}}",
-                    "rightValue": "saiu_para_entrega",
+                    "leftValue": "={{ (() => { const b = $('Webhook').item.json.body; return b.status_novo === 'pronto' || (b.status_novo === 'saiu_para_entrega' && b.status_anterior !== 'pronto'); })() }}",
+                    "rightValue": "",
                     "operator": {
-                      "type": "string",
-                      "operation": "equals",
-                      "name": "filter.operator.equals"
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
                     }
                   }
                 ],
