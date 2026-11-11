@@ -188,7 +188,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nconst cached = store.ifoodTokens[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now());\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
+        "jsCode": "const empresaId = $json.empresa_id;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokensV2 = store.ifoodTokensV2 || {};\nconst cached = store.ifoodTokensV2[empresaId];\nconst valido = !!(cached && cached.expiresAt > Date.now());\nreturn [{\n  json: {\n    ...$json,\n    access_token: valido ? cached.accessToken : null,\n    token_valido: valido,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -268,7 +268,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $('Checar token em cache').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokens = store.ifoodTokens || {};\nstore.ifoodTokens[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
+        "jsCode": "const ctx = $('Checar token em cache').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.ifoodTokensV2 = store.ifoodTokensV2 || {};\nstore.ifoodTokensV2[ctx.empresa_id] = {\n  accessToken: $json.accessToken,\n  expiresAt: Date.now() + (($json.expiresIn || 21600) * 1000),\n};\nreturn [{\n  json: { ...ctx, access_token: $json.accessToken, token_valido: true },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -934,7 +934,8 @@
             "cupom_marketplace": "={{$('Mapear pagamento e montar pedido').item.json.cupom_marketplace}}",
             "politica_substituicao": "={{$('Mapear pagamento e montar pedido').item.json.politica_substituicao}}",
             "entregador_tipo": "={{$('Mapear pagamento e montar pedido').item.json.entregador_tipo}}",
-            "metadata": "={{$('Mapear pagamento e montar pedido').item.json.marketplace_metadata}}"
+            "metadata": "={{$('Mapear pagamento e montar pedido').item.json.marketplace_metadata}}",
+            "pedidos_cliente_na_plataforma": "={{ $('Buscar detalhes do pedido').item.json.customer?.ordersCountOnMerchant ?? null }}"
           },
           "matchingColumns": [],
           "schema": []
