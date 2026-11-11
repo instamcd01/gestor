@@ -701,7 +701,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Buscar credenciais empresa').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{\n  json: {\n    entregador_tipo: $json.entregador_tipo,\n    app_id_valor: cfg.api_key,\n    app_shop_id_valor: cfg.id_loja_plataforma,\n    api_secret: cfg.api_secret,\n    auth_token: valido ? cached.authToken : null,\n    token_valido: valido,\n  },\n}];"
+        "jsCode": "const cfg = $('Buscar credenciais empresa').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\n// Sempre pega do banco (food99_token): ele renova e detecta token derrubado pela 99.\nconst valido = false;\nreturn [{\n  json: {\n    entregador_tipo: $json.entregador_tipo,\n    app_id_valor: cfg.api_key,\n    app_shop_id_valor: cfg.id_loja_plataforma,\n    api_secret: cfg.api_secret,\n    auth_token: valido ? cached.authToken : null,\n    token_valido: valido,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

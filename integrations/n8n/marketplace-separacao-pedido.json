@@ -1239,7 +1239,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Buscar credenciais empresa ação').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{ json: { app_id_valor: cfg.api_key, app_shop_id_valor: cfg.id_loja_plataforma, api_secret: cfg.api_secret, auth_token: valido ? cached.authToken : null, token_valido: valido } }];"
+        "jsCode": "const cfg = $('Buscar credenciais empresa ação').item.json;\nconst store = $getWorkflowStaticData('global');\nstore.food99Tokens = store.food99Tokens || {};\nconst cached = store.food99Tokens[cfg.id_loja_plataforma];\n// Sempre pega do banco (food99_token): ele renova e detecta token derrubado pela 99.\nconst valido = false;\nreturn [{ json: { app_id_valor: cfg.api_key, app_shop_id_valor: cfg.id_loja_plataforma, api_secret: cfg.api_secret, auth_token: valido ? cached.authToken : null, token_valido: valido } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
