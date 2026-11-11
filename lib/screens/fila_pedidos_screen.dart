@@ -143,11 +143,13 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
 
   /// Qual pedido do cliente é este (1º, 2º...), igual o painel do iFood.
   /// `total_pedidos` conta só os ENTREGUES da pessoa (cadastros vinculados
-  /// somados), então pedido ainda em andamento é o próximo (+1). iFood/99Food
-  /// ficam de fora: hoje caem no cliente genérico do relatório e a própria
-  /// plataforma já mostra isso.
+  /// somados), então pedido ainda em andamento é o próximo (+1). Pedido que
+  /// veio pela API do iFood usa a contagem da própria plataforma
+  /// (ordersCountOnMerchant, histórico do cliente na loja inteira); pedido
+  /// de marketplace sem essa contagem (relatório, 99Food) fica sem número.
   int? _ordemPedidoCliente(Venda venda) {
-    if (venda.ehMarketplace || venda.canalVenda == '99food' || venda.cancelada) return null;
+    if (venda.cancelada) return null;
+    if (venda.ehMarketplace || venda.canalVenda == '99food') return venda.pedidosClienteNaPlataforma;
     final entregues = venda.cliente.numeroCompras ?? 0;
     return venda.finalizada ? (entregues < 1 ? 1 : entregues) : entregues + 1;
   }

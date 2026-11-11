@@ -88,6 +88,7 @@ class Venda {
   final String? separacaoStatus; // null/separando/finalizada/erro
   final String? separacaoErro;
   final String? numeroExibicaoMarketplace; // "displayId" da iFood, número curto mostrado ao cliente
+  final int? pedidosClienteNaPlataforma; // quantos pedidos o cliente já fez na loja segundo a plataforma (iFood: ordersCountOnMerchant)
   final String? telefoneLocalizador; // código de discagem mascarada -- só funciona pra ligar, não WhatsApp
   final DateTime? telefoneLocalizadorExpiraEm;
   final String? codigoRetiradaExibicao; // pickupCode informativo da iFood (não é o código que o lojista digita)
@@ -183,6 +184,7 @@ class Venda {
     this.separacaoStatus,
     this.separacaoErro,
     this.numeroExibicaoMarketplace,
+    this.pedidosClienteNaPlataforma,
     this.telefoneLocalizador,
     this.telefoneLocalizadorExpiraEm,
     this.codigoRetiradaExibicao,
@@ -272,6 +274,7 @@ class Venda {
     String? separacaoStatus,
     String? separacaoErro,
     String? numeroExibicaoMarketplace,
+    int? pedidosClienteNaPlataforma,
     String? telefoneLocalizador,
     DateTime? telefoneLocalizadorExpiraEm,
     String? codigoRetiradaExibicao,
@@ -352,6 +355,7 @@ class Venda {
       separacaoStatus: separacaoStatus ?? this.separacaoStatus,
       separacaoErro: separacaoErro ?? this.separacaoErro,
       numeroExibicaoMarketplace: numeroExibicaoMarketplace ?? this.numeroExibicaoMarketplace,
+      pedidosClienteNaPlataforma: pedidosClienteNaPlataforma ?? this.pedidosClienteNaPlataforma,
       telefoneLocalizador: telefoneLocalizador ?? this.telefoneLocalizador,
       telefoneLocalizadorExpiraEm: telefoneLocalizadorExpiraEm ?? this.telefoneLocalizadorExpiraEm,
       codigoRetiradaExibicao: codigoRetiradaExibicao ?? this.codigoRetiradaExibicao,

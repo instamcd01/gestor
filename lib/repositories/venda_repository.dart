@@ -27,7 +27,7 @@ class VendaRepository {
       '*, cliente:clientes(*, recebe_push), itens_pedido(*, produtos!itens_pedido_produto_id_fkey(*)), '
       'cupons_uso(cupom_id, cupons(codigo, tipo_desconto, valor)), '
       'marketplace_pedidos(id, rastreio_latitude, rastreio_longitude, rastreio_eta_entrega, rastreio_atualizado_em, '
-      'separacao_status, separacao_erro, numero_exibicao, telefone_localizador, telefone_localizador_expira_em, '
+      'separacao_status, separacao_erro, numero_exibicao, pedidos_cliente_na_plataforma, telefone_localizador, telefone_localizador_expira_em, '
       'codigo_retirada_exibicao, link_confirmacao_entrega, agendado, entrega_prevista_inicio, entrega_prevista_fim, '
       'taxa_servico_cliente, campanha_marketplace, cupom_marketplace, politica_substituicao, entregador_tipo, '
       'taxa_comissao, taxa_gateway, incentivo_promocional_ifood, taxa_entrega_marketplace, '
@@ -510,6 +510,7 @@ class VendaRepository {
       separacaoStatus: marketplacePedidoRow?['separacao_status']?.toString(),
       separacaoErro: marketplacePedidoRow?['separacao_erro']?.toString(),
       numeroExibicaoMarketplace: marketplacePedidoRow?['numero_exibicao']?.toString(),
+      pedidosClienteNaPlataforma: (marketplacePedidoRow?['pedidos_cliente_na_plataforma'] as num?)?.toInt(),
       telefoneLocalizador: marketplacePedidoRow?['telefone_localizador']?.toString(),
       telefoneLocalizadorExpiraEm:
           DateTime.tryParse(marketplacePedidoRow?['telefone_localizador_expira_em']?.toString() ?? '')?.toLocal(),
