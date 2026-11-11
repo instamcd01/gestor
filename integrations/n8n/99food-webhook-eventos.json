@@ -178,7 +178,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const parsed = $('Extrair corpo e assinatura').item.json;\nconst config = $('Buscar config pelo app_id').item.json;\nconst computed = $json.data ?? $json.hash ?? $json.hmac ?? $json.value ?? '';\nconst valido = String(computed).toLowerCase() === String(parsed.signature || '').toLowerCase();\nreturn [{\n  json: {\n    ...parsed,\n    empresa_id: config.empresa_id,\n    app_id_valor: config.app_id_valor,\n    app_shop_id_valor: config.app_shop_id_valor,\n    api_secret: config.api_secret,\n    assinatura_valida: valido,\n  },\n}];"
+        "jsCode": "const parsed = $('Extrair corpo e assinatura').item.json;\nconst config = $('Buscar config pelo app_id').item.json;\nconst computed = $json.data ?? $json.hash ?? $json.hmac ?? $json.value ?? '';\nconst valido = String(computed).toLowerCase() === String(parsed.signature || '').toLowerCase();\nreturn [{\n  json: {\n    ...parsed,\n    empresa_id: config.empresa_id,\n    app_id_valor: config.app_id_valor,\n    app_shop_id_valor: config.app_shop_id_valor,\n    api_secret: config.api_secret,\n    assinatura_valida: valido,\n    assinatura_calculada: String(computed),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -240,7 +240,7 @@
           "mappingMode": "defineBelow",
           "value": {
             "tipo_evento": "99food_assinatura_invalida",
-            "dados": "={{ JSON.stringify({ rawBody: $json.rawBody }) }}"
+            "dados": "={{ JSON.stringify({ rawBody: $json.rawBody, recebida: $json.signature, calculada: $json.assinatura_calculada, app_id: $json.app_id, tem_config: !!$json.api_secret }) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -357,6 +357,29 @@
                 ],
                 "combinator": "and"
               }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "sw99ev",
+                    "leftValue": "={{ ['orderConfirm','orderReady','orderFinish','orderPartialCancel','scheduledTimeChanged','deliveryStatus'].includes($json.type) }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
             }
           ]
         },
@@ -432,7 +455,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $('Switch por tipo de evento').item.json;\nconst empresaId = ctx.empresa_id;\nconst orderInfo = ctx.data.order_info || {};\nconst price = orderInfo.price || {};\nconst addr = orderInfo.receive_address || {};\n\n// Mapa de pay_channel -> forma de pagamento PT-BR, melhor tentativa, nao\n// confirmado ao vivo ainda - ver LEIA-ME.\nconst payChannelMap = {\n  150: 'Cartão de Crédito', 153: 'Dinheiro', 154: 'Outros', 190: 'Outros', 120: 'Outros',\n  212: 'Pix', 280: 'Pix', 257: 'Outros', 258: 'Outros', 259: 'Outros', 260: 'Outros',\n  262: 'Cartão de Crédito', 263: 'Cartão de Débito', 264: 'Outros',\n};\nconst tipoPagamento = payChannelMap[orderInfo.pay_channel] || 'Outros';\nconst statusPagamento = orderInfo.pay_method === 1 ? 'pago' : 'pendente';\n\n// 99Food tem 2 modelos de price ativos, escolhidos por delivery_type\n// (1=entrega pela 99Food -> Price Model 1, sem campo de total explicito;\n// 2=entrega pela loja -> Price Model 2, com real_pay_price/customer_need_paying_money).\n// Bug real encontrado 2026-08-06, antes de qualquer pedido real chegar:\n// o codigo so tratava Model 2 - todo pedido com delivery_type=1 (que o\n// usuario espera ser o modo liberado primeiro pela 99Food) cairia no\n// fallback ?? 0 e gravaria valor_total=0. Model 1 nao tem campo de total\n// documentado, entao o valor abaixo e DERIVADO (order_price - descontos +\n// taxa de entrega original - reembolsos), nao confirmado ainda contra um\n// pedido real - ver LEIA-ME.\nconst isModel2 = price.real_pay_price != null || price.customer_need_paying_money != null;\nlet valorProdutos, valorEntrega, desconto, valorTotal;\nif (isModel2) {\n  valorProdutos = (price.order_price || 0) / 100;\n  valorEntrega = (price.delivery_price || 0) / 100;\n  desconto = ((price.items_discount || 0) + (price.delivery_discount || 0)) / 100;\n  valorTotal = (price.real_pay_price ?? price.customer_need_paying_money ?? 0) / 100;\n} else {\n  valorProdutos = ((price.order_price || 0) - (price.items_discount || 0)) / 100;\n  valorEntrega = Math.max(0, (price.store_charged_delivery_price || 0) - (price.delivery_discount || 0)) / 100;\n  desconto = ((price.items_discount || 0) + (price.delivery_discount || 0)) / 100;\n  valorTotal = valorProdutos + valorEntrega + ((price.service_price || 0) + (price.meal_top_up_price || 0) - (price.refund_price || 0)) / 100;\n}\nconst taxaServico = (price.others_fees?.service_price ?? price.service_price ?? 0) / 100;\n\n// delivery_type: 1=entrega pela 99Food (courier da plataforma), 2=entrega\n// pela loja - eixo diferente de fulfillment_mode (entrega vs retirada).\n// Mesma convencao ja usada pro iFood (entregador_tipo='MERCHANT' quando a\n// loja entrega) para manter os dois marketplaces comparaveis no dashboard.\nconst entregadorTipo = orderInfo.delivery_type === 1 ? '99FOOD' : 'MERCHANT';\n\nconst valorPendente = price.customer_need_paying_money ?? price.real_pay_price ?? valorTotal;\nconst changeFor = orderInfo.change_for || 0;\nconst troco = changeFor > valorPendente * 100 ? (changeFor - valorPendente * 100) / 100 : null;\n\n// fulfillment_mode: 0=Delivery, 1=Self Pickup (retirada).\nconst tipoEntrega = orderInfo.fulfillment_mode === 1 ? 'TAKEOUT' : 'DELIVERY';\n\nconst remarkArr = Array.isArray(orderInfo.remark) ? orderInfo.remark : (orderInfo.remark ? [orderInfo.remark] : []);\n\nreturn [{\n  json: {\n    empresa_id: empresaId,\n    order_id: ctx.data.order_id,\n    orderInfo,\n    cliente: {\n      nome: addr.name || 'Cliente 99Food',\n      telefone: addr.phone || '',\n      idExterno99food: addr.uid || null,\n      cpf: addr.cpf || null,\n      endereco: addr.street_name || '',\n      numero: addr.street_number || addr.house_number || '',\n      bairro: addr.district || '',\n      cidade: addr.city || '',\n      estado: addr.state || '',\n      cep: addr.postal_code || '',\n      complemento: addr.complement || null,\n      latitude: addr.poi_lat ?? null,\n      longitude: addr.poi_lng ?? null,\n    },\n    pagamento: { tipo_pagamento: tipoPagamento, status_pagamento: statusPagamento, troco },\n    precos: {\n      valor_produtos: valorProdutos,\n      valor_entrega: valorEntrega,\n      desconto,\n      valor_total: valorTotal,\n      taxa_servico_cliente: taxaServico,\n      price_model: isModel2 ? 2 : 1,\n      raw: price,\n    },\n    numero_exibicao: orderInfo.order_index != null ? String(orderInfo.order_index) : null,\n    telefone_localizador: addr.locator || null,\n    codigo_retirada_exibicao: orderInfo.handover_code || orderInfo.pickup_code || null,\n    tipo_entrega_marketplace: tipoEntrega,\n    entregador_tipo: entregadorTipo,\n    observacoes: remarkArr.join(', '),\n  },\n}];"
+        "jsCode": "const ctx = $('Switch por tipo de evento').item.json;\nconst empresaId = ctx.empresa_id;\nconst orderInfo = ctx.data.order_info || {};\nconst price = orderInfo.price || {};\nconst addr = orderInfo.receive_address || {};\n\n// Mapa de pay_type -> forma de pagamento PT-BR. Corrigido 2026-09-18: o\n// campo real (confirmado na collection Postman oficial da 99Food) e\n// 'pay_type', nao 'pay_channel' como a doc publica sugeria -- ate aqui\n// TODO pedido teria caido no fallback 'Outros' sempre. Os VALORES do mapa\n// ainda sao a mesma melhor-tentativa de antes (nao ha enum documentado\n// pra pay_type em lugar nenhum) -- nao confirmado contra pedido real.\nconst payChannelMap = {\n  150: 'Cartão de Crédito', 153: 'Dinheiro', 154: 'Outros', 190: 'Outros', 120: 'Outros',\n  212: 'Pix', 280: 'Pix', 257: 'Outros', 258: 'Outros', 259: 'Outros', 260: 'Outros',\n  262: 'Cartão de Crédito', 263: 'Cartão de Débito', 264: 'Outros',\n};\nconst tipoPagamento = payChannelMap[orderInfo.pay_channel] || payChannelMap[orderInfo.pay_type] || 'Outros';\n// pay_method tambem nao existe no schema oficial -- pay_time (timestamp)\n// e o sinal real de pagamento confirmado (presente no exemplo oficial de\n// Get Order Details): pedido pago tem pay_time preenchido, pendente nao.\nconst statusPagamento = orderInfo.pay_time ? 'pago' : 'pendente';\n\n// 99Food tem 2 modelos de price ativos, escolhidos por delivery_type\n// (1=entrega pela 99Food -> Price Model 1, sem campo de total explicito;\n// 2=entrega pela loja -> Price Model 2, com real_pay_price/customer_need_paying_money).\n// Bug real encontrado 2026-08-06, antes de qualquer pedido real chegar:\n// o codigo so tratava Model 2 - todo pedido com delivery_type=1 (que o\n// usuario espera ser o modo liberado primeiro pela 99Food) cairia no\n// fallback ?? 0 e gravaria valor_total=0. Model 1 nao tem campo de total\n// documentado, entao o valor abaixo e DERIVADO (order_price - descontos +\n// taxa de entrega original - reembolsos).\n// Corrigido 2026-09-18 contra o exemplo oficial (Roteiro de Integracao\n// Groceries, PDF da 99Food): os campos reais do Model 1 sao order_price,\n// items_discount, delivery_discount, shop_paid_money, refund_price,\n// store_charged_delivery_price -- 'service_price'/'meal_top_up_price' (que\n// o codigo antigo somava) NAO EXISTEM nesse modelo, sempre viravam 0 sem\n// efeito real. shop_paid_money e um campo real nao lido antes -- guardado\n// em metadata pra reconciliacao manual (nao confirmado se entra no total\n// que o cliente paga ou e so um valor de acerto da loja, ver LEIA-ME).\nconst isModel2 = price.real_pay_price != null || price.customer_need_paying_money != null;\nlet valorProdutos, valorEntrega, desconto, valorTotal;\nif (isModel2) {\n  // Model 2 (entrega pela loja): valor_produtos agora desconta\n  // items_discount (consistente com o Model 1) e o desconto tambem soma\n  // others_fees.coupon_discount, que antes nao era capturado. valorTotal\n  // continua usando real_pay_price direto (o proprio campo que a 99Food\n  // ja calcula como 'quanto o cliente paga'), mais confiavel que derivar.\n  valorProdutos = ((price.order_price || 0) - (price.items_discount || 0)) / 100;\n  valorEntrega = (price.delivery_price || 0) / 100;\n  desconto = ((price.items_discount || 0) + (price.delivery_discount || 0) + (price.others_fees?.coupon_discount || 0)) / 100;\n  valorTotal = (price.real_pay_price ?? price.customer_need_paying_money ?? 0) / 100;\n} else {\n  valorProdutos = ((price.order_price || 0) - (price.items_discount || 0)) / 100;\n  valorEntrega = Math.max(0, (price.store_charged_delivery_price || 0) - (price.delivery_discount || 0)) / 100;\n  desconto = ((price.items_discount || 0) + (price.delivery_discount || 0)) / 100;\n  valorTotal = valorProdutos + valorEntrega - (price.refund_price || 0) / 100;\n}\n// Quem pagou cada desconto (Roteiro 99, 'Mapeamento de cupons'): shop_subside_price = parte da loja.\nconst promocoes = Array.isArray(orderInfo.promotions) ? orderInfo.promotions : [];\nconst descontoLoja = promocoes.reduce((s, p) => s + (p.shop_subside_price || 0), 0) / 100;\nconst descontoPlataforma = promocoes.reduce((s, p) => s + Math.max(0, (p.promo_discount || 0) - (p.shop_subside_price || 0)), 0) / 100;\nconst taxaServico = (price.others_fees?.service_price ?? price.service_price ?? 0) / 100;\n\n// delivery_type: 1=entrega pela 99Food (courier da plataforma), 2=entrega\n// pela loja - eixo diferente de fulfillment_mode (entrega vs retirada).\n// Mesma convencao ja usada pro iFood (entregador_tipo='MERCHANT' quando a\n// loja entrega) para manter os dois marketplaces comparaveis no dashboard.\nconst entregadorTipo = orderInfo.delivery_type === 1 ? '99FOOD' : 'MERCHANT';\n\nconst valorPendente = price.customer_need_paying_money ?? price.real_pay_price ?? valorTotal;\nconst changeFor = orderInfo.change_for || 0;\nconst troco = changeFor > valorPendente * 100 ? (changeFor - valorPendente * 100) / 100 : null;\n\n// fulfillment_mode: 0=Delivery, 1=Self Pickup (retirada).\nconst tipoEntrega = orderInfo.fulfillment_mode === 1 ? 'TAKEOUT' : 'DELIVERY';\n\nconst remarkArr = Array.isArray(orderInfo.remark) ? orderInfo.remark : (orderInfo.remark ? [orderInfo.remark] : []);\n\nreturn [{\n  json: {\n    empresa_id: empresaId,\n    order_id: ctx.data.order_id,\n    orderInfo,\n    cliente: {\n      nome: addr.name || 'Cliente 99Food',\n      telefone: addr.phone || '',\n      idExterno99food: addr.uid || null,\n      cpf: addr.cpf || null,\n      endereco: addr.street_name || '',\n      numero: addr.street_number || addr.house_number || '',\n      bairro: addr.district || '',\n      cidade: addr.city || '',\n      estado: addr.state || '',\n      cep: addr.postal_code || '',\n      complemento: addr.complement || null,\n      latitude: addr.poi_lat ?? null,\n      longitude: addr.poi_lng ?? null,\n    },\n    pagamento: { tipo_pagamento: tipoPagamento, status_pagamento: statusPagamento, troco },\n    precos: {\n      promocoes: promocoes,\n      desconto_pago_loja: descontoLoja,\n      desconto_pago_99: descontoPlataforma,\n      valor_produtos: valorProdutos,\n      valor_entrega: valorEntrega,\n      desconto,\n      valor_total: valorTotal,\n      taxa_servico_cliente: taxaServico,\n      price_model: isModel2 ? 2 : 1,\n      raw: price,\n    },\n    numero_exibicao: orderInfo.order_index != null ? String(orderInfo.order_index) : null,\n    telefone_localizador: addr.locator || null,\n    codigo_retirada_exibicao: orderInfo.handover_code || orderInfo.pickup_code || null,\n    link_confirmacao_entrega: addr.handover_page_url || null,\n    tipo_entrega_marketplace: tipoEntrega,\n    entregador_tipo: entregadorTipo,\n    observacoes: remarkArr.join(', '),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -568,7 +591,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const ctx = $json;\nconst items = ctx.orderInfo.order_items || [];\nreturn items.map(it => {\n  const remark = Array.isArray(it.remark) ? it.remark.join(', ') : (it.remark || null);\n  return {\n    json: {\n      empresa_id: ctx.empresa_id,\n      cliente_id: ctx.cliente_id,\n      order_id: ctx.order_id,\n      orderInfo: ctx.orderInfo,\n      pagamento: ctx.pagamento,\n      precos: ctx.precos,\n      numero_exibicao: ctx.numero_exibicao,\n      telefone_localizador: ctx.telefone_localizador,\n      codigo_retirada_exibicao: ctx.codigo_retirada_exibicao,\n      tipo_entrega_marketplace: ctx.tipo_entrega_marketplace,\n      entregador_tipo: ctx.entregador_tipo,\n      observacoes: ctx.observacoes,\n      item_externo_id: String(it.app_item_id),\n      uniqueid_marketplace: it.mdu_id != null ? String(it.mdu_id) : null,\n      nome_item: it.name,\n      quantidade: it.amount,\n      preco_unitario: (it.sku_price || 0) / 100,\n      subtotal: (it.total_price ?? ((it.sku_price || 0) * (it.amount || 1))) / 100,\n      observacao_cliente: remark,\n    },\n  };\n});"
+        "jsCode": "const ctx = $json;\nconst items = ctx.orderInfo.order_items || [];\nreturn items.map(it => {\n  const remark = Array.isArray(it.remark) ? it.remark.join(', ') : (it.remark || null);\n  return {\n    json: {\n      empresa_id: ctx.empresa_id,\n      cliente_id: ctx.cliente_id,\n      order_id: ctx.order_id,\n      orderInfo: ctx.orderInfo,\n      pagamento: ctx.pagamento,\n      precos: ctx.precos,\n      numero_exibicao: ctx.numero_exibicao,\n      telefone_localizador: ctx.telefone_localizador,\n      codigo_retirada_exibicao: ctx.codigo_retirada_exibicao,\n      link_confirmacao_entrega: ctx.link_confirmacao_entrega,\n      tipo_entrega_marketplace: ctx.tipo_entrega_marketplace,\n      entregador_tipo: ctx.entregador_tipo,\n      observacoes: ctx.observacoes,\n      item_externo_id: String(it.app_item_id),\n      uniqueid_marketplace: it.mdu_id != null ? String(it.mdu_id) : null,\n      nome_item: it.name,\n      quantidade: it.amount,\n      preco_unitario: (it.sku_price || 0) / 100,\n      subtotal: (it.total_price ?? ((it.sku_price || 0) * (it.amount || 1))) / 100,\n      observacao_cliente: remark,\n    },\n  };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -753,7 +776,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const list = items.map(i => i.json);\nconst first = list[0] || {};\nreturn [{\n  json: {\n    empresa_id: first.empresa_id,\n    cliente_id: first.cliente_id,\n    order_id: first.order_id,\n    orderInfo: first.orderInfo,\n    pagamento: first.pagamento,\n    precos: first.precos,\n    numero_exibicao: first.numero_exibicao,\n    telefone_localizador: first.telefone_localizador,\n    codigo_retirada_exibicao: first.codigo_retirada_exibicao,\n    tipo_entrega_marketplace: first.tipo_entrega_marketplace,\n    entregador_tipo: first.entregador_tipo,\n    observacoes: first.observacoes,\n    itens: list,\n    algum_nao_catalogado: list.some(i => i.item_nao_catalogado),\n  },\n}];"
+        "jsCode": "const list = items.map(i => i.json);\nconst first = list[0] || {};\nreturn [{\n  json: {\n    empresa_id: first.empresa_id,\n    cliente_id: first.cliente_id,\n    order_id: first.order_id,\n    orderInfo: first.orderInfo,\n    pagamento: first.pagamento,\n    precos: first.precos,\n    numero_exibicao: first.numero_exibicao,\n    telefone_localizador: first.telefone_localizador,\n    codigo_retirada_exibicao: first.codigo_retirada_exibicao,\n    link_confirmacao_entrega: first.link_confirmacao_entrega,\n    tipo_entrega_marketplace: first.tipo_entrega_marketplace,\n    entregador_tipo: first.entregador_tipo,\n    observacoes: first.observacoes,\n    itens: list,\n    algum_nao_catalogado: list.some(i => i.item_nao_catalogado),\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -899,7 +922,8 @@
             "codigo_retirada_exibicao": "={{$('Agregar itens resolvidos').item.json.codigo_retirada_exibicao}}",
             "taxa_servico_cliente": "={{$('Agregar itens resolvidos').item.json.precos.taxa_servico_cliente}}",
             "entregador_tipo": "={{$('Agregar itens resolvidos').item.json.entregador_tipo}}",
-            "metadata": "={{ JSON.stringify({ price_model: $('Agregar itens resolvidos').item.json.precos.price_model, price_raw: $('Agregar itens resolvidos').item.json.precos.raw }) }}"
+            "metadata": "={{ JSON.stringify({ price_model: $('Agregar itens resolvidos').item.json.precos.price_model, price_raw: $('Agregar itens resolvidos').item.json.precos.raw, promocoes: $('Agregar itens resolvidos').item.json.precos.promocoes, desconto_pago_loja: $('Agregar itens resolvidos').item.json.precos.desconto_pago_loja, desconto_pago_99: $('Agregar itens resolvidos').item.json.precos.desconto_pago_99 }) }}",
+            "link_confirmacao_entrega": "={{$('Agregar itens resolvidos').item.json.link_confirmacao_entrega}}"
           },
           "matchingColumns": [],
           "schema": []
@@ -970,35 +994,27 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "app_id",
-              "value": "={{$json.app_id_valor}}"
-            },
-            {
-              "name": "app_secret",
-              "value": "={{$json.api_secret}}"
-            },
-            {
-              "name": "app_shop_id",
-              "value": "={{$json.app_shop_id_valor}}"
-            }
-          ]
-        },
-        "options": {}
+        "operation": "executeQuery",
+        "query": "select errno, errmsg, data from public.food99_token_resposta($1);",
+        "options": {
+          "queryReplacement": "={{ [$json.app_shop_id_valor] }}"
+        }
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "id": "n22",
       "name": "Obter token 99Food",
       "position": [
         6040,
         -200
-      ]
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -1232,8 +1248,8 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "tipo_evento": "={{ '99food_evento_' + ($json.type || 'desconhecido') }}",
-            "dados": "={{ JSON.stringify($json.data) }}"
+            "tipo_evento": "={{ '99food_evento_' + ($('Switch por tipo de evento').item.json.type || 'desconhecido') }}",
+            "dados": "={{ JSON.stringify($('Switch por tipo de evento').item.json.data) }}"
           },
           "matchingColumns": [],
           "schema": []
@@ -1444,6 +1460,29 @@
           "name": "Postgres cloud"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.food99_aplicar_evento($1, $2, $3::jsonb) as resultado;",
+        "options": {
+          "queryReplacement": "={{ [String($json.data && $json.data.order_id || ''), $json.type, JSON.stringify($json.data || {})] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "food99_aplicar_evento",
+      "name": "Aplicar evento 99Food",
+      "position": [
+        1240,
+        460
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
     }
   ],
   "connections": {
@@ -1569,6 +1608,13 @@
         [
           {
             "node": "Buscar pedido pelo id do marketplace (disputa)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aplicar evento 99Food",
             "type": "main",
             "index": 0
           }
@@ -1958,6 +2004,17 @@
         [
           {
             "node": "Log disputa recebida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar evento 99Food": {
+      "main": [
+        [
+          {
+            "node": "Registrar evento genérico",
             "type": "main",
             "index": 0
           }

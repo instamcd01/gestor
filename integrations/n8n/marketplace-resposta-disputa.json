@@ -505,35 +505,27 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "app_id",
-              "value": "={{$json.app_id_valor}}"
-            },
-            {
-              "name": "app_secret",
-              "value": "={{$json.api_secret}}"
-            },
-            {
-              "name": "app_shop_id",
-              "value": "={{$json.app_shop_id_valor}}"
-            }
-          ]
-        },
-        "options": {}
+        "operation": "executeQuery",
+        "query": "select errno, errmsg, data from public.food99_token_resposta($1);",
+        "options": {
+          "queryReplacement": "={{ [$json.app_shop_id_valor] }}"
+        }
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "id": "e6",
       "name": "Obter token 99Food (disputa)",
       "position": [
         1200,
         380
-      ]
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {

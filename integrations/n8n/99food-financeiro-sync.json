@@ -1,0 +1,486 @@
+{
+  "name": "99Food - Financeiro Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Financeiro Sync (99Food)\n\nRoda a cada 6h, por empresa ativa com config 99Food. Busca GET->POST /v3/finance/finance/getShopBillDetail dos últimos 7 dias e atualiza marketplace_pedidos com valor bruto, comissão, taxa de gateway, taxa de entrega cobrada pela plataforma e valor/data prevista de repasse.\n\nIMPORTANTE, testado ao vivo 2026-08-06: ao contrário do que a doc sugere ('Special Authorization Needed'), a chamada getShopBillDetail JÁ FUNCIONA nessa conta -- errno:0, só sem dados ainda (total_num:0) porque nunca houve pedido real pago nesta loja sandbox (os pedidos usados nos testes desta integração são todos sintéticos, nunca passaram por pagamento de verdade). O fluxo de autenticação (Financial API Authtoken, /v3/auth/authtoken/signIn) também confirmado funcionando ao vivo -- JWT separado do auth_token normal da 99Food, vai no header Authorization: Bearer, não como query param. O IF de errno continua útil como proteção geral (outros ambientes/momentos podem responder diferente), mas não é mais um bloqueio conhecido.\n\nMapeamento de campos (por linha de pedido no retorno, já em centavos /100):\n- orderAmount -> valor_bruto_marketplace\n- commissionAmount -> taxa_comissao\n- payCommissionAmount -> taxa_gateway\n- b2pDeliveryAmount -> taxa_entrega_marketplace\n- settlementAmount -> valor_liquido_recebido\n- expectSettleDate -> data_prevista_repassado\n- Não preenche data_repassado/valor_repassado (isso exigiria o endpoint separado 'Get Settlements Data', mesma classe de gate, não construído)\n- JSON bruto da linha inteira sempre salvo em metadata->bill_99food, mesmo padrão do iFood (metadata->billingSummary) pra nunca perder dado mesmo se o mapeamento acima errar",
+        "height": 460,
+        "width": 620
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "id": "note",
+      "name": "LEIA-ME",
+      "position": [
+        -320,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "id": "t1",
+      "name": "A cada 6h",
+      "position": [
+        -320,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select empresa_id, id_loja_plataforma, api_key, api_secret\nfrom empresa_marketplace_config\nwhere marketplace_id = 'e11ec855-6936-410d-a56a-635adebfe595' and ativo = true;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "s2",
+      "name": "Buscar credenciais ativas",
+      "position": [
+        -80,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const store = $getWorkflowStaticData('global');\nstore.food99FinanceTokens = store.food99FinanceTokens || {};\nconst cached = store.food99FinanceTokens[$json.api_key];\nconst valido = !!(cached && cached.expiresAt > Date.now() + 60000);\nreturn [{ json: { ...$json, access_token: valido ? cached.accessToken : null, token_valido: valido } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "s3",
+      "name": "Checar token financeiro em cache",
+      "position": [
+        160,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "s4c",
+              "leftValue": "={{$json.token_valido}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "s4",
+      "name": "Token financeiro válido?",
+      "position": [
+        400,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.99food.com/v3/auth/authtoken/signIn",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { retailer: $json.api_key, secret: $json.api_secret } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "s5",
+      "name": "Obter token financeiro",
+      "position": [
+        400,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Checar token financeiro em cache').item.json;\nconst resp = $json;\nconst ok = !!resp.accessToken;\nconst store = $getWorkflowStaticData('global');\nstore.food99FinanceTokens = store.food99FinanceTokens || {};\nif (ok) { store.food99FinanceTokens[ctx.api_key] = { accessToken: resp.accessToken, expiresAt: Date.now() + ((resp.expiresIn || 21600) * 1000) }; }\nreturn [{ json: { ...ctx, access_token: ok ? resp.accessToken : null, token_valido: ok, token_erro: ok ? null : (resp.errmsg || 'erro desconhecido ao obter token financeiro') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "s6",
+      "name": "Salvar token financeiro em cache",
+      "position": [
+        640,
+        280
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "id": "s7",
+      "name": "Token financeiro pronto",
+      "position": [
+        880,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst end = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);\nconst begin = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);\nconst fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');\nreturn [{ json: { ...$json, start_date: fmt(begin), end_date: fmt(end) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "s9",
+      "name": "Montar periodo",
+      "position": [
+        1120,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.99food.com/v3/finance/finance/getShopBillDetail",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$json.access_token}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { acceptor_code: $json.id_loja_plataforma, page_no: 1, page_size: 200, start_date: $json.start_date, end_date: $json.end_date } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "id": "s10",
+      "name": "Buscar bill data 99Food",
+      "position": [
+        1360,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "s11c",
+              "leftValue": "={{$json.errno}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "id": "s11",
+      "name": "Bill data teve sucesso?",
+      "position": [
+        1600,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_financeiro_sync_sem_autorizacao",
+            "dados": "={{ JSON.stringify({ empresa_id: $('Buscar credenciais ativas').item.json.empresa_id, errno: $json.errno, errmsg: $json.errmsg, start_date: $('Montar periodo').item.json.start_date, end_date: $('Montar periodo').item.json.end_date }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c7err",
+      "name": "Bill sem autorização (99Food)",
+      "position": [
+        1840,
+        280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "eventos_sistema",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo_evento": "99food_financeiro_sync",
+            "dados": "={{ JSON.stringify({ empresa_id: $('Buscar credenciais ativas').item.json.empresa_id, start_date: $('Montar periodo').item.json.start_date, end_date: $('Montar periodo').item.json.end_date, total: $json.data ? $json.data.total_num : null }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c7",
+      "name": "Log execucao",
+      "position": [
+        1840,
+        20
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = ($json.data && $json.data.data) || [];\n// So linhas de receita/reembolso de pedido tem orderId util pra casar com\n// marketplace_pedidos -- orderType 5 (taxa mensal/nao-acompanhante) nao tem\n// order_id de verdade, pula.\nreturn rows.filter(r => r.orderId && r.orderType !== 5).map(r => ({\n  json: {\n    marketplace_order_id: String(r.orderId),\n    valor_bruto: (r.orderAmount || 0) / 100,\n    taxa_comissao: (r.commissionAmount || 0) / 100,\n    taxa_gateway: (r.payCommissionAmount || 0) / 100,\n    taxa_entrega_marketplace: (r.b2pDeliveryAmount || 0) / 100,\n    valor_liquido_recebido: (r.settlementAmount || 0) / 100,\n    data_prevista_repassado: r.expectSettleDate || null,\n    linha_bruta: JSON.stringify(r),\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "c8",
+      "name": "Processar linhas 99Food",
+      "position": [
+        1840,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update marketplace_pedidos\nset valor_bruto_marketplace = coalesce($2, valor_bruto_marketplace),\n    taxa_comissao = coalesce($3, taxa_comissao),\n    taxa_gateway = coalesce($4, taxa_gateway),\n    taxa_entrega_marketplace = coalesce($5, taxa_entrega_marketplace),\n    valor_liquido_recebido = coalesce($6, valor_liquido_recebido),\n    data_prevista_repassado = coalesce($7::date, data_prevista_repassado),\n    metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('bill_99food', $8::jsonb),\n    updated_at = now()\nwhere marketplace_order_id = $1;",
+        "options": {
+          "queryReplacement": "={{ [$json.marketplace_order_id, $json.valor_bruto, $json.taxa_comissao, $json.taxa_gateway, $json.taxa_entrega_marketplace, $json.valor_liquido_recebido, $json.data_prevista_repassado, $json.linha_bruta] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "id": "c9",
+      "name": "Atualizar marketplace_pedidos",
+      "position": [
+        2080,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "A cada 6h": {
+      "main": [
+        [
+          {
+            "node": "Buscar credenciais ativas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar credenciais ativas": {
+      "main": [
+        [
+          {
+            "node": "Checar token financeiro em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checar token financeiro em cache": {
+      "main": [
+        [
+          {
+            "node": "Token financeiro válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token financeiro válido?": {
+      "main": [
+        [
+          {
+            "node": "Token financeiro pronto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obter token financeiro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter token financeiro": {
+      "main": [
+        [
+          {
+            "node": "Salvar token financeiro em cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar token financeiro em cache": {
+      "main": [
+        [
+          {
+            "node": "Token financeiro pronto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token financeiro pronto": {
+      "main": [
+        [
+          {
+            "node": "Montar periodo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar periodo": {
+      "main": [
+        [
+          {
+            "node": "Buscar bill data 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar bill data 99Food": {
+      "main": [
+        [
+          {
+            "node": "Bill data teve sucesso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bill data teve sucesso?": {
+      "main": [
+        [
+          {
+            "node": "Log execucao",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Processar linhas 99Food",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bill sem autorização (99Food)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar linhas 99Food": {
+      "main": [
+        [
+          {
+            "node": "Atualizar marketplace_pedidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "active": true
+}

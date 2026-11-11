@@ -902,34 +902,27 @@
     },
     {
       "parameters": {
-        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "app_id",
-              "value": "={{$json.app_id_valor}}"
-            },
-            {
-              "name": "app_secret",
-              "value": "={{$json.api_secret}}"
-            },
-            {
-              "name": "app_shop_id",
-              "value": "={{$json.app_shop_id_valor}}"
-            }
-          ]
-        },
-        "options": {}
+        "operation": "executeQuery",
+        "query": "select errno, errmsg, data from public.food99_token_resposta($1);",
+        "options": {
+          "queryReplacement": "={{ [$json.app_shop_id_valor] }}"
+        }
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "id": "t3 (pausar)",
       "name": "Obter token 99Food (pausar)",
       "position": [
         1184,
         768
-      ]
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -1222,34 +1215,27 @@
     },
     {
       "parameters": {
-        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "app_id",
-              "value": "={{$json.app_id_valor}}"
-            },
-            {
-              "name": "app_secret",
-              "value": "={{$json.api_secret}}"
-            },
-            {
-              "name": "app_shop_id",
-              "value": "={{$json.app_shop_id_valor}}"
-            }
-          ]
-        },
-        "options": {}
+        "operation": "executeQuery",
+        "query": "select errno, errmsg, data from public.food99_token_resposta($1);",
+        "options": {
+          "queryReplacement": "={{ [$json.app_shop_id_valor] }}"
+        }
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "id": "t3 (retomar)",
       "name": "Obter token 99Food (retomar)",
       "position": [
         1184,
         1232
-      ]
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -1546,34 +1532,27 @@
     },
     {
       "parameters": {
-        "url": "https://openapi.99food.com/v1/auth/authtoken/get",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "app_id",
-              "value": "={{$json.app_id_valor}}"
-            },
-            {
-              "name": "app_secret",
-              "value": "={{$json.api_secret}}"
-            },
-            {
-              "name": "app_shop_id",
-              "value": "={{$json.app_shop_id_valor}}"
-            }
-          ]
-        },
-        "options": {}
+        "operation": "executeQuery",
+        "query": "select errno, errmsg, data from public.food99_token_resposta($1);",
+        "options": {
+          "queryReplacement": "={{ [$json.app_shop_id_valor] }}"
+        }
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "id": "t3 (horário)",
       "name": "Obter token 99Food (horário)",
       "position": [
         1184,
         1680
-      ]
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GEzDAcb9DFtH5ozo",
+          "name": "Postgres cloud"
+        }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
