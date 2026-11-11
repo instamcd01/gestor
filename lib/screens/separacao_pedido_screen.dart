@@ -223,7 +223,9 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
     super.initState();
     _status = widget.venda.separacaoStatus;
     if (_status != null) _atualizarAcoes();
-    if (_status == 'finalizada') _atualizarConfirmacao();
+    // Também em 'separando': mostra o erro de uma finalização que não chegou
+    // ao iFood (o reenvio do banco devolve o pedido pra 'separando' com o motivo).
+    if (_status == 'finalizada' || _status == 'separando') _atualizarConfirmacao();
     if (_ehIfood) {
       _atualizarChamadas();
       _pollChamadasTimer = Timer.periodic(const Duration(seconds: 3), (_) => _atualizarChamadas());
@@ -269,11 +271,15 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
         });
         return;
       }
+      if (_status != 'finalizada') return;
       setState(() => _confirmacao = resultado);
       _tentativasConfirmacao++;
       _pollConfirmacaoTimer?.cancel();
-      if (resultado?['itens_confirmados_ifood'] == null && _tentativasConfirmacao < 8) {
-        _pollConfirmacaoTimer = Timer(const Duration(seconds: 2), _atualizarConfirmacao);
+      // 8 voltas rápidas (2 s) e depois a cada 10 s por até ~10 min: se a
+      // chamada ao n8n falhar, o reenvio do banco leva de 1 a 3 min.
+      if (resultado?['itens_confirmados_ifood'] == null && _tentativasConfirmacao < 68) {
+        _pollConfirmacaoTimer =
+            Timer(Duration(seconds: _tentativasConfirmacao < 8 ? 2 : 10), _atualizarConfirmacao);
       }
     } catch (_) {
       // Silencioso — mesma lógica de _atualizarAcoes.
@@ -677,7 +683,11 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                   child: AvisoBanner(
                     tipo: TipoAviso.erro,
                     negrito: true,
-                    texto: 'O iFood recusou finalizar: $_erroFinalizacao',
+                    // Erro do reenvio do banco já vem como frase completa
+                    // ("A finalização não chegou ao iFood..."); o do iFood é só o motivo.
+                    texto: _erroFinalizacao!.contains('não chegou ao iFood')
+                        ? _erroFinalizacao!
+                        : 'O iFood recusou finalizar: $_erroFinalizacao',
                   ),
                 ),
               if (_ehIfood) _cardVirtualBag(),
