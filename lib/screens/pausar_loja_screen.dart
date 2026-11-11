@@ -112,10 +112,16 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
     // Início e fim têm CADA UM sua própria data — antes só existia 1 data
     // pro dia inteiro, o que impedia pausar por vários dias seguidos
     // (ex: viagem, feriado prolongado). Reportado pelo usuário testando.
-    DateTime dataInicio = DateTime.now();
-    TimeOfDay horaInicio = const TimeOfDay(hour: 14, minute: 0);
-    DateTime dataFim = DateTime.now();
-    TimeOfDay horaFim = const TimeOfDay(hour: 16, minute: 0);
+    // Sugestão: próxima hora cheia, por 2 h. Antes vinha fixo 14h–16h de
+    // hoje e, aberto depois das 14h, o agendamento era recusado sem salvar
+    // (visto em 11/11 às 16h14).
+    final agora = DateTime.now();
+    final sugestaoInicio = DateTime(agora.year, agora.month, agora.day, agora.hour).add(const Duration(hours: 1));
+    final sugestaoFim = sugestaoInicio.add(const Duration(hours: 2));
+    DateTime dataInicio = DateTime(sugestaoInicio.year, sugestaoInicio.month, sugestaoInicio.day);
+    TimeOfDay horaInicio = TimeOfDay(hour: sugestaoInicio.hour, minute: 0);
+    DateTime dataFim = DateTime(sugestaoFim.year, sugestaoFim.month, sugestaoFim.day);
+    TimeOfDay horaFim = TimeOfDay(hour: sugestaoFim.hour, minute: 0);
 
     final confirmado = await showDialog<bool>(
       context: context,
@@ -203,8 +209,9 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
     );
     if (confirmado != true) return;
 
-    final inicio = DateTime(dataInicio.year, dataInicio.month, dataInicio.day, horaInicio.hour, horaInicio.minute);
+    var inicio = DateTime(dataInicio.year, dataInicio.month, dataInicio.day, horaInicio.hour, horaInicio.minute);
     final fim = DateTime(dataFim.year, dataFim.month, dataFim.day, horaFim.hour, horaFim.minute);
+    final agoraConfirmado = DateTime.now();
 
     if (!fim.isAfter(inicio)) {
       if (mounted) {
@@ -213,15 +220,23 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
       }
       return;
     }
-    if (!inicio.isAfter(DateTime.now())) {
+    if (!fim.isAfter(agoraConfirmado)) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Pra pausar já a partir de agora, use "Pausar agora".')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Esse horário já passou. Escolha um fim depois de agora.')));
       }
       return;
     }
+    // Início já passou mas o fim ainda não: pausa a partir de agora até o fim
+    // escolhido (o repositório grava como 'ativa'), em vez de recusar.
+    final comecaAgora = !inicio.isAfter(agoraConfirmado);
+    if (comecaAgora) inicio = agoraConfirmado;
 
     await _salvar(motivo: motivoController.text.trim(), inicio: inicio, fim: fim);
+    if (comecaAgora && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('O início já tinha passado: a loja foi pausada agora, até ${DateFormat('dd/MM HH:mm').format(fim)}.')));
+    }
   }
 
   Future<void> _salvar({required String motivo, required DateTime inicio, required DateTime fim}) async {
