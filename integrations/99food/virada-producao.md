@@ -40,6 +40,10 @@ loja de teste com `app_shop_id` = id da empresa Delivery Pet `3bce0e24-2868-49f3
    (`food99_carga_catalogo.concluido_em`). Se a produção tiver o limite de 1 envio a cada 4 h, ele espera e
    tenta de novo (errno 10005) — perguntar antes à 99 se liberam a janela pra carga inicial.
    Em produção a 99 categoriza pelo **EAN** (item library): EAN certo importa mais que a categoria.
+6b. **Aceitação só pela OpenAPI** (a 99 volta pra "B-App e OpenAPI" ao vincular; nesse modo a loja NÃO aparece pro
+   cliente se não for aberta pelo app de lojista): `POST /v1/shop/shop/setconfirmmethod` com `order_confirm_method: 2`.
+   E ligar pedidos de cancelamento/reembolso do cliente: `POST /v1/shop/apply/set` (receive_cancel_apply e
+   receive_refund_apply = 1). Conferir em `/v1/shop/shop/detail`.
 7. **Loja**: configurar no merchant.99app.com (Grocery, categoria, entrega pela loja, área/taxa, horário) e
    abrir pela tela de pausa do Gestor ou `setStatus`.
 8. **Piloto**: 1º pedido real acompanhado ao vivo (chega, confirma sozinho, pronto, saiu, entregue,
