@@ -29,7 +29,8 @@ loja de teste com `app_shop_id` = id da empresa Delivery Pet `3bce0e24-2868-49f3
    (é o mesmo robô; ele confere a assinatura com o segredo que está na configuração).
 2. **Autorização da loja**: Gerenciamento da loja › Autorização de solicitação de lote › escolher o app de
    produção › copiar o link. O Lucas abre o link logado como gerente da loja real e clica em Autorizar.
-3. **Vincular**: aba "Vincular estabelecimento" › Bind › `app_shop_id` = `3bce0e24-2868-49f3-a9dd-eed921ffc8e4`.
+3. **Vincular**: FEITO em 12/11 16h02 pela 99 na call — app de produção `5764607674690308143`, loja real com
+   `app_shop_id` = **`52816710000198`** (CNPJ, não o id da empresa). Esse é o valor do "ID da loja" no Gestor.
 4. **Desvincular a loja de TESTE** do app de teste (Unbind). Senão os pedidos de teste continuam caindo na
    empresa real e baixando estoque.
 5. **Trocar a credencial** no Gestor (Integrar Plataformas › 99Food): App ID e Secret do app de produção. Quem
