@@ -457,11 +457,14 @@ class Venda {
   /// R$9,99 da entrega, e o desconto também nunca era descontado).
   double get lucroLiquidoReal {
     if (finalizada && statusPagamento == 'pago') return lucroTotal;
+    // Entrega feita pela plataforma (99FOOD/IFOOD): o frete é dela e a loja
+    // não tem custo de entrega (12/11 — igual ao calcular_lucro_pedido).
+    final plataformaEntrega = ehPlataformaDelivery && entregadorTipo != null && entregadorTipo != 'MERCHANT';
     return lucroTotal +
-        valorEntrega -
+        (plataformaEntrega ? 0 : valorEntrega) -
         desconto -
         (custoEmbalagem ?? 0) -
-        (custoEntregaReal ?? 0) -
+        (plataformaEntrega ? 0 : (custoEntregaReal ?? 0)) -
         (taxaMaquininha ?? 0) -
         (mercadoPagoTaxa ?? 0) -
         (ehPlataformaDelivery ? (taxaComissaoMarketplace ?? 0) : 0) -
