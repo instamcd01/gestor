@@ -1099,6 +1099,27 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               if (venda.numeroExibicaoMarketplace != null)
                 _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (${venda.nomePlataforma})',
                     '#${venda.numeroExibicaoMarketplace}'),
+              // 99Food: handover_code (código de entrega/coleta) e handover_page_url (confirmação de entrega).
+              if (venda.canalVenda == '99food' && (venda.codigoRetiradaExibicao ?? '').isNotEmpty)
+                _linhaInfo(Icons.qr_code_2, 'Código de entrega (99Food)', venda.codigoRetiradaExibicao!),
+              if (venda.canalVenda == '99food' && (venda.linkConfirmacaoEntrega ?? '').isNotEmpty)
+                InkWell(
+                  onTap: () async {
+                    final uri = Uri.parse(venda.linkConfirmacaoEntrega!);
+                    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      children: [
+                        Icon(Icons.link, size: 16, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Text('Abrir confirmação de entrega (99Food)',
+                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, decoration: TextDecoration.underline)),
+                      ],
+                    ),
+                  ),
+                ),
               _linhaInfo(Icons.receipt_long, 'ID da Venda', venda.idVenda ?? '-'),
             ],
           ),

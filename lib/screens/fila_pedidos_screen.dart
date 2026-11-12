@@ -876,6 +876,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         entrega.add(_textoCartao('Código de retirada: ${venda.codigoRetiradaExibicao}', apagado: true));
       }
     } else {
+      // 99Food: handover_code também na entrega (conferir com o entregador/cliente).
+      if (venda.canalVenda == '99food' && (venda.codigoRetiradaExibicao ?? '').isNotEmpty) {
+        entrega.add(_textoCartao('Código de entrega (99Food): ${venda.codigoRetiradaExibicao}'));
+      }
       final linhaModalidade = [
         _rotuloModalidade(venda),
         if (venda.entregaSelecionada.isNotEmpty) 'zona ${venda.entregaSelecionada}',
