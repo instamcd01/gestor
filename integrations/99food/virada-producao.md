@@ -45,6 +45,16 @@ loja de teste com `app_shop_id` = id da empresa Delivery Pet `3bce0e24-2868-49f3
 8. **Piloto**: 1º pedido real acompanhado ao vivo (chega, confirma sozinho, pronto, saiu, entregue,
    valores batem com o app da 99).
 
+## Rede de segurança do token (12/11)
+A 99 derruba o token da loja a qualquer momento (validade aleatória, mudança de config). Enquanto o banco
+renova, os robôs mandavam confirmar/cancelar com token vazio (errno 10002) e a chamada se perdia — num pedido
+real a 99 cancelaria sozinha em 5 min. Agora:
+- `food99-manter-token` roda a cada **15 s** (era 1 min).
+- `food99-garantir-acoes` (a cada 20 s, função `food99_garantir_acoes`): confirma de novo pedido que ficou
+  `orderNew` por mais de 15 s (até 6 tentativas em 5 min) e reenvia ao robô de status qualquer
+  cancelado/pronto/entregue que voltou com errno 10002/10100/10102. Resposta 10100/10102 força renovar o token.
+  Histórico em `food99_reenvios`.
+
 ## Conferências rápidas
 ```sql
 select * from food99_token;                         -- token válido e sem erro
