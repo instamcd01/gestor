@@ -1068,7 +1068,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                 if (venda.saldoUsado > 0) linhaTotal('Saldo usado', '− ${moeda.format(venda.saldoUsado)}'),
                 if (venda.petcashUsado > 0) linhaTotal('PetCash usado', '− ${moeda.format(venda.petcashUsado)}'),
                 if (venda.temEntrega)
-                  linhaTotal('Entrega', venda.freteGratisIfood ? 'Grátis' : moeda.format(venda.valorEntrega)),
+                  // Frete grátis do iFood já está DENTRO do desconto acima — mostrar "Grátis"
+                  // aqui fazia a conta não fechar (12/11, pedido da Érica).
+                  linhaTotal(venda.freteGratisIfood ? 'Entrega (grátis pro cliente, abatida no desconto)' : 'Entrega',
+                      moeda.format(venda.valorEntrega)),
                 if ((venda.jurosParcelamento ?? 0) > 0)
                   linhaTotal('Juros do parcelamento (${venda.parcelasCartao}x)', moeda.format(venda.jurosParcelamento!)),
                 if ((venda.taxaServicoCliente ?? 0) > 0)

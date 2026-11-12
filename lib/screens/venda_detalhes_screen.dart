@@ -1593,7 +1593,83 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
   /// cadeado/"informações internas" ficava redundante com isso, dava a
   /// entender que ainda precisava de outra camada de esconderijo. Card
   /// normal agora, mesmo padrão visual do resto da tela.
+  /// Pedido de iFood/99Food: conta que FECHA, linha a linha, até o lucro
+  /// líquido (12/11 — pedido da Érica: aparecia "Entrega cobrada do cliente
+  /// R$12,99" com frete grátis bancado pela loja e o desconto de R$17,99 não
+  /// aparecia em lugar nenhum). Mesma fórmula do `calcular_lucro_pedido`:
+  /// produtos + entrega − desconto + reembolso − custos/taxas.
+  Widget _cardFinanceiroPlataforma(Venda venda, NumberFormat currencyFormat) {
+    final brightness = Theme.of(context).brightness;
+    final corLaranja = AppTheme.tomAdaptavel(Colors.orange, brightness);
+    final corVerde = AppTheme.tomAdaptavel(Colors.green, brightness);
+    final plat = venda.nomePlataforma;
+    final plataformaEntrega = venda.entregadorTipo != null && venda.entregadorTipo != 'MERCHANT';
+    final reembolso = (venda.promocaoReembolsadaIfood ?? 0) + (venda.custoPromocaoExterna ?? 0);
+    final freteGratis = (venda.taxaEntregaMarketplace ?? 0) - (venda.taxaEntregaPagaMarketplace ?? venda.taxaEntregaMarketplace ?? 0);
+    final descontoLoja = venda.custoPromocaoPropriaIfood ?? (venda.desconto - reembolso).clamp(0, double.infinity).toDouble();
+    final cinza = Theme.of(context).colorScheme.onSurfaceVariant;
+
+    Widget nota(String texto) => Padding(
+          padding: const EdgeInsets.only(left: 12, bottom: 4),
+          child: Text(texto, style: TextStyle(fontSize: 11, color: cinza)),
+        );
+
+    final partesDesconto = <String>[
+      if (freteGratis > 0.009) 'frete grátis ${currencyFormat.format(freteGratis)}',
+      if (venda.desconto - freteGratis > 0.009) 'cupom/promoção ${currencyFormat.format(venda.desconto - freteGratis)}',
+    ];
+    final quemPagou = <String>[
+      if (descontoLoja > 0.009) 'loja ${currencyFormat.format(descontoLoja)}',
+      if (reembolso > 0.009) '$plat/parceiro ${currencyFormat.format(reembolso)}',
+    ];
+
+    return _card(
+      titulo: 'Informações Financeiras',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _linhaValor('Venda dos produtos', venda.subtotal, currencyFormat, cor: corVerde),
+          if (venda.valorEntrega > 0)
+            plataformaEntrega
+                ? nota('Entrega de ${currencyFormat.format(venda.valorEntrega)} fica com a $plat (ela entregou)')
+                : _linhaValor('Entrega (taxa do pedido)', venda.valorEntrega, currencyFormat, cor: corVerde),
+          if (venda.desconto > 0) ...[
+            _linhaValor('Desconto dado ao cliente', -venda.desconto, currencyFormat, cor: corLaranja),
+            if (partesDesconto.isNotEmpty) nota('${partesDesconto.join(' + ')}${quemPagou.isNotEmpty ? ' · pago por: ${quemPagou.join(', ')}' : ''}'),
+          ],
+          if (reembolso > 0) _linhaValor('Reembolso do desconto ($plat/parceiro)', reembolso, currencyFormat, cor: corVerde),
+          if ((venda.taxaServicoCliente ?? 0) > 0)
+            nota('Taxa de serviço de ${currencyFormat.format(venda.taxaServicoCliente)} paga pelo cliente fica com a $plat (fora da conta)'),
+          const Divider(height: 20),
+          _linhaValor('Custo dos produtos', -(venda.custoTotal), currencyFormat, cor: corLaranja),
+          if (venda.custoEmbalagem != null) _linhaValor('Embalagem', -venda.custoEmbalagem!, currencyFormat, cor: corLaranja),
+          if (!plataformaEntrega && venda.custoEntregaReal != null)
+            _linhaValor('Entrega própria (custo)', -venda.custoEntregaReal!, currencyFormat, cor: corLaranja),
+          if (venda.taxaComissaoMarketplace != null)
+            _linhaValor('Comissão $plat', -venda.taxaComissaoMarketplace!, currencyFormat, cor: corLaranja),
+          if (venda.taxaGatewayMarketplace != null)
+            _linhaValor('Taxa de pagamento $plat', -venda.taxaGatewayMarketplace!, currencyFormat, cor: corLaranja),
+          if (venda.taxaMaquininha != null) _linhaValor('Taxa maquininha', -venda.taxaMaquininha!, currencyFormat, cor: corLaranja),
+          const Divider(height: 20),
+          _linhaValor(venda.finalizada && venda.statusPagamento == 'pago' ? 'Lucro líquido real' : 'Lucro líquido (estimado)',
+              venda.lucroLiquidoReal, currencyFormat,
+              cor: corVerde, destaque: true),
+          _linhaValor(
+            'Margem líquida real',
+            null,
+            currencyFormat,
+            textoCustomizado: venda.valorTotal > 0
+                ? '${(venda.lucroLiquidoReal / venda.valorTotal * 100).toStringAsFixed(1)}%'
+                : '-',
+            cor: corVerde,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _cardInterno(Venda venda, NumberFormat currencyFormat) {
+    if (venda.ehPlataformaDelivery) return _cardFinanceiroPlataforma(venda, currencyFormat);
     final brightness = Theme.of(context).brightness;
     final corLaranja = AppTheme.tomAdaptavel(Colors.orange, brightness);
     final corVerde = AppTheme.tomAdaptavel(Colors.green, brightness);

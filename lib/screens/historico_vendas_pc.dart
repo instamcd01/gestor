@@ -984,7 +984,8 @@ class _HistoricoVendasPcState extends State<HistoricoVendasPc> {
                           if (v.saldoUsado > 0) linhaTotal('Saldo usado', '− ${_moeda.format(v.saldoUsado)}'),
                           if (v.petcashUsado > 0) linhaTotal('PetCash usado', '− ${_moeda.format(v.petcashUsado)}'),
                           if (v.temEntrega && !v.retirada)
-                            linhaTotal('Entrega', v.freteGratisIfood ? 'Grátis' : _moeda.format(v.valorEntrega)),
+                            linhaTotal(v.freteGratisIfood ? 'Entrega (grátis pro cliente, abatida no desconto)' : 'Entrega',
+                                _moeda.format(v.valorEntrega)),
                           if ((v.jurosParcelamento ?? 0) > 0)
                             linhaTotal('Juros do parcelamento', _moeda.format(v.jurosParcelamento!)),
                           if ((v.taxaServicoCliente ?? 0) > 0)
