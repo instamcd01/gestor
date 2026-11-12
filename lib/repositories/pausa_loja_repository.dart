@@ -25,6 +25,7 @@ class PausaLojaRepository {
     String? motivo,
     required DateTime inicio,
     required DateTime fim,
+    List<String>? canais,
   }) async {
     final status = !inicio.isAfter(DateTime.now()) ? 'ativa' : 'agendada';
     await supabase.from('pausas_loja').insert({
@@ -34,7 +35,30 @@ class PausaLojaRepository {
       'inicio': inicio.toUtc().toIso8601String(),
       'fim': fim.toUtc().toIso8601String(),
       'status': status,
+      'canais': canais,
     });
+  }
+
+  /// Interrupções geradas pelas pausas (status real em cada marketplace: pendente/ativa/erro).
+  Future<List<Map<String, dynamic>>> interrupcoesDasPausas(List<String> pausaIds) async {
+    final data = await supabase
+        .from('marketplace_interrupcoes')
+        .select('origem_pausa_id, marketplace_id, status, erro')
+        .inFilter('origem_pausa_id', pausaIds);
+    return (data as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Marketplaces ligados na empresa (id + nome) — pra escolher em quais
+  /// canais a pausa vale.
+  Future<List<({String id, String nome})>> listarMarketplacesAtivos() async {
+    final data = await supabase
+        .from('empresa_marketplace_config')
+        .select('marketplace_id, marketplaces(nome)')
+        .eq('ativo', true);
+    return (data as List).map((row) {
+      final r = row as Map<String, dynamic>;
+      return (id: r['marketplace_id'].toString(), nome: (r['marketplaces'] as Map?)?['nome']?.toString() ?? 'Marketplace');
+    }).toList();
   }
 
   /// Cancela antes do fim — o trigger cuida de cancelar em cascata as

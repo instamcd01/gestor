@@ -25,6 +25,10 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
   final _repository = PausaLojaRepository();
 
   List<PausaLoja> _pausas = [];
+  /// Marketplaces ligados (id + nome) — canais além de 'proprios' (site + WhatsApp).
+  List<({String id, String nome})> _marketplaces = [];
+  /// Interrupções que as pausas ativas geraram em cada marketplace (status real da aplicação).
+  List<Map<String, dynamic>> _interrupcoes = [];
   bool _carregando = true;
   bool _salvando = false;
 
@@ -37,7 +41,16 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
   Future<void> _carregar() async {
     try {
       final pausas = await _repository.listarAtivasOuAgendadas();
-      if (mounted) setState(() => _pausas = pausas);
+      final marketplaces = await _repository.listarMarketplacesAtivos();
+      final ativas = pausas.where((p) => p.ativa).map((p) => p.id).toList();
+      final interrupcoes = ativas.isEmpty ? <Map<String, dynamic>>[] : await _repository.interrupcoesDasPausas(ativas);
+      if (mounted) {
+        setState(() {
+          _pausas = pausas;
+          _marketplaces = marketplaces;
+          _interrupcoes = interrupcoes;
+        });
+      }
     } catch (e) {
       debugPrint('Erro ao carregar pausas da loja: $e');
     } finally {
@@ -45,7 +58,41 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
     }
   }
 
-  PausaLoja? get _pausaAtiva => _pausas.where((p) => p.ativa).firstOrNull;
+  List<PausaLoja> get _pausasAtivas => _pausas.where((p) => p.ativa).toList();
+
+  /// Canais possíveis: 'proprios' (site + WhatsApp) + cada marketplace ligado.
+  List<({String id, String nome})> get _canais => [(id: 'proprios', nome: 'Site e WhatsApp'), ..._marketplaces];
+
+  bool _pausaValeNoCanal(PausaLoja p, String canal) => p.canais == null || p.canais!.contains(canal);
+
+  String _rotuloCanais(PausaLoja p) {
+    if (p.canais == null) return 'Todos os canais';
+    return _canais.where((c) => p.canais!.contains(c.id)).map((c) => c.nome).join(', ');
+  }
+
+  /// Seletor de canais nos diálogos. Tudo marcado = null (todos, inclusive marketplaces ligados no futuro).
+  Widget _seletorCanais(Set<String> escolhidos, void Function(void Function()) setDialogState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Onde pausar?', style: TextStyle(fontSize: 12)),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          children: _canais
+              .map((c) => FilterChip(
+                    label: Text(c.nome),
+                    selected: escolhidos.contains(c.id),
+                    onSelected: (v) => setDialogState(() => v ? escolhidos.add(c.id) : escolhidos.remove(c.id)),
+                  ))
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  List<String>? _canaisParaSalvar(Set<String> escolhidos) =>
+      escolhidos.length == _canais.length ? null : escolhidos.toList();
   List<PausaLoja> get _proximasAgendadas => _pausas.where((p) => p.agendada).toList();
 
   Duration _ateOFimDoDia() {
@@ -57,6 +104,7 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
   Future<void> _pausarAgora() async {
     final motivoController = TextEditingController();
     Duration duracaoEscolhida = const Duration(hours: 1);
+    final canaisEscolhidos = _canais.map((c) => c.id).toSet();
 
     final confirmado = await showDialog<bool>(
       context: context,
@@ -92,6 +140,8 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
                   );
                 }).toList(),
               ),
+              const SizedBox(height: 16),
+              _seletorCanais(canaisEscolhidos, setDialogState),
             ],
           ),
           actions: [
@@ -102,9 +152,17 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
       ),
     );
     if (confirmado != true) return;
+    if (canaisEscolhidos.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Escolha pelo menos um canal.')));
+      return;
+    }
 
     final agora = DateTime.now();
-    await _salvar(motivo: motivoController.text.trim(), inicio: agora, fim: agora.add(duracaoEscolhida));
+    await _salvar(
+        motivo: motivoController.text.trim(),
+        inicio: agora,
+        fim: agora.add(duracaoEscolhida),
+        canais: _canaisParaSalvar(canaisEscolhidos));
   }
 
   Future<void> _agendarPausa() async {
@@ -122,6 +180,7 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
     TimeOfDay horaInicio = TimeOfDay(hour: sugestaoInicio.hour, minute: 0);
     DateTime dataFim = DateTime(sugestaoFim.year, sugestaoFim.month, sugestaoFim.day);
     TimeOfDay horaFim = TimeOfDay(hour: sugestaoFim.hour, minute: 0);
+    final canaisEscolhidos = _canais.map((c) => c.id).toSet();
 
     final confirmado = await showDialog<bool>(
       context: context,
@@ -197,6 +256,8 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
                     if (escolhida != null) setDialogState(() => horaFim = escolhida);
                   },
                 ),
+                const SizedBox(height: 12),
+                _seletorCanais(canaisEscolhidos, setDialogState),
               ],
             ),
           ),
@@ -208,6 +269,10 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
       ),
     );
     if (confirmado != true) return;
+    if (canaisEscolhidos.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Escolha pelo menos um canal.')));
+      return;
+    }
 
     var inicio = DateTime(dataInicio.year, dataInicio.month, dataInicio.day, horaInicio.hour, horaInicio.minute);
     final fim = DateTime(dataFim.year, dataFim.month, dataFim.day, horaFim.hour, horaFim.minute);
@@ -232,14 +297,14 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
     final comecaAgora = !inicio.isAfter(agoraConfirmado);
     if (comecaAgora) inicio = agoraConfirmado;
 
-    await _salvar(motivo: motivoController.text.trim(), inicio: inicio, fim: fim);
+    await _salvar(motivo: motivoController.text.trim(), inicio: inicio, fim: fim, canais: _canaisParaSalvar(canaisEscolhidos));
     if (comecaAgora && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('O início já tinha passado: a loja foi pausada agora, até ${DateFormat('dd/MM HH:mm').format(fim)}.')));
     }
   }
 
-  Future<void> _salvar({required String motivo, required DateTime inicio, required DateTime fim}) async {
+  Future<void> _salvar({required String motivo, required DateTime inicio, required DateTime fim, List<String>? canais}) async {
     final auth = context.read<AuthProvider>();
     final empresaId = auth.empresaId;
     if (empresaId == null) return;
@@ -252,6 +317,7 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
         motivo: motivo.isEmpty ? null : motivo,
         inicio: inicio,
         fim: fim,
+        canais: canais,
       );
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pausa salva.')));
       await _carregar();
@@ -275,46 +341,75 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
     }
   }
 
+  /// Situação de cada canal: aberto, ou pausado até HH:mm (com aviso se a plataforma não aplicou).
   Widget _cardStatus() {
-    final pausa = _pausaAtiva;
-    final dateFormat = DateFormat('dd/MM HH:mm');
-
-    if (pausa == null) {
-      return Card(
-        margin: const EdgeInsets.only(bottom: 12),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Icon(Icons.storefront, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(width: 10),
-              const Expanded(child: Text('Loja aberta normalmente')),
-            ],
-          ),
-        ),
-      );
-    }
-
+    final hora = DateFormat('dd/MM HH:mm');
+    final cores = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.pause_circle_outline, color: Colors.orange),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Loja em pausa${pausa.motivo != null ? ': ${pausa.motivo}' : ''}',
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  Text('Volta às ${dateFormat.format(pausa.fim)}',
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                ],
-              ),
-            ),
-            TextButton(onPressed: () => _cancelar(pausa), child: const Text('Retomar agora')),
+            const Text('Situação por canal', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ..._canais.map((c) {
+              final pausas = _pausasAtivas.where((p) => _pausaValeNoCanal(p, c.id)).toList()
+                ..sort((a, b) => b.fim.compareTo(a.fim));
+              final pausa = pausas.firstOrNull;
+              final interrupcao = pausa == null || c.id == 'proprios'
+                  ? null
+                  : _interrupcoes
+                      .where((i) => i['origem_pausa_id'] == pausa.id && i['marketplace_id'].toString() == c.id)
+                      .firstOrNull;
+              final falhou = interrupcao != null && interrupcao['status'] == 'erro';
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Icon(pausa == null ? Icons.check_circle : Icons.pause_circle_filled,
+                        size: 18, color: pausa == null ? Colors.green : Colors.orange),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(c.nome)),
+                    Text(
+                      pausa == null ? 'Aberto' : 'Pausado até ${hora.format(pausa.fim)}',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: pausa == null ? Colors.green : Colors.orange,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    if (falhou)
+                      Tooltip(
+                        message: interrupcao['erro']?.toString() ?? 'A plataforma não aceitou a pausa',
+                        child: const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: Text('⚠ não aplicou', style: TextStyle(fontSize: 12, color: Colors.red)),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+            if (_pausasAtivas.isNotEmpty) ...[
+              const Divider(height: 20),
+              ..._pausasAtivas.map((p) => Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Pausa${p.motivo != null ? ': ${p.motivo}' : ''}',
+                                style: const TextStyle(fontWeight: FontWeight.w600)),
+                            Text('${_rotuloCanais(p)} · volta às ${hora.format(p.fim)}',
+                                style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant)),
+                          ],
+                        ),
+                      ),
+                      TextButton(onPressed: () => _cancelar(p), child: const Text('Retomar agora')),
+                    ],
+                  )),
+            ],
           ],
         ),
       ),
@@ -338,7 +433,7 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
               child: ListTile(
                 leading: const Icon(Icons.event_outlined),
                 title: Text(pausa.motivo ?? 'Sem motivo informado'),
-                subtitle: Text('${dateFormat.format(pausa.inicio)} — ${dateFormat.format(pausa.fim)}'),
+                subtitle: Text('${dateFormat.format(pausa.inicio)} — ${dateFormat.format(pausa.fim)} · ${_rotuloCanais(pausa)}'),
                 trailing: IconButton(
                   icon: const Icon(Icons.close),
                   tooltip: 'Cancelar',
@@ -360,7 +455,7 @@ class _PausarLojaScreenState extends State<PausarLojaScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  'Pausa vale pro site, WhatsApp e integrações (iFood/99Food) de uma vez só. '
+                  'Escolha onde a pausa vale: site e WhatsApp, iFood, 99Food ou todos. '
                   'Pedidos já em andamento continuam normalmente — só bloqueia pedido novo imediato '
                   '(Expressa/"Quero agora"); Agendado e Econômico continuam disponíveis.',
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),

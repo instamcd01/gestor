@@ -10,12 +10,17 @@ class PausaLoja {
   final DateTime fim;
   final String status;
 
+  /// null = todos os canais. Senão: 'proprios' (site + WhatsApp) e/ou ids de
+  /// marketplaces (empresa_marketplace_config.marketplace_id) — 12/11.
+  final List<String>? canais;
+
   PausaLoja({
     required this.id,
     this.motivo,
     required this.inicio,
     required this.fim,
     required this.status,
+    this.canais,
   });
 
   bool get ativa => status == 'ativa';
@@ -28,6 +33,7 @@ class PausaLoja {
       inicio: DateTime.parse(row['inicio'] as String).toLocal(),
       fim: DateTime.parse(row['fim'] as String).toLocal(),
       status: row['status']?.toString() ?? 'agendada',
+      canais: (row['canais'] as List?)?.map((e) => e.toString()).toList(),
     );
   }
 }
