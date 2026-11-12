@@ -716,7 +716,8 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                   // Picking do iFood só aceita adicionar item em pedido White
                   // Label (doc + resposta real ITEM_ADD_NOT_ALLOWED, 17/09);
                   // no marketplace iFood o botão só gerava erro.
-                  if (!_ehIfood)
+                  // 99Food também não aceita adicionar item (Adjust Order Items só cancela/ajusta peso).
+                  if (!_ehIfood && widget.venda.canalVenda != '99food')
                     OutlinedButton.icon(
                       onPressed: _processando ? null : _adicionarItem,
                       icon: const Icon(Icons.add),

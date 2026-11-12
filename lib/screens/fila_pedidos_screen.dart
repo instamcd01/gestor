@@ -488,7 +488,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   }
 
   bool _podeSeparar(Venda venda) =>
-      venda.ehMarketplace && venda.marketplacePedidoId != null && !venda.cancelada && !venda.finalizada;
+      venda.ehPlataformaDelivery && venda.marketplacePedidoId != null && !venda.cancelada && !venda.finalizada;
 
   void _abrirSeparacao(Venda venda) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => SeparacaoPedidoScreen(venda: venda)));

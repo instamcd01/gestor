@@ -877,7 +877,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        if (venda.ehMarketplace && venda.marketplacePedidoId != null && !venda.cancelada && !venda.finalizada)
+        if (venda.ehPlataformaDelivery && venda.marketplacePedidoId != null && !venda.cancelada && !venda.finalizada)
           _cardSeparacaoPedido(venda),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
