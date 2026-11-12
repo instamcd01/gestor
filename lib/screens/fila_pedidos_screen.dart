@@ -1068,7 +1068,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                 if ((venda.jurosParcelamento ?? 0) > 0)
                   linhaTotal('Juros do parcelamento (${venda.parcelasCartao}x)', moeda.format(venda.jurosParcelamento!)),
                 if ((venda.taxaServicoCliente ?? 0) > 0)
-                  linhaTotal('Taxa de serviço iFood (fica com o iFood)', moeda.format(venda.taxaServicoCliente!)),
+                  linhaTotal('Taxa de serviço ${venda.nomePlataforma} (fica com o ${venda.nomePlataforma})', moeda.format(venda.taxaServicoCliente!)),
                 const SizedBox(height: 2),
                 linhaTotal('Total', moeda.format(venda.valorTotal), forte: true),
               ],

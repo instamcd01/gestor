@@ -988,7 +988,7 @@ class _HistoricoVendasPcState extends State<HistoricoVendasPc> {
                           if ((v.jurosParcelamento ?? 0) > 0)
                             linhaTotal('Juros do parcelamento', _moeda.format(v.jurosParcelamento!)),
                           if ((v.taxaServicoCliente ?? 0) > 0)
-                            linhaTotal('Taxa de serviço iFood', _moeda.format(v.taxaServicoCliente!)),
+                            linhaTotal('Taxa de serviço ${v.nomePlataforma}', _moeda.format(v.taxaServicoCliente!)),
                           linhaTotal('Total', _moeda.format(v.valorTotal), forte: true),
                         ],
                       ),

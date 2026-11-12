@@ -45,6 +45,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
   List<Produto> _catalogo = [];
 
   bool get _ehIfood => widget.venda.canalVenda == 'ifood';
+  String get _plat => widget.venda.nomePlataforma;
 
   final _ifoodRepository = IfoodMerchantRepository();
   RespostaIfood? _virtualBag;
@@ -590,8 +591,8 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
     if (pendentes > 0) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(pendentes == 1
-            ? 'Ainda tem 1 alteração indo pro iFood. Espere ela confirmar pra finalizar.'
-            : 'Ainda tem $pendentes alterações indo pro iFood. Espere confirmarem pra finalizar.'),
+            ? 'Ainda tem 1 alteração indo pro $_plat. Espere ela confirmar pra finalizar.'
+            : 'Ainda tem $pendentes alterações indo pro $_plat. Espere confirmarem pra finalizar.'),
       ));
       return;
     }
@@ -601,8 +602,8 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Finalizar separação'),
         content: Text(comErro > 0
-            ? '$comErro alteração(ões) não chegaram ao iFood e NÃO vão valer. Faça de novo antes, ou finalize assim mesmo.'
-            : 'Isso envia todas as trocas/remoções pra iFood definitivamente. Confirmar?'),
+            ? '$comErro alteração(ões) não chegaram ao $_plat e NÃO vão valer. Faça de novo antes, ou finalize assim mesmo.'
+            : 'Isso envia todas as trocas/remoções pra $_plat definitivamente. Confirmar?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Voltar')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Finalizar')),
@@ -687,7 +688,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                     // ("A finalização não chegou ao iFood..."); o do iFood é só o motivo.
                     texto: _erroFinalizacao!.contains('não chegou ao iFood')
                         ? _erroFinalizacao!
-                        : 'O iFood recusou finalizar: $_erroFinalizacao',
+                        : 'O $_plat recusou finalizar: $_erroFinalizacao',
                   ),
                 ),
               if (_ehIfood) _cardVirtualBag(),
@@ -707,7 +708,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
                     padding: EdgeInsets.only(bottom: 12),
                     child: AvisoBanner(tipo: TipoAviso.sucesso, texto: 'Separação finalizada'),
                   ),
-                  _cardConfirmacaoPosSeparacao(),
+                  if (_ehIfood) _cardConfirmacaoPosSeparacao(),
                 ],
                 ...itens.map((item) => _itemCard(item)),
                 ..._acoesAdicionar.map(_itemAdicionadoCard),
@@ -856,14 +857,22 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
   /// da iFood (com a mensagem real do erro, quando houver).
   Widget _statusAcaoTexto(Map<String, dynamic> acao, {bool confirmadoCompleto = false}) {
     final status = acao['status'] as String? ?? 'pendente';
+    if (status == 'aguardando') {
+      // 99Food: só aceita 1 cancelamento parcial por pedido -> tudo vai junto ao finalizar.
+      return Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Text('Vai pra $_plat ao finalizar a separação',
+            style: const TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.w600)),
+      );
+    }
     if (status == 'pendente') {
-      return const Padding(
-        padding: EdgeInsets.only(top: 2),
+      return Padding(
+        padding: const EdgeInsets.only(top: 2),
         child: Row(
           children: [
-            SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 2)),
-            SizedBox(width: 6),
-            Text('Enviando pra iFood...', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: 6),
+            Text('Enviando pra $_plat...', style: const TextStyle(fontSize: 12, color: Colors.grey)),
           ],
         ),
       );

@@ -1085,8 +1085,8 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 0, bottom: 8),
             child: Text(
-              'Taxa de serviço da iFood: ${currencyFormat.format(venda.taxaServicoCliente)} '
-              '(receita da iFood, não da loja)',
+              'Taxa de serviço da ${venda.nomePlataforma}: ${currencyFormat.format(venda.taxaServicoCliente)} '
+              '(receita da ${venda.nomePlataforma}, não da loja)',
               style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
@@ -1097,7 +1097,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (venda.numeroExibicaoMarketplace != null)
-                _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (iFood)',
+                _linhaInfo(Icons.confirmation_number_outlined, 'Número do pedido (${venda.nomePlataforma})',
                     '#${venda.numeroExibicaoMarketplace}'),
               _linhaInfo(Icons.receipt_long, 'ID da Venda', venda.idVenda ?? '-'),
             ],
