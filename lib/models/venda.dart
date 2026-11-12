@@ -464,9 +464,9 @@ class Venda {
         (custoEntregaReal ?? 0) -
         (taxaMaquininha ?? 0) -
         (mercadoPagoTaxa ?? 0) -
-        (ehMarketplace ? (taxaComissaoMarketplace ?? 0) : 0) -
-        (ehMarketplace ? (taxaGatewayMarketplace ?? 0) : 0) +
-        (ehMarketplace ? (promocaoReembolsadaIfood ?? 0) : 0);
+        (ehPlataformaDelivery ? (taxaComissaoMarketplace ?? 0) : 0) -
+        (ehPlataformaDelivery ? (taxaGatewayMarketplace ?? 0) : 0) +
+        (ehPlataformaDelivery ? (promocaoReembolsadaIfood ?? 0) : 0);
   }
 
   /// `true` quando o pedido tinha uma taxa de entrega real (`taxaEntregaMarketplace`)
@@ -561,6 +561,12 @@ class Venda {
   /// na retirada, então só estar preenchido não basta.
   bool get temEntrega => valorEntrega > 0 || (entregaSelecionada.isNotEmpty && !retirada);
   bool get ehMarketplace => canalVenda == 'ifood';
+
+  /// Pedido que veio de uma plataforma de delivery (iFood ou 99Food). Usado só
+  /// pra EXIBIR dados da plataforma (nº do pedido, quem bancou o desconto);
+  /// as ações específicas do iFood continuam em `ehMarketplace`.
+  bool get ehPlataformaDelivery => ehMarketplace || canalVenda == '99food';
+  String get nomePlataforma => canalVenda == '99food' ? '99Food' : 'iFood';
 
   /// Trocar/tirar item depois de recebido (editar_itens_pedido): só pedido
   /// em andamento — aguardando pagamento online ainda não tem cobrança

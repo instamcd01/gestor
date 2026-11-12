@@ -852,7 +852,7 @@ class _HistoricoVendasPcState extends State<HistoricoVendasPc> {
                       [
                         rotuloCanalVenda(v.canalVenda),
                         DateFormat("dd/MM 'às' HH:mm").format(v.dataVenda),
-                        if (v.ehMarketplace && v.numeroExibicaoMarketplace != null) 'iFood #${v.numeroExibicaoMarketplace}',
+                        if (v.ehPlataformaDelivery && v.numeroExibicaoMarketplace != null) '${v.nomePlataforma} #${v.numeroExibicaoMarketplace}',
                       ].join(' · '),
                       style: TextStyle(fontSize: 13, color: cores.onSurfaceVariant),
                     ),

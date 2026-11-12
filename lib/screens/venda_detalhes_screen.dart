@@ -665,7 +665,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     // aguardando_conciliacao) ou pra "pronto" fora de retirada — decisão do
     // usuário (19/09). Pedido iFood também fica de fora: telefone mascarado
     // pela iFood não recebe WhatsApp (ver aviso já existente na aba Cliente).
-    final mensagemStatus = venda.ehMarketplace ? null : mensagemPadraoStatus(venda, venda.status, nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
+    final mensagemStatus = venda.ehPlataformaDelivery ? null : mensagemPadraoStatus(venda, venda.status, nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
 
     return Scaffold(
       appBar: AppBar(
@@ -1024,15 +1024,15 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   currencyFormat,
                   cor: Colors.red,
                 ),
-              if (venda.desconto > 0 && venda.ehMarketplace && (venda.promocaoReembolsadaIfood ?? 0) > 0)
+              if (venda.desconto > 0 && venda.ehPlataformaDelivery && (venda.promocaoReembolsadaIfood ?? 0) > 0)
                 Padding(
                   padding: const EdgeInsets.only(left: 12, bottom: 2),
                   child: Text(
-                    'Custeado pela iFood: ${currencyFormat.format(venda.promocaoReembolsadaIfood)}',
+                    'Custeado pela ${venda.nomePlataforma}: ${currencyFormat.format(venda.promocaoReembolsadaIfood)}',
                     style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ),
-              if (venda.desconto > 0 && venda.ehMarketplace && (venda.custoPromocaoPropriaIfood ?? 0) > 0)
+              if (venda.desconto > 0 && venda.ehPlataformaDelivery && (venda.custoPromocaoPropriaIfood ?? 0) > 0)
                 Padding(
                   padding: const EdgeInsets.only(left: 12, bottom: 2),
                   child: Text(
@@ -1614,7 +1614,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 venda.taxaMaquininha != null ||
                 venda.mercadoPagoTaxa != null ||
                 venda.valorEntrega > 0 ||
-                (venda.ehMarketplace && (venda.taxaComissaoMarketplace != null || venda.taxaGatewayMarketplace != null))) ...[
+                (venda.ehPlataformaDelivery && (venda.taxaComissaoMarketplace != null || venda.taxaGatewayMarketplace != null))) ...[
               const Divider(height: 20),
               if (venda.custoEmbalagem != null)
                 _linhaValor('Embalagem', -venda.custoEmbalagem!, currencyFormat, cor: corLaranja),
@@ -1632,16 +1632,16 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                 _linhaValor('Taxa maquininha', -venda.taxaMaquininha!, currencyFormat, cor: corLaranja),
               if (venda.mercadoPagoTaxa != null)
                 _linhaValor('Taxa Mercado Pago', -venda.mercadoPagoTaxa!, currencyFormat, cor: corLaranja),
-              if (venda.ehMarketplace && venda.taxaComissaoMarketplace != null)
+              if (venda.ehPlataformaDelivery && venda.taxaComissaoMarketplace != null)
                 _linhaValor('Comissão marketplace', -venda.taxaComissaoMarketplace!, currencyFormat, cor: corLaranja),
-              if (venda.ehMarketplace && venda.taxaGatewayMarketplace != null)
+              if (venda.ehPlataformaDelivery && venda.taxaGatewayMarketplace != null)
                 _linhaValor('Taxa pagamento (marketplace)', -venda.taxaGatewayMarketplace!, currencyFormat,
                     cor: corLaranja),
               // Frete grátis bancado pela PRÓPRIA loja (não o iFood) — já
               // embutido em valorTotal (não entra de novo na conta), só
               // exibido informativamente pra mostrar quanto custou a
               // promoção.
-              if (venda.ehMarketplace &&
+              if (venda.ehPlataformaDelivery &&
                   venda.custoPromocaoPropriaIfood != null &&
                   venda.custoPromocaoPropriaIfood! > 0)
                 _linhaValor(
@@ -1654,10 +1654,10 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               // devolve esse valor separado pra loja (lançamento real
               // "Promoção custeada pelo iFood" no Extrato Financeiro) — só
               // aparece quando existir, igual as demais linhas do card.
-              if (venda.ehMarketplace &&
+              if (venda.ehPlataformaDelivery &&
                   venda.promocaoReembolsadaIfood != null &&
                   venda.promocaoReembolsadaIfood! > 0)
-                _linhaValor('Reembolso promoção iFood', venda.promocaoReembolsadaIfood!, currencyFormat,
+                _linhaValor('Reembolso promoção ${venda.nomePlataforma}', venda.promocaoReembolsadaIfood!, currencyFormat,
                     cor: corVerde),
               _linhaValor('Lucro líquido real', venda.lucroLiquidoReal, currencyFormat,
                   cor: corVerde, destaque: true),

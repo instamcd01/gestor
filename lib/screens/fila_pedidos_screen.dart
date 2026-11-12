@@ -211,7 +211,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   List<Widget> _chipsInfo(BuildContext context, Venda venda) {
     final chips = <Widget>[];
 
-    if (venda.ehMarketplace && venda.numeroExibicaoMarketplace != null) {
+    if (venda.ehPlataformaDelivery && venda.numeroExibicaoMarketplace != null) {
       chips.add(_chipDestaque(context, Icons.confirmation_number_outlined, '#${venda.numeroExibicaoMarketplace}'));
     }
 
@@ -277,7 +277,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       }
     }
 
-    if (venda.ehMarketplace) {
+    if (venda.ehPlataformaDelivery) {
       chips.add(_chipInfo(
         context,
         venda.pagoPeloMarketplace ? Icons.check_circle_outline : Icons.payments_outlined,
@@ -523,7 +523,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
 
   /// Mesmos casos do selo de pagamento do cartão do celular (`_chipsInfo`).
   ({String texto, bool pago})? _pagamentoCurto(Venda venda) {
-    if (venda.ehMarketplace) {
+    if (venda.ehPlataformaDelivery) {
       return venda.pagoPeloMarketplace ? (texto: 'Pago', pago: true) : (texto: 'Cobrar na entrega', pago: false);
     }
     if (venda.aguardandoPagamento) return (texto: 'Aguardando pagamento', pago: false);
@@ -633,8 +633,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                   Text('${venda.itens.length} itens · ${currencyFormat.format(venda.valorTotal)}',
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                   const Spacer(),
-                  if (venda.ehMarketplace && venda.numeroExibicaoMarketplace != null) ...[
-                    Text('iFood #${venda.numeroExibicaoMarketplace}', style: TextStyle(fontSize: 11.5, color: apagado)),
+                  if (venda.ehPlataformaDelivery && venda.numeroExibicaoMarketplace != null) ...[
+                    Text('${venda.nomePlataforma} #${venda.numeroExibicaoMarketplace}', style: TextStyle(fontSize: 11.5, color: apagado)),
                     const SizedBox(width: 10),
                   ],
                   if (pagamento != null)
@@ -841,7 +841,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     final subtitulo = [
       rotuloCanalVenda(venda.canalVenda),
       'feito às ${DateFormat('HH:mm').format(venda.dataVenda)} (${_tempoDesde(venda.dataVenda)})',
-      if (venda.ehMarketplace && venda.numeroExibicaoMarketplace != null) 'iFood #${venda.numeroExibicaoMarketplace}',
+      if (venda.ehPlataformaDelivery && venda.numeroExibicaoMarketplace != null) '${venda.nomePlataforma} #${venda.numeroExibicaoMarketplace}',
     ].join(' · ');
 
     final acoes = <Widget>[
@@ -1045,9 +1045,9 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                   ? 'Desconto manual'
                                   : 'Desconto',
                       '− ${moeda.format(venda.desconto)}'),
-                if (venda.desconto > 0 && venda.ehMarketplace)
+                if (venda.desconto > 0 && venda.ehPlataformaDelivery)
                   for (final (rotulo, valor) in [
-                    ('Custeado pela iFood', venda.promocaoReembolsadaIfood),
+                    ('Custeado pela ${venda.nomePlataforma}', venda.promocaoReembolsadaIfood),
                     ('Custeado pela loja', venda.custoPromocaoPropriaIfood),
                     ('Custeado por patrocinador externo', venda.custoPromocaoExterna),
                     ('Custeado pela rede de lojas', venda.custoPromocaoRede),
@@ -1711,7 +1711,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                 // mascarado pela iFood não recebe WhatsApp).
                                 Builder(builder: (context) {
                                   final mensagemStatus =
-                                      venda.ehMarketplace ? null : mensagemPadraoStatus(venda, venda.status, nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
+                                      venda.ehPlataformaDelivery ? null : mensagemPadraoStatus(venda, venda.status, nomeLoja: context.read<BrandingProvider>().nomeEmpresa);
                                   // Só aparece "Forma de pagamento" a partir de "saiu
                                   // para entrega" — é o momento real em que o cliente
                                   // pode mudar de ideia na porta (combinou débito, quer
