@@ -231,13 +231,94 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     );
   }
 
+  /// Lista fechada da 99Food (Order API › Cancel Order). O roteiro de
+  /// integração da 99 pede pra mapear o motivo de verdade — antes ia sempre
+  /// 1080 ("outro"). 1060 só vale pra entrega feita pela loja.
+  static const _motivosCancelamento99Food = [
+    (codigo: '1010', descricao: 'Item em falta'),
+    (codigo: '1020', descricao: 'Loja fechada'),
+    (codigo: '1030', descricao: 'Loja muito cheia, sem condição de separar'),
+    (codigo: '1040', descricao: 'Sem água ou energia'),
+    (codigo: '1050', descricao: 'Cliente pediu o cancelamento'),
+    (codigo: '1060', descricao: 'Sem entregador (entrega da loja)'),
+    (codigo: '1080', descricao: 'Outro motivo'),
+  ];
+
+  Future<({String codigo, String descricao})?> _escolherMotivoCancelamento99Food() async {
+    final entregaDaLoja = _venda.entregadorTipo == 'MERCHANT';
+    final motivos = _motivosCancelamento99Food
+        .where((m) => m.codigo != '1060' || entregaDaLoja)
+        .toList();
+    var selecionado = motivos.first;
+    final controladorOutro = TextEditingController();
+    return showDialog<({String codigo, String descricao})>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Motivo do cancelamento'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Esse pedido veio da 99Food — escolha o motivo que será informado a ela.'),
+                  const SizedBox(height: 8),
+                  ...motivos.map((motivo) => RadioListTile<String>(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(motivo.descricao),
+                        value: motivo.codigo,
+                        groupValue: selecionado.codigo,
+                        onChanged: (_) => setDialogState(() => selecionado = motivo),
+                      )),
+                  if (selecionado.codigo == '1080')
+                    TextField(
+                      controller: controladorOutro,
+                      maxLength: 200,
+                      decoration: const InputDecoration(
+                        labelText: 'Qual o motivo? (obrigatório)',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Voltar')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              // A 99 recusa 1080 sem texto: só libera com o motivo escrito.
+              onPressed: selecionado.codigo == '1080' && controladorOutro.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(
+                        ctx,
+                        selecionado.codigo == '1080'
+                            ? (codigo: '1080', descricao: controladorOutro.text.trim())
+                            : selecionado,
+                      ),
+              child: const Text('Cancelar venda', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmarCancelamento() async {
     final ehIfood = _venda.canalVenda == 'ifood';
+    final eh99Food = _venda.canalVenda == '99food';
     String? motivoCodigo;
     String? motivoDescricao;
 
     if (ehIfood) {
       final motivo = await _escolherMotivoCancelamentoIfood();
+      if (motivo == null || !mounted) return;
+      motivoCodigo = motivo.codigo;
+      motivoDescricao = motivo.descricao;
+    } else if (eh99Food) {
+      final motivo = await _escolherMotivoCancelamento99Food();
       if (motivo == null || !mounted) return;
       motivoCodigo = motivo.codigo;
       motivoDescricao = motivo.descricao;

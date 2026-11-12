@@ -11,6 +11,18 @@ loja de teste com `app_shop_id` = id da empresa Delivery Pet `3bce0e24-2868-49f3
 3. **Loja de produção**: quem cria é o time **comercial** da 99 (contrato). A Delivery Pet tem cadastro, mas
    a loja não está ativa.
 
+## Antes da call (conferido contra o roteiro da 99 em 12/11)
+- [ ] Loja de teste ABERTA. Em 12/11 o setStatus deu errno 11040 "is shop self delivery pay mode set?": a loja está
+      em entrega pela loja sem forma de pagamento. Acertar em merchant.99app.com › Lojas › Configurações ›
+      Formas de pagamento (e Configurações de entrega), depois reabrir.
+- [ ] Testar pedido com desconto (promotions / shop_subside_price / items_discount): nenhum teste teve desconto ainda.
+- [ ] Pagamento online e cancelamento/reembolso pedido pelo cliente (C-App).
+- [x] Cancelamento pela loja manda o motivo real (1010–1080), não mais sempre 1080 (app + robô de status, 12/11).
+- [x] Dinheiro com entrega da 99 entra "pago" (a 99 repassa como online); com entrega da loja entra "pendente".
+- [x] Catálogo ≥ 5 itens, estoque 1x/hora, token refresh→get, webhook responde errno 0.
+- Opcional (não está na call): cancelamento parcial `/v3/order/operate/partialCancel` com `is_sold_out`
+  (hoje a separação usa `adjustItem`); polling de pedidos (só se a 99 liberar; usamos webhook).
+
 ## Virada (depois da call aprovada e da loja criada pelo comercial)
 1. **App de produção** no portal (Gerenciamento de aplicativo › Criar aplicativo):
    nome `DeliveryPet_P_GR_BR`, tipo "Ambiente de produção", webhook `https://n8n.lukz.com.br/webhook/99food-eventos`
