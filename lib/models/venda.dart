@@ -562,7 +562,16 @@ class Venda {
   }
   /// Vai até o cliente. `entregaSelecionada` guarda o texto "Retirada na Loja"
   /// na retirada, então só estar preenchido não basta.
-  bool get temEntrega => valorEntrega > 0 || (entregaSelecionada.isNotEmpty && !retirada);
+  /// Pedido de plataforma (iFood/99Food) não grava `entregaSelecionada`: quem
+  /// diz se vai até o cliente é o tipo do pedido, nunca a taxa — taxa R$ 0
+  /// (frete grátis da plataforma) fazia o pedido virar "balcão", sem endereço
+  /// e sem "saiu para entrega" (14/11, pedido do Wesley).
+  bool get temEntrega {
+    if (ehPlataformaDelivery && tipoEntregaMarketplace != null) {
+      return tipoEntregaMarketplace == 'DELIVERY';
+    }
+    return valorEntrega > 0 || (entregaSelecionada.isNotEmpty && !retirada);
+  }
   bool get ehMarketplace => canalVenda == 'ifood';
 
   /// Pedido que veio de uma plataforma de delivery (iFood ou 99Food). Usado só
@@ -582,6 +591,9 @@ class Venda {
   bool get retirada {
     if (ehMarketplace) {
       return tipoEntregaMarketplace != null && tipoEntregaMarketplace != 'DELIVERY';
+    }
+    if (canalVenda == '99food' && tipoEntregaMarketplace != null) {
+      return tipoEntregaMarketplace != 'DELIVERY';
     }
     return entregaSelecionada.isEmpty || entregaSelecionada == 'Retirada na Loja';
   }
