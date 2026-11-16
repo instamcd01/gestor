@@ -489,7 +489,11 @@ class VendaRepository {
       codigoAutorizacaoCartao: row['codigo_autorizacao_cartao']?.toString(),
       pagamentosDetalhados: pagamentosDetalhados,
       totalItens: itens.fold<int>(0, (soma, i) => soma + i.quantidade),
-      custoTotal: (row['custo_total'] as num?)?.toDouble() ?? 0.0,
+      // pedidos.custo_total só é gravado pelo banco quando o pedido fecha
+      // (entregue + pago). Antes disso vem nulo: soma o custo dos itens,
+      // senão a tela mostra "Custo dos produtos R$ 0,00" no pedido em andamento.
+      custoTotal: (row['custo_total'] as num?)?.toDouble() ??
+          itens.fold<double>(0, (soma, i) => soma + i.custoTotal),
       lucroTotal: (row['lucro_bruto'] as num?)?.toDouble() ?? 0.0,
       observacao: row['observacoes']?.toString() ?? '',
       itens: itens,
