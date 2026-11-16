@@ -298,6 +298,17 @@ class SugestaoCompra {
   /// 20 dias) — a quantidade sugerida já vem descontada disso.
   final int quantidadeACaminho;
 
+  /// Estoque mínimo do cadastro e o que a sugestão usou de fato: o mínimo
+  /// vira teto, limitado a ~60 dias de venda do produto (16/11).
+  final int estoqueMinimoCadastrado;
+  final int estoqueMinimoEfetivo;
+
+  /// Produto com 90+ dias de cadastro e no máximo 1 venda em 12 meses: a
+  /// sugestão vem 0 (nem pelo mínimo) e o Lucas decide o que fazer.
+  final bool emObservacao;
+  final int vendas12Meses;
+  final DateTime? ultimaVenda;
+
   SugestaoCompra({
     required this.produtoId,
     required this.produtoNome,
@@ -314,6 +325,11 @@ class SugestaoCompra {
     this.prazoOrigem,
     this.diasSemEstoque = 0,
     this.quantidadeACaminho = 0,
+    this.estoqueMinimoCadastrado = 0,
+    this.estoqueMinimoEfetivo = 0,
+    this.emObservacao = false,
+    this.vendas12Meses = 0,
+    this.ultimaVenda,
   });
 
   factory SugestaoCompra.fromSupabase(Map<String, dynamic> row) {
@@ -333,6 +349,11 @@ class SugestaoCompra {
       prazoOrigem: row['prazo_origem'] as String?,
       diasSemEstoque: (row['dias_sem_estoque'] as num?)?.toInt() ?? 0,
       quantidadeACaminho: (row['quantidade_a_caminho'] as num?)?.toInt() ?? 0,
+      estoqueMinimoCadastrado: (row['estoque_minimo_cadastrado'] as num?)?.toInt() ?? 0,
+      estoqueMinimoEfetivo: (row['estoque_minimo_efetivo'] as num?)?.toInt() ?? 0,
+      emObservacao: row['em_observacao'] as bool? ?? false,
+      vendas12Meses: (row['vendas_12_meses'] as num?)?.toInt() ?? 0,
+      ultimaVenda: row['ultima_venda'] == null ? null : DateTime.tryParse(row['ultima_venda'].toString()),
     );
   }
 }

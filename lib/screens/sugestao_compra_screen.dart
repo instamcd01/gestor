@@ -119,6 +119,13 @@ class _ItemEditavel {
   /// Já pedido e ainda não recebido — a sugestão já desconta isso.
   final int quantidadeACaminho;
 
+  /// Ver [SugestaoCompra.emObservacao] / estoque mínimo efetivo.
+  final bool emObservacao;
+  final int vendas12Meses;
+  final DateTime? ultimaVenda;
+  final int estoqueMinimoCadastrado;
+  final int estoqueMinimoEfetivo;
+
   /// Fabricante do produto (cadastro) — usado pra organizar a lista do
   /// fornecedor igual ao catálogo da distribuidora (pedido do usuário 09/10).
   final String? fabricante;
@@ -150,18 +157,24 @@ class _ItemEditavel {
     this.vendaMediaDiaria = 0,
     this.diasSemEstoque = 0,
     this.quantidadeACaminho = 0,
+    this.emObservacao = false,
+    this.vendas12Meses = 0,
+    this.ultimaVenda,
+    this.estoqueMinimoCadastrado = 0,
+    this.estoqueMinimoEfetivo = 0,
     this.fabricante,
     this.marca,
   });
 
   /// Zerado e com venda: cada dia assim é venda perdida.
-  bool get emFalta => estoqueAtual <= 0 && vendaMediaDiaria > 0;
+  /// Em observação (quase não vende) não conta como falta: não é venda perdida.
+  bool get emFalta => !emObservacao && estoqueAtual <= 0 && vendaMediaDiaria > 0;
 
   /// Ainda tem, mas não dura até o pedido chegar (prazo do fornecedor) —
   /// ainda dá pra salvar pedindo agora.
   bool get acabaAntesDeChegar {
     final prazo = prazoFornecedorAtual;
-    if (estoqueAtual <= 0 || vendaMediaDiaria <= 0 || prazo == null) return false;
+    if (emObservacao || estoqueAtual <= 0 || vendaMediaDiaria <= 0 || prazo == null) return false;
     return estoqueAtual / vendaMediaDiaria < prazo;
   }
 
@@ -226,6 +239,7 @@ class _GrupoFornecedor {
   String get fornecedorNome => fornecedor.nome;
 
   int get qtdEmFalta => itens.where((i) => i.emFalta).length;
+  int get qtdEmObservacao => itens.where((i) => i.emObservacao).length;
   int get qtdAcabaAntesDeChegar => itens.where((i) => i.acabaAntesDeChegar).length;
   double get vendaParadaPorDia => itens.fold(0, (t, i) => t + i.vendaParadaPorDia);
   double get vendaEmRiscoPorDia => itens.fold(0, (t, i) => t + i.vendaEmRiscoPorDia);
@@ -251,7 +265,7 @@ class _GrupoFornecedor {
   /// depois os que acabam antes de chegar, depois o resto como vinha.
   void ordenarItensPorUrgencia() {
     final ordemOriginal = {for (var i = 0; i < itens.length; i++) itens[i]: i};
-    int nivel(_ItemEditavel i) => i.emFalta ? 2 : (i.acabaAntesDeChegar ? 1 : 0);
+    int nivel(_ItemEditavel i) => i.emFalta ? 2 : (i.acabaAntesDeChegar ? 1 : (i.emObservacao ? -1 : 0));
     itens.sort((a, b) {
       final n = nivel(b).compareTo(nivel(a));
       if (n != 0) return n;
@@ -452,6 +466,11 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         vendaMediaDiaria: escolhida.vendaMediaDiaria,
         diasSemEstoque: escolhida.diasSemEstoque,
         quantidadeACaminho: escolhida.quantidadeACaminho,
+        emObservacao: escolhida.emObservacao,
+        vendas12Meses: escolhida.vendas12Meses,
+        ultimaVenda: escolhida.ultimaVenda,
+        estoqueMinimoCadastrado: escolhida.estoqueMinimoCadastrado,
+        estoqueMinimoEfetivo: escolhida.estoqueMinimoEfetivo,
         fabricante: fabricantePorProduto[escolhida.produtoId],
         marca: marcaPorProduto[escolhida.produtoId],
       ));
@@ -1129,7 +1148,8 @@ class _GrupoFornecedorCard extends StatelessWidget {
                 style: TextStyle(color: corUrgencia, fontWeight: FontWeight.w600, fontSize: 12.5),
               ),
             Text(
-              '${grupo.itens.length} ite${grupo.itens.length == 1 ? 'm' : 'ns'} · $rotuloPrazo'
+              '${grupo.itens.length} ite${grupo.itens.length == 1 ? 'm' : 'ns'}'
+              '${grupo.qtdEmObservacao > 0 ? ' (${grupo.qtdEmObservacao} em observação)' : ''} · $rotuloPrazo'
               ' · Pedido R\$ ${grupo.total.toStringAsFixed(2)}',
               style: TextStyle(
                 fontSize: 12.5,
@@ -1620,7 +1640,26 @@ class _LinhaItemState extends State<_LinhaItem> {
                 ),
               ),
             ),
-          if (item.diasSemEstoque > 0)
+          if (item.emObservacao)
+            Padding(
+              padding: const EdgeInsets.only(left: 40),
+              child: Text(
+                '🔍 Em observação — ${item.vendas12Meses == 0 ? 'nenhuma venda' : '1 venda'} em 12 meses'
+                '${item.ultimaVenda != null ? ' (última em ${_formatarDataCurta(item.ultimaVenda!)})' : ''}. '
+                'Não sugerido nem pelo estoque mínimo: veja se é falta de procura, preço ou exposição — '
+                'ou use ⋮ pra não sugerir mais.',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.purple.shade700),
+              ),
+            )
+          else if (item.estoqueMinimoEfetivo < item.estoqueMinimoCadastrado)
+            Padding(
+              padding: const EdgeInsets.only(left: 40),
+              child: Text(
+                'Estoque mínimo ajustado pela venda: ${item.estoqueMinimoCadastrado} → ${item.estoqueMinimoEfetivo}',
+                style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+              ),
+            ),
+          if (item.diasSemEstoque > 0 && !item.emObservacao)
             Padding(
               padding: const EdgeInsets.only(left: 40),
               child: Text(
