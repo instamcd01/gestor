@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../config/supabase_config.dart';
+import '../utils/busca_utils.dart';
 import '../models/entrada.dart';
 import '../models/fornecedor.dart';
 import '../models/pedido_compra.dart';
@@ -122,7 +123,17 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   NfeImportada? _nfe;
   List<ItemEntrada> _itensResolvidos = [];
   Fornecedor? _fornecedorExistente;
+
+  /// O CNPJ da nota não bateu com nenhum cadastro e o usuário apontou um
+  /// fornecedor cadastrado à mão (sem CNPJ): ao confirmar, grava o CNPJ nele
+  /// em vez de criar outro. Achado 16/11: "MEGARIO" (à mão, com os pedidos)
+  /// e "MEGA RIO LOGISTICA…" (criado pela nota) — a nota não achava o pedido.
+  bool _gravarCnpjNoFornecedor = false;
   Map<String, String> _produtoIdPorCodigoFornecedor = {};
+
+  /// Itens que já foram marcados como uso interno/bonificação em notas
+  /// anteriores (`itens_nfe_uso_interno`) — a próxima nota já vem marcada.
+  Set<String> _chavesUsoInterno = {};
   // Embalagem já ensinada por código do fornecedor (ex.: caixa com 12) e a
   // vigente por item desta nota — 1 (ausente) = sem conversão.
   Map<String, int> _embalagemPorCodigoFornecedor = {};
@@ -319,6 +330,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       numeroLote: atual.numeroLote,
       dataFabricacao: atual.dataFabricacao,
       dataValidade: atual.dataValidade,
+      usoInterno: atual.usoInterno,
     );
   }
 
@@ -366,7 +378,9 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         final produtoId = (porCodigo != null && idsValidos.contains(porCodigo))
             ? porCodigo
             : (item.eanNfe.isNotEmpty ? produtoIdPorEan[item.eanNfe] : null);
-        return produtoId != null ? item.copyWith(produtoId: produtoId, produtoIdDefinir: true) : item;
+        if (produtoId != null) return item.copyWith(produtoId: produtoId, produtoIdDefinir: true);
+        if (!item.usoInterno && _chavesUsoInterno.contains(item.chaveUsoInterno)) return item.copyWith(usoInterno: true);
+        return item;
       }).toList();
     });
   }
@@ -489,6 +503,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       }
       final fator = fornecedorExistente?.fatorCusto ?? 1.0;
       final codigosFornecedor = await _carregarCodigosFornecedor(fornecedorExistente?.id);
+      _chavesUsoInterno = await _carregarChavesUsoInterno();
       final pedidosAbertos = widget.pedidoCompra == null && fornecedorExistente?.id != null
           ? await _carregarPedidosAbertos(fornecedorExistente!.id!)
           : <PedidoCompra>[];
@@ -501,6 +516,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
         _filtroItens = _FiltroItens.todos;
         _itensExpandidos.clear();
         _fornecedorExistente = fornecedorExistente;
+        _gravarCnpjNoFornecedor = false;
         _produtoIdPorCodigoFornecedor = codigosFornecedor.produtos;
         _embalagemPorCodigoFornecedor = codigosFornecedor.embalagens;
         _pedidosAbertos = pedidosAbertos;
@@ -594,7 +610,134 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
 
     _marcarAlterada();
     setState(() {
-      _itensResolvidos[index] = item.copyWith(produtoId: escolhido.id, produtoIdDefinir: true);
+      _itensResolvidos[index] = item.copyWith(produtoId: escolhido.id, produtoIdDefinir: true, usoInterno: false);
+    });
+  }
+
+  Future<Set<String>> _carregarChavesUsoInterno() async {
+    try {
+      final rows = await supabase.from('itens_nfe_uso_interno').select('chave');
+      return {for (final r in rows) r['chave'] as String};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Fornecedores cadastrados à mão (sem CNPJ) — candidatos a serem o
+  /// emitente desta nota quando o CNPJ não bateu com nenhum cadastro.
+  List<Fornecedor> _fornecedoresSemCnpj() => context
+      .read<FornecedorProvider>()
+      .fornecedores
+      .where((f) => f.ativo && f.id != null && f.cnpjCpf.replaceAll(RegExp(r'[^0-9]'), '').isEmpty)
+      .toList()
+    ..sort((a, b) => a.nome.toLowerCase().compareTo(b.nome.toLowerCase()));
+
+  /// Cadastro à mão com nome parecido com o da nota ("MEGARIO" x "MEGA RIO
+  /// LOGISTICA…"): compara sem espaço/acento, por conter ou pela 1ª palavra.
+  Fornecedor? _fornecedorParecido(String nomeNota) {
+    String junto(String t) => normalizarBusca(t).replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final nota = junto(nomeNota);
+    final primeiraNota = normalizarBusca(nomeNota).split(RegExp(r'\s+')).first;
+    for (final f in _fornecedoresSemCnpj()) {
+      final cad = junto(f.nome);
+      final primeiraCad = normalizarBusca(f.nome).split(RegExp(r'[\s(]+')).first;
+      if (cad.length >= 4 && (nota.contains(cad) || cad.contains(nota))) return f;
+      if (primeiraCad.length >= 4 && primeiraCad == primeiraNota) return f;
+    }
+    return null;
+  }
+
+  Future<void> _usarFornecedorCadastrado(Fornecedor f) async {
+    final codigos = await _carregarCodigosFornecedor(f.id);
+    final pedidos = widget.pedidoCompra == null ? await _carregarPedidosAbertos(f.id!) : <PedidoCompra>[];
+    if (!mounted) return;
+    setState(() {
+      _fornecedorExistente = f;
+      _gravarCnpjNoFornecedor = true;
+      _produtoIdPorCodigoFornecedor = codigos.produtos;
+      _embalagemPorCodigoFornecedor = codigos.embalagens;
+      _pedidosAbertos = pedidos;
+      final recentes = pedidos.where((pc) {
+        final data = pc.dataEnvio ?? pc.dataConfirmacao ?? pc.createdAt;
+        return data != null && DateTime.now().difference(data).inDays <= 20;
+      }).toList();
+      _pedidoEscolhido = pedidos.length == 1 && recentes.length == 1 ? recentes.first : null;
+    });
+    _recasarPendentes(context.read<ProdutoProvider>().produtos);
+  }
+
+  Future<void> _escolherFornecedorCadastrado() async {
+    final opcoes = _fornecedoresSemCnpj();
+    final escolhido = await showDialog<Fornecedor>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Qual fornecedor é esse?'),
+        children: [
+          for (final f in opcoes)
+            SimpleDialogOption(onPressed: () => Navigator.pop(ctx, f), child: Text(f.nome)),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Nenhum — é um fornecedor novo', style: TextStyle(fontStyle: FontStyle.italic)),
+          ),
+        ],
+      ),
+    );
+    if (escolhido != null && mounted) await _usarFornecedorCadastrado(escolhido);
+  }
+
+  /// Nota de fornecedor "novo" (CNPJ sem cadastro) quando existe cadastro
+  /// feito à mão: pergunta antes de criar outro, pra não duplicar.
+  Widget _avisoFornecedorTalvezCadastrado(NfeImportada nfe) {
+    if (_fornecedorExistente != null && !_gravarCnpjNoFornecedor) return const SizedBox.shrink();
+    if (_gravarCnpjNoFornecedor) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: AvisoBanner(
+          texto: 'Usando o cadastro "${_fornecedorExistente!.nome}" — o CNPJ da nota será gravado nele.',
+          tipo: TipoAviso.info,
+        ),
+      );
+    }
+    final opcoes = _fornecedoresSemCnpj();
+    if (opcoes.isEmpty) return const SizedBox.shrink();
+    final parecido = _fornecedorParecido(nfe.fornecedorDetectado.nome);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AvisoBanner(
+            texto: parecido != null
+                ? 'Esse CNPJ não está em nenhum cadastro. É o "${parecido.nome}" que você cadastrou à mão? '
+                    'Usar o mesmo evita fornecedor duplicado (e acha o pedido em aberto).'
+                : 'Esse CNPJ não está em nenhum cadastro. Se o fornecedor já foi cadastrado à mão, escolha ele '
+                    'pra não duplicar.',
+            tipo: TipoAviso.alerta,
+          ),
+          Wrap(
+            spacing: 8,
+            children: [
+              if (parecido != null)
+                FilledButton.tonal(
+                  onPressed: () => _usarFornecedorCadastrado(parecido),
+                  child: Text('Usar "${parecido.nome}"'),
+                ),
+              TextButton(onPressed: _escolherFornecedorCadastrado, child: const Text('Escolher cadastro')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Marca/desmarca o item como uso interno/bonificação (ex.: desinfetante
+  /// que o distribuidor manda junto): não precisa de produto, não soma no
+  /// estoque e não fica como pendente. Fica lembrado ao confirmar a nota.
+  void _alternarUsoInterno(int index) {
+    final item = _itensResolvidos[index];
+    _marcarAlterada();
+    setState(() {
+      _itensResolvidos[index] = item.copyWith(usoInterno: !item.usoInterno);
     });
   }
 
@@ -685,7 +828,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     if (nfe == null) return;
 
     final produtos = _produtosPorId;
-    final pendentes = _itensResolvidos.where((i) => !i.casado).length;
+    final pendentes = _itensResolvidos.where((i) => !i.resolvido).length;
     final vaiParaEstoque = _itensResolvidos.length - pendentes;
     final itensComCustoDivergente = _itensResolvidos.where((i) {
       if (!i.casado || i.custoUnitario <= 0) return false;
@@ -805,6 +948,14 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       if (empresaId == null) throw StateError('Empresa não identificada.');
 
       String? fornecedorId = _fornecedorExistente?.id;
+      if (fornecedorId != null && _gravarCnpjNoFornecedor) {
+        final detectado = nfe.fornecedorDetectado;
+        await supabase.from('fornecedores').update({
+          'cnpj_cpf': detectado.cnpjCpf,
+          if (_fornecedorExistente!.telefone.trim().isEmpty && detectado.telefone.trim().isNotEmpty)
+            'telefone': detectado.telefone,
+        }).eq('id', fornecedorId);
+      }
       if (fornecedorId == null && nfe.fornecedorDetectado.cnpjCpf.isNotEmpty) {
         final novo = await context.read<FornecedorProvider>().adicionar(nfe.fornecedorDetectado);
         fornecedorId = novo.id;
@@ -897,6 +1048,20 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             criadoPor: context.read<AuthProvider>().usuarioAtual?.id,
           );
 
+      // Uso interno/bonificação: lembra pra próxima nota já vir marcada.
+      final usoInterno = _itensResolvidos.where((i) => i.usoInterno && !i.casado).toList();
+      if (usoInterno.isNotEmpty) {
+        try {
+          await supabase.from('itens_nfe_uso_interno').upsert(
+            [for (final i in usoInterno) {'empresa_id': empresaId, 'chave': i.chaveUsoInterno, 'descricao': i.descricaoNfe}],
+            onConflict: 'empresa_id,chave',
+            ignoreDuplicates: true,
+          );
+        } catch (_) {
+          // Só memória pra próxima nota — não trava a entrada.
+        }
+      }
+
       // "quantidade_recebida" no pedido nunca era gravada por nenhum dos 2
       // caminhos de dar entrada — casamento aqui é por produto_id (mesmo
       // critério de "casado" já usado pra vincular custo acima), já que a
@@ -921,7 +1086,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       }
 
       if (!mounted) return;
-      final pendentes = _itensResolvidos.where((i) => !i.casado).length;
+      final pendentes = _itensResolvidos.where((i) => !i.resolvido).length;
       final temBoletos = nfe.parcelas.isNotEmpty;
 
       final navigator = Navigator.of(context);
@@ -1233,7 +1398,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final indicesCustoMaior = <int>{};
     for (var i = 0; i < _itensResolvidos.length; i++) {
       final item = _itensResolvidos[i];
-      (item.casado ? indicesProntos : indicesVinculo).add(i);
+      (item.resolvido ? indicesProntos : indicesVinculo).add(i);
       if (_custoSubiu(item, produtos[item.produtoId])) indicesCustoMaior.add(i);
     }
     // Filtro cujo chip sumiu (resolveu o último item sem vínculo, por
@@ -1245,9 +1410,9 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     }
     bool passaFiltro(int i) => switch (filtro) {
           _FiltroItens.todos => true,
-          _FiltroItens.vinculo => !_itensResolvidos[i].casado,
+          _FiltroItens.vinculo => !_itensResolvidos[i].resolvido,
           _FiltroItens.custoMaior => indicesCustoMaior.contains(i),
-          _FiltroItens.prontos => _itensResolvidos[i].casado,
+          _FiltroItens.prontos => _itensResolvidos[i].resolvido,
         };
     final vinculoVisiveis = indicesVinculo.where(passaFiltro).toList();
     final prontosVisiveis = indicesProntos.where(passaFiltro).toList();
@@ -1257,8 +1422,8 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     Widget item(int i) {
       final resolvido = _itensResolvidos[i];
       final produto = produtos[resolvido.produtoId];
-      final precisaAtencao = !resolvido.casado ||
-          produto == null ||
+      final precisaAtencao = !resolvido.resolvido ||
+          (produto == null && !resolvido.usoInterno) ||
           indicesCustoMaior.contains(i) ||
           (_embalagemPorItem[i] ?? 1) > 1 ||
           semEstoquePago.contains(resolvido.produtoId);
@@ -1319,6 +1484,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                       ? 'Fornecedor: ${_fornecedorExistente!.nome}'
                       : 'Fornecedor: ${nfe.fornecedorDetectado.nome} (novo, será cadastrado)',
                 ),
+                _avisoFornecedorTalvezCadastrado(nfe),
                 const SizedBox(height: 12),
                 if (_ehBonificacao)
                   const AvisoBanner(
@@ -1457,7 +1623,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
   Widget _barraConfirmar(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final total = _itensResolvidos.length;
-    final semVinculo = _itensResolvidos.where((i) => !i.casado).length;
+    final semVinculo = _itensResolvidos.where((i) => !i.resolvido).length;
     return Material(
       elevation: 8,
       color: colorScheme.surface,
@@ -1561,7 +1727,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final indicesCustoMaior = <int>{};
     for (var i = 0; i < _itensResolvidos.length; i++) {
       final item = _itensResolvidos[i];
-      if (!item.casado) indicesVinculo.add(i);
+      if (!item.resolvido) indicesVinculo.add(i);
       if (_custoSubiu(item, produtos[item.produtoId])) indicesCustoMaior.add(i);
     }
     var filtro = _filtroItens;
@@ -1571,14 +1737,14 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     }
     bool passa(int i) => switch (filtro) {
           _FiltroItens.todos => true,
-          _FiltroItens.vinculo => !_itensResolvidos[i].casado,
+          _FiltroItens.vinculo => !_itensResolvidos[i].resolvido,
           _FiltroItens.custoMaior => indicesCustoMaior.contains(i),
-          _FiltroItens.prontos => _itensResolvidos[i].casado,
+          _FiltroItens.prontos => _itensResolvidos[i].resolvido,
         };
     final visiveis = <int>[for (var i = 0; i < _itensResolvidos.length; i++) if (passa(i)) i];
     // Sem vínculo primeiro (é o que trava o estoque), depois a ordem da nota.
     visiveis.sort((a, b) {
-      final x = (_itensResolvidos[a].casado ? 1 : 0).compareTo(_itensResolvidos[b].casado ? 1 : 0);
+      final x = (_itensResolvidos[a].resolvido ? 1 : 0).compareTo(_itensResolvidos[b].resolvido ? 1 : 0);
       return x != 0 ? x : a.compareTo(b);
     });
 
@@ -1634,6 +1800,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                         ].join(' · '),
                         style: TextStyle(fontSize: 13, color: cores.onSurfaceVariant),
                       ),
+                      _avisoFornecedorTalvezCadastrado(nfe),
                     ],
                   ),
                 ),
@@ -1858,7 +2025,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final i = visiveis[posicao];
     final item = _itensResolvidos[i];
     final produto = item.casado ? produtos[item.produtoId] : null;
-    final semVinculo = !item.casado;
+    final semVinculo = !item.resolvido;
     final custoMaior = indicesCustoMaior.contains(i);
     final embalagem = _embalagemPorItem[i] ?? 1;
     final laranja = Colors.orange.shade800;
@@ -1918,9 +2085,13 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
       child: _linhaPc(
         compacto: compacto,
         icone: Tooltip(
-          message: semVinculo ? 'Sem vínculo: não soma no estoque' : 'Vinculado',
-          child: Icon(semVinculo ? Icons.error : Icons.check_circle,
-              size: 18, color: semVinculo ? cores.error : Colors.green.shade600),
+          message: semVinculo
+              ? 'Sem vínculo: não soma no estoque'
+              : item.usoInterno
+                  ? 'Uso interno/bonificação: não entra no estoque'
+                  : 'Vinculado',
+          child: Icon(semVinculo ? Icons.error : (item.usoInterno ? Icons.cleaning_services_outlined : Icons.check_circle),
+              size: 18, color: semVinculo ? cores.error : (item.usoInterno ? cores.onSurfaceVariant : Colors.green.shade600)),
         ),
         nota: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1954,6 +2125,27 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                     icon: const Icon(Icons.add_box_outlined, size: 18),
                     style: IconButton.styleFrom(visualDensity: VisualDensity.compact),
                   ),
+                  const SizedBox(width: 4),
+                  IconButton.outlined(
+                    tooltip: 'Uso interno / bonificação (não entra no estoque)',
+                    onPressed: () => _alternarUsoInterno(i),
+                    icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+                    style: IconButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+                ],
+              )
+            : item.usoInterno && !item.casado
+            ? Row(
+                children: [
+                  Expanded(
+                    child: Text('Uso interno / bonificação — não entra no estoque',
+                        style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant, fontStyle: FontStyle.italic)),
+                  ),
+                  TextButton(
+                    onPressed: () => _alternarUsoInterno(i),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    child: const Text('Desfazer'),
+                  ),
                 ],
               )
             : semVinculo
@@ -1974,6 +2166,11 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                     onPressed: () => _cadastrarNovoProduto(i),
                     style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
                     child: const Text('Cadastrar novo'),
+                  ),
+                  TextButton(
+                    onPressed: () => _alternarUsoInterno(i),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    child: const Text('Uso interno'),
                   ),
                 ],
               )
@@ -2057,7 +2254,7 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
     final cores = Theme.of(context).colorScheme;
     final produtos = _produtosPorId;
     final total = _itensResolvidos.length;
-    final semVinculo = _itensResolvidos.where((i) => !i.casado).length;
+    final semVinculo = _itensResolvidos.where((i) => !i.resolvido).length;
     final custoMaior = _itensResolvidos.where((i) => _custoSubiu(i, produtos[i.produtoId])).length;
     return Material(
       elevation: 6,
@@ -2204,8 +2401,8 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
-                  item.casado ? Icons.check_circle : Icons.error_outline,
-                  color: item.casado ? Colors.green : colorScheme.error,
+                  item.casado ? Icons.check_circle : (item.usoInterno ? Icons.cleaning_services_outlined : Icons.error_outline),
+                  color: item.casado ? Colors.green : (item.usoInterno ? colorScheme.onSurfaceVariant : colorScheme.error),
                   size: 20,
                 ),
                 const SizedBox(width: 10),
@@ -2245,7 +2442,10 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                         )
                       : Text('Produto vinculado não encontrado (pode ter sido excluído) — vincule novamente.',
                           style: TextStyle(color: colorScheme.error, fontSize: 12.5)))
-                  : const SizedBox.shrink(),
+                  : item.usoInterno
+                      ? Text('Uso interno / bonificação — não entra no estoque',
+                          style: TextStyle(color: colorScheme.onSurfaceVariant, fontStyle: FontStyle.italic, fontSize: 12.5))
+                      : const SizedBox.shrink(),
             ),
             if ((_embalagemPorItem[index] ?? 1) > 1 && _nfe != null) ...[
               const SizedBox(height: 10),
@@ -2286,6 +2486,13 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
                   icon: const Icon(Icons.add_box_outlined, size: 16),
                   label: const Text('Cadastrar novo'),
                 ),
+                if (!item.casado)
+                  TextButton.icon(
+                    onPressed: () => _alternarUsoInterno(index),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    icon: Icon(item.usoInterno ? Icons.undo : Icons.cleaning_services_outlined, size: 16),
+                    label: Text(item.usoInterno ? 'Não é uso interno' : 'Uso interno / bonificação'),
+                  ),
                 if (onRecolher != null)
                   TextButton.icon(
                     onPressed: onRecolher,

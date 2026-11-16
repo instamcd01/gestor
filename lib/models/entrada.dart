@@ -23,6 +23,11 @@ class ItemEntrada {
   final DateTime? dataFabricacao;
   final DateTime? dataValidade;
 
+  /// Item de uso interno/bonificação (ex.: desinfetante que o distribuidor
+  /// manda junto): sem produto, fora do estoque e não conta como pendente.
+  /// Fica lembrado em `itens_nfe_uso_interno` pra próxima nota já vir marcada.
+  final bool usoInterno;
+
   ItemEntrada({
     this.id,
     this.produtoId,
@@ -36,9 +41,20 @@ class ItemEntrada {
     this.numeroLote,
     this.dataFabricacao,
     this.dataValidade,
+    this.usoInterno = false,
   });
 
   bool get casado => produtoId != null;
+
+  /// Pronto pra dar entrada: vinculado a um produto ou marcado como uso interno.
+  bool get resolvido => casado || usoInterno;
+
+  /// Chave pra lembrar o item de uso interno: EAN quando tem, senão a descrição.
+  String get chaveUsoInterno {
+    final ean = eanNfe.trim();
+    if (ean.isNotEmpty && RegExp(r'^\d{8,14}$').hasMatch(ean)) return ean;
+    return 'desc:${descricaoNfe.trim().toLowerCase()}';
+  }
 
   /// `produtoId`/`dataValidade` aceitam `null` explícito via os `bool ...Definir`
   /// — sem isso não dava pra distinguir "não mudar" de "limpar o valor".
@@ -54,6 +70,7 @@ class ItemEntrada {
     DateTime? dataFabricacao,
     DateTime? dataValidade,
     bool dataValidadeDefinir = false,
+    bool? usoInterno,
   }) {
     return ItemEntrada(
       id: id,
@@ -68,6 +85,7 @@ class ItemEntrada {
       numeroLote: numeroLote ?? this.numeroLote,
       dataFabricacao: dataFabricacao ?? this.dataFabricacao,
       dataValidade: dataValidadeDefinir ? dataValidade : (dataValidade ?? this.dataValidade),
+      usoInterno: usoInterno ?? this.usoInterno,
     );
   }
 
@@ -84,6 +102,7 @@ class ItemEntrada {
       numeroLote: row['numero_lote']?.toString(),
       dataFabricacao: row['data_fabricacao'] != null ? DateTime.parse(row['data_fabricacao'].toString()) : null,
       dataValidade: row['data_validade'] != null ? DateTime.parse(row['data_validade'].toString()) : null,
+      usoInterno: row['uso_interno'] as bool? ?? false,
     );
   }
 
@@ -99,6 +118,7 @@ class ItemEntrada {
       'numero_lote': numeroLote,
       'data_fabricacao': dataFabricacao?.toIso8601String().split('T').first,
       'data_validade': dataValidade?.toIso8601String().split('T').first,
+      'uso_interno': usoInterno,
     };
   }
 }
