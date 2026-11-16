@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../widgets/primeiros_passos_card.dart';
 import '../models/despesa.dart';
 import '../models/produto.dart';
 import '../models/venda.dart';
@@ -232,6 +233,7 @@ class _InicioPcState extends State<InicioPc> {
             children: [
               _cabecalho(auth),
               if (pendentes > 0) ...[const SizedBox(height: 12), _bannerPendentes(pendentes)],
+              if (auth.isDono) ...[const SizedBox(height: 12), const PrimeirosPassosCard(compacto: true)],
               const SizedBox(height: 12),
               _numeros(auth, provider.vendas, compacto),
               const SizedBox(height: 12),

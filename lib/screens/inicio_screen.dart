@@ -12,6 +12,7 @@ import '../providers/historico_vendas_provider.dart';
 import '../providers/modulo_provider.dart';
 import '../providers/produto_provider.dart';
 import '../widgets/metric_card.dart';
+import '../widgets/primeiros_passos_card.dart';
 import 'custos_operacao_screen.dart';
 import 'fila_pedidos_screen.dart';
 import 'fluxo_caixa_screen.dart';
@@ -137,6 +138,10 @@ class _InicioScreenState extends State<InicioScreen> {
                 const SizedBox(height: 20),
                 _botaoVender(context),
                 _bannerPedidosPendentes(context),
+                if (auth.isDono) ...[
+                  const SizedBox(height: 16),
+                  const PrimeirosPassosCard(),
+                ],
                 const SizedBox(height: 28),
                 _secaoVendas(context),
                 // Resumo agregado de estoque (contagem de produtos/estoque
