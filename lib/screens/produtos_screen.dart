@@ -268,7 +268,7 @@ class _ProdutosScreenState extends State<ProdutosScreen> {
         produtoProvider.produtos.where((p) => p.estoqueAtual <= p.estoqueMinimo).length;
 
     final produtosFiltrados = produtoProvider.produtos.where((p) {
-      final passaBusca = contemTodasPalavras(p.nome, _busca) ||
+      final passaBusca = p.bateBusca(_busca) ||
           p.codigoBarras.toLowerCase().contains(normalizarBusca(_busca)) ||
           contemTodasPalavras(p.categoria, _busca);
       if (!passaBusca) return false;

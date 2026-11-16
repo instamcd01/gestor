@@ -209,7 +209,7 @@ class _AbaSemImagemState extends State<_AbaSemImagem> {
     final produtoProvider = context.watch<ProdutoProvider>();
     final lista = produtoProvider.produtos
         .where((p) => p.imagemUrl.isEmpty)
-        .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) => p.bateBusca(_busca))
         .where((p) => _filtroExibido == null || p.exibirNoCatalogo == _filtroExibido)
         .where((p) => _filtroComEstoque == null || (p.estoqueAtual > 0) == _filtroComEstoque)
         .toList();
@@ -506,7 +506,7 @@ class _AbaVariantesState extends State<_AbaVariantes> {
     final contagemPorTipo = produtoProvider.contagemSugestoesPorTipo;
     final lista = produtoProvider.produtos
         .where((p) => p.id != null && produtoProvider.sugestoesVariantePara(p.id!).isNotEmpty)
-        .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) => p.bateBusca(_busca))
         .where((p) =>
             _filtroTipo == null ||
             produtoProvider.sugestoesVariantePara(p.id!).any((s) => s.tipoVariacao == _filtroTipo))
@@ -940,7 +940,7 @@ class _AbaRevisarPrecoState extends State<_AbaRevisarPreco> {
     }
 
     final lista = pendentes
-        .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) => p.bateBusca(_busca))
         .where((p) => _filtroCategoria == null ||
             (p.categoria.isNotEmpty ? p.categoria : 'Sem categoria') == _filtroCategoria)
         .where(direcaoConfere)
@@ -1643,7 +1643,7 @@ class _AbaCicloRecompraState extends State<_AbaCicloRecompra> {
       contagemPorCategoria[cat] = (contagemPorCategoria[cat] ?? 0) + 1;
     }
     final lista = produtoProvider.produtos
-        .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) => p.bateBusca(_busca))
         .where((p) => _filtroCategoria == null ||
             (p.categoria.isNotEmpty ? p.categoria : 'Sem categoria') == _filtroCategoria)
         .where((p) => _filtroComCiclo == null || (p.cicloRecompraDias != null) == _filtroComCiclo)
@@ -1962,7 +1962,7 @@ class _AbaCatalogoState extends State<_AbaCatalogo> {
     }
 
     final lista = produtoProvider.produtos
-        .where((p) => contemTodasPalavras(p.nome, _busca))
+        .where((p) => p.bateBusca(_busca))
         .where((p) => _filtroCategoria == null ||
             (p.categoria.isNotEmpty ? p.categoria : 'Sem categoria') == _filtroCategoria)
         .where((p) => _filtroSubcategoria == null || p.subcategoria == _filtroSubcategoria)
@@ -2172,7 +2172,7 @@ class _AbaEanDuplicadoState extends State<_AbaEanDuplicado> {
   Widget build(BuildContext context) {
     final produtoProvider = context.watch<ProdutoProvider>();
     final grupos = _gruposEanDuplicado(produtoProvider.produtos)
-        .where((grupo) => _busca.isEmpty || grupo.any((p) => contemTodasPalavras(p.nome, _busca)))
+        .where((grupo) => _busca.isEmpty || grupo.any((p) => p.bateBusca(_busca)))
         .toList();
 
     return Column(
@@ -3067,7 +3067,7 @@ class _AbaEstoqueParadoState extends State<_AbaEstoqueParado> {
       contagemPorCategoria[cat] = (contagemPorCategoria[cat] ?? 0) + 1;
     }
     final lista = pares
-        .where((par) => contemTodasPalavras(par.produto.nome, _busca))
+        .where((par) => par.produto.bateBusca(_busca))
         .where((par) => _filtroFaixa == null || par.item.faixa == _filtroFaixa)
         .where((par) => _filtroSugestao == null || par.sugestao.sugestao.rotulo == _filtroSugestao)
         .where((par) => _filtroValidade == null || _faixaValidade(par.item.produtoId) == _filtroValidade)

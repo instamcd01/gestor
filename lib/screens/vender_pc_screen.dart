@@ -215,7 +215,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     return todos.where((p) {
       if (_categoria != 'Tudo' && _normalizar(p.categoria) != normalizada) return false;
       if (termo.isEmpty) return true;
-      return contemTodasPalavras(p.nome, termo) || (p.codigoBarras.isNotEmpty && p.codigoBarras.contains(termo));
+      return p.bateBusca(termo) || (p.codigoBarras.isNotEmpty && p.codigoBarras.contains(termo));
     }).toList();
   }
 

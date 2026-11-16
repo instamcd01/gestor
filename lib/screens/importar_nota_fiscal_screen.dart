@@ -20,7 +20,6 @@ import '../repositories/nfe_pendente_entrada_repository.dart';
 import '../repositories/pedido_compra_repository.dart';
 import '../repositories/produto_fornecedor_repository.dart';
 import '../services/nfe_xml_parser.dart';
-import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/leitor_codigo_barras.dart';
 import '../utils/nfe_chave_acesso_validator.dart';
@@ -615,10 +614,10 @@ class _ImportarNotaFiscalScreenState extends State<ImportarNotaFiscalScreen> {
             imagemUrl: '',
             codigoBarras: item.eanNfe,
             custo: item.custoUnitario,
-            // Fornecedor já identificado (cadastrado ou detectado no XML) —
-            // sem isso o usuário tinha que digitar de novo um nome que a
-            // tela já sabia, pra cada produto novo da mesma nota.
-            empresa: _fornecedorExistente?.nome ?? _nfe?.fornecedorDetectado.nome,
+            // NÃO preencher `empresa` (coluna `marca`) com o fornecedor: desde
+            // 09/10 ela é a MARCA/linha (Golden, Premier). Achado 16/11: 14
+            // produtos ficaram com marca = distribuidora (Alfa Vet, Agrolife…).
+            // O vínculo com o fornecedor sai da própria nota.
             ncm: item.ncm,
           ),
         ),
@@ -2372,7 +2371,7 @@ class _BuscarProdutoDialogState extends State<_BuscarProdutoDialog> {
   Widget build(BuildContext context) {
     final filtrados = _busca.isEmpty
         ? widget.produtos
-        : widget.produtos.where((p) => contemTodasPalavras(p.nome, _busca)).toList();
+        : widget.produtos.where((p) => p.bateBusca(_busca)).toList();
 
     return AlertDialog(
       title: const Text('Vincular a um produto'),

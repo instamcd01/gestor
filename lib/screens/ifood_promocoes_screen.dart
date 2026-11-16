@@ -8,7 +8,6 @@ import '../config/supabase_config.dart';
 import '../models/produto.dart';
 import '../repositories/ifood_merchant_repository.dart';
 import '../repositories/produto_repository.dart';
-import '../utils/busca_utils.dart';
 
 /// Promoções no iFood (módulo Promotion v2.0), pela Edge Function
 /// `ifood-merchant`. A promoção vive no iFood; o Gestor guarda o
@@ -625,7 +624,7 @@ class _FormPromocaoScreenState extends State<_FormPromocaoScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
         final t = busca.text.trim();
-        final filtrados = (t.isEmpty ? _catalogo : _catalogo.where((p) => contemTodasPalavras(p.nome, t) || p.codigoBarras.contains(t))).take(40).toList();
+        final filtrados = (t.isEmpty ? _catalogo : _catalogo.where((p) => p.bateBusca(t) || p.codigoBarras.contains(t))).take(40).toList();
         return AlertDialog(
           title: const Text('Produtos da promoção'),
           content: SizedBox(

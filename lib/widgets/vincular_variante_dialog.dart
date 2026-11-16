@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../models/produto.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/valor_estruturado_repository.dart';
-import '../utils/busca_utils.dart';
 import '../utils/variante_label_utils.dart';
 import 'campo_com_sugestao.dart';
 
@@ -165,7 +164,7 @@ class _VincularVarianteDialogState extends State<VincularVarianteDialog> {
       final busca = _buscaController.text;
       final resultados = (busca.isEmpty
               ? todos
-              : todos.where((p) => contemTodasPalavras(p.nome, busca)))
+              : todos.where((p) => p.bateBusca(busca)))
           .where((p) => p.id != widget.produto.id)
           .take(30)
           .toList();

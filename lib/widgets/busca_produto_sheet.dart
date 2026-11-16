@@ -64,7 +64,7 @@ class _BuscaProdutoSheetState extends State<BuscaProdutoSheet> {
     final termo = _controller.text.toLowerCase();
     final filtrados = termo.isEmpty
         ? widget.produtos.take(50).toList()
-        : widget.produtos.where((p) => p.nome.toLowerCase().contains(termo)).take(50).toList();
+        : widget.produtos.where((p) => p.bateBusca(termo)).take(50).toList();
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),

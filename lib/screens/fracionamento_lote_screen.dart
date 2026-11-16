@@ -7,7 +7,6 @@ import '../providers/produto_provider.dart';
 import '../repositories/marketplace_repository.dart';
 import '../repositories/produto_canal_repository.dart';
 import '../repositories/produto_repository.dart';
-import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 import '../utils/variante_label_utils.dart';
@@ -268,7 +267,7 @@ class _FracionamentoLoteScreenState extends State<FracionamentoLoteScreen>
       if (p.id == null) return false;
       if (p.ehKit) return false;
       if (!_mostrarTodos && p.fracionadoDeId != null) return false;
-      return contemTodasPalavras(p.nome, _busca) || p.codigoBarras.toLowerCase().contains(_busca.toLowerCase());
+      return p.bateBusca(_busca) || p.codigoBarras.toLowerCase().contains(_busca.toLowerCase());
     }).toList();
 
     return Scaffold(

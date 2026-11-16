@@ -7,7 +7,6 @@ import '../models/produto_fornecedor.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/produto_fornecedor_repository.dart';
-import '../utils/busca_utils.dart';
 import '../utils/produto_validators.dart';
 
 /// Vincula vários produtos de uma vez a um fornecedor — o inverso de
@@ -222,7 +221,7 @@ class _VincularProdutosFornecedorScreenState extends State<VincularProdutosForne
       final temOutroFornecedor = _fornecedoresPorProduto.containsKey(p.id);
       if (_filtroVinculo == _FiltroVinculo.semFornecedor && temOutroFornecedor) return false;
       if (_filtroVinculo == _FiltroVinculo.comFornecedor && !temOutroFornecedor) return false;
-      return contemTodasPalavras(p.nome, busca) || p.codigoBarras.toLowerCase().contains(busca.toLowerCase());
+      return p.bateBusca(busca) || p.codigoBarras.toLowerCase().contains(busca.toLowerCase());
     }).toList();
 
     return Scaffold(

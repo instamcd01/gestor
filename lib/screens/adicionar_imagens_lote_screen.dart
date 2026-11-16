@@ -352,7 +352,7 @@ class _SeletorProdutoSheetState extends State<_SeletorProdutoSheet> {
   @override
   Widget build(BuildContext context) {
     final filtrados = widget.produtos
-        .where((p) => contemTodasPalavras(p.nome, _busca) || p.codigoBarras.toLowerCase().contains(normalizarBusca(_busca)))
+        .where((p) => p.bateBusca(_busca) || p.codigoBarras.toLowerCase().contains(normalizarBusca(_busca)))
         .toList();
 
     return DraggableScrollableSheet(

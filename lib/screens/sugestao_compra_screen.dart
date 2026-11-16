@@ -15,6 +15,7 @@ import '../repositories/entrada_repository.dart';
 import '../repositories/pedido_compra_repository.dart';
 import '../repositories/produto_fornecedor_repository.dart';
 import '../repositories/produto_repository.dart';
+import '../utils/busca_utils.dart';
 import '../widgets/busca_produto_sheet.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'pedido_compra_detalhe_screen.dart';
@@ -1380,8 +1381,9 @@ class _ListaItensFornecedorState extends State<_ListaItensFornecedor> {
     final termo = _busca.trim().toLowerCase();
     var itens = widget.grupo.itens.where((i) {
       if (termo.isEmpty) return true;
-      return i.produtoNome.toLowerCase().contains(termo) ||
-          _fabricante(i).toLowerCase().contains(termo) ||
+      // Mesma busca de produto do resto do app: "premier" não traz a Golden
+      // (nome termina em "– PremieRpet"); "premierpet" traz o fabricante todo.
+      return produtoBateBusca(i.produtoNome, termo, marca: i.marca, fabricante: i.fabricante) ||
           (i.codigoFornecedor?.toLowerCase().contains(termo) ?? false);
     }).toList();
     if (!widget.porFabricante) return itens;

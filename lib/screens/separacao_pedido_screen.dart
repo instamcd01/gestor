@@ -8,7 +8,6 @@ import '../models/venda.dart';
 import '../repositories/ifood_merchant_repository.dart';
 import '../repositories/produto_repository.dart';
 import '../repositories/separacao_pedido_repository.dart';
-import '../utils/busca_utils.dart';
 import '../widgets/aviso_banner.dart';
 
 /// Separação de pedido de Mercado na iFood (Picking API) — trocar ou
@@ -346,7 +345,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
           final busca = buscaController.text.trim();
           final filtrados = busca.isEmpty
               ? _catalogo.take(20).toList()
-              : _catalogo.where((p) => contemTodasPalavras(p.nome, busca)).take(20).toList();
+              : _catalogo.where((p) => p.bateBusca(busca)).take(20).toList();
           return AlertDialog(
             title: Text('Substituir "${item.produto.nome}"'),
             content: SizedBox(
@@ -520,7 +519,7 @@ class _SeparacaoPedidoScreenState extends State<SeparacaoPedidoScreen> {
           final busca = buscaController.text.trim();
           final filtrados = busca.isEmpty
               ? _catalogo.take(20).toList()
-              : _catalogo.where((p) => contemTodasPalavras(p.nome, busca)).take(20).toList();
+              : _catalogo.where((p) => p.bateBusca(busca)).take(20).toList();
           return AlertDialog(
             title: const Text('Adicionar item ao pedido'),
             content: SizedBox(

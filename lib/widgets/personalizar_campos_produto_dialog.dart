@@ -6,7 +6,6 @@ import '../models/produto.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/valor_estruturado_repository.dart';
-import '../utils/busca_utils.dart';
 
 /// Ativa/desativa e reordena, só pra ESTE produto, quais dos 12 campos
 /// entram no NOME gerado automaticamente (`compor_nome_produto`) e em que
@@ -262,7 +261,7 @@ class _BuscarProdutoComPersonalizacaoDialogState extends State<_BuscarProdutoCom
     final busca = _buscaController.text;
     final resultados = (busca.isEmpty
             ? widget.produtos
-            : widget.produtos.where((p) => contemTodasPalavras(p.nome, busca)))
+            : widget.produtos.where((p) => p.bateBusca(busca)))
         .take(30)
         .toList();
 

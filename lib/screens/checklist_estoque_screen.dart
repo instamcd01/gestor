@@ -11,7 +11,6 @@ import '../models/produto.dart';
 import '../providers/auth_provider.dart';
 import '../providers/produto_provider.dart';
 import '../repositories/checklist_estoque_repository.dart';
-import '../utils/busca_utils.dart';
 import '../utils/leitor_codigo_barras.dart';
 
 final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
@@ -226,7 +225,7 @@ class _ConferenciaChecklistScreenState extends State<ConferenciaChecklistScreen>
       if (!passaFiltro) return false;
       if (_categoria != null && p.categoria != _categoria) return false;
       if (busca.isEmpty) return true;
-      return p.codigoBarras == busca || contemTodasPalavras(normalizarBusca(p.nome), normalizarBusca(busca));
+      return p.codigoBarras == busca || p.bateBusca(busca);
     }).toList();
   }
 

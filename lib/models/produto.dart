@@ -1,3 +1,5 @@
+import '../utils/busca_utils.dart';
+
 /// Representa um produto do catálogo, já considerando o estoque agregado
 /// (somado entre depósitos) vindo da tabela `estoque` do Supabase.
 class Produto {
@@ -97,6 +99,10 @@ class Produto {
   }
 
   bool get foraDaSugestaoCompra => naoSugerirCompra || sugestaoCompraPausada;
+
+  /// Busca padrão de produto (nome sem o sufixo do fabricante + marca) — ver
+  /// [produtoBateBusca].
+  bool bateBusca(String busca) => produtoBateBusca(nome, busca, marca: empresa, fabricante: fabricante);
 
   /// `estoque.minimo_fixado`: true = mínimo escolhido pelo usuário, o ajuste
   /// automático mensal (`ajustar_estoque_minimo_mensal`, dia 1) não mexe.

@@ -5,7 +5,6 @@ import '../models/kit_produto.dart';
 import '../models/produto.dart';
 import '../providers/kit_produto_provider.dart';
 import '../providers/produto_provider.dart';
-import '../utils/busca_utils.dart';
 import '../utils/formatadores_input.dart';
 import '../utils/produto_validators.dart';
 import '../widgets/form_section.dart';
@@ -402,7 +401,7 @@ class _SeletorProdutoSheetState extends State<_SeletorProdutoSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final filtrados = widget.produtos.where((p) => contemTodasPalavras(p.nome, _busca)).toList();
+    final filtrados = widget.produtos.where((p) => p.bateBusca(_busca)).toList();
 
     return DraggableScrollableSheet(
       initialChildSize: 0.8,
