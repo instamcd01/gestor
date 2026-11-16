@@ -130,6 +130,7 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
   /// com o que veio no produto e é relido do banco ao abrir, porque a pausa
   /// pode ter sido feita agora há pouco na tela de sugestão de compra.
   late bool _naoSugerirCompra = widget.produto.naoSugerirCompra;
+  late bool _minimoFixado = widget.produto.minimoFixado;
   late DateTime? _sugestaoPausadaAte =
       widget.produto.sugestaoCompraPausada ? widget.produto.sugestaoCompraPausadaAte : null;
 
@@ -151,6 +152,19 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
       });
     } catch (_) {
       // Sem conexão: fica com o que veio no produto.
+    }
+  }
+
+  Future<void> _definirMinimoAutomatico(bool automatico) async {
+    final estoqueId = widget.produto.estoqueId;
+    if (estoqueId == null) return;
+    try {
+      await ProdutoRepository().definirMinimoFixado(estoqueId, !automatico);
+      if (!mounted) return;
+      setState(() => _minimoFixado = !automatico);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível alterar: $e')));
     }
   }
 
@@ -1402,6 +1416,17 @@ class _EditarProdutoScreenState extends State<EditarProdutoScreen> {
                     validator: (value) =>
                         ProdutoValidators.estoqueInteiro(value, campo: 'o estoque mínimo'),
                   ),
+                  if (widget.produto.estoqueId != null)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Ajustar mínimo automaticamente pela venda'),
+                      subtitle: Text(_minimoFixado
+                          ? 'Fixado: o número acima não muda sozinho.'
+                          : 'Todo dia 1 o mínimo vira a venda do prazo de entrega + 1 semana '
+                              '(0 se o produto estiver em observação). Se você mudar o número, ele fica fixado.'),
+                      value: !_minimoFixado,
+                      onChanged: _definirMinimoAutomatico,
+                    ),
                   if (widget.produto.id != null)
                     Align(
                       alignment: Alignment.centerLeft,

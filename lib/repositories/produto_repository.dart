@@ -11,7 +11,7 @@ import '../models/sugestao_variante.dart';
 /// leitura, o Postgres já faz isso.
 class ProdutoRepository {
   static const _selectComEstoque =
-      '*, estoque(id, quantidade_atual, quantidade_minima, deposito_id)';
+      '*, estoque(id, quantidade_atual, quantidade_minima, deposito_id, minimo_fixado)';
 
   /// Sugere um ciclo de recompra (dias) pra um produto ainda não salvo, com
   /// base em produtos parecidos já cadastrados que já têm ciclo definido
@@ -181,7 +181,7 @@ class ProdutoRepository {
           .from('estoque')
           .update({'quantidade_minima': produto.estoqueMinimo})
           .eq('id', produto.estoqueId!)
-          .select('id, quantidade_atual, quantidade_minima');
+          .select('id, quantidade_atual, quantidade_minima, minimo_fixado');
     }
 
     return Produto.fromSupabase({
@@ -320,6 +320,11 @@ class ProdutoRepository {
           ? null
           : '${pausarAte.year.toString().padLeft(4, '0')}-${pausarAte.month.toString().padLeft(2, '0')}-${pausarAte.day.toString().padLeft(2, '0')}',
     }).eq('id', produtoId);
+  }
+
+  /// Liga/desliga o ajuste automático do estoque mínimo (robô do dia 1).
+  Future<void> definirMinimoFixado(String estoqueId, bool fixado) async {
+    await supabase.from('estoque').update({'minimo_fixado': fixado}).eq('id', estoqueId);
   }
 
   Future<void> marcarPrecoRevisado(String produtoId) async {

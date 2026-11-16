@@ -98,6 +98,12 @@ class Produto {
 
   bool get foraDaSugestaoCompra => naoSugerirCompra || sugestaoCompraPausada;
 
+  /// `estoque.minimo_fixado`: true = mínimo escolhido pelo usuário, o ajuste
+  /// automático mensal (`ajustar_estoque_minimo_mensal`, dia 1) não mexe.
+  /// Vira true sozinho (trigger) quando o número do mínimo é editado.
+  /// Somente leitura aqui — muda via `ProdutoRepository.definirMinimoFixado`.
+  final bool minimoFixado;
+
   /// Preço que vale numa venda agora — mesma regra do banco em
   /// editar_itens_pedido: promocional só quando menor que o normal.
   double get precoVendaAtual =>
@@ -200,6 +206,7 @@ class Produto {
     this.revisarPreco = false,
     this.naoSugerirCompra = false,
     this.sugestaoCompraPausadaAte,
+    this.minimoFixado = false,
     this.nomeComercial,
     this.tipoProduto,
     this.especie,
@@ -282,6 +289,7 @@ class Produto {
       validade: row['validade']?.toString(),
       revisarPreco: row['revisar_preco'] as bool? ?? false,
       naoSugerirCompra: row['nao_sugerir_compra'] as bool? ?? false,
+      minimoFixado: estoqueRows.isNotEmpty && (estoqueRows.first['minimo_fixado'] as bool? ?? false),
       sugestaoCompraPausadaAte: DateTime.tryParse(row['sugestao_compra_pausada_ate']?.toString() ?? ''),
       nomeComercial: row['nome_comercial']?.toString(),
       tipoProduto: row['tipo_produto']?.toString(),
