@@ -29,15 +29,20 @@ String nomeSemFabricante(String nome, String? fabricante) {
   return n;
 }
 
-/// Busca de PRODUTO: cada palavra precisa estar no nome (sem o sufixo do
-/// fabricante) ou na marca; o fabricante só conta quando a palavra é o nome
-/// dele inteiro (ex.: "premierpet" traz Golden + Premier + Vitta).
-/// Achado 16/11: buscar "premier" trazia toda a linha Golden porque o nome
-/// termina em "– PremieRpet".
+/// Busca de PRODUTO (mesma regra do site e do WhatsApp — `produto_bate_padroes`
+/// no banco): cada palavra precisa estar no texto (nome sem o sufixo do
+/// fabricante + marca) OU fazer parte do nome do fabricante; e pelo menos uma
+/// palavra precisa estar no texto ou ser o fabricante inteiro.
+/// "premier" = linha Premier; "golden premier" = Golden; "premierpet" = tudo.
+/// Achado 16/11: "premier" trazia toda a Golden (nome termina em "– PremieRpet").
 bool produtoBateBusca(String nome, String busca, {String? marca, String? fabricante}) {
   final termo = normalizarBusca(busca).trim();
   if (termo.isEmpty) return true;
   final fabJunto = normalizarBusca(fabricante ?? '').replaceAll(RegExp(r'\s+'), '');
   final alvo = '${nomeSemFabricante(nome, fabricante)} ${normalizarBusca(marca ?? '')}';
-  return termo.split(RegExp(r'\s+')).every((p) => alvo.contains(p) || (fabJunto.isNotEmpty && fabJunto == p));
+  final palavras = termo.split(RegExp(r'\s+'));
+  bool noTexto(String p) => alvo.contains(p);
+  bool parteDoFabricante(String p) => p.length >= 3 && fabJunto.contains(p);
+  return palavras.every((p) => noTexto(p) || parteDoFabricante(p)) &&
+      palavras.any((p) => noTexto(p) || (fabJunto.isNotEmpty && fabJunto == p));
 }

@@ -22,6 +22,12 @@ void main() {
     expect(busca(golden, 'premierpet golden', marca: 'Golden'), isTrue);
   });
 
+  test('"golden premier" (fabricante como complemento) traz Golden', () {
+    expect(busca(golden, 'golden premier', marca: 'Golden'), isTrue);
+    expect(busca(golden, 'racao golden da premier', marca: 'Golden'), isFalse); // "da" não está em lugar nenhum
+    expect(busca(premier, 'golden premier', marca: 'Premier'), isFalse);
+  });
+
   test('busca pela marca e por palavras do nome continua', () {
     expect(busca('Ração X Para Cães 10kg – PremieRpet', 'golden', marca: 'Golden'), isTrue);
     expect(busca(golden, 'racao golden 15kg', marca: 'Golden'), isTrue);
