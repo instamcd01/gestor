@@ -3,5 +3,9 @@
 /// banco — trocar nos dois lugares quando a INARI tiver domínio próprio.
 const String kDominioBaseLojas = 'inari.lukz.com.br';
 
+/// WhatsApp do suporte da INARI (implantação, dúvidas de loja nova).
+/// Espelha `PLATAFORMA.whatsappContato` no site (gestor-loja/src/lib/plataforma.ts).
+const String kWhatsappSuportePlataforma = '5521998877477';
+
 /// IP da VPS pra onde o domínio próprio da loja deve apontar (registro A).
 const String kIpServidorLojas = '187.77.60.141';

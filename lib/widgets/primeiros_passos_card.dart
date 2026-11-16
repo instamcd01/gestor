@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/auth_provider.dart';
-import '../screens/cadastro_produto_screen.dart';
+import '../screens/comecar_produtos_screen.dart';
 import '../screens/catalogo_online_hub_screen.dart';
 import '../screens/configuracao_entrega_screen.dart';
 import '../screens/dados_loja_screen.dart';
@@ -42,8 +42,8 @@ final _passos = <_Passo>[
       Icons.storefront_outlined, () => const DadosLojaScreen()),
   _Passo('horario', 'Horário de funcionamento', 'Quando a loja recebe pedidos',
       Icons.schedule_outlined, () => const GeralScreen()),
-  _Passo('produtos', 'Cadastrar produtos', 'Um por um ou por planilha, na tela Produtos',
-      Icons.inventory_2_outlined, () => const CadastroProdutoScreen()),
+  _Passo('produtos', 'Cadastrar produtos', 'Por planilha, com a ajuda da INARI ou um por um',
+      Icons.inventory_2_outlined, () => const ComecarProdutosScreen()),
   _Passo('entrega', 'Taxas de entrega', 'Bairros ou distâncias que a loja atende',
       Icons.delivery_dining_outlined, () => const ConfiguracaoEntregaScreen()),
   _Passo('equipe', 'Chamar a equipe', 'Cada pessoa com o próprio acesso',

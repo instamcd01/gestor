@@ -88,7 +88,12 @@ const _aliasesProdutos = {
 };
 
 class ImportarProdutosScreen extends StatefulWidget {
-  const ImportarProdutosScreen({super.key});
+  /// Loja começando (veio do guia "Primeiros passos"): texto simples, modelo
+  /// primeiro e sem a parte de planilha mestre, que só faz sentido com
+  /// catálogo já montado.
+  final bool primeiraVez;
+
+  const ImportarProdutosScreen({super.key, this.primeiraVez = false});
 
   @override
   State<ImportarProdutosScreen> createState() => _ImportarProdutosScreenState();
@@ -600,6 +605,34 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
     }
   }
 
+  List<Widget> _corpoPrimeiraVez(BuildContext context) {
+    final cinza = TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13);
+    return [
+      Text('Traga seus produtos de uma vez', style: Theme.of(context).textTheme.titleLarge, textAlign: TextAlign.center),
+      const SizedBox(height: 8),
+      Text(
+        'Se você já tem uma planilha (do Excel ou do sistema que usa hoje), pode enviar do jeito que está: '
+        'a INARI reconhece as colunas pelo nome. Se não tiver, baixe o modelo, preencha e envie.',
+        textAlign: TextAlign.center,
+        style: cinza,
+      ),
+      const SizedBox(height: 24),
+      FilledButton.icon(
+        onPressed: _processando ? null : _iniciarImportacao,
+        icon: const Icon(Icons.upload_file),
+        label: const Text('Enviar minha planilha'),
+      ),
+      const SizedBox(height: 12),
+      OutlinedButton.icon(
+        onPressed: _processando ? null : _gerarPlanilhaBase,
+        icon: const Icon(Icons.download),
+        label: const Text('Baixar planilha modelo'),
+      ),
+      const SizedBox(height: 8),
+      Text('No modelo, só nome e preço são essenciais. O resto você completa quando quiser.', style: cinza, textAlign: TextAlign.center),
+    ];
+  }
+
   Future<void> _gerarPlanilhaBase() async {
     final excel = Excel.createExcel();
     final Sheet sheet = excel['Produtos'];
@@ -805,7 +838,7 @@ class _ImportarProdutosScreenState extends State<ImportarProdutosScreen> {
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+                children: widget.primeiraVez ? _corpoPrimeiraVez(context) : [
                   Text(
                     'Aceita a planilha da sua loja do jeito que ela já é — reconhece as colunas pelo '
                     'nome do cabeçalho, então não precisa reordenar nada. Se tiver mais de uma aba, só '
