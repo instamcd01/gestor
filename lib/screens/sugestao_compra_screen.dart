@@ -123,6 +123,8 @@ class _ItemEditavel {
   final bool emObservacao;
   final int vendas12Meses;
   final DateTime? ultimaVenda;
+  final int vendas3Meses;
+  final int diasComEstoque3Meses;
   final int estoqueMinimoCadastrado;
   final int estoqueMinimoEfetivo;
 
@@ -160,6 +162,8 @@ class _ItemEditavel {
     this.emObservacao = false,
     this.vendas12Meses = 0,
     this.ultimaVenda,
+    this.vendas3Meses = 0,
+    this.diasComEstoque3Meses = 0,
     this.estoqueMinimoCadastrado = 0,
     this.estoqueMinimoEfetivo = 0,
     this.fabricante,
@@ -469,6 +473,8 @@ class _SugestaoCompraScreenState extends State<SugestaoCompraScreen> {
         emObservacao: escolhida.emObservacao,
         vendas12Meses: escolhida.vendas12Meses,
         ultimaVenda: escolhida.ultimaVenda,
+        vendas3Meses: escolhida.vendas3Meses,
+        diasComEstoque3Meses: escolhida.diasComEstoque3Meses,
         estoqueMinimoCadastrado: escolhida.estoqueMinimoCadastrado,
         estoqueMinimoEfetivo: escolhida.estoqueMinimoEfetivo,
         fabricante: fabricantePorProduto[escolhida.produtoId],
@@ -1644,7 +1650,9 @@ class _LinhaItemState extends State<_LinhaItem> {
             Padding(
               padding: const EdgeInsets.only(left: 40),
               child: Text(
-                '🔍 Em observação — ${item.vendas12Meses == 0 ? 'nenhuma venda' : '1 venda'} em 12 meses'
+                '🔍 Em observação — '
+                '${item.diasComEstoque3Meses >= 30 ? '${item.vendas3Meses == 0 ? 'nenhuma venda' : '1 venda'} em 3 meses, '
+                    'com estoque em ${item.diasComEstoque3Meses} dias' : '${item.vendas12Meses == 0 ? 'nenhuma venda' : '1 venda'} em 12 meses'}'
                 '${item.ultimaVenda != null ? ' (última em ${_formatarDataCurta(item.ultimaVenda!)})' : ''}. '
                 'Não sugerido nem pelo estoque mínimo: veja se é falta de procura, preço ou exposição — '
                 'ou use ⋮ pra não sugerir mais.',

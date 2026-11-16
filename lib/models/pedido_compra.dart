@@ -303,11 +303,15 @@ class SugestaoCompra {
   final int estoqueMinimoCadastrado;
   final int estoqueMinimoEfetivo;
 
-  /// Produto com 90+ dias de cadastro e no máximo 1 venda em 12 meses: a
-  /// sugestão vem 0 (nem pelo mínimo) e o Lucas decide o que fazer.
+  /// Produto com 90+ dias de cadastro que teve estoque em 30+ dos últimos
+  /// 90 dias e vendeu ≤1 nesse período (ou, se ficou zerado quase o
+  /// trimestre todo, vendeu ≤1 em 12 meses): a sugestão vem 0 (nem pelo
+  /// mínimo) e o Lucas decide o que fazer.
   final bool emObservacao;
   final int vendas12Meses;
   final DateTime? ultimaVenda;
+  final int vendas3Meses;
+  final int diasComEstoque3Meses;
 
   SugestaoCompra({
     required this.produtoId,
@@ -330,6 +334,8 @@ class SugestaoCompra {
     this.emObservacao = false,
     this.vendas12Meses = 0,
     this.ultimaVenda,
+    this.vendas3Meses = 0,
+    this.diasComEstoque3Meses = 0,
   });
 
   factory SugestaoCompra.fromSupabase(Map<String, dynamic> row) {
@@ -354,6 +360,8 @@ class SugestaoCompra {
       emObservacao: row['em_observacao'] as bool? ?? false,
       vendas12Meses: (row['vendas_12_meses'] as num?)?.toInt() ?? 0,
       ultimaVenda: row['ultima_venda'] == null ? null : DateTime.tryParse(row['ultima_venda'].toString()),
+      vendas3Meses: (row['vendas_3_meses'] as num?)?.toInt() ?? 0,
+      diasComEstoque3Meses: (row['dias_com_estoque_3_meses'] as num?)?.toInt() ?? 0,
     );
   }
 }
