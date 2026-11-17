@@ -236,6 +236,26 @@ class VendaRepository {
     await supabase.rpc('desagendar_pedido', params: {'p_pedido_id': idVenda});
   }
 
+  /// Troca pra entrega na zona [zonaId] ou pra retirada (null). Frete,
+  /// total (juros de parcelamento inclusos) e previsão recalculados no
+  /// banco (`alterar_entrega_pedido`); histórico em metadata.alteracoesEntrega.
+  Future<void> alterarEntrega(String idVenda, String? zonaId) async {
+    await supabase.rpc('alterar_entrega_pedido', params: {'p_pedido_id': idVenda, 'p_zona_id': zonaId});
+  }
+
+  /// Marca como pago antes da entrega (ex: Pix antecipado) ou desfaz —
+  /// `marcar_pagamento_pedido`.
+  Future<void> marcarPagamento(String idVenda, bool pago) async {
+    await supabase.rpc('marcar_pagamento_pedido', params: {'p_pedido_id': idVenda, 'p_pago': pago});
+  }
+
+  /// Volta o status marcado por engano (`voltar_status_pedido`): sem
+  /// mensagem pro cliente; de entregue só o dono, e o pagamento confirmado
+  /// na entrega volta a ficar a cobrar. Registro em metadata.statusCorrigido.
+  Future<void> voltarStatus(String idVenda, String status) async {
+    await supabase.rpc('voltar_status_pedido', params: {'p_pedido_id': idVenda, 'p_status': status});
+  }
+
   /// Troca a forma de pagamento (e parcelas, se for cartão de crédito) de
   /// uma venda de balcão já registrada — caso real: cliente falou "débito"
   /// na hora de montar o pedido mas na entrega paga com Pix, ou pede pra

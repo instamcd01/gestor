@@ -605,6 +605,36 @@ class Venda {
       status == StatusPedido.saiuParaEntrega || (status == StatusPedido.pronto && !temEntrega);
 
   bool get podeReagendar => emAndamento && !ehPlataformaDelivery && idVenda != null;
+
+  bool get _pedidoProprioEditavel => idVenda != null && !ehPlataformaDelivery && canalVenda != 'kyte_historico';
+
+  /// Trocar entre entrega e retirada, ou a zona (`alterar_entrega_pedido`):
+  /// só antes de sair pra entrega.
+  bool get podeTrocarEntrega =>
+      _pedidoProprioEditavel &&
+      const [StatusPedido.pendente, StatusPedido.preparando, StatusPedido.pronto].contains(status);
+
+  /// Marcar como pago antes da entrega/retirada (ex: Pix antecipado) —
+  /// `marcar_pagamento_pedido`. Pago online é do Mercado Pago, não daqui.
+  bool get podeMarcarPago => _pedidoProprioEditavel && emAndamento && mercadoPagoPaymentId == null;
+
+  /// Pedido em andamento já pago (antecipado/balcão) — a Fila mostra "não cobrar".
+  bool get pagoAntecipado => podeMarcarPago && statusPagamento == 'pago';
+
+  /// Status anteriores pra onde dá pra voltar um pedido marcado por engano
+  /// (`voltar_status_pedido`). Entregue → só o dono (o banco confere).
+  List<String> get statusAnteriores {
+    if (!_pedidoProprioEditavel) return const [];
+    final ordem = [
+      StatusPedido.pendente,
+      StatusPedido.preparando,
+      StatusPedido.pronto,
+      if (temEntrega) StatusPedido.saiuParaEntrega,
+      StatusPedido.entregue,
+    ];
+    final atual = ordem.indexOf(status);
+    return atual <= 0 ? const [] : ordem.sublist(0, atual).reversed.toList();
+  }
   bool get temRastreio => rastreioLatitude != null && rastreioLongitude != null;
 
   /// true = cliente retira na loja (não precisa entrar em rota nenhuma).

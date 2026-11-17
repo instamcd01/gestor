@@ -23,6 +23,8 @@ import '../utils/app_destinos.dart';
 import 'alterar_forma_pagamento_screen.dart';
 import 'separacao_pedido_screen.dart';
 import 'venda_detalhes_screen.dart';
+import '../providers/auth_provider.dart';
+import '../widgets/editar_pedido_menu.dart';
 import '../widgets/reagendar_pedido_dialog.dart';
 
 /// Urgência do pedido em relação à previsão de entrega calculada pela
@@ -288,6 +290,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       chips.add(_chipInfo(context, Icons.hourglass_empty, 'Aguardando confirmação do pagamento'));
     } else if (venda.pagoOnline) {
       chips.add(_chipInfo(context, Icons.check_circle_outline, 'Pago online — não cobrar'));
+    } else if (venda.pagoAntecipado) {
+      chips.add(_chipInfo(context, Icons.check_circle_outline, 'Já pago — não cobrar'));
     }
 
     if (venda.troco > 0) {
@@ -529,6 +533,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
     }
     if (venda.aguardandoPagamento) return (texto: 'Aguardando pagamento', pago: false);
     if (venda.pagoOnline) return (texto: 'Pago online', pago: true);
+    if (venda.pagoAntecipado) return (texto: 'Já pago', pago: true);
     return null;
   }
 
@@ -867,6 +872,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
           icon: const Icon(Icons.event_outlined, size: 18),
           label: Text(venda.agendadoManualmente ? 'Mudar horário' : 'Agendar'),
         ),
+      MenuEditarPedido(venda: venda, comoBotao: true),
       if (venda.proximoStatus != null)
         FilledButton.icon(
           onPressed: () => _avancarStatus(venda),
@@ -1747,6 +1753,8 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                         icon: const Icon(Icons.payments_outlined, size: 18),
                                         label: const Text('Forma de pagamento'),
                                       ),
+                                    if (MenuEditarPedido.temOpcoes(venda, dono: context.read<AuthProvider>().isDono))
+                                      MenuEditarPedido(venda: venda),
                                     if (venda.proximoStatus != null)
                                       ElevatedButton(
                                         onPressed: () => _avancarStatus(venda),

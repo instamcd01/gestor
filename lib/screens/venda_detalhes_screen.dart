@@ -24,6 +24,7 @@ import 'cliente_detalhes_screen.dart';
 import 'editar_pedido_screen.dart';
 import 'recibo_screen.dart';
 import 'separacao_pedido_screen.dart';
+import '../widgets/editar_pedido_menu.dart';
 import '../widgets/reagendar_pedido_dialog.dart';
 
 class VendaDetalhesScreen extends StatefulWidget {
@@ -545,6 +546,14 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     setState(() => _venda = atualizada);
   }
 
+  /// Depois de editar pelo menu (entrega, pago, voltar status).
+  Future<void> _recarregarVenda() async {
+    if (_venda.idVenda == null) return;
+    final atualizada = await VendaRepository().buscarPorId(_venda.idVenda!);
+    if (!mounted) return;
+    setState(() => _venda = atualizada);
+  }
+
   /// Agendar/mudar horário depois de criado — recarrega pra mostrar a janela nova.
   Future<void> _reagendar() async {
     if (_venda.idVenda == null || !await reagendarPedido(context, _venda) || !mounted) return;
@@ -704,6 +713,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               tooltip: 'Copiar dados pro entregador',
               onPressed: () => copiarMensagemEntregador(context, venda),
             ),
+          if (!_processando) MenuEditarPedido(venda: venda, aoAlterar: _recarregarVenda),
           IconButton(
             icon: const Icon(Icons.receipt_long),
             tooltip: 'Ver recibo',

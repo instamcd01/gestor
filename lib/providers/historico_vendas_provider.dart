@@ -287,6 +287,24 @@ class HistoricoVendasProvider with ChangeNotifier {
     await _recarregarPedidos([idVenda]);
   }
 
+  /// Entrega ↔ retirada / troca de zona — ver `VendaRepository.alterarEntrega`.
+  Future<void> alterarEntregaPedido(String idVenda, String? zonaId) async {
+    await _repository.alterarEntrega(idVenda, zonaId);
+    await _recarregarPedidos([idVenda]);
+  }
+
+  /// Pago antecipado (ou desfazer) — ver `VendaRepository.marcarPagamento`.
+  Future<void> marcarPagamentoPedido(String idVenda, bool pago) async {
+    await _repository.marcarPagamento(idVenda, pago);
+    await _recarregarPedidos([idVenda]);
+  }
+
+  /// Volta status marcado por engano — ver `VendaRepository.voltarStatus`.
+  Future<void> voltarStatusPedido(String idVenda, String status) async {
+    await _repository.voltarStatus(idVenda, status);
+    await _recarregarPedidos([idVenda]);
+  }
+
   /// Troca forma de pagamento (e parcelas) de uma venda já registrada —
   /// ver `VendaRepository.alterarFormaPagamento`.
   Future<void> alterarFormaPagamento(
