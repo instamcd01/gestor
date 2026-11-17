@@ -852,7 +852,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
           icon: const Icon(Icons.checklist, size: 18),
           label: Text(venda.separacaoStatus == null ? 'Separar pedido  ·  S' : 'Ver separação  ·  S'),
         ),
-      if (venda.status == StatusPedido.saiuParaEntrega && venda.formaPagamentoEditavel)
+      if (venda.momentoDeCobrar && venda.formaPagamentoEditavel)
         OutlinedButton.icon(
           onPressed: () => Navigator.push(
             context,
@@ -1736,7 +1736,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                   // verdade por gateway ou pelo marketplace
                                   // (`formaPagamentoEditavel`).
                                   final botoesDireita = <Widget>[
-                                    if (venda.status == StatusPedido.saiuParaEntrega && venda.formaPagamentoEditavel)
+                                    if (venda.momentoDeCobrar && venda.formaPagamentoEditavel)
                                       OutlinedButton.icon(
                                         onPressed: () => Navigator.push(
                                           context,

@@ -599,6 +599,11 @@ class Venda {
       emAndamento && !ehMarketplace && canalVenda != '99food' && canalVenda != 'kyte_historico' && idVenda != null;
   /// Agendar/mudar horário depois de criado (cliente pediu pra receber ou
   /// retirar mais tarde) — iFood/99Food o horário é da plataforma.
+  /// Hora de cobrar o cliente: saiu pra entrega, ou retirada pronta (o
+  /// cliente vem buscar — retirada nunca passa por "saiu para entrega").
+  bool get momentoDeCobrar =>
+      status == StatusPedido.saiuParaEntrega || (status == StatusPedido.pronto && !temEntrega);
+
   bool get podeReagendar => emAndamento && !ehPlataformaDelivery && idVenda != null;
   bool get temRastreio => rastreioLatitude != null && rastreioLongitude != null;
 
