@@ -229,6 +229,13 @@ class VendaRepository {
     });
   }
 
+  /// Tira o agendamento (volta a "quero agora"): o banco recalcula a
+  /// previsão a partir de agora (`desagendar_pedido` — faixa da zona na
+  /// entrega, prazo de retirada da loja na retirada).
+  Future<void> desagendar(String idVenda) async {
+    await supabase.rpc('desagendar_pedido', params: {'p_pedido_id': idVenda});
+  }
+
   /// Troca a forma de pagamento (e parcelas, se for cartão de crédito) de
   /// uma venda de balcão já registrada — caso real: cliente falou "débito"
   /// na hora de montar o pedido mas na entrega paga com Pix, ou pede pra

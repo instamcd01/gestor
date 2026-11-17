@@ -281,6 +281,12 @@ class HistoricoVendasProvider with ChangeNotifier {
     await _recarregarPedidos([idVenda]);
   }
 
+  /// Tira o agendamento — ver `VendaRepository.desagendar`.
+  Future<void> desagendarPedido(String idVenda) async {
+    await _repository.desagendar(idVenda);
+    await _recarregarPedidos([idVenda]);
+  }
+
   /// Troca forma de pagamento (e parcelas) de uma venda já registrada —
   /// ver `VendaRepository.alterarFormaPagamento`.
   Future<void> alterarFormaPagamento(

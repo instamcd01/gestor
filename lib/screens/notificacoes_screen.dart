@@ -18,6 +18,8 @@ import '../widgets/estado_erro_lista.dart';
       return (Icons.hourglass_empty, Colors.orange);
     case TipoNotificacao.pedidoHoraSaidaEntrega:
       return (Icons.directions_run, Colors.orange);
+    case TipoNotificacao.pedidoAgendadoHorario:
+      return (Icons.event_available_outlined, Colors.blue);
     case TipoNotificacao.pedidoAtrasadoEntrega:
       return (Icons.local_shipping_outlined, Colors.red);
     case TipoNotificacao.despesaVencendo:

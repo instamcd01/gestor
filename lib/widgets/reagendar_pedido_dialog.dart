@@ -82,6 +82,24 @@ class _ReagendarPedidoDialogState extends State<_ReagendarPedidoDialog> {
     }
   }
 
+  Future<void> _desagendar() async {
+    if (widget.venda.idVenda == null) return;
+    setState(() {
+      _salvando = true;
+      _erro = null;
+    });
+    try {
+      await context.read<HistoricoVendasProvider>().desagendarPedido(widget.venda.idVenda!);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _salvando = false;
+        _erro = e is PostgrestException ? e.message : 'Não foi possível salvar. Tente de novo.';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cores = Theme.of(context).colorScheme;
@@ -148,6 +166,13 @@ class _ReagendarPedidoDialogState extends State<_ReagendarPedidoDialog> {
               ),
       ),
       actions: [
+        // Volta a "quero agora": previsão recalculada a partir de agora.
+        if (widget.venda.agendadoManualmente)
+          TextButton(
+            onPressed: _salvando ? null : _desagendar,
+            style: TextButton.styleFrom(foregroundColor: cores.error),
+            child: const Text('Tirar agendamento'),
+          ),
         TextButton(onPressed: _salvando ? null : () => Navigator.pop(context, false), child: const Text('Cancelar')),
         FilledButton(
           onPressed: _janela == null || _salvando ? null : _salvar,

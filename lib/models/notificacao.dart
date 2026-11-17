@@ -26,6 +26,7 @@ class TipoNotificacao {
   static const novoPedido = 'novo_pedido';
   static const pedidoAtrasadoEntrega = 'pedido_atrasado_entrega';
   static const pedidoHoraSaidaEntrega = 'pedido_hora_saida_entrega';
+  static const pedidoAgendadoHorario = 'pedido_agendado_horario'; // cron notificar_pedidos_agendados_horario, todo minuto
   static const carrinhoAbandonado = 'carrinho_abandonado';
   static const clienteAtivoNoSite = 'cliente_ativo_no_site';
   static const erroSistema = 'erro_sistema';
@@ -78,6 +79,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.pedidoHoraSaidaEntrega,
     titulo: 'Hora de sair pra entrega',
     descricao: 'Quando o tempo restante até o prazo já é só o suficiente pra rodar a rota até o cliente.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.pedidoAgendadoHorario,
+    titulo: 'Pedido agendado: chegou a hora',
+    descricao: 'Quando começa o horário de uma entrega ou retirada agendada.',
   ),
   CategoriaNotificacao(
     chave: TipoNotificacao.pedidoAtrasadoEntrega,
