@@ -127,7 +127,9 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
         subtitle: Text(semModelo
             ? 'Indisponível: falta um modelo de mensagem aprovado pela Meta. O envio manual continua normal.'
             : _envioAutomatico
-                ? 'Ligado: manda sozinho $quando depois que o contato entra na lista. Você ainda pode mandar à mão.'
+                ? (widget.campanha.origemSistema == 'carrinho_abandonado'
+                    ? 'Ligado: manda sozinho $quando depois que o cliente para de mexer no carrinho, a qualquer hora. Você ainda pode mandar à mão.'
+                    : 'Ligado: manda sozinho $quando depois que o contato entra na lista, das 8h às 20h. Você ainda pode mandar à mão.')
                 : 'Desligado: só envio manual.'),
         value: _envioAutomatico,
         onChanged: (semModelo || _salvandoEnvioAutomatico || widget.campanha.arquivada)
