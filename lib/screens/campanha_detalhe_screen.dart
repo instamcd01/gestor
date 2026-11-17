@@ -98,6 +98,45 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
   // comportamento antes dessa tela existir) até carregar o que foi salvo.
   Set<CampoCartaoContato> _camposCartao = CampoCartaoContato.values.toSet();
 
+  late bool _envioAutomatico = widget.campanha.envioAutomatico;
+  bool _salvandoEnvioAutomatico = false;
+
+  Future<void> _alterarEnvioAutomatico(bool ligado) async {
+    setState(() => _salvandoEnvioAutomatico = true);
+    try {
+      await CampanhaAtivacaoRepository().definirEnvioAutomatico(widget.campanha.id, ligado);
+      if (mounted) setState(() => _envioAutomatico = ligado);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não deu pra salvar: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _salvandoEnvioAutomatico = false);
+    }
+  }
+
+  /// Botão do envio automático. Só liga com modelo aprovado na Meta; o envio
+  /// manual (lista abaixo) segue funcionando de qualquer jeito.
+  Widget _cartaoEnvioAutomatico() {
+    final semModelo = widget.campanha.modeloWhatsapp == null;
+    final atraso = widget.campanha.envioAtrasoMinutos;
+    final quando = atraso < 60 ? '$atraso min' : '${(atraso / 60).toStringAsFixed(atraso % 60 == 0 ? 0 : 1)} h';
+    return Card(
+      child: SwitchListTile(
+        title: const Text('Envio automático'),
+        subtitle: Text(semModelo
+            ? 'Indisponível: falta um modelo de mensagem aprovado pela Meta. O envio manual continua normal.'
+            : _envioAutomatico
+                ? 'Ligado: manda sozinho $quando depois que o contato entra na lista. Você ainda pode mandar à mão.'
+                : 'Desligado: só envio manual.'),
+        value: _envioAutomatico,
+        onChanged: (semModelo || _salvandoEnvioAutomatico || widget.campanha.arquivada)
+            ? null
+            : _alterarEnvioAutomatico,
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -675,6 +714,8 @@ class _CampanhaDetalheScreenState extends State<CampanhaDetalheScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
+              _cartaoEnvioAutomatico(),
+              const SizedBox(height: 16),
               FutureBuilder<MetricasCampanha>(
                 future: _futuroMetricas,
                 builder: (context, snapshot) {

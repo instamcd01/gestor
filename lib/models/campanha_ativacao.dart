@@ -16,6 +16,15 @@ class CampanhaAtivacao {
   /// usuário. Usado pra escolher a sugestão de mensagem certa por tipo.
   final String? origemSistema;
 
+  /// Envio automático pelo WhatsApp oficial (modelo aprovado na Meta). O
+  /// envio manual continua funcionando com ele ligado ou desligado.
+  final bool envioAutomatico;
+
+  /// Nome do modelo aprovado na Meta — sem ele o automático não pode ligar
+  /// (constraint no banco).
+  final String? modeloWhatsapp;
+  final int envioAtrasoMinutos;
+
   bool get arquivada => arquivadaEm != null;
 
   CampanhaAtivacao({
@@ -26,6 +35,9 @@ class CampanhaAtivacao {
     this.arquivadaEm,
     this.mensagemPadrao,
     this.origemSistema,
+    this.envioAutomatico = false,
+    this.modeloWhatsapp,
+    this.envioAtrasoMinutos = 60,
   });
 
   factory CampanhaAtivacao.fromSupabase(Map<String, dynamic> row) {
@@ -37,6 +49,9 @@ class CampanhaAtivacao {
       arquivadaEm: row['deleted_at'] != null ? DateTime.parse(row['deleted_at'] as String) : null,
       mensagemPadrao: row['mensagem_padrao'] as String?,
       origemSistema: row['origem_sistema'] as String?,
+      envioAutomatico: row['envio_automatico'] as bool? ?? false,
+      modeloWhatsapp: row['modelo_whatsapp'] as String?,
+      envioAtrasoMinutos: (row['envio_atraso_minutos'] as num?)?.toInt() ?? 60,
     );
   }
 }

@@ -75,6 +75,12 @@ class CampanhaAtivacaoRepository {
     await supabase.from('campanhas_ativacao').update({'mensagem_padrao': mensagem}).eq('id', campanhaId);
   }
 
+  /// Liga/desliga o envio automático. O banco recusa ligar sem modelo
+  /// aprovado (`campanhas_envio_auto_exige_modelo`).
+  Future<void> definirEnvioAutomatico(String campanhaId, bool ligado) async {
+    await supabase.from('campanhas_ativacao').update({'envio_automatico': ligado}).eq('id', campanhaId);
+  }
+
   Future<void> desarquivar(String campanhaId) async {
     await supabase.from('campanhas_ativacao').update({'deleted_at': null}).eq('id', campanhaId);
   }
