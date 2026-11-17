@@ -12,6 +12,7 @@ import '../providers/historico_vendas_provider.dart';
 import '../providers/modulo_provider.dart';
 import '../providers/produto_provider.dart';
 import '../widgets/metric_card.dart';
+import '../widgets/aviso_assinatura_banner.dart';
 import '../widgets/primeiros_passos_card.dart';
 import 'custos_operacao_screen.dart';
 import 'fila_pedidos_screen.dart';
@@ -139,6 +140,7 @@ class _InicioScreenState extends State<InicioScreen> {
                 _botaoVender(context),
                 _bannerPedidosPendentes(context),
                 if (auth.isDono) ...[
+                  const AvisoAssinaturaBanner(),
                   const SizedBox(height: 16),
                   const PrimeirosPassosCard(),
                 ],
