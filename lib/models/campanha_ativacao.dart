@@ -41,8 +41,12 @@ class CampanhaAtivacao {
   }
 }
 
+/// Métricas da campanha (RPC `obter_metricas_campanha`). Desde 17/11 só conta
+/// quem RECEBEU a mensagem e só pedidos não cancelados até 14 dias depois do
+/// envio — antes somava tudo desde a entrada na lista, mesmo sem envio.
 class MetricasCampanha {
   final int totalContatos;
+  final int enviados;
   final int ativados;
   final int comPedido;
   final int recompraram;
@@ -53,8 +57,18 @@ class MetricasCampanha {
   final int pedidosSite;
   final int pedidosWhatsapp;
 
+  /// Grupo de controle (só "Prontos pra recompra"): sorteados pra não
+  /// receber mensagem. A comparação usa só quem já tem 14 dias na lista
+  /// (`*Maduros`), contando a partir da entrada na lista nos dois grupos.
+  final int controleContatos;
+  final int controleComPedido;
+  final int controleMaduros;
+  final int enviadosDesdeEntradaComPedido;
+  final int enviadosMaduros;
+
   MetricasCampanha({
     required this.totalContatos,
+    this.enviados = 0,
     required this.ativados,
     required this.comPedido,
     required this.recompraram,
@@ -64,11 +78,23 @@ class MetricasCampanha {
     required this.favoritosSemCompra,
     required this.pedidosSite,
     required this.pedidosWhatsapp,
+    this.controleContatos = 0,
+    this.controleComPedido = 0,
+    this.controleMaduros = 0,
+    this.enviadosDesdeEntradaComPedido = 0,
+    this.enviadosMaduros = 0,
   });
 
   factory MetricasCampanha.fromSupabase(Map<String, dynamic> row) {
+    int i(String k) => (row[k] as num?)?.toInt() ?? 0;
     return MetricasCampanha(
-      totalContatos: (row['total_contatos'] as num?)?.toInt() ?? 0,
+      totalContatos: i('total_contatos'),
+      enviados: i('enviados'),
+      controleContatos: i('controle_contatos'),
+      controleComPedido: i('controle_com_pedido'),
+      controleMaduros: i('controle_maduros'),
+      enviadosDesdeEntradaComPedido: i('enviados_desde_entrada_com_pedido'),
+      enviadosMaduros: i('enviados_maduros'),
       ativados: (row['ativados'] as num?)?.toInt() ?? 0,
       comPedido: (row['com_pedido'] as num?)?.toInt() ?? 0,
       recompraram: (row['recompraram'] as num?)?.toInt() ?? 0,

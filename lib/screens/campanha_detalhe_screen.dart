@@ -824,19 +824,19 @@ class _PainelMetricas extends StatelessWidget {
       spacing: 12,
       runSpacing: 12,
       children: [
-        _Metrica('Contatos', '${m.totalContatos}'),
+        _Metrica('Receberam', '${m.enviados} de ${m.totalContatos}'),
         _Metrica(
-          'Ativaram',
-          '${m.ativados} (${_pct(m.ativados, m.totalContatos)})',
+          'Têm conta no site',
+          '${m.ativados} (${_pct(m.ativados, m.enviados)})',
           onTap: () => onAbrirLista(
-            titulo: 'Ativaram',
-            filtro: (c) => c.ativou,
+            titulo: 'Têm conta no site',
+            filtro: (c) => c.ativou && c.enviado,
             subtitulo: (c) => c.telefone,
           ),
         ),
         _Metrica(
-          'Fizeram pedido',
-          '${m.comPedido} (${_pct(m.comPedido, m.ativados)})',
+          'Compraram em 14 dias',
+          '${m.comPedido} (${_pct(m.comPedido, m.enviados)})',
           onTap: () => onAbrirLista(
             titulo: 'Fizeram pedido',
             filtro: (c) => c.qtdPedidos > 0,
@@ -852,7 +852,15 @@ class _PainelMetricas extends StatelessWidget {
             subtitulo: _subtituloPedidos,
           ),
         ),
-        _Metrica('Valor gerado', _formatarReais(m.valorTotal)),
+        _Metrica('Vendido em 14 dias', _formatarReais(m.valorTotal)),
+        if (m.controleContatos > 0)
+          _Metrica(
+            'Com × sem mensagem',
+            m.controleMaduros < 10
+                ? 'Aguardando (${m.controleContatos} sem msg)'
+                : '${_pct(m.enviadosDesdeEntradaComPedido, m.enviadosMaduros)} × '
+                    '${_pct(m.controleComPedido, m.controleMaduros)}',
+          ),
         _Metrica('Ticket médio', _formatarReais(m.ticketMedio)),
         _Metrica(
           'Carrinho abandonado',
