@@ -135,12 +135,14 @@ class _ConfigAutomacoesWhatsappScreenState extends State<ConfigAutomacoesWhatsap
             FormSection(
               titulo: 'Recompra e retenção',
               children: [
-                SwitchListTile(
+                // 17/11: o envio automático do carrinho passou pro botão
+                // "Envio automático" dentro da campanha "Carrinhos
+                // abandonados" (robô n8n 5KnFu697UuatkvmI). A coluna antiga
+                // segue sendo salva, mas nada mais lê.
+                const ListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('Carrinho abandonado'),
-                  subtitle: const Text('Cliente deixou itens no carrinho e sumiu — lembra dele algumas horas depois.'),
-                  value: _carrinhoAbandonado,
-                  onChanged: (v) => setState(() => _carrinhoAbandonado = v),
+                  title: Text('Carrinho abandonado'),
+                  subtitle: Text('Agora fica em Clientes → Campanhas → Carrinhos abandonados → "Envio automático".'),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
