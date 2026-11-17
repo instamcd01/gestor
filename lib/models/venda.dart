@@ -597,6 +597,9 @@ class Venda {
   /// fechada, entregue já saiu, e iFood/99Food só o marketplace altera.
   bool get podeEditarItens =>
       emAndamento && !ehMarketplace && canalVenda != '99food' && canalVenda != 'kyte_historico' && idVenda != null;
+  /// Agendar/mudar horário depois de criado (cliente pediu pra receber ou
+  /// retirar mais tarde) — iFood/99Food o horário é da plataforma.
+  bool get podeReagendar => emAndamento && !ehPlataformaDelivery && idVenda != null;
   bool get temRastreio => rastreioLatitude != null && rastreioLongitude != null;
 
   /// true = cliente retira na loja (não precisa entrar em rota nenhuma).

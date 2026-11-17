@@ -24,6 +24,7 @@ import 'cliente_detalhes_screen.dart';
 import 'editar_pedido_screen.dart';
 import 'recibo_screen.dart';
 import 'separacao_pedido_screen.dart';
+import '../widgets/reagendar_pedido_dialog.dart';
 
 class VendaDetalhesScreen extends StatefulWidget {
   final Venda venda;
@@ -544,6 +545,14 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     setState(() => _venda = atualizada);
   }
 
+  /// Agendar/mudar horário depois de criado — recarrega pra mostrar a janela nova.
+  Future<void> _reagendar() async {
+    if (_venda.idVenda == null || !await reagendarPedido(context, _venda) || !mounted) return;
+    final atualizada = await VendaRepository().buscarPorId(_venda.idVenda!);
+    if (!mounted) return;
+    setState(() => _venda = atualizada);
+  }
+
   /// Editar itens (faltou produto, cliente trocou): salva, devolve a
   /// diferença no Mercado Pago se foi pago online e oferece avisar o
   /// cliente com a lista nova.
@@ -682,6 +691,12 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               icon: const Icon(Icons.edit_note),
               tooltip: 'Editar itens do pedido',
               onPressed: _processando ? null : _editarPedido,
+            ),
+          if (venda.podeReagendar)
+            IconButton(
+              icon: const Icon(Icons.event_outlined),
+              tooltip: venda.agendadoManualmente ? 'Mudar horário' : 'Agendar entrega/retirada',
+              onPressed: _processando ? null : _reagendar,
             ),
           if (venda.temEntrega && !cancelada)
             IconButton(

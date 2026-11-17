@@ -23,6 +23,7 @@ import '../utils/app_destinos.dart';
 import 'alterar_forma_pagamento_screen.dart';
 import 'separacao_pedido_screen.dart';
 import 'venda_detalhes_screen.dart';
+import '../widgets/reagendar_pedido_dialog.dart';
 
 /// Urgência do pedido em relação à previsão de entrega calculada pela
 /// LOJA (zona escolhida no checkout + faixa de minutos configurada nela —
@@ -859,6 +860,12 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
           ),
           icon: const Icon(Icons.payments_outlined, size: 18),
           label: const Text('Forma de pagamento'),
+        ),
+      if (venda.podeReagendar)
+        OutlinedButton.icon(
+          onPressed: () => reagendarPedido(context, venda),
+          icon: const Icon(Icons.event_outlined, size: 18),
+          label: Text(venda.agendadoManualmente ? 'Mudar horário' : 'Agendar'),
         ),
       if (venda.proximoStatus != null)
         FilledButton.icon(

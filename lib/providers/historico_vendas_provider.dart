@@ -275,6 +275,12 @@ class HistoricoVendasProvider with ChangeNotifier {
     await _recarregarPedidos([idVenda]);
   }
 
+  /// Agenda/muda o horário de um pedido já criado — ver `VendaRepository.reagendar`.
+  Future<void> reagendarPedido(String idVenda, DateTime inicio, DateTime fim) async {
+    await _repository.reagendar(idVenda, inicio, fim);
+    await _recarregarPedidos([idVenda]);
+  }
+
   /// Troca forma de pagamento (e parcelas) de uma venda já registrada —
   /// ver `VendaRepository.alterarFormaPagamento`.
   Future<void> alterarFormaPagamento(

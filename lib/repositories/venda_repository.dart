@@ -218,6 +218,17 @@ class VendaRepository {
     await supabase.from('pedidos').update({'status': novoStatus}).eq('id', idVenda);
   }
 
+  /// Agenda (ou muda o horário de) um pedido já criado — cliente pediu pra
+  /// receber/retirar mais tarde. Regras no banco (`reagendar_pedido`): só
+  /// pedido em andamento e de canal próprio.
+  Future<void> reagendar(String idVenda, DateTime inicio, DateTime fim) async {
+    await supabase.rpc('reagendar_pedido', params: {
+      'p_pedido_id': idVenda,
+      'p_inicio': inicio.toUtc().toIso8601String(),
+      'p_fim': fim.toUtc().toIso8601String(),
+    });
+  }
+
   /// Troca a forma de pagamento (e parcelas, se for cartão de crédito) de
   /// uma venda de balcão já registrada — caso real: cliente falou "débito"
   /// na hora de montar o pedido mas na entrega paga com Pix, ou pede pra
