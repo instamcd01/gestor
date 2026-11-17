@@ -2,6 +2,7 @@
 /// `trigger_notificacao_estoque_baixo`, `job_notificacao_pedido_parado`,
 /// `job_notificacao_despesa_vencendo`, `trigger_notificacao_avaliacao_disputa_sync`,
 /// `notificar_pedidos_atrasados_entrega`, `notifica_hora_de_sair_para_entrega`,
+/// `notificar_pedidos_agendados_horario` (15 min antes e no início da janela),
 /// `notificar_balanco_acoes_estoque_parado` (cron diário, 14 e 30 dias),
 /// `notificar_carrinhos_abandonados`, `notificar_disputas_proximas_do_prazo`
 /// — cron `*/5 * * * *`, `trigger_notificacao_nfe_pendente` em
@@ -27,6 +28,7 @@ class TipoNotificacao {
   static const pedidoAtrasadoEntrega = 'pedido_atrasado_entrega';
   static const pedidoHoraSaidaEntrega = 'pedido_hora_saida_entrega';
   static const pedidoAgendadoHorario = 'pedido_agendado_horario'; // cron notificar_pedidos_agendados_horario, todo minuto
+  static const pedidoAgendadoEmBreve = 'pedido_agendado_em_breve'; // mesmo cron, 15 min antes do início
   static const carrinhoAbandonado = 'carrinho_abandonado';
   static const clienteAtivoNoSite = 'cliente_ativo_no_site';
   static const erroSistema = 'erro_sistema';
@@ -79,6 +81,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.pedidoHoraSaidaEntrega,
     titulo: 'Hora de sair pra entrega',
     descricao: 'Quando o tempo restante até o prazo já é só o suficiente pra rodar a rota até o cliente.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.pedidoAgendadoEmBreve,
+    titulo: 'Pedido agendado: faltam 15 min',
+    descricao: 'Aviso pra separar e preparar a saída antes do horário de uma entrega ou retirada agendada.',
   ),
   CategoriaNotificacao(
     chave: TipoNotificacao.pedidoAgendadoHorario,

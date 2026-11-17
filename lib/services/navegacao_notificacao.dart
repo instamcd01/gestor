@@ -35,6 +35,7 @@ Widget? _telaRelacionada(String tipo) {
     case TipoNotificacao.pedidoParado:
     case TipoNotificacao.pedidoHoraSaidaEntrega:
     case TipoNotificacao.pedidoAgendadoHorario:
+    case TipoNotificacao.pedidoAgendadoEmBreve:
     case TipoNotificacao.pedidoAtrasadoEntrega:
       return const FilaPedidosScreen();
     case TipoNotificacao.despesaVencendo:
