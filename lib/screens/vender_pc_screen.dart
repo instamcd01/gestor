@@ -1485,7 +1485,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 cliente == null
                     ? 'Entrega'
                     : (carrinho.zonaEntregaSelecionada == null
-                        ? 'Retirada na loja'
+                        ? (carrinho.balcao ? 'Balcão' : 'Retirada na loja')
                         : 'Entrega · ${carrinho.zonaEntregaSelecionada!.nome}'),
                 cliente == null
                     ? 'A calcular'
@@ -1652,10 +1652,13 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                 !retirada,
                 () => retirada ? resolverZonaEntregaParaCliente(context, cliente, carrinho) : null,
               ),
-              _pilula(colorScheme, 'Retirar na loja', retirada, () => carrinho.selecionarZonaEntrega(null)),
-              _pilula(colorScheme, 'Quero agora', agendamento == null, () => carrinho.selecionarAgendamento(null)),
-              _pilula(colorScheme, agendamento == null ? 'Agendar' : 'Agendado · ${agendamento.label}',
-                  agendamento != null, _escolherCliente),
+              _pilula(colorScheme, 'Retirada', carrinho.retiradaPosterior, carrinho.selecionarRetirada),
+              _pilula(colorScheme, 'Balcão', carrinho.balcao, carrinho.selecionarBalcao),
+              if (!carrinho.balcao) ...[
+                _pilula(colorScheme, 'Quero agora', agendamento == null, () => carrinho.selecionarAgendamento(null)),
+                _pilula(colorScheme, agendamento == null ? 'Agendar' : 'Agendado · ${agendamento.label}',
+                    agendamento != null, _escolherCliente),
+              ],
               if (cliente.saldo > 0)
                 Text('Saldo R\$ ${_moeda(cliente.saldo)}',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _verde)),
@@ -1886,7 +1889,11 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     final total = _aPagar(carrinho);
     final metodos = _metodosAtivos();
     final modalidade = carrinho.zonaEntregaSelecionada == null
-        ? 'retira na loja'
+        ? (carrinho.balcao
+            ? 'balcão, leva agora'
+            : (carrinho.agendamentoSelecionado == null
+                ? 'retira na loja'
+                : 'retira ${carrinho.agendamentoSelecionado!.label}'))
         : (carrinho.agendamentoSelecionado == null
             ? 'entrega agora'
             : 'entrega ${carrinho.agendamentoSelecionado!.label}');

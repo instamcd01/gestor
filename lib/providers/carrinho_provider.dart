@@ -64,6 +64,9 @@ class CarrinhoProvider with ChangeNotifier {
   bool _validandoCupom = false;
   String? _erroCupom;
   JanelaHorarioAgendamento? _agendamentoSelecionado; // null = "quero agora" (previsão automática)
+  // Sem zona de entrega: true = balcão (cliente leva na hora, não entra na
+  // Fila), false = retirada (cliente vem buscar depois, passa pela Fila).
+  bool _balcao = true;
 
   // Getters
   List<ItemCarrinho> get itens => [..._itens]; // Retorna uma cópia para evitar modificação externa
@@ -74,6 +77,12 @@ class CarrinhoProvider with ChangeNotifier {
   bool get validandoCupom => _validandoCupom;
   String? get erroCupom => _erroCupom;
   JanelaHorarioAgendamento? get agendamentoSelecionado => _agendamentoSelecionado;
+
+  /// Venda de balcão: sem entrega e marcada como balcão (o padrão).
+  bool get balcao => _zonaSelecionada == null && _balcao;
+
+  /// Sem entrega e não é balcão: cliente vem buscar depois.
+  bool get retiradaPosterior => _zonaSelecionada == null && !_balcao;
 
   /// Nome pra exibição/registro da venda — mantém esse getter (usado em
   /// vários lugares como rótulo descritivo) mesmo não sendo mais um ID
@@ -356,6 +365,30 @@ class CarrinhoProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Balcão (cliente leva na hora) — sem entrega e sem agendamento, que não
+  /// fazem sentido pra quem já está levando o produto.
+  void selecionarBalcao() {
+    _zonaSelecionada = null;
+    _agendamentoSelecionado = null;
+    _balcao = true;
+    notifyListeners();
+  }
+
+  /// Retirada: sem entrega, cliente vem buscar depois (passa pela Fila).
+  void selecionarRetirada() {
+    _zonaSelecionada = null;
+    _balcao = false;
+    notifyListeners();
+  }
+
+  /// Aplica o que veio da tela de Entrega: zona (entrega) ou, sem zona,
+  /// balcão/retirada.
+  void definirSemEntregaComoBalcao(bool balcao) {
+    _balcao = balcao;
+    if (balcao) _agendamentoSelecionado = null;
+    notifyListeners();
+  }
+
   void selecionarCliente(Cliente cliente) {
     _clienteSelecionado = cliente;
     notifyListeners();
@@ -378,6 +411,7 @@ class CarrinhoProvider with ChangeNotifier {
     _cupomAplicado = null;
     _erroCupom = null;
     _agendamentoSelecionado = null;
+    _balcao = true;
     notifyListeners();
   }
 }

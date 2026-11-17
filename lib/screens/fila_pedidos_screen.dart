@@ -36,9 +36,9 @@ enum _Urgencia { neutro, atencao, atrasado }
 /// (pendente/em preparo/saiu para entrega) — Concluídos/Cancelados são
 /// filtros à parte, escondidos por padrão pra não confundir com o que
 /// ainda precisa de ação, e só trazem pedidos de hoje (não é histórico
-/// completo, esse já existe em Histórico de Vendas). Vendas de balcão sem
-/// entrega não entram na fila em andamento — já nascem como entregues,
-/// ver `VendaRepository.registrar`.
+/// completo, esse já existe em Histórico de Vendas). Vendas de balcão
+/// (cliente leva na hora) não entram na fila — nascem entregues; retirada
+/// (vem buscar depois) entra. Ver `VendaRepository.registrar`.
 class FilaPedidosScreen extends StatefulWidget {
   const FilaPedidosScreen({super.key});
 
@@ -772,7 +772,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Tooltip(
-                  message: StatusPedido.rotulo(etapas[i]),
+                  message: StatusPedido.rotulo(etapas[i], retirada: !venda.temEntrega),
                   child: Container(
                   width: 24,
                   height: 24,
@@ -798,7 +798,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                 if (!estreito || agora) ...[
                   const SizedBox(width: 7),
                   Text(
-                    StatusPedido.rotulo(etapas[i]),
+                    StatusPedido.rotulo(etapas[i], retirada: !venda.temEntrega),
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: agora ? FontWeight.w700 : FontWeight.w400,
@@ -864,7 +864,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
         FilledButton.icon(
           onPressed: () => _avancarStatus(venda),
           icon: const Icon(Icons.arrow_forward, size: 18),
-          label: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!)}  ·  Enter'),
+          label: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!, retirada: !venda.temEntrega)}  ·  Enter'),
         ),
     ];
 
@@ -1648,7 +1648,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                           borderRadius: BorderRadius.circular(12),
                                         ),
                                         child: Text(
-                                          StatusPedido.rotulo(venda.status),
+                                          StatusPedido.rotulo(venda.status, retirada: !venda.temEntrega),
                                           style: TextStyle(
                                             color: _corStatus(venda.status),
                                             fontWeight: FontWeight.bold,
@@ -1743,7 +1743,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                     if (venda.proximoStatus != null)
                                       ElevatedButton(
                                         onPressed: () => _avancarStatus(venda),
-                                        child: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!)}'),
+                                        child: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!, retirada: !venda.temEntrega)}'),
                                       ),
                                   ];
 

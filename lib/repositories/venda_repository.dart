@@ -95,21 +95,21 @@ class VendaRepository {
     final lucroTotal = venda.itens.fold<double>(0, (soma, i) => soma + i.lucroTotal);
     final margemPercentual = venda.valorTotal > 0 ? (lucroTotal / venda.valorTotal * 100) : 0.0;
 
-    // Venda de balcão já sai como entregue: o cliente leva o produto na hora.
-    // Entrega e retirada agendada passam pela Fila de Pedidos. Mesmo o balcão
-    // nasce pendente e avança logo depois do insert: lucro real e intervalo de
-    // recompra só são calculados por trigger de UPDATE do status.
-    final vendaDeBalcao = !venda.temEntrega && !venda.agendadoManualmente;
+    // Só a venda de BALCÃO já sai como entregue: o cliente está na loja e
+    // leva o produto na hora. Retirada (cliente vem buscar depois, ex: pediu
+    // pelo WhatsApp) e entrega passam pela Fila de Pedidos — até 17/11 toda
+    // retirada "quero agora" nascia entregue e sumia da Fila (pedido 11225).
+    // Mesmo o balcão nasce pendente e avança logo depois do insert: lucro
+    // real e intervalo de recompra só são calculados por trigger de UPDATE
+    // do status.
+    final vendaDeBalcao = venda.balcao && !venda.temEntrega && !venda.agendadoManualmente;
 
     // Preencher a forma de pagamento na tela não significa que o dinheiro
-    // já entrou — o app serve tanto de PDV (balcão/retirada, cobrado na
-    // hora) quanto pra montar pedido de entrega (pagamento normalmente só
-    // acontece quando o entregador chega). `venda.retirada` distingue os
-    // dois casos. Pra entrega de
-    // verdade, o pagamento é confirmado automaticamente pelo banco no
-    // momento em que o pedido é marcado como entregue (trigger
-    // `confirmar_pagamento_entrega_loja_fisica`), não aqui.
-    final statusPagamentoInicial = venda.retirada ? 'pago' : 'pendente';
+    // já entrou — só no balcão ele é cobrado na hora. Retirada e entrega
+    // ficam pendentes e são confirmadas pelo banco quando o pedido é marcado
+    // como entregue (trigger `confirmar_pagamento_entrega_loja_fisica`).
+    final statusPagamentoInicial = vendaDeBalcao ? 'pago' : 'pendente';
+    final modalidade = vendaDeBalcao ? 'balcao' : (venda.temEntrega ? 'entrega' : 'retirada');
 
     final itensPayload = venda.itens.map((item) {
       final margemItem = item.precoUnitario > 0
@@ -169,6 +169,7 @@ class VendaRepository {
           'troco': venda.troco,
           'saldoUsado': venda.saldoUsado,
           'entregaSelecionada': venda.entregaSelecionada,
+          'modalidade': modalidade,
           'pagamentosDetalhados': venda.pagamentosDetalhados,
           if (venda.agendadoManualmente) 'agendado': true,
           if (venda.parcelasCartao != null && venda.parcelasCartao! > 1) 'parcelas': venda.parcelasCartao,
@@ -204,6 +205,8 @@ class VendaRepository {
       dataVenda: DateTime.tryParse(pedidoInserido['created_at'].toString())?.toLocal() ?? DateTime.now(),
       lucroTotal: lucroTotal,
       status: statusFinal,
+      statusPagamento: statusPagamentoInicial,
+      balcao: vendaDeBalcao,
       canalVenda: pedidoInserido['canal_venda']?.toString() ?? 'loja_fisica',
       vendedorId: pedidoInserido['vendedor_id'] as String?,
     );
@@ -555,6 +558,7 @@ class VendaRepository {
       previsaoEntregaInicio: DateTime.tryParse(row['previsao_entrega_inicio']?.toString() ?? '')?.toLocal(),
       previsaoEntregaFim: DateTime.tryParse(row['previsao_entrega_fim']?.toString() ?? '')?.toLocal(),
       modalidadeEntrega: metadata['modalidadeEntrega']?.toString(),
+      balcao: metadata['modalidade'] == 'balcao',
     );
   }
 }

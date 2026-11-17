@@ -837,7 +837,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   child: FilledButton.icon(
                     onPressed: _processando ? null : _avancarStatus,
                     icon: const Icon(Icons.arrow_forward),
-                    label: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!)}'),
+                    label: Text('Marcar: ${StatusPedido.rotulo(venda.proximoStatus!, retirada: !venda.temEntrega)}'),
                   ),
                 ),
               ),

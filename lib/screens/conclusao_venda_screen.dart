@@ -5,6 +5,7 @@ import '../models/cliente.dart';
 import '../models/produto.dart';
 import '../models/venda.dart';
 import '../models/zona_entrega.dart';
+import '../providers/auth_provider.dart';
 import '../providers/carrinho_provider.dart';
 import '../providers/produto_provider.dart';
 import '../providers/historico_vendas_provider.dart';
@@ -61,14 +62,22 @@ Future<Venda> registrarVendaDoCheckout(
   final totalItens = itensVenda.fold<int>(0, (soma, i) => soma + i.quantidade);
   final dataVenda = DateTime.now();
 
+  final balcao = zonaEntrega == null && agendamento == null && carrinhoProvider.balcao;
+
   // Previsão automática: zona escolhida no checkout + faixa de minutos
   // configurada nela, ancorada no exato momento do pedido — só quando
-  // a zona tem faixa configurada (não é obrigatório). Sobrescrita pela
-  // janela explícita quando o vendedor agendou (tela de Entrega).
-  final previsaoInicio = agendamento?.inicio ??
+  // a zona tem faixa configurada (não é obrigatório). Retirada imediata usa
+  // o prazo de retirada da loja (o mesmo do site). Sobrescrita pela janela
+  // explícita quando o vendedor agendou (tela de Entrega).
+  DateTime? previsaoInicio = agendamento?.inicio ??
       (zonaEntrega?.estimativaMinMin != null ? dataVenda.add(Duration(minutes: zonaEntrega!.estimativaMinMin!)) : null);
-  final previsaoFim = agendamento?.fim ??
+  DateTime? previsaoFim = agendamento?.fim ??
       (zonaEntrega?.estimativaMinMax != null ? dataVenda.add(Duration(minutes: zonaEntrega!.estimativaMinMax!)) : null);
+  if (zonaEntrega == null && agendamento == null && !balcao) {
+    final prazoMax = await _prazoRetiradaMin(context);
+    previsaoInicio = dataVenda.add(Duration(minutes: (prazoMax - 10).clamp(0, prazoMax)));
+    previsaoFim = dataVenda.add(Duration(minutes: prazoMax));
+  }
 
   final venda = Venda(
     cliente: cliente,
@@ -93,6 +102,7 @@ Future<Venda> registrarVendaDoCheckout(
     agendadoManualmente: agendamento != null,
     parcelasCartao: parcelasCartao,
     jurosParcelamento: jurosParcelamento,
+    balcao: balcao,
   );
 
   final vendaRegistrada = await historicoProvider.registrarVenda(venda);
@@ -102,6 +112,27 @@ Future<Venda> registrarVendaDoCheckout(
   // mesmo erro de estoque negativo na tentativa seguinte.
   carrinhoProvider.limparCarrinho();
   return vendaRegistrada;
+}
+
+/// Prazo de retirada da loja em minutos (`empresas.retirada_prazo_min`, o
+/// mesmo do site, em Catálogo Online). Sem prazo configurado ou sem rede:
+/// 30 min — a retirada nunca fica sem previsão na Fila.
+Future<int> _prazoRetiradaMin(BuildContext context) async {
+  const padrao = 30;
+  final empresaId = context.read<AuthProvider>().empresaId;
+  if (empresaId == null) return padrao;
+  try {
+    final data = await Supabase.instance.client
+        .from('empresas')
+        .select('retirada_prazo_min')
+        .eq('id', empresaId)
+        .single();
+    final prazo = (data['retirada_prazo_min'] as num?)?.toInt();
+    return prazo != null && prazo > 0 ? prazo : padrao;
+  } catch (e) {
+    debugPrint('Prazo de retirada não carregado: $e');
+    return padrao;
+  }
 }
 
 class ConclusaoVendaScreen extends StatefulWidget {

@@ -28,7 +28,12 @@ class OpcaoEntregaScreen extends StatefulWidget {
   /// Já abre com este cliente escolhido (ex: "Nova venda" na ficha do cliente).
   final Cliente? clienteInicial;
 
-  const OpcaoEntregaScreen({super.key, required this.subtotal, this.clienteInicial});
+  /// 'entrega' (padrão), 'retirada' ou 'balcao' — abre já na modalidade que
+  /// a venda tem (ex: "Agendar" no PC com a venda marcada como retirada).
+  final String modoInicial;
+
+  const OpcaoEntregaScreen(
+      {super.key, required this.subtotal, this.clienteInicial, this.modoInicial = 'entrega'});
 
   @override
   State<OpcaoEntregaScreen> createState() => _OpcaoEntregaScreenState();
@@ -49,7 +54,10 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
   List<Cliente> _clientesKyteFiltrados = [];
   String? _promovendoKyteId;
 
-  bool _retirarNaLoja = false;
+  // 'entrega' | 'retirada' (vem buscar depois, passa pela Fila) | 'balcao'
+  // (leva na hora, nasce entregue).
+  late String _modo = widget.modoInicial;
+  bool get _retirarNaLoja => _modo != 'entrega';
   double? _distanciaKm;
   int? _estimativaMin;
   bool _calculandoDistancia = false;
@@ -308,7 +316,7 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
 
   bool get _podeConfirmar {
     if (_clienteSelecionado == null) return false;
-    if (_agendando && _janelaEscolhida == null) return false;
+    if (_modo != 'balcao' && _agendando && _janelaEscolhida == null) return false;
     if (_retirarNaLoja) return true;
     return _zonaEncontrada != null;
   }
@@ -318,7 +326,8 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
     Navigator.pop(context, {
       'cliente': _clienteSelecionado,
       'zona': _retirarNaLoja ? null : _zonaEncontrada,
-      'agendamento': _agendando ? _janelaEscolhida : null,
+      'agendamento': _modo != 'balcao' && _agendando ? _janelaEscolhida : null,
+      'balcao': _modo == 'balcao',
     });
   }
 
@@ -460,16 +469,35 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
 
               if (_clienteSelecionado != null) ...[
                 const Divider(),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Cliente vai retirar na loja'),
-                  subtitle: const Text('Sem cobrança de entrega'),
-                  value: _retirarNaLoja,
-                  onChanged: (v) => setState(() => _retirarNaLoja = v),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'entrega', label: Text('Entrega'), icon: Icon(Icons.delivery_dining)),
+                      ButtonSegment(value: 'retirada', label: Text('Retirada'), icon: Icon(Icons.storefront)),
+                      ButtonSegment(value: 'balcao', label: Text('Balcão'), icon: Icon(Icons.point_of_sale)),
+                    ],
+                    selected: {_modo},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => setState(() => _modo = s.first),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    switch (_modo) {
+                      'retirada' => 'Cliente vem buscar depois — entra na Fila pra separar.',
+                      'balcao' => 'Cliente está na loja e leva na hora — venda já sai concluída.',
+                      _ => 'Levamos até o cliente.',
+                    },
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
                 ),
                 if (!_retirarNaLoja) _buildResumoEntrega(),
-                const Divider(),
-                _buildAgendamento(),
+                if (_modo != 'balcao') ...[
+                  const Divider(),
+                  _buildAgendamento(),
+                ],
               ],
 
               const SizedBox(height: 24),
@@ -527,7 +555,7 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
                       _janelaEscolhida = null;
                     }),
                   ),
-                  if (estimativaMin != null && estimativaMax != null)
+                  if (_modo == 'entrega' && estimativaMin != null && estimativaMax != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 4, left: 4),
                       child: Text(

@@ -70,7 +70,11 @@ Future<void> resolverZonaEntregaParaCliente(
 /// a tela toda (a venda continua visível atrás).
 Future<void> escolherClienteEEntrega(BuildContext context, CarrinhoProvider carrinhoProvider,
     {bool comoJanela = false, Cliente? clienteInicial}) async {
-  final tela = OpcaoEntregaScreen(subtotal: carrinhoProvider.subtotal, clienteInicial: clienteInicial);
+  final tela = OpcaoEntregaScreen(
+    subtotal: carrinhoProvider.subtotal,
+    clienteInicial: clienteInicial,
+    modoInicial: carrinhoProvider.retiradaPosterior ? 'retirada' : 'entrega',
+  );
   final resultado = comoJanela
       ? await showDialog(
           context: context,
@@ -92,6 +96,7 @@ Future<void> escolherClienteEEntrega(BuildContext context, CarrinhoProvider carr
   carrinhoProvider.selecionarCliente(cliente);
   carrinhoProvider.selecionarZonaEntrega(zona);
   carrinhoProvider.selecionarAgendamento(agendamento);
+  carrinhoProvider.definirSemEntregaComoBalcao(resultado['balcao'] == true);
   if (cliente.idCliente == null || !context.mounted) return;
 
   // Se o cliente já tem algo no carrinho compartilhado, mescla com o que
@@ -341,7 +346,9 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                   carrinhoProvider.clienteSelecionado == null
                       ? 'A calcular'
                       : (carrinhoProvider.valorEntregaCalculado == 0
-                          ? (carrinhoProvider.zonaEntregaSelecionada == null ? 'Retirada na loja' : 'Frete Grátis')
+                          ? (carrinhoProvider.zonaEntregaSelecionada == null
+                              ? (carrinhoProvider.balcao ? 'Balcão (leva agora)' : 'Retirada na loja')
+                              : 'Frete Grátis')
                           : 'R\$ ${carrinhoProvider.valorEntregaCalculado.toStringAsFixed(2)}'),
                   cor: carrinhoProvider.clienteSelecionado != null &&
                           carrinhoProvider.zonaEntregaSelecionada != null &&

@@ -16,7 +16,9 @@ class StatusPedido {
 
   static const emAndamento = [pendente, preparando, pronto, saiuParaEntrega];
 
-  static String rotulo(String status) {
+  /// `retirada`: pedido sem entrega — "Pronto" vira "Pronto pra retirar",
+  /// que é o que a equipe precisa saber (o cliente vem buscar).
+  static String rotulo(String status, {bool retirada = false}) {
     switch (status) {
       case aguardandoPagamento:
         return 'Aguardando pagamento';
@@ -25,7 +27,7 @@ class StatusPedido {
       case preparando:
         return 'Em preparo';
       case pronto:
-        return 'Pronto';
+        return retirada ? 'Pronto pra retirar' : 'Pronto';
       case saiuParaEntrega:
         return 'Saiu para entrega';
       case entregue:
@@ -142,6 +144,13 @@ class Venda {
   /// imediato — nesse caso trata-se como 'expressa' (ver `Venda.modalidade`).
   final String? modalidadeEntrega;
 
+  /// Venda de balcão: o cliente está na loja e leva o produto na hora —
+  /// nasce entregue e paga, não entra na Fila. Retirada (cliente vem buscar
+  /// depois, ex: pediu pelo WhatsApp) também não tem entrega, mas passa pela
+  /// Fila com prazo de separação. Gravado em `metadata.modalidade` ('balcao'/
+  /// 'retirada'/'entrega'); vendas anteriores a 17/11 não têm a chave.
+  final bool balcao;
+
   Venda({
     this.idVenda,
     this.numeroSequencial,
@@ -222,6 +231,7 @@ class Venda {
     this.previsaoEntregaInicio,
     this.previsaoEntregaFim,
     this.modalidadeEntrega,
+    this.balcao = false,
   });
 
   /// Sempre usar isso pra atualizar campos localmente (ex: status após
@@ -312,6 +322,7 @@ class Venda {
     DateTime? previsaoEntregaInicio,
     DateTime? previsaoEntregaFim,
     String? modalidadeEntrega,
+    bool? balcao,
   }) {
     return Venda(
       idVenda: idVenda ?? this.idVenda,
@@ -393,6 +404,7 @@ class Venda {
       previsaoEntregaInicio: previsaoEntregaInicio ?? this.previsaoEntregaInicio,
       previsaoEntregaFim: previsaoEntregaFim ?? this.previsaoEntregaFim,
       modalidadeEntrega: modalidadeEntrega ?? this.modalidadeEntrega,
+      balcao: balcao ?? this.balcao,
     );
   }
 

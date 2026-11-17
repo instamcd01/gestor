@@ -227,6 +227,7 @@ class _PagamentoScreenState extends State<PagamentoScreen> {
     context.read<CarrinhoProvider>().selecionarCliente(novoCliente);
     context.read<CarrinhoProvider>().selecionarZonaEntrega(novaZona);
     context.read<CarrinhoProvider>().selecionarAgendamento(novoAgendamento);
+    context.read<CarrinhoProvider>().definirSemEntregaComoBalcao(resultado['balcao'] == true);
   }
 
   double _calcularValorEntrega(ZonaEntrega? zona) {
