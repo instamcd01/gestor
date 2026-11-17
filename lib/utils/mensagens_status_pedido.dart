@@ -105,15 +105,38 @@ String? mensagemPadraoStatus(Venda venda, String status, {String? nomeLoja}) {
 }
 
 /// Pedido de avaliação no Google — enviado DEPOIS que o cliente responde a
-/// mensagem de "Entregue" (texto aprovado pelo usuário 02/10). Vai pra todo
-/// cliente que responder, não só pros que elogiaram: o Google proíbe pedir
-/// avaliação de forma seletiva ("review gating").
-String mensagemPedidoAvaliacaoGoogle(String link) => [
-      'Ahh que bom! Fiquei muito feliz de ler isso 🥰\n'
-          'Vou mostrar seu recado pro pessoal aqui, eles vão amar',
-      'Consegue deixar esse carinho no Google também? É rapidinho 🙏🏼\n$link',
-      'Muito obrigada! ❤️',
+/// mensagem de "Entregue". Vai pra todo cliente que responder, não só pros
+/// que elogiaram: o Google proíbe pedir avaliação de forma seletiva ("review
+/// gating"). 17/11: mesmo texto de gratidão do automático
+/// (`pedido_resposta_entregue` no banco, que manda em 3 balões) — agradece,
+/// dá o propósito (ajudar outros tutores do bairro), pede como pergunta com
+/// esforço baixo e o link sozinho no fim. [pet] = "cãozinho", "gatinho" ou
+/// "pet" (ver [palavraPetDoPedido]).
+String mensagemPedidoAvaliacaoGoogle(String link, {String pet = 'pet'}) => [
+      'Ahh, que alegria ler isso! 🥰\n\n'
+          'Obrigada de coração por confiar na gente pra cuidar do seu $pet 🐾',
+      'Sabe o que ajuda muito outros tutores aqui do bairro a escolherem onde comprar? '
+          'Ler a experiência de quem já comprou com a gente 💛',
+      'Você toparia contar no Google como foi? *Uma frase já basta*, pode ser sobre '
+          'a entrega, o atendimento ou o que você quiser ⭐',
+      '👉 $link',
     ].join('\n\n');
+
+/// "cãozinho" se o pedido só tem produto de cachorro, "gatinho" se só de
+/// gato, "pet" se misturar ou não der pra saber — mesma regra do banco.
+String palavraPetDoPedido(Iterable<String?> especies) {
+  var cao = false, gato = false;
+  for (final e in especies) {
+    final s = (e ?? '').toLowerCase();
+    final temGato = s.contains('gat');
+    final temCao = s.startsWith('cã') || s.startsWith('ca');
+    if (temCao && !temGato) cao = true;
+    if (s.startsWith('gat') && !temCao) gato = true;
+  }
+  if (cao && !gato) return 'cãozinho';
+  if (gato && !cao) return 'gatinho';
+  return 'pet';
+}
 
 /// Aviso de pedido editado depois de recebido (`EditarPedidoScreen`): a
 /// lista como ficou e o total novo. Sem pedir desculpa nem explicar

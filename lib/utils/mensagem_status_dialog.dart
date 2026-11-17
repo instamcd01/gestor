@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 
 import '../config/supabase_config.dart';
 import '../models/venda.dart';
@@ -23,20 +24,24 @@ import 'telefone_utils.dart';
 Future<void> enviarMensagemStatusWhatsApp(BuildContext context, Venda venda, String mensagemPadrao) async {
   var mensagem = mensagemPadrao;
   var ehPedidoAvaliacao = false;
+  // Id do registro em avaliacoes_google_pedidas, gerado antes pra ir no link
+  // rastreado (site /avaliar/<id> conta o toque e manda pro Google).
+  final avaliacaoId = const Uuid().v4();
 
   if (venda.status == StatusPedido.entregue) {
     final escolha = await _escolherMensagemEntregue(context, venda);
     if (escolha == null || !context.mounted) return;
     if (escolha == _MensagemEntregue.avaliacao) {
-      final link = await _linkAvaliacaoGoogle(context.read<AuthProvider>().empresaId);
+      final dados = await _dadosAvaliacaoGoogle(context.read<AuthProvider>().empresaId, venda);
       if (!context.mounted) return;
-      if (link == null) {
+      if (dados == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Link de avaliação do Google não cadastrado na empresa.')),
         );
         return;
       }
-      mensagem = mensagemPedidoAvaliacaoGoogle(link);
+      final link = dados.dominio != null ? 'https://${dados.dominio}/avaliar/$avaliacaoId' : dados.linkGoogle;
+      mensagem = mensagemPedidoAvaliacaoGoogle(link, pet: dados.pet);
       ehPedidoAvaliacao = true;
     }
   }
@@ -96,7 +101,7 @@ Future<void> enviarMensagemStatusWhatsApp(BuildContext context, Venda venda, Str
   } else if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não foi possível abrir o WhatsApp.')));
   }
-  if (abriu && ehPedidoAvaliacao) await _registrarPedidoAvaliacao(venda);
+  if (abriu && ehPedidoAvaliacao) await _registrarPedidoAvaliacao(venda, avaliacaoId);
 }
 
 enum _MensagemEntregue { experiencia, avaliacao }
@@ -134,15 +139,43 @@ Future<_MensagemEntregue?> _escolherMensagemEntregue(BuildContext context, Venda
   );
 }
 
-Future<String?> _linkAvaliacaoGoogle(String? empresaId) async {
+/// Link do Google da loja (obrigatório), domínio do site pro link rastreado
+/// (opcional — sem ele vai o link do Google direto) e a palavra do pet pelos
+/// produtos do pedido.
+Future<({String linkGoogle, String? dominio, String pet})?> _dadosAvaliacaoGoogle(
+    String? empresaId, Venda venda) async {
   if (empresaId == null) return null;
   try {
-    final data =
-        await supabase.from('empresas').select('link_avaliacao_google').eq('id', empresaId).maybeSingle();
+    final data = await supabase
+        .from('empresas')
+        .select('link_avaliacao_google, catalogo_slug')
+        .eq('id', empresaId)
+        .maybeSingle();
     final link = (data?['link_avaliacao_google'] as String?)?.trim();
-    return link == null || link.isEmpty ? null : link;
+    if (link == null || link.isEmpty) return null;
+
+    String? dominio;
+    final slug = data?['catalogo_slug'] as String?;
+    if (slug != null) {
+      final d = await supabase
+          .from('catalogo_dominios_publico')
+          .select('dominio_customizado')
+          .eq('catalogo_slug', slug)
+          .order('principal', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      dominio = d?['dominio_customizado'] as String?;
+    }
+
+    var pet = 'pet';
+    if (venda.idVenda != null) {
+      final itens = await supabase.from('itens_pedido').select('produtos(especie)').eq('pedido_id', venda.idVenda!);
+      pet = palavraPetDoPedido(
+          (itens as List).map((i) => (i['produtos'] as Map<String, dynamic>?)?['especie'] as String?));
+    }
+    return (linkGoogle: link, dominio: dominio, pet: pet);
   } catch (e) {
-    debugPrint('Erro ao ler link de avaliação do Google: $e');
+    debugPrint('Erro ao ler dados da avaliação do Google: $e');
     return null;
   }
 }
@@ -166,10 +199,11 @@ Future<DateTime?> _ultimoPedidoAvaliacao(Venda venda) async {
   }
 }
 
-Future<void> _registrarPedidoAvaliacao(Venda venda) async {
+Future<void> _registrarPedidoAvaliacao(Venda venda, String avaliacaoId) async {
   if (venda.idVenda == null) return;
   try {
     await supabase.from('avaliacoes_google_pedidas').insert({
+      'id': avaliacaoId,
       'pedido_id': venda.idVenda,
       'cliente_id': venda.cliente.idCliente,
     });
