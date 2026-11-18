@@ -46,6 +46,10 @@ class Cupom {
   final int? usoMaximo;
   final int usos;
   final int? usoMaximoPorCliente;
+  /// Só pra quem nunca comprou direto com a loja (site, WhatsApp, balcão,
+  /// Kyte) — quem só comprou no iFood/99 ainda conta como novo. A regra
+  /// fica em validar_cupom.
+  final bool apenasPrimeiroPedido;
   final DateTime? dataInicio;
   final DateTime? dataExpiracao;
   final bool ativo;
@@ -68,6 +72,7 @@ class Cupom {
     this.usoMaximo,
     this.usos = 0,
     this.usoMaximoPorCliente,
+    this.apenasPrimeiroPedido = false,
     this.dataInicio,
     this.dataExpiracao,
     this.ativo = true,
@@ -92,6 +97,7 @@ class Cupom {
       usoMaximo: row['uso_maximo'] as int?,
       usos: row['usos'] as int? ?? 0,
       usoMaximoPorCliente: row['uso_maximo_por_cliente'] as int?,
+      apenasPrimeiroPedido: row['apenas_primeiro_pedido'] as bool? ?? false,
       dataInicio: row['data_inicio'] != null ? DateTime.parse(row['data_inicio']) : null,
       dataExpiracao: row['data_expiracao'] != null ? DateTime.parse(row['data_expiracao']) : null,
       ativo: row['ativo'] as bool? ?? true,
@@ -113,6 +119,7 @@ class Cupom {
       'desconto_maximo': tipoDesconto == TipoDescontoCupom.percentual ? descontoMaximo : null,
       'uso_maximo': usoMaximo,
       'uso_maximo_por_cliente': usoMaximoPorCliente,
+      'apenas_primeiro_pedido': apenasPrimeiroPedido,
       'data_inicio': dataInicio?.toIso8601String(),
       'data_expiracao': dataExpiracao?.toIso8601String(),
       'ativo': ativo,

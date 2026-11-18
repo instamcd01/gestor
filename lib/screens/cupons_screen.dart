@@ -191,6 +191,7 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
   EscopoCupom _escopoTipo = EscopoCupom.pedido;
   DateTime? _dataExpiracao;
   bool _ativo = true;
+  bool _apenasPrimeiroPedido = false;
   bool _salvando = false;
   List<Produto> _produtosSelecionados = [];
   bool _carregandoProdutos = false;
@@ -217,6 +218,7 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
     _escopoTipo = c?.escopoTipo ?? EscopoCupom.pedido;
     _dataExpiracao = c?.dataExpiracao;
     _ativo = c?.ativo ?? true;
+    _apenasPrimeiroPedido = c?.apenasPrimeiroPedido ?? false;
 
     if (_editando && _escopoTipo == EscopoCupom.produtos) {
       _carregarProdutosSelecionados();
@@ -362,8 +364,11 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
       descontoMaximo: ProdutoValidators.parseNumero(_descontoMaximoController.text),
       usoMaximo: int.tryParse(_usoMaximoController.text.trim()),
       usoMaximoPorCliente: int.tryParse(_usoMaximoPorClienteController.text.trim()),
+      // A tela não edita a data de início — sem isto, salvar apagava a do banco.
+      dataInicio: widget.cupom?.dataInicio,
       dataExpiracao: _dataExpiracao,
       ativo: _ativo,
+      apenasPrimeiroPedido: _apenasPrimeiroPedido,
       descricao: _descricaoController.text.trim().isEmpty ? null : _descricaoController.text.trim(),
     );
 
@@ -551,6 +556,13 @@ class _CupomFormScreenState extends State<_CupomFormScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Só para cliente novo'),
+                    subtitle: const Text('Não vale pra quem já comprou direto com a loja (site, WhatsApp ou balcão). Quem só comprou no iFood ou 99 pode usar.'),
+                    value: _apenasPrimeiroPedido,
+                    onChanged: (v) => setState(() => _apenasPrimeiroPedido = v),
                   ),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
