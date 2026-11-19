@@ -119,7 +119,25 @@ function primeiroNome(nome: string | null | undefined) {
   return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
 }
 
-function montarTexto(tipo: string, nome: string, retirada: boolean, pagarNaEntrega: boolean) {
+// Acha um telefone brasileiro na resposta do cliente → 55DDNNNNNNNNN.
+// Sem DDD, assume 21 (loja no Rio). Só celular (9 + 8 dígitos): WhatsApp é
+// celular e assim CEP/número de pedido não vira telefone.
+function extrairTelefone(texto: string): string | null {
+  const candidatos = texto.match(/(?:\+?\s*55[\s.-]*)?(?:\(?\s*\d{2}\s*\)?[\s.-]*)?9[\s.]*\d{4}[\s.-]*\d{4}/g) ?? [];
+  for (const cand of candidatos) {
+    let d = cand.replace(/\D/g, "");
+    if (d.length === 13) { if (!d.startsWith("55")) continue; }
+    else if (d.length === 11) d = "55" + d;
+    else if (d.length === 9) d = "5521" + d;
+    else continue;
+    const ddd = Number(d.slice(2, 4));
+    if (ddd < 11 || ddd > 99 || d[4] !== "9") continue;
+    return d;
+  }
+  return null;
+}
+
+function montarTexto(tipo: string, nome: string, retirada: boolean, pagarNaEntrega: boolean, jaTemContato = false) {
   const ola = nome ? `Olá, ${nome}!` : "Olá!";
   if (tipo === "recebido") {
     return [
@@ -135,7 +153,7 @@ function montarTexto(tipo: string, nome: string, retirada: boolean, pagarNaEntre
   return [
     "Ebaa! 🤩 Seu pedido acabou de sair para entrega 😊🙌",
     "Nosso entregador já está a caminho e logo chegará até você 🛵💨",
-    "Pode deixar um contato para facilitar a entrega, caso precise? Obrigado!",
+    jaTemContato ? "" : "Pode deixar um contato para facilitar a entrega, caso precise? Obrigado!",
     pagarNaEntrega
       ? "⚠️ Por favor, como o pagamento será na entrega, deixe o cartão ou o dinheiro em mãos. Isso ajuda o entregador a agilizar a sua entrega e as próximas. 😊"
       : "",
@@ -231,7 +249,13 @@ async function processar() {
         await marcar({ status: "erro", motivo: "cliente sem código do iFood", marketplace_pedido_id: mp!.id });
         continue;
       }
-      const texto = montarTexto(item.tipo, primeiroNome(cli.nome), retirada, ped.status_pagamento !== "pago");
+      let jaTemContato = false;
+      if (item.tipo === "saiu") {
+        const { data: r } = await admin.from("ifood_chat_envios").select("telefone_resposta")
+          .eq("order_id", item.order_id).eq("tipo", "recebido").maybeSingle();
+        jaTemContato = !!r?.telefone_resposta;
+      }
+      const texto = montarTexto(item.tipo, primeiroNome(cli.nome), retirada, ped.status_pagamento !== "pago", jaTemContato);
       try {
         c = await garantirChatToken(c);
         await enviarNoChat(c, item.order_id, cli.id_externo_ifood, texto);
@@ -250,6 +274,55 @@ async function processar() {
         await admin.from("ifood_chat_conexoes").update({ chat_token: null }).eq("empresa_id", c.empresa_id);
         c = { ...c, chat_token: null };
         resultado.push({ order: item.order_id, tipo: item.tipo, erro: (e as Error).message });
+      }
+    }
+
+    // Respostas: pedidos com a 1ª mensagem enviada nas últimas 3 h e sem telefone ainda.
+    const { data: aguardando } = await admin.from("ifood_chat_envios")
+      .select("id, order_id, cliente_id, enviado_em")
+      .eq("empresa_id", c.empresa_id).eq("tipo", "recebido").eq("status", "enviado")
+      .is("telefone_resposta", null)
+      .gt("enviado_em", new Date(Date.now() - 3 * 3600e3).toISOString())
+      .or(`resposta_verificada_em.is.null,resposta_verificada_em.lt.${new Date(Date.now() - 110e3).toISOString()}`)
+      .limit(15);
+    if (aguardando?.length) {
+      let sb: any = null;
+      try {
+        c = await garantirChatToken(c);
+        sb = SendbirdChat.init({
+          appId: SENDBIRD_APP, modules: [new GroupChannelModule()], localCacheEnabled: false, appStateToggleEnabled: false,
+        });
+        await sb.connect(c.merchant_id, c.chat_token);
+        for (const a of aguardando) {
+          const agora = new Date().toISOString();
+          try {
+            const canal = await sb.groupChannel.getChannel(`sendbird_gc_cm_${a.order_id}_${c.merchant_id}`);
+            const msgs = await canal.createPreviousMessageListQuery({ limit: 30 }).load();
+            const doCliente = msgs.filter((m: any) =>
+              m.sender?.userId && m.sender.userId !== c.merchant_id && new Date(m.createdAt) >= new Date(a.enviado_em));
+            let tel: string | null = null;
+            for (const m of doCliente) { tel = extrairTelefone(String(m.message ?? "")); if (tel) break; }
+            if (!tel) {
+              await admin.from("ifood_chat_envios").update({ resposta_verificada_em: agora }).eq("id", a.id);
+              continue;
+            }
+            await admin.from("ifood_chat_envios").update({ telefone_resposta: tel, resposta_em: agora, resposta_verificada_em: agora }).eq("id", a.id);
+            if (a.cliente_id) {
+              await admin.from("clientes").update({ whatsapp_informado: tel, whatsapp_informado_em: agora }).eq("id", a.cliente_id);
+            }
+            await new Promise((ok, falha) => {
+              canal.sendUserMessage({ message: "Anotado, obrigado! 😊🐾" }).onSucceeded(ok).onFailed(falha);
+            }).catch(() => null);
+            resultado.push({ order: a.order_id, telefone: "capturado" });
+          } catch (e) {
+            await admin.from("ifood_chat_envios").update({ resposta_verificada_em: agora }).eq("id", a.id);
+            resultado.push({ order: a.order_id, erro_leitura: (e as Error).message });
+          }
+        }
+      } catch (e) {
+        resultado.push({ erro_leitura: (e as Error).message });
+      } finally {
+        try { await sb?.disconnect(); } catch { /* */ }
       }
     }
   }
