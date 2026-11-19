@@ -137,7 +137,9 @@ function extrairTelefone(texto: string): string | null {
   return null;
 }
 
-// Texto v2 (19/11): o v1 ("pode deixar um contato, para facilitar a entrega?")
+// Texto v3 (19/11, ideia do Lucas): motivo = agilizar a entrega + mandar a
+// localização pelo WhatsApp (a loja chama com ifood_localizacao_v1 ou o
+// "saiu para entrega"). Texto v2: o v1 ("pode deixar um contato, para facilitar a entrega?")
 // teve 0 respostas. Agora: pergunta direta pelo WhatsApp, motivo concreto que
 // ajuda o próprio cliente (portão/interfone), exemplo de como responder, e
 // "só o número" pra contrapor o aviso anti-golpe que o iFood põe logo acima.
@@ -148,8 +150,8 @@ function montarTexto(tipo: string, nome: string, retirada: boolean, pagarNaEntre
     return [
       `${oi} Seu pedido já está sendo separado aqui na loja 🐾`,
       retirada
-        ? "Qual o seu WhatsApp? Te aviso por lá assim que estiver pronto pra retirar."
-        : "Qual o seu WhatsApp? Assim o entregador consegue te chamar se precisar (portão, interfone, referência) e te aviso na hora que sair 🛵",
+        ? "Me passa o seu WhatsApp? Te aviso por lá assim que estiver pronto pra retirar."
+        : "Pra agilizar a sua entrega, me passa o seu WhatsApp? Te chamo lá pra você mandar a sua localização 📍 e o entregador vai direto, sem precisar procurar 🛵",
       "É só responder aqui com o número, tipo: 21 99999-9999",
     ].join(`
 
@@ -158,7 +160,7 @@ function montarTexto(tipo: string, nome: string, retirada: boolean, pagarNaEntre
   return [
     "Seu pedido saiu para entrega! 🛵💨",
     "O entregador já está a caminho.",
-    jaTemContato ? "" : "Se quiser, responde aqui com o seu WhatsApp, caso o entregador precise te chamar 😉",
+    jaTemContato ? "" : "Pra agilizar, me passa o seu WhatsApp? Te chamo lá pra você mandar a sua localização 📍",
     pagarNaEntrega ? "O pagamento é na entrega: se puder, deixa o cartão ou o dinheiro à mão 🙏" : "",
   ].filter(Boolean).join(`
 
@@ -342,7 +344,7 @@ async function processar() {
               await admin.from("clientes").update({ whatsapp_informado: tel, whatsapp_informado_em: agora }).eq("id", a.cliente_id);
             }
             await new Promise((ok, falha) => {
-              canal.sendUserMessage({ message: "Anotado, obrigado! 😊🐾" }).onSucceeded(ok).onFailed(falha);
+              canal.sendUserMessage({ message: "Anotado, obrigado! 😊 Já já te chamo no WhatsApp 🐾" }).onSucceeded(ok).onFailed(falha);
             }).catch(() => null);
             resultado.push({ order: a.order_id, telefone: "capturado" });
           } catch (e) {
