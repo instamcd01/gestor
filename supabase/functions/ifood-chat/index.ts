@@ -137,27 +137,32 @@ function extrairTelefone(texto: string): string | null {
   return null;
 }
 
+// Texto v2 (19/11): o v1 ("pode deixar um contato, para facilitar a entrega?")
+// teve 0 respostas. Agora: pergunta direta pelo WhatsApp, motivo concreto que
+// ajuda o próprio cliente (portão/interfone), exemplo de como responder, e
+// "só o número" pra contrapor o aviso anti-golpe que o iFood põe logo acima.
+// Contrato iFood: nada de site, cupom ou número da loja aqui.
 function montarTexto(tipo: string, nome: string, retirada: boolean, pagarNaEntrega: boolean, jaTemContato = false) {
-  const ola = nome ? `Olá, ${nome}!` : "Olá!";
+  const oi = nome ? `Oi, ${nome}! 😊` : "Oi! 😊";
   if (tipo === "recebido") {
     return [
-      `🛎️ ${ola} 👋`,
-      "Recebemos o seu pedido e ele já está sendo separado com carinho! 🐾😁",
+      `${oi} Seu pedido já está sendo separado aqui na loja 🐾`,
       retirada
-        ? "Pode deixar um contato, para te avisarmos quando estiver pronto, por favor?"
-        : "Pode deixar um contato, para facilitar a entrega, por favor?",
-      retirada ? "" : "⚠️ Você será avisado assim que o seu pedido sair para entrega. 🛵",
-      "💢 Mensagem enviada automaticamente. 💢",
-    ].filter(Boolean).join("\n\n");
+        ? "Qual o seu WhatsApp? Te aviso por lá assim que estiver pronto pra retirar."
+        : "Qual o seu WhatsApp? Assim o entregador consegue te chamar se precisar (portão, interfone, referência) e te aviso na hora que sair 🛵",
+      "É só responder aqui com o número, tipo: 21 99999-9999",
+    ].join(`
+
+`);
   }
   return [
-    "Ebaa! 🤩 Seu pedido acabou de sair para entrega 😊🙌",
-    "Nosso entregador já está a caminho e logo chegará até você 🛵💨",
-    jaTemContato ? "" : "Pode deixar um contato para facilitar a entrega, caso precise? Obrigado!",
-    pagarNaEntrega
-      ? "⚠️ Por favor, como o pagamento será na entrega, deixe o cartão ou o dinheiro em mãos. Isso ajuda o entregador a agilizar a sua entrega e as próximas. 😊"
-      : "",
-  ].filter(Boolean).join("\n\n");
+    "Seu pedido saiu para entrega! 🛵💨",
+    "O entregador já está a caminho.",
+    jaTemContato ? "" : "Se quiser, responde aqui com o seu WhatsApp, caso o entregador precise te chamar 😉",
+    pagarNaEntrega ? "O pagamento é na entrega: se puder, deixa o cartão ou o dinheiro à mão 🙏" : "",
+  ].filter(Boolean).join(`
+
+`);
 }
 
 async function enviarNoChat(c: Conexao, orderId: string, customerId: string, texto: string) {
@@ -279,11 +284,10 @@ async function processar() {
 
     // Respostas: pedidos com a 1ª mensagem enviada nas últimas 3 h e sem telefone ainda.
     const { data: aguardando } = await admin.from("ifood_chat_envios")
-      .select("id, order_id, cliente_id, enviado_em")
+      .select("id, order_id, cliente_id, enviado_em, telefone_resposta, cliente_msg_avisada_ate, marketplace_pedido_id")
       .eq("empresa_id", c.empresa_id).eq("tipo", "recebido").eq("status", "enviado")
-      .is("telefone_resposta", null)
       .gt("enviado_em", new Date(Date.now() - 3 * 3600e3).toISOString())
-      .or(`resposta_verificada_em.is.null,resposta_verificada_em.lt.${new Date(Date.now() - 110e3).toISOString()}`)
+      .or(`resposta_verificada_em.is.null,resposta_verificada_em.lt.${new Date(Date.now() - 50e3).toISOString()}`)
       .limit(15);
     if (aguardando?.length) {
       let sb: any = null;
@@ -300,6 +304,33 @@ async function processar() {
             const msgs = await canal.createPreviousMessageListQuery({ limit: 30 }).load();
             const doCliente = msgs.filter((m: any) =>
               m.sender?.userId && m.sender.userId !== c.merchant_id && new Date(m.createdAt) >= new Date(a.enviado_em));
+            // Ninguém acompanha o chat do Separador: toda mensagem nova do
+            // cliente que não seja só o telefone vira aviso no Gestor.
+            const avisadaAte = a.cliente_msg_avisada_ate ? new Date(a.cliente_msg_avisada_ate).getTime() : 0;
+            const novas = doCliente.filter((m: any) => m.createdAt > avisadaAte);
+            if (novas.length) {
+              const ultima = Math.max(...novas.map((m: any) => m.createdAt));
+              await admin.from("ifood_chat_envios").update({ cliente_msg_avisada_ate: new Date(ultima).toISOString() }).eq("id", a.id);
+              // só o número (ex. "21 99999-0000") não precisa de aviso — o robô já agradece
+              const textos = novas.map((m: any) => String(m.message ?? "").trim())
+                .filter((t: string) => t && !(extrairTelefone(t) && !/[a-zà-ú]{3,}/i.test(t)));
+              if (textos.length) {
+                const { data: mpi } = a.marketplace_pedido_id
+                  ? await admin.from("marketplace_pedidos").select("numero_exibicao, pedido_id").eq("id", a.marketplace_pedido_id).maybeSingle()
+                  : { data: null };
+                await admin.from("notificacoes").insert({
+                  empresa_id: c.empresa_id, tipo: "ifood_chat_cliente",
+                  titulo: `Cliente escreveu no chat do iFood${mpi?.numero_exibicao ? ` (#${mpi.numero_exibicao})` : ""}`,
+                  mensagem: `"${textos.slice(-3).join(" / ").slice(0, 300)}" — responda pelo Separador (chat do pedido).`,
+                  entidade_tipo: mpi?.pedido_id ? "pedido" : null, entidade_id: mpi?.pedido_id ?? null,
+                });
+                resultado.push({ order: a.order_id, aviso_cliente: textos.length });
+              }
+            }
+            if (a.telefone_resposta) {
+              await admin.from("ifood_chat_envios").update({ resposta_verificada_em: agora }).eq("id", a.id);
+              continue;
+            }
             let tel: string | null = null;
             for (const m of doCliente) { tel = extrairTelefone(String(m.message ?? "")); if (tel) break; }
             if (!tel) {
