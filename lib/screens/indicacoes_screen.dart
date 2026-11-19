@@ -239,7 +239,7 @@ class _CardQuemPegouCodigo extends StatelessWidget {
   final Map<String, dynamic> dados;
   const _CardQuemPegouCodigo({required this.dados});
 
-  static const _origens = {'pedido': 'Tela do pedido', 'conta': 'Minha conta', 'panfleto': 'Panfleto / link'};
+  static const _origens = {'pedido': 'Tela do pedido', 'conta': 'Minha conta', 'whatsapp': 'WhatsApp', 'panfleto': 'Panfleto / link'};
 
   @override
   Widget build(BuildContext context) {
