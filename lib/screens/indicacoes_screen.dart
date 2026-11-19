@@ -26,6 +26,7 @@ class _IndicacoesScreenState extends State<IndicacoesScreen> {
   String? _erro;
   int _dias = 90;
   List<Map<String, dynamic>> _indicadores = [];
+  Map<String, dynamic> _codigos = const {};
 
   bool _ativo = false;
   double _valorAmigo = 10;
@@ -53,6 +54,7 @@ class _IndicacoesScreenState extends State<IndicacoesScreen> {
           .eq('id', empresaId)
           .single();
       final rel = await supabase.rpc('relatorio_indicacoes', params: {'p_empresa_id': empresaId, 'p_dias': _dias});
+      final cods = await supabase.rpc('codigos_indicacao_gerados', params: {'p_empresa_id': empresaId, 'p_dias': _dias});
       if (!mounted) return;
       setState(() {
         _ativo = cfg['indicacao_ativo'] == true;
@@ -61,6 +63,7 @@ class _IndicacoesScreenState extends State<IndicacoesScreen> {
         _pedidoMinimo = (cfg['indicacao_pedido_minimo'] as num?)?.toDouble() ?? 89;
         _limiteMes = (cfg['indicacao_limite_mes'] as num?)?.toInt();
         _indicadores = ((rel as List?) ?? []).cast<Map<String, dynamic>>();
+        _codigos = (cods as Map?)?.cast<String, dynamic>() ?? const {};
       });
     } catch (e) {
       if (mounted) setState(() => _erro = 'Não foi possível carregar as indicações: $e');
@@ -212,6 +215,8 @@ class _IndicacoesScreenState extends State<IndicacoesScreen> {
               _Resumo(rotulo: 'Com alerta', valor: '$alertas', destaque: alertas > 0),
             ],
           ),
+          const SizedBox(height: 8),
+          _CardQuemPegouCodigo(dados: _codigos),
           const SizedBox(height: 12),
           if (_indicadores.isEmpty)
             Padding(
@@ -221,6 +226,62 @@ class _IndicacoesScreenState extends State<IndicacoesScreen> {
             )
           else
             for (final ind in _indicadores) _CardIndicador(ind: ind, onAlternarCodigo: () => _alternarCodigo(ind)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Quem abriu a tela "Indique um amigo" no site (o código é criado nessa
+/// hora) e por onde chegou — mostra se as pessoas estão vendo a campanha,
+/// mesmo antes de alguém usar o código (`codigos_indicacao_gerados`).
+class _CardQuemPegouCodigo extends StatelessWidget {
+  final Map<String, dynamic> dados;
+  const _CardQuemPegouCodigo({required this.dados});
+
+  static const _origens = {'pedido': 'Tela do pedido', 'conta': 'Minha conta', 'panfleto': 'Panfleto / link'};
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final total = (dados['total'] as num?)?.toInt() ?? 0;
+    final jaIndicaram = (dados['ja_indicaram'] as num?)?.toInt() ?? 0;
+    final porOrigem = (dados['por_origem'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final clientes = ((dados['clientes'] as List?) ?? []).cast<Map<String, dynamic>>();
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        leading: Icon(Icons.qr_code_2, color: cs.primary),
+        title: Text('$total ${total == 1 ? 'cliente pegou' : 'clientes pegaram'} o código'),
+        subtitle: Text(
+          '$jaIndicaram já ${jaIndicaram == 1 ? 'indicou' : 'indicaram'} alguém • '
+          '${_origens.entries.map((o) => '${o.value}: ${(porOrigem[o.key] as num?)?.toInt() ?? 0}').join(' • ')}',
+        ),
+        children: [
+          if (clientes.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Ninguém abriu a tela de indicação nesse período.',
+                  style: TextStyle(color: cs.onSurfaceVariant)),
+            )
+          else
+            for (final c in clientes)
+              ListTile(
+                dense: true,
+                title: Text('${c['nome'] ?? 'Cliente'} • ${c['codigo']}'),
+                subtitle: Text(
+                  '${_origens[c['origem']] ?? c['origem']} • pegou em ${_data.format(DateTime.parse(c['criado_em'] as String).toLocal())}'
+                  ' • abriu ${c['acessos'] ?? 0}x',
+                ),
+                trailing: Text(
+                  ((c['usos'] as num?) ?? 0) > 0 ? '${c['usos']} ${c['usos'] == 1 ? 'uso' : 'usos'}' : 'sem uso',
+                  style: TextStyle(
+                    color: ((c['usos'] as num?) ?? 0) > 0 ? cs.primary : cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
         ],
       ),
     );
