@@ -6,6 +6,9 @@ class CupomRepository {
     final data = await supabase
         .from('cupons')
         .select('*, clientes(nome), usuarios(nome)')
+        // Códigos do "indique um amigo" (um por cliente) ficam fora da lista
+        // de campanhas — senão a tela vira uma lista de clientes.
+        .or('origem.is.null,origem.neq.indicacao')
         .order('created_at', ascending: false);
 
     return (data as List).map((row) => Cupom.fromSupabase(row as Map<String, dynamic>)).toList();
