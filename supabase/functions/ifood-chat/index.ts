@@ -329,5 +329,38 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Diagnóstico: lê as últimas mensagens de um pedido (sem enviar nada).
+  if (acao === "ler") {
+    const { data: seg } = await admin.from("ifood_chat_parametros").select("valor").eq("chave", "cron_secret").maybeSingle();
+    if (!seg?.valor || req.headers.get("x-cron-secret") !== seg.valor) return resp({ erro: "não autorizado" }, 401);
+    try {
+      const { data: c0 } = await admin.from("ifood_chat_conexoes").select("*").limit(1).maybeSingle();
+      let c = await garantirAcesso(c0 as Conexao);
+      c = await garantirChatToken(c);
+      return resp({ ok: true, mensagens: await lerMensagens(c, String(body.order_id)) });
+    } catch (e) {
+      return resp({ erro: (e as Error).message ?? String(e) }, 500);
+    }
+  }
+
   return resp({ erro: "ação desconhecida" }, 400);
 });
+
+async function lerMensagens(c: Conexao, orderId: string) {
+  const sb = SendbirdChat.init({
+    appId: SENDBIRD_APP, modules: [new GroupChannelModule()], localCacheEnabled: false, appStateToggleEnabled: false,
+  }) as any;
+  await sb.connect(c.merchant_id, c.chat_token);
+  try {
+    const canal = await sb.groupChannel.getChannel(`sendbird_gc_cm_${orderId}_${c.merchant_id}`);
+    const q = canal.createPreviousMessageListQuery({ limit: 30 });
+    const msgs = await q.load();
+    return msgs.map((m: any) => ({
+      de: m.sender?.userId === c.merchant_id ? "loja" : (m.sender?.userId ? "outro" : "sistema"),
+      quando: new Date(m.createdAt).toISOString(),
+      texto: String(m.message ?? "").slice(0, 300),
+    }));
+  } finally {
+    try { await sb.disconnect(); } catch { /* */ }
+  }
+}
