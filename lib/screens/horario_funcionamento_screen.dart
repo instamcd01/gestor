@@ -7,6 +7,7 @@ import '../models/pausa_loja.dart';
 import '../providers/auth_provider.dart';
 import '../repositories/pausa_loja_repository.dart';
 import 'datas_especiais_screen.dart';
+import 'modo_domingo_feriado_screen.dart';
 import 'pausar_loja_screen.dart';
 
 const _diasSemana = [
@@ -225,6 +226,16 @@ class _GeralScreenState extends State<GeralScreen> {
                     subtitle: const Text('Horário nos feriados, datas pet e temporadas de venda'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DatasEspeciaisScreen())),
+                  ),
+                ),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: ListTile(
+                    leading: const Icon(Icons.wb_sunny_outlined),
+                    title: const Text('Domingo e feriado'),
+                    subtitle: const Text('O que muda sozinho no site, WhatsApp e iFood'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ModoDomingoFeriadoScreen())),
                   ),
                 ),
                 ..._diasSemana.map((diaInfo) {

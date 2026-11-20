@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers/auth_provider.dart';
 import '../repositories/datas_especiais_repository.dart';
+import 'modo_domingo_feriado_screen.dart';
 
 /// Feriados e datas especiais: o calendário da loja (feriados nacionais e da
 /// cidade, datas do mundo pet, datas e temporadas de vendas). Nos feriados o
@@ -477,7 +478,16 @@ class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
     final datas = _datas.where((d) => d.categoria == 'pet' || d.categoria == 'vendas').toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Feriados e datas especiais')),
+      appBar: AppBar(
+        title: const Text('Feriados e datas especiais'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.wb_sunny_outlined),
+            label: const Text('Domingo e feriado'),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ModoDomingoFeriadoScreen())),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _carregar,
         child: _carregando
