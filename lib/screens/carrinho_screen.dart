@@ -58,6 +58,7 @@ Future<void> resolverZonaEntregaParaCliente(
     }
   }
 
+  await zonaProvider.garantirAtualizadas();
   carrinhoProvider.selecionarZonaEntrega(zonaProvider.zonaParaDistancia(distanciaKm));
 }
 

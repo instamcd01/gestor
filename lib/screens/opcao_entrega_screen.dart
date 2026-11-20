@@ -286,9 +286,12 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
     }
   }
 
-  void _resolverZona() {
+  Future<void> _resolverZona() async {
     if (_distanciaKm == null) return;
-    final zona = context.read<ZonaEntregaProvider>().zonaParaDistancia(_distanciaKm!);
+    final provider = context.read<ZonaEntregaProvider>();
+    await provider.garantirAtualizadas();
+    if (!mounted || _distanciaKm == null) return;
+    final zona = provider.zonaParaDistancia(_distanciaKm!);
     setState(() => _zonaEncontrada = zona);
   }
 

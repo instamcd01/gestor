@@ -12,6 +12,7 @@ class ZonaEntregaProvider with ChangeNotifier {
   bool _carregando = false;
   String? _erro;
   String? _empresaId;
+  DateTime? _carregadoEm;
 
   List<ZonaEntrega> get zonas => _zonas;
   bool get carregando => _carregando;
@@ -30,6 +31,7 @@ class ZonaEntregaProvider with ChangeNotifier {
 
     try {
       _zonas = await _repository.listar();
+      _carregadoEm = DateTime.now();
     } catch (e) {
       _erro = 'Erro ao carregar zonas de entrega: $e';
       debugPrint(_erro);
@@ -37,6 +39,16 @@ class ZonaEntregaProvider with ChangeNotifier {
       _carregando = false;
       notifyListeners();
     }
+  }
+
+  /// Recarrega se as faixas tiverem mais de [maxIdade]. O app carrega as
+  /// zonas no login, mas domingo/feriado mudam frete, frete grátis e prazo
+  /// no meio do dia (ajustes_temporarios) — sem isso o PDV mostrava os
+  /// valores de quando o app abriu (achado real 20/11).
+  Future<void> garantirAtualizadas({Duration maxIdade = const Duration(minutes: 5)}) async {
+    if (_carregando) return;
+    if (_carregadoEm != null && DateTime.now().difference(_carregadoEm!) < maxIdade) return;
+    await carregarZonas();
   }
 
   Future<void> criarZona(ZonaEntrega zona) async {
