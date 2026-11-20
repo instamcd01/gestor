@@ -1,0 +1,11 @@
+-- Aplicada em produção 20/11/2026 (migration "pedidos_cancelado_por").
+-- Lucas: pedido iFood #1980 cancelado pela CLIENTE aparecia "cancelado pela loja".
+-- Causa: o app deduzia quem cancelou só pelo código do motivo (tudo do iFood
+-- caía em 'loja'); o evento CANCELLED do iFood traz metadata.CANCEL_ORIGIN
+-- (CONSUMER/MERCHANT/IFOOD/LOGISTIC) e não era guardado.
+-- Agora: pedidos.cancelado_por (cliente|loja|sistema|marketplace), preenchido
+-- pelo trigger trg_ifood_evento_cancelado_por (ifood_eventos_recebidos) e por
+-- trg_pedido_preencher_cancelado_por (pedidos: evento já recebido, códigos do
+-- site e 99Food 1050 = cliente). Backfill pelos eventos, por
+-- marketplace_cancelamentos (relatório) e pelos códigos conhecidos.
+-- SQL completo: ver supabase_migrations.schema_migrations (name = pedidos_cancelado_por).

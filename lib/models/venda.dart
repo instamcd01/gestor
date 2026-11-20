@@ -77,6 +77,7 @@ class Venda {
   final String? vendedorId;       // quem registrou a venda — null em pedidos de outras origens (iFood, site)
   final String? motivoCancelamentoCodigo; // pedidos.motivo_cancelamento_codigo — só existe quando cancelada; ver Venda.origemCancelamento
   final String? motivoCancelamentoDescricao; // pedidos.motivo_cancelamento_descricao — texto pronto pra mostrar, quando presente
+  final String? canceladoPor; // pedidos.cancelado_por (20/11): cliente | loja | sistema | marketplace — vem do iFood (CANCEL_ORIGIN) e da 99
 
   // --- Campos específicos de marketplace (iFood), todos opcionais ---
   final String? marketplacePedidoId;    // marketplace_pedidos.id, precisa pra ações que gravam lá
@@ -182,6 +183,7 @@ class Venda {
     this.vendedorId,
     this.motivoCancelamentoCodigo,
     this.motivoCancelamentoDescricao,
+    this.canceladoPor,
     this.marketplacePedidoId,
     this.tipoEntregaMarketplace,
     this.codigoConfirmacaoStatus,
@@ -273,6 +275,7 @@ class Venda {
     String? vendedorId,
     String? motivoCancelamentoCodigo,
     String? motivoCancelamentoDescricao,
+    String? canceladoPor,
     String? marketplacePedidoId,
     String? tipoEntregaMarketplace,
     String? codigoConfirmacaoStatus,
@@ -355,6 +358,7 @@ class Venda {
       vendedorId: vendedorId ?? this.vendedorId,
       motivoCancelamentoCodigo: motivoCancelamentoCodigo ?? this.motivoCancelamentoCodigo,
       motivoCancelamentoDescricao: motivoCancelamentoDescricao ?? this.motivoCancelamentoDescricao,
+      canceladoPor: canceladoPor ?? this.canceladoPor,
       marketplacePedidoId: marketplacePedidoId ?? this.marketplacePedidoId,
       tipoEntregaMarketplace: tipoEntregaMarketplace ?? this.tipoEntregaMarketplace,
       codigoConfirmacaoStatus: codigoConfirmacaoStatus ?? this.codigoConfirmacaoStatus,
@@ -533,6 +537,11 @@ class Venda {
   /// comum. Só faz sentido quando `cancelada`.
   String? get origemCancelamento {
     if (!cancelada) return null;
+    // 20/11: o banco guarda quem cancelou (iFood manda CANCEL_ORIGIN). Antes
+    // todo cancelamento do iFood caía em 'loja', mesmo pedido pelo cliente.
+    if (canceladoPor != null && canceladoPor!.isNotEmpty) return canceladoPor;
+    // Marketplace sem a informação (pedidos antigos): não chutar "loja".
+    if (canalVenda == 'ifood' || canalVenda == '99food') return null;
     switch (motivoCancelamentoCodigo) {
       case 'cliente_trocou_forma_pagamento':
         return 'cliente';

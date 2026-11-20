@@ -1572,11 +1572,13 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       final origemLabel = switch (_venda.origemCancelamento) {
         'cliente' => 'pelo cliente',
         'sistema' => 'pelo sistema',
-        _ => 'pela loja',
+        'marketplace' => _venda.canalVenda == '99food' ? 'pela 99Food' : 'pelo iFood',
+        'loja' => 'pela loja',
+        _ => '', // marketplace antigo, sem a informação de quem cancelou
       };
       final motivo = _venda.motivoCancelamentoDescricao?.trim();
       final motivoTexto = (motivo != null && motivo.isNotEmpty) ? motivo : 'motivo não informado';
-      texto = 'VENDA CANCELADA $origemLabel — $motivoTexto';
+      texto = 'VENDA CANCELADA${origemLabel.isEmpty ? '' : ' $origemLabel'} — $motivoTexto';
     }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
