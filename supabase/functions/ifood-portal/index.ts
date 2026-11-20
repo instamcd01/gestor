@@ -205,6 +205,7 @@ async function roboResultado(body: any) {
       status: "erro", erro, resultado: body.resultado ?? null, concluido_em: new Date().toISOString(),
     }).eq("id", t.id);
     const oque = t.acao === "pedido_minimo" ? `mudar o pedido mínimo pra R$ ${t.parametros?.valor}`
+      : t.acao === "promocao" ? `${t.parametros?.modo === "sair" ? "sair da" : "voltar pra"} promoção "${t.parametros?.nome}"`
       : `ligar a pré-configuração ${t.parametros?.nome}`;
     await avisar(t.empresa_id, "Robô do Portal iFood não conseguiu ⚠️",
       `Não consegui ${oque} (${t.motivo ?? ""}). Faça à mão no Portal do Parceiro. Detalhe: ${erro.slice(0, 160)}`);
