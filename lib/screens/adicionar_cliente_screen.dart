@@ -47,7 +47,8 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
 
   List<Pet> _pets = [];
   bool _aceitaMarketing = false;
-  bool _aceitaLembreteWhatsapp = false;
+  // Vem ligado (decisão do Lucas 20/11/2026): quem não quiser, desliga aqui ou depois.
+  bool _aceitaLembreteWhatsapp = true;
   bool _salvando = false;
   bool _autopreenchendoEndereco = false;
   double? _latitude;

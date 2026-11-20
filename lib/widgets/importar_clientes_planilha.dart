@@ -215,7 +215,8 @@ class _ImportarClientesScreenState extends State<ImportarClientesScreen> {
             tipoPessoa: existente?.tipoPessoa ?? 'fisica',
             cnpj: existente?.cnpj ?? '',
             razaoSocial: existente?.razaoSocial ?? '',
-            aceitaLembreteWhatsapp: existente?.aceitaLembreteWhatsapp ?? false,
+            // Cliente novo da planilha já entra com o aviso ligado (decisão do Lucas 20/11/2026).
+            aceitaLembreteWhatsapp: existente?.aceitaLembreteWhatsapp ?? true,
             proximaVisita: existente?.proximaVisita,
             motivoUltimaVisita: existente?.motivoUltimaVisita,
             ultimoContato: existente?.ultimoContato,
