@@ -209,6 +209,15 @@ class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
                 ],
                 const SizedBox(height: 16),
                 FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Salvar')),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.trending_up),
+                  label: const Text('Ajustes de alta demanda (frete e prazo)'),
+                  onPressed: () {
+                    Navigator.pop(ctx, false);
+                    _abrirAjustes(d);
+                  },
+                ),
               ],
             ),
           ),
@@ -298,6 +307,86 @@ class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _abrirAjustes(DataEspecial d) async {
+    final auth = context.read<AuthProvider>();
+    if (!(auth.isDono || auth.isGerente)) return;
+    Map<String, dynamic> sug;
+    List<Map<String, dynamic>> atuais;
+    try {
+      sug = await _repo.sugerirAjustes(d.id, d.inicio);
+      atuais = await _repo.ajustesDoDia(d.inicio);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não deu pra carregar os ajustes.')));
+      return;
+    }
+    if (!mounted) return;
+    final itens = (sug['itens'] as List).cast<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    final grupos = <String>{for (final i in itens) i['grupo'] as String}.toList();
+    final marcados = {...grupos};
+    final ativos = atuais.where((a) => a['status'] == 'agendado' || a['status'] == 'ativo').toList();
+    final promoDia = (sug['ifood_promo_loja_por_dia'] as num?) ?? 0;
+
+    final acao = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Alta demanda: ${d.nome}', style: Theme.of(ctx).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                const Text('Valem o dia todo e voltam ao normal sozinhos à meia-noite.', style: TextStyle(fontSize: 12)),
+                if (ativos.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('${ativos.length} ajuste(s) já marcados pra esse dia.', style: const TextStyle(fontWeight: FontWeight.w600)),
+                ],
+                const SizedBox(height: 8),
+                ...grupos.map((g) => CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: marcados.contains(g),
+                      title: Text(g, style: const TextStyle(fontSize: 14)),
+                      onChanged: (v) => setSheet(() => v == true ? marcados.add(g) : marcados.remove(g)),
+                    )),
+                const Divider(),
+                Text(
+                  'iFood: nos últimos 60 dias a loja pagou em média R\$ ${promoDia.toStringAsFixed(2).replaceAll('.', ',')} por dia em promoções. '
+                  '${sug['aviso_ifood']}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: marcados.isEmpty ? null : () => Navigator.pop(ctx, 'aplicar'),
+                  child: const Text('Aplicar no dia'),
+                ),
+                if (ativos.isNotEmpty)
+                  TextButton(onPressed: () => Navigator.pop(ctx, 'cancelar'), child: const Text('Desfazer ajustes desse dia')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (acao == null || !mounted) return;
+    try {
+      if (acao == 'aplicar') {
+        await _repo.aplicarAjustes(d.id, d.inicio, itens.where((i) => marcados.contains(i['grupo'])).toList());
+      } else {
+        await _repo.cancelarAjustes(d.inicio);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(acao == 'aplicar' ? 'Ajustes marcados pro dia ${DateFormat('dd/MM').format(d.inicio)}.' : 'Ajustes desfeitos.')));
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   (IconData, Color) _iconeCor(String categoria) {

@@ -71,6 +71,31 @@ class DatasEspeciaisRepository {
     return r == null ? null : Map<String, dynamic>.from(r as Map);
   }
 
+  String _d(DateTime data) =>
+      '${data.year.toString().padLeft(4, '0')}-${data.month.toString().padLeft(2, '0')}-${data.day.toString().padLeft(2, '0')}';
+
+  /// Ajustes sugeridos pra dia de alta demanda (frete grátis e prazo no
+  /// site/WhatsApp) + quanto a loja paga de promoção no iFood por dia.
+  Future<Map<String, dynamic>> sugerirAjustes(String dataEspecialId, DateTime data) async {
+    final r = await supabase.rpc('sugerir_ajustes_alta_demanda', params: {'p_data_especial_id': dataEspecialId, 'p_data': _d(data)});
+    return Map<String, dynamic>.from(r as Map);
+  }
+
+  /// Ajustes já marcados pro dia (agendado/ativo/revertido...).
+  Future<List<Map<String, dynamic>>> ajustesDoDia(DateTime data) async {
+    final r = await supabase.from('ajustes_temporarios').select('tipo, alvo_nome, status, detalhe').eq('data', _d(data));
+    return (r as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Valem o dia todo e voltam sozinhos à meia-noite.
+  Future<void> aplicarAjustes(String dataEspecialId, DateTime data, List<Map<String, dynamic>> itens) async {
+    await supabase.rpc('aplicar_ajustes_alta_demanda', params: {'p_data_especial_id': dataEspecialId, 'p_data': _d(data), 'p_itens': itens});
+  }
+
+  Future<void> cancelarAjustes(DateTime data) async {
+    await supabase.rpc('cancelar_ajustes_alta_demanda', params: {'p_data': _d(data)});
+  }
+
   /// Horário da loja no feriado. Por baixo cria pausas (pausas_loja), que já
   /// travam site/WhatsApp e pausam iFood/99Food nos horários fechados.
   Future<void> definirFuncionamento({
