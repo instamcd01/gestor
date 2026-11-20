@@ -1,3 +1,4 @@
+import '../utils/busca_marketplace.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
@@ -1546,11 +1547,77 @@ class _LinhaItem extends StatefulWidget {
 
 class _LinhaItemState extends State<_LinhaItem> {
   late final TextEditingController _qtdController;
+  /// Link do anúncio (marketplace) — local porque o vínculo é imutável e
+  /// salvar o link não deve recarregar a sugestão inteira.
+  String? _link;
 
   @override
   void initState() {
     super.initState();
     _qtdController = TextEditingController(text: widget.item.quantidadePedida.toString());
+    _link = widget.item.vinculo?.linkAnuncio;
+  }
+
+  bool get _temLink => _link != null && _link!.trim().isNotEmpty;
+
+  Future<void> _abrir(Uri uri) async {
+    final ok = await BuscaMarketplace.abrir(uri);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Não consegui abrir o link.')));
+    }
+  }
+
+  Future<void> _editarLink() async {
+    final vinculoId = widget.item.vinculo?.id;
+    if (vinculoId == null) return;
+    final controller = TextEditingController(text: _link ?? '');
+    final novo = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Link do anúncio'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(hintText: 'Cole o link da Shopee, Mercado Livre...'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('Salvar')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (novo == null) return;
+    try {
+      await ProdutoFornecedorRepository().definirLinkAnuncio(vinculoId, novo);
+      if (!mounted) return;
+      setState(() => _link = novo.trim());
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(novo.trim().isEmpty ? 'Link apagado.' : 'Link do anúncio salvo.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não consegui salvar o link: $e')));
+    }
+  }
+
+  void _menu(String opcao) {
+    final item = widget.item;
+    switch (opcao) {
+      case 'anuncio':
+        final u = Uri.tryParse(_link!.trim());
+        if (u != null) _abrir(u.hasScheme ? u : Uri.parse('https://${_link!.trim()}'));
+      case 'link':
+        _editarLink();
+      case 'shopee':
+        _abrir(BuscaMarketplace.shopee(item.produtoNome));
+      case 'ml':
+        _abrir(BuscaMarketplace.mercadoLivre(item.produtoNome));
+      case 'pausar':
+        widget.onTirarDaSugestao(item, false);
+      case 'nao_sugerir':
+        widget.onTirarDaSugestao(item, true);
+    }
   }
 
   @override
@@ -1610,14 +1677,20 @@ class _LinhaItemState extends State<_LinhaItem> {
                 width: 76,
                 child: Text('R\$${item.subtotal.toStringAsFixed(2)}', textAlign: TextAlign.right),
               ),
-              PopupMenuButton<bool>(
+              PopupMenuButton<String>(
                 tooltip: 'Mais opções',
-                icon: const Icon(Icons.more_vert, size: 18),
+                icon: Icon(_temLink ? Icons.link : Icons.more_vert, size: 18),
                 padding: EdgeInsets.zero,
-                onSelected: (naoSugerir) => widget.onTirarDaSugestao(item, naoSugerir),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: false, child: Text('Pausar sugestão por 30 dias')),
-                  PopupMenuItem(value: true, child: Text('Não sugerir mais este produto')),
+                onSelected: _menu,
+                itemBuilder: (_) => [
+                  if (_temLink) const PopupMenuItem(value: 'anuncio', child: Text('Abrir anúncio salvo')),
+                  if (item.vinculo?.id != null)
+                    PopupMenuItem(value: 'link', child: Text(_temLink ? 'Trocar link do anúncio' : 'Salvar link do anúncio')),
+                  const PopupMenuItem(value: 'shopee', child: Text('Menor preço na Shopee')),
+                  const PopupMenuItem(value: 'ml', child: Text('Menor preço no Mercado Livre (frete grátis)')),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(value: 'pausar', child: Text('Pausar sugestão por 30 dias')),
+                  const PopupMenuItem(value: 'nao_sugerir', child: Text('Não sugerir mais este produto')),
                 ],
               ),
             ],

@@ -144,6 +144,15 @@ class ProdutoFornecedorRepository {
     await supabase.from('produto_fornecedores').update({'principal': true}).eq('id', vinculoId);
   }
 
+  /// Salva (ou apaga, com texto vazio) o link do anúncio do vínculo.
+  Future<void> definirLinkAnuncio(String vinculoId, String link) async {
+    final limpo = link.trim();
+    await supabase
+        .from('produto_fornecedores')
+        .update({'link_anuncio': limpo.isEmpty ? null : limpo})
+        .eq('id', vinculoId);
+  }
+
   Future<void> excluir(String vinculoId) async {
     await supabase.from('produto_fornecedores').delete().eq('id', vinculoId);
   }

@@ -58,6 +58,10 @@ class ProdutoFornecedor {
   final bool ativo;
   final List<FaixaDescontoProdutoFornecedor> faixasDesconto;
 
+  /// Link do anúncio quando o fornecedor é marketplace (Shopee, Mercado
+  /// Livre). Null = tela não mexe no campo; '' = apagar.
+  final String? linkAnuncio;
+
   ProdutoFornecedor({
     this.id,
     required this.produtoId,
@@ -72,7 +76,10 @@ class ProdutoFornecedor {
     this.principal = false,
     this.ativo = true,
     this.faixasDesconto = const [],
+    this.linkAnuncio,
   });
+
+  bool get temLinkAnuncio => linkAnuncio != null && linkAnuncio!.trim().isNotEmpty;
 
   /// Custo unitário aplicado ao pedir [quantidade] unidades — a maior faixa
   /// cuja quantidade mínima cabe na quantidade pedida, senão o custo base.
@@ -126,6 +133,7 @@ class ProdutoFornecedor {
       unidadesPorEmbalagem: (row['unidades_por_embalagem'] as num?)?.toInt(),
       principal: row['principal'] as bool? ?? false,
       ativo: row['ativo'] as bool? ?? true,
+      linkAnuncio: row['link_anuncio']?.toString(),
       faixasDesconto: faixasRows
           .map((r) => FaixaDescontoProdutoFornecedor.fromSupabase(r as Map<String, dynamic>))
           .toList()
@@ -145,6 +153,8 @@ class ProdutoFornecedor {
       if (unidadesPorEmbalagem != null) 'unidades_por_embalagem': unidadesPorEmbalagem,
       'principal': principal,
       'ativo': ativo,
+      // Só grava quando a tela conhece o campo (mesmo motivo de unidades_por_embalagem).
+      if (linkAnuncio != null) 'link_anuncio': linkAnuncio!.trim().isEmpty ? null : linkAnuncio!.trim(),
     };
   }
 }

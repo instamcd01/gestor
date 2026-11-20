@@ -48,7 +48,26 @@ class _ConfirmarRecebimentoScreenState extends State<ConfirmarRecebimentoScreen>
   late final List<_ItemRecebimento> _itens;
   late final TextEditingController _nfeNumeroController;
   late final TextEditingController _nfeSerieController;
+  /// Frete pago no pedido (marketplace) — opcional; dividido entre os itens
+  /// proporcional ao valor de cada um e somado no custo da entrada.
+  final _freteController = TextEditingController();
   bool _salvando = false;
+
+  double get _frete => ProdutoValidators.parseNumero(_freteController.text) ?? 0;
+
+  double _qtd(_ItemRecebimento i) => ProdutoValidators.parseNumero(i.quantidadeController.text) ?? 0;
+  double _custoBase(_ItemRecebimento i) => ProdutoValidators.parseNumero(i.custoController.text) ?? 0;
+
+  /// Custo unitário com a parte do frete daquele item (rateio pelo valor).
+  double _custoComFrete(_ItemRecebimento i) {
+    final base = _custoBase(i);
+    final q = _qtd(i);
+    if (_frete <= 0 || q <= 0) return base;
+    final totalBase = _itens.fold<double>(0, (s, x) => s + _qtd(x) * _custoBase(x));
+    if (totalBase <= 0) return base;
+    final parteDoFrete = _frete * (q * base) / totalBase;
+    return base + parteDoFrete / q;
+  }
 
   @override
   void initState() {
@@ -68,6 +87,7 @@ class _ConfirmarRecebimentoScreenState extends State<ConfirmarRecebimentoScreen>
     }
     _nfeNumeroController.dispose();
     _nfeSerieController.dispose();
+    _freteController.dispose();
     super.dispose();
   }
 
@@ -78,8 +98,9 @@ class _ConfirmarRecebimentoScreenState extends State<ConfirmarRecebimentoScreen>
       final empresaId = authProvider.empresaId!;
 
       final itensEntrada = _itens.map((i) {
-        final quantidade = ProdutoValidators.parseNumero(i.quantidadeController.text) ?? 0;
-        final custo = ProdutoValidators.parseNumero(i.custoController.text) ?? 0;
+        final quantidade = _qtd(i);
+        // Custo do estoque = preço + parte do frete (custo real do produto).
+        final custo = double.parse(_custoComFrete(i).toStringAsFixed(4));
         return ItemEntrada(
           produtoId: i.origem.produtoSubstitutoId ?? i.origem.produtoId,
           eanNfe: '',
@@ -94,7 +115,8 @@ class _ConfirmarRecebimentoScreenState extends State<ConfirmarRecebimentoScreen>
         fornecedor: widget.pedido.fornecedor,
         nfeNumero: _nfeNumeroController.text.trim().isEmpty ? null : _nfeNumeroController.text.trim(),
         nfeSerie: _nfeSerieController.text.trim().isEmpty ? null : _nfeSerieController.text.trim(),
-        observacoes: 'Recebimento do pedido de compra #${widget.pedido.numeroSequencial ?? ''}',
+        observacoes: 'Recebimento do pedido de compra #${widget.pedido.numeroSequencial ?? ''}'
+            '${_frete > 0 ? ' · frete R\$${_frete.toStringAsFixed(2)} dividido no custo dos itens' : ''}',
         itens: itensEntrada,
       );
 
@@ -115,7 +137,9 @@ class _ConfirmarRecebimentoScreenState extends State<ConfirmarRecebimentoScreen>
       final pedidoRepo = PedidoCompraRepository();
       for (final item in _itens) {
         final quantidade = ProdutoValidators.parseNumero(item.quantidadeController.text) ?? 0;
-        final custo = ProdutoValidators.parseNumero(item.custoController.text) ?? 0;
+        // O vínculo guarda o preço SEM frete: na próxima compra o frete pode
+        // ser grátis, e é esse preço que a Sugestão de Compra usa.
+        final custo = _custoBase(item);
         final produtoId = item.origem.produtoSubstitutoId ?? item.origem.produtoId;
 
         if (fornecedorId != null && custo > 0) {
@@ -173,6 +197,18 @@ class _ConfirmarRecebimentoScreenState extends State<ConfirmarRecebimentoScreen>
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _freteController,
+            decoration: const InputDecoration(
+              labelText: 'Frete do pedido (R\$, opcional)',
+              helperText: 'Deixe em branco se o frete foi grátis. Ele é dividido entre os itens e entra no custo.',
+              helperMaxLines: 2,
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [MoedaInputFormatter()],
+            onChanged: (_) => setState(() {}),
+          ),
           const SizedBox(height: 16),
           for (final item in _itens)
             Card(
@@ -201,10 +237,19 @@ class _ConfirmarRecebimentoScreenState extends State<ConfirmarRecebimentoScreen>
                             decoration: const InputDecoration(labelText: 'Custo unitário (R\$)', isDense: true),
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             inputFormatters: [MoedaInputFormatter()],
+                            onChanged: (_) => setState(() {}),
                           ),
                         ),
                       ],
                     ),
+                    if (_frete > 0 && _qtd(item) > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Com o frete: R\$${_custoComFrete(item).toStringAsFixed(2)} por unidade',
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary),
+                        ),
+                      ),
                   ],
                 ),
               ),

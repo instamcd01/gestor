@@ -175,6 +175,7 @@ class _VinculoFornecedorFormScreenState extends State<_VinculoFornecedorFormScre
   String? _fornecedorId;
   late TextEditingController _custoController;
   late TextEditingController _codigoController;
+  late TextEditingController _linkController;
   late TextEditingController _multiploController;
   bool _principal = false;
   bool _salvando = false;
@@ -195,6 +196,7 @@ class _VinculoFornecedorFormScreenState extends State<_VinculoFornecedorFormScre
     _fornecedorId = v?.fornecedorId;
     _custoController = TextEditingController(text: v != null ? ProdutoValidators.formatarMoeda(v.custoUnitario) : '');
     _codigoController = TextEditingController(text: v?.codigoProdutoFornecedor ?? '');
+    _linkController = TextEditingController(text: v?.linkAnuncio ?? '');
     _multiploController = TextEditingController(text: v?.multiploCompra?.toString() ?? '');
     _principal = v?.principal ?? false;
     for (final faixa in v?.faixasDesconto ?? []) {
@@ -220,6 +222,7 @@ class _VinculoFornecedorFormScreenState extends State<_VinculoFornecedorFormScre
   void dispose() {
     _custoController.dispose();
     _codigoController.dispose();
+    _linkController.dispose();
     _multiploController.dispose();
     for (final faixa in _faixas) {
       faixa.quantidade.dispose();
@@ -266,6 +269,7 @@ class _VinculoFornecedorFormScreenState extends State<_VinculoFornecedorFormScre
       multiploCompra: int.tryParse(_multiploController.text.trim()),
       principal: _principal,
       faixasDesconto: faixas,
+      linkAnuncio: _linkController.text.trim(),
     );
 
     setState(() => _salvando = true);
@@ -342,6 +346,15 @@ class _VinculoFornecedorFormScreenState extends State<_VinculoFornecedorFormScre
               TextFormField(
                 controller: _codigoController,
                 decoration: const InputDecoration(labelText: 'Código do produto no fornecedor (Opcional)'),
+              ),
+              TextFormField(
+                controller: _linkController,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  labelText: 'Link do anúncio (Opcional)',
+                  helperText: 'Pra Shopee, Mercado Livre... Na Sugestão de Compra dá pra abrir o anúncio ou buscar o menor preço do dia.',
+                  helperMaxLines: 2,
+                ),
               ),
               TextFormField(
                 controller: _multiploController,
