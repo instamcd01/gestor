@@ -35,6 +35,7 @@ class TipoNotificacao {
   static const nfePendente = 'nfe_pendente';
   static const guiaRascunho = 'guia_rascunho';
   static const whatsappAtendimento = 'whatsapp_atendimento';
+  static const dataEspecial = 'data_especial'; // cron datas-especiais-avisar, 08:00
 }
 
 /// Chaves de preferência de alerta (som/vibração) por categoria — não ligam/
@@ -152,6 +153,11 @@ const categoriasNotificacaoDisponiveis = [
     chave: TipoNotificacao.guiaRascunho,
     titulo: 'Dica nova pro site',
     descricao: 'Quando um Reel educativo da loja vira rascunho de página no site, esperando você revisar e publicar.',
+  ),
+  CategoriaNotificacao(
+    chave: TipoNotificacao.dataEspecial,
+    titulo: 'Feriados e datas especiais',
+    descricao: 'Alguns dias antes de feriados (pra escolher o horário), datas do mundo pet, datas de vendas e temporadas.',
   ),
   CategoriaNotificacao(
     chave: TipoNotificacao.erroSistema,

@@ -46,6 +46,8 @@ import '../widgets/estado_erro_lista.dart';
       return (Icons.error_outline, Colors.red);
     case TipoNotificacao.nfePendente:
       return (Icons.receipt_long_outlined, Colors.blue);
+    case TipoNotificacao.dataEspecial:
+      return (Icons.event_note_outlined, Colors.deepOrange);
     case TipoNotificacao.guiaRascunho:
       return (Icons.menu_book_outlined, Colors.blue);
     default:

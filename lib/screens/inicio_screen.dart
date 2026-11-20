@@ -12,6 +12,7 @@ import '../providers/historico_vendas_provider.dart';
 import '../providers/modulo_provider.dart';
 import '../providers/produto_provider.dart';
 import '../widgets/metric_card.dart';
+import '../widgets/aviso_feriado_banner.dart';
 import '../widgets/aviso_assinatura_banner.dart';
 import '../widgets/primeiros_passos_card.dart';
 import 'custos_operacao_screen.dart';
@@ -139,6 +140,7 @@ class _InicioScreenState extends State<InicioScreen> {
                 const SizedBox(height: 20),
                 _botaoVender(context),
                 _bannerPedidosPendentes(context),
+                if (auth.isDono || auth.isGerente) const AvisoFeriadoBanner(),
                 if (auth.isDono) ...[
                   const AvisoAssinaturaBanner(),
                   const SizedBox(height: 16),

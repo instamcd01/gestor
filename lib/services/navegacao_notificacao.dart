@@ -11,6 +11,7 @@ import '../screens/avaliacoes_disputas_screen.dart';
 import '../screens/campanhas_ativacao_screen.dart';
 import '../screens/cliente_screen.dart';
 import '../screens/conversas_whatsapp_screen.dart';
+import '../screens/datas_especiais_screen.dart';
 import '../screens/despesas_screen.dart';
 import '../screens/dicas_site_screen.dart';
 import '../screens/editar_produto_screen.dart';
@@ -51,6 +52,8 @@ Widget? _telaRelacionada(String tipo) {
       return ClientesScreen();
     case TipoNotificacao.nfePendente:
       return const ImportarNotaFiscalScreen();
+    case TipoNotificacao.dataEspecial:
+      return const DatasEspeciaisScreen();
     case TipoNotificacao.erroSistema:
       // Sem tela própria — a mensagem já vem com a rota do site onde o
       // erro aconteceu; investigar é olhar o código, não navegar no app.
