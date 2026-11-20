@@ -153,7 +153,37 @@ async function roboTarefas() {
   return pegas;
 }
 
+// Sessão do Separador (client app-separador, refresh "Offline" de 48 h que se
+// renova sozinho — a função ifood-chat mantém viva). Teste: o Portal aceita?
+async function sessaoSeparador(empresa_id: string) {
+  const { data: c } = await admin.from("ifood_chat_conexoes").select("*").eq("empresa_id", empresa_id).maybeSingle();
+  if (!c) throw new Error("sem conexão do Separador");
+  const r = await fetch(KEYCLOAK, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", client_id: "app-separador", refresh_token: c.refresh_token }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw new Error(`separador ${r.status} ${j.error ?? ""}`);
+  await admin.from("ifood_chat_conexoes").update({
+    access_token: j.access_token, access_expira_em: new Date(Date.now() + (j.expires_in ?? 3600) * 1000).toISOString(),
+    refresh_token: j.refresh_token ?? c.refresh_token, refresh_expira_em: expDoJwt(j.refresh_token ?? c.refresh_token),
+    renovado_em: new Date().toISOString(),
+  }).eq("empresa_id", empresa_id);
+  return j;
+}
+
 async function roboSessao(body: any) {
+  if (body?.origem === "separador") {
+    const j = await sessaoSeparador(body.empresa_id);
+    const { data: cfg } = await admin.from("empresa_marketplace_config").select("id_loja_plataforma")
+      .eq("empresa_id", body.empresa_id).eq("marketplace_id", IFOOD_ID).maybeSingle();
+    const perfil = (() => { try { return JSON.parse(atob(String(j.id_token ?? j.access_token).split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); } catch { return {}; } })();
+    return { status: 200, body: { merchant_id: cfg?.id_loja_plataforma, origem: "separador", oidc_user: {
+      id_token: j.id_token ?? null, session_state: j.session_state ?? null, access_token: j.access_token,
+      refresh_token: null, token_type: "Bearer", scope: j.scope ?? "openid", profile: perfil,
+      expires_at: Math.floor(Date.now() / 1000) + (j.expires_in ?? 3600) } } };
+  }
   const { data: c } = await admin.from("ifood_portal_conexoes").select("*").eq("empresa_id", body?.empresa_id).maybeSingle();
   if (!c) return { status: 404, body: { erro: "loja sem conexão com o Portal" } };
   const n = await renovarESalvar(c);
