@@ -212,7 +212,7 @@ class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.trending_up),
-                  label: const Text('Ajustes de alta demanda (frete e prazo)'),
+                  label: const Text('Ajustes de alta demanda (site e WhatsApp)'),
                   onPressed: () {
                     Navigator.pop(ctx, false);
                     _abrirAjustes(d);
