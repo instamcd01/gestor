@@ -14,6 +14,7 @@ class AvisoFeriadoBanner extends StatefulWidget {
 
 class _AvisoFeriadoBannerState extends State<AvisoFeriadoBanner> {
   DataEspecial? _feriado;
+  String? _recomendacao;
 
   @override
   void initState() {
@@ -26,6 +27,17 @@ class _AvisoFeriadoBannerState extends State<AvisoFeriadoBanner> {
       final datas = await DatasEspeciaisRepository().proximas(dias: 7);
       final pendente = datas.where((d) => d.ehFeriado && !d.decidido).firstOrNull;
       if (mounted) setState(() => _feriado = pendente);
+      if (pendente != null) {
+        final r = await DatasEspeciaisRepository().recomendar(pendente.id, pendente.inicio);
+        if (r != null && mounted) {
+          final ped = (r['pedidos'] as num?)?.round() ?? 0;
+          setState(() => _recomendacao = switch (r['modo']) {
+                'fechada' => 'Recomendado: fechar',
+                'normal' => 'Recomendado: horário normal (~$ped pedidos)',
+                _ => 'Recomendado: ${r['abre']}–${r['fecha']} (~$ped pedidos)',
+              });
+        }
+      }
     } catch (_) {
       // A tela Início não pode depender disso.
     }
@@ -55,8 +67,14 @@ class _AvisoFeriadoBannerState extends State<AvisoFeriadoBanner> {
                 const Icon(Icons.event_busy_outlined, color: Colors.deepOrange),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text('$quando é ${f.nome}. Como a loja vai funcionar?',
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('$quando é ${f.nome}. Como a loja vai funcionar?',
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      if (_recomendacao != null) Text(_recomendacao!, style: const TextStyle(fontSize: 13)),
+                    ],
+                  ),
                 ),
                 const Icon(Icons.chevron_right),
               ],

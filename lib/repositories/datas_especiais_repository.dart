@@ -62,6 +62,15 @@ class DatasEspeciaisRepository {
     return (data as List).map((r) => DataEspecial.fromRow(Map<String, dynamic>.from(r as Map))).toList();
   }
 
+  /// Recomendação de horário pro feriado (histórico + tipo de feriado + clima +
+  /// custo por hora). Campos: modo, abre, fecha, pedidos, lucro, faixas[],
+  /// motivos[], confianca.
+  Future<Map<String, dynamic>?> recomendar(String dataEspecialId, DateTime data) async {
+    final d = '${data.year.toString().padLeft(4, '0')}-${data.month.toString().padLeft(2, '0')}-${data.day.toString().padLeft(2, '0')}';
+    final r = await supabase.rpc('recomendar_horario_feriado', params: {'p_data_especial_id': dataEspecialId, 'p_data': d});
+    return r == null ? null : Map<String, dynamic>.from(r as Map);
+  }
+
   /// Horário da loja no feriado. Por baixo cria pausas (pausas_loja), que já
   /// travam site/WhatsApp e pausam iFood/99Food nos horários fechados.
   Future<void> definirFuncionamento({

@@ -21,6 +21,8 @@ class DatasEspeciaisScreen extends StatefulWidget {
 class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
   final _repo = DatasEspeciaisRepository();
   List<DataEspecial> _datas = [];
+  /// Recomendação por feriado (chave = id|data). Carrega depois da lista.
+  final Map<String, Map<String, dynamic>> _recs = {};
   bool _carregando = true;
   String? _erro;
 
@@ -38,10 +40,36 @@ class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
     try {
       final datas = await _repo.proximas(dias: 120);
       if (mounted) setState(() => _datas = datas);
+      _carregarRecomendacoes(datas);
     } catch (e) {
       if (mounted) setState(() => _erro = 'Não deu pra carregar o calendário. Puxe pra tentar de novo.');
     } finally {
       if (mounted) setState(() => _carregando = false);
+    }
+  }
+
+  String _chave(DataEspecial d) => '${d.id}|${d.inicio.toIso8601String()}';
+
+  Future<void> _carregarRecomendacoes(List<DataEspecial> datas) async {
+    for (final d in datas.where((d) => d.ehFeriado && d.diasPara >= 0 && d.diasPara <= 45)) {
+      try {
+        final r = await _repo.recomendar(d.id, d.inicio);
+        if (r != null && mounted) setState(() => _recs[_chave(d)] = r);
+      } catch (_) {
+        // Sem recomendação, a tela segue funcionando.
+      }
+    }
+  }
+
+  String _textoRecomendacao(Map<String, dynamic> r) {
+    final ped = (r['pedidos'] as num?)?.round() ?? 0;
+    switch (r['modo']) {
+      case 'fechada':
+        return 'Recomendado: fechar';
+      case 'normal':
+        return 'Recomendado: horário normal · ~$ped pedidos · R\$ ${r['lucro']}';
+      default:
+        return 'Recomendado: ${r['abre']}–${r['fecha']} · ~$ped pedidos · R\$ ${r['lucro']}';
     }
   }
 
@@ -93,7 +121,12 @@ class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
     final normal = d.horarioNormal;
     var abre = _parse(d.abre ?? normal?['abre']?.toString(), const TimeOfDay(hour: 9, minute: 0));
     var fecha = _parse(d.fecha ?? normal?['fecha']?.toString(), const TimeOfDay(hour: 14, minute: 0));
-    var modo = d.funcionamento ?? 'especial';
+    final rec = _recs[_chave(d)];
+    var modo = d.funcionamento ?? (rec?['modo'] as String?) ?? 'especial';
+    if (d.funcionamento == null && rec != null && rec['modo'] == 'especial') {
+      abre = _parse(rec['abre']?.toString(), abre);
+      fecha = _parse(rec['fecha']?.toString(), fecha);
+    }
 
     final confirmado = await showModalBottomSheet<bool>(
       context: context,
@@ -113,6 +146,16 @@ class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
                 if (d.dica != null) ...[
                   const SizedBox(height: 8),
                   Text(d.dica!, style: const TextStyle(fontSize: 13)),
+                ],
+                if (rec != null) ...[
+                  const SizedBox(height: 12),
+                  _blocoRecomendacao(ctx, rec, () => setSheet(() {
+                        modo = rec['modo'] as String;
+                        if (modo == 'especial') {
+                          abre = _parse(rec['abre']?.toString(), abre);
+                          fecha = _parse(rec['fecha']?.toString(), fecha);
+                        }
+                      })),
                 ],
                 const SizedBox(height: 16),
                 SegmentedButton<String>(
@@ -198,6 +241,65 @@ class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
     }
   }
 
+  Widget _blocoRecomendacao(BuildContext ctx, Map<String, dynamic> r, VoidCallback usar) {
+    final cs = Theme.of(ctx).colorScheme;
+    final faixas = (r['faixas'] as List? ?? []).cast<Map>();
+    final motivos = (r['motivos'] as List? ?? []).cast<String>();
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(cs.primary.withValues(alpha: 0.08), cs.surface),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.insights_outlined, size: 18, color: cs.primary),
+            const SizedBox(width: 6),
+            Expanded(child: Text(_textoRecomendacao(r), style: const TextStyle(fontWeight: FontWeight.w600))),
+          ]),
+          const SizedBox(height: 8),
+          ...faixas.map((f) {
+            final lucro = (f['lucro'] as num?) ?? 0;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 1),
+              child: Row(children: [
+                SizedBox(width: 120, child: Text('${f['faixa']} ${f['de']}–${f['ate']}', style: const TextStyle(fontSize: 12))),
+                Expanded(child: Text('~${(f['pedidos'] as num).toStringAsFixed(1).replaceAll('.', ',')} pedidos', style: const TextStyle(fontSize: 12))),
+                Text('${lucro < 0 ? '-' : ''}R\$ ${lucro.abs()}',
+                    style: TextStyle(fontSize: 12, color: lucro < 0 ? Colors.red : null, fontWeight: FontWeight.w600)),
+              ]),
+            );
+          }),
+          Theme(
+            data: Theme.of(ctx).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text('Por quê? (confiança ${r['confianca']})', style: const TextStyle(fontSize: 12)),
+              children: motivos
+                  .map((m) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Text('•  ', style: TextStyle(fontSize: 12)),
+                          Expanded(child: Text(m, style: const TextStyle(fontSize: 12))),
+                        ]),
+                      ))
+                  .toList(),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(onPressed: usar, child: const Text('Usar recomendação')),
+          ),
+        ],
+      ),
+    );
+  }
+
   (IconData, Color) _iconeCor(String categoria) {
     switch (categoria) {
       case 'feriado':
@@ -248,6 +350,11 @@ class _DatasEspeciaisScreenState extends State<DatasEspeciaisScreen> {
                   children: [
                     Text(d.nome, style: const TextStyle(fontWeight: FontWeight.w600)),
                     Text(_quando(d), style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                    if (d.ehFeriado && !d.decidido && _recs[_chave(d)] != null) ...[
+                      const SizedBox(height: 4),
+                      Text(_textoRecomendacao(_recs[_chave(d)]!),
+                          style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.primary)),
+                    ],
                     if (d.ehFeriado) ...[
                       const SizedBox(height: 4),
                       Text(
