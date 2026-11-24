@@ -28,6 +28,7 @@ import 'ifood_financeiro_screen.dart';
 import 'ifood_promocoes_screen.dart';
 import 'qualidade_ifood_screen.dart';
 import 'recebiveis_ifood_screen.dart';
+import 'robos_ifood_screen.dart';
 import 'ruptura_ifood_screen.dart';
 
 /// Tela dedicada da integração com o iFood — pausa/retomar loja, indicador
@@ -791,6 +792,17 @@ class _IntegracaoIfoodScreenState extends State<IntegracaoIfoodScreen> {
               padding: const EdgeInsets.all(12),
               children: [
                 _cardPausaLoja(),
+                if (context.read<AuthProvider>().isDono || context.read<AuthProvider>().isGerente)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: ListTile(
+                      leading: const Icon(Icons.smart_toy_outlined, color: Colors.red),
+                      title: const Text('Robôs do iFood'),
+                      subtitle: const Text('Ligar/desligar e configurar o robô do Portal (domingo e feriado) e as mensagens no chat do Separador'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RobosIfoodScreen())),
+                    ),
+                  ),
                 Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   child: ListTile(
