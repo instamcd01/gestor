@@ -12,6 +12,7 @@ import '../models/produto.dart';
 import '../models/venda.dart';
 import '../providers/auth_provider.dart';
 import '../providers/carrinho_provider.dart';
+import '../providers/cliente_provider.dart';
 import '../providers/kit_produto_provider.dart';
 import '../providers/metodos_pagamento_provider.dart';
 import '../providers/produto_provider.dart';
@@ -27,6 +28,7 @@ import 'carrinhos_do_dia_screen.dart';
 import 'conclusao_venda_screen.dart';
 import 'conversas_whatsapp_screen.dart';
 import 'desconto_screen.dart';
+import 'editar_cliente_screen.dart';
 import 'pagamento_credito_screen.dart';
 import 'pagamento_link_screen.dart';
 import 'pagamento_outros_screen.dart';
@@ -70,6 +72,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   final _painelFoco = FocusNode(debugLabel: 'painel-pdv');
   final _listaScroll = ScrollController();
 
+  late final ClientProvider _clientes;
   bool _carregando = true;
   bool _modoGrade = false;
   String _categoria = 'Tudo';
@@ -98,6 +101,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     super.initState();
     HardwareKeyboard.instance.addHandler(_tecla);
     vendaParaCliente.addListener(_atenderVendaParaCliente);
+    _clientes = context.read<ClientProvider>()..addListener(_sincronizarClienteDoCarrinho);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _carregar();
@@ -165,6 +169,7 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_tecla);
     vendaParaCliente.removeListener(_atenderVendaParaCliente);
+    _clientes.removeListener(_sincronizarClienteDoCarrinho);
     _buscaController.dispose();
     _buscaFoco.dispose();
     _cupomController.dispose();
@@ -323,6 +328,68 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
 
   Future<void> _escolherCliente() async {
     await escolherClienteEEntrega(context, context.read<CarrinhoProvider>(), comoJanela: true);
+    if (mounted && _fase == _Fase.montando) _buscaFoco.requestFocus();
+  }
+
+  /// O carrinho guarda uma cópia do cliente de quando ele foi escolhido.
+  /// Se o cadastro muda depois (endereço editado aqui ou na tela de
+  /// Clientes), a cópia ficava velha: distância e frete de antes. Sempre que
+  /// a lista de clientes muda, troca pela versão nova e, se é entrega,
+  /// recalcula a faixa pela distância nova.
+  bool _sincronizando = false;
+  Future<void> _sincronizarClienteDoCarrinho() async {
+    if (_sincronizando || !mounted) return;
+    final carrinho = context.read<CarrinhoProvider>();
+    final atual = carrinho.clienteSelecionado;
+    if (atual?.idCliente == null) return;
+    final novo = _clientes.clientes.where((c) => c.idCliente == atual!.idCliente).firstOrNull;
+    if (novo == null) return;
+    final mudouEndereco = novo.enderecoExibicao != atual!.enderecoExibicao ||
+        novo.rangeDistancia != atual.rangeDistancia ||
+        novo.latitude != atual.latitude ||
+        novo.longitude != atual.longitude;
+    if (!mudouEndereco && novo.nome == atual.nome && novo.saldo == atual.saldo) return;
+
+    _sincronizando = true;
+    try {
+      final faixaAntes = carrinho.zonaEntregaSelecionada;
+      carrinho.selecionarCliente(novo);
+      if (!mudouEndereco || faixaAntes == null) return;
+      await resolverZonaEntregaParaCliente(context, novo, carrinho);
+      if (!mounted) return;
+      final faixa = carrinho.zonaEntregaSelecionada;
+      final km = novo.rangeDistancia?.toStringAsFixed(1).replaceAll('.', ',');
+      if (faixa == null) {
+        // Fora de todas as faixas: não deixa a venda seguir como "retirada"
+        // sem ninguém perceber.
+        _aviso('Endereço novo${km == null ? '' : ' ($km km)'} fora das faixas de entrega — '
+            'escolha a entrega de novo (F8).');
+      } else if (faixa.id != faixaAntes.id) {
+        _aviso('Endereço novo${km == null ? '' : ' ($km km)'}: entrega mudou pra ${faixa.nome}.');
+      }
+    } finally {
+      _sincronizando = false;
+    }
+  }
+
+  /// Editar o endereço sem sair do Vender: abre o cadastro numa janela por
+  /// cima da venda. Ao salvar, o cadastro recalcula a rota e o
+  /// `_sincronizarClienteDoCarrinho` atualiza distância e faixa aqui.
+  Future<void> _editarEnderecoCliente() async {
+    final cliente = context.read<CarrinhoProvider>().clienteSelecionado;
+    if (cliente?.idCliente == null) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        clipBehavior: Clip.antiAlias,
+        insetPadding: const EdgeInsets.all(40),
+        child: SizedBox(
+          width: 760,
+          height: (MediaQuery.sizeOf(ctx).height - 80).clamp(400, 860).toDouble(),
+          child: EditarClienteScreen(clienteSelecionado: cliente!),
+        ),
+      ),
+    );
     if (mounted && _fase == _Fase.montando) _buscaFoco.requestFocus();
   }
 
@@ -1620,6 +1687,20 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                   ],
                 ),
               ),
+              if (cliente.idCliente != null) ...[
+                TextButton(
+                  onPressed: _editarEnderecoCliente,
+                  style: TextButton.styleFrom(
+                    backgroundColor: colorScheme.surfaceContainer,
+                    foregroundColor: colorScheme.onSurface,
+                    minimumSize: const Size(0, 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: const Text('Endereço', style: TextStyle(fontSize: 12)),
+                ),
+                const SizedBox(width: 6),
+              ],
               TextButton(
                 onPressed: _escolherCliente,
                 style: TextButton.styleFrom(
