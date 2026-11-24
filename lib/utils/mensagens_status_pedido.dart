@@ -185,7 +185,13 @@ String? _lembretePagamentoNaEntrega(Venda venda) {
       final troco = venda.troco > 0 ? ' (troco de *${moeda.format(venda.troco)}*)' : '';
       return 'Pagamento na entrega: $valor em dinheiro$troco.';
     case 'Cartão de Crédito':
-      return 'Pagamento na entrega: $valor no cartão de crédito.';
+      // Parcelado no site (metadata.parcelas): mostra as parcelas, senão o
+      // cliente estranha o valor cheio na maquininha.
+      final parcela = venda.valorParcelaCartao;
+      final parcelado = parcela != null
+          ? ' em ${venda.parcelasCartao}x de *${moeda.format(parcela)}*'
+          : '';
+      return 'Pagamento na entrega: $valor no cartão de crédito$parcelado.';
     case 'Cartão de Débito':
       return 'Pagamento na entrega: $valor no cartão de débito.';
     case 'Pix':
