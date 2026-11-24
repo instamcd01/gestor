@@ -313,6 +313,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
     final eh99Food = _venda.canalVenda == '99food';
     String? motivoCodigo;
     String? motivoDescricao;
+    var avisarCliente = true;
 
     if (ehIfood) {
       final motivo = await _escolherMotivoCancelamentoIfood();
@@ -333,9 +334,17 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
       // ('cancelado_pela_loja') pra já dar pra saber QUEM cancelou mesmo
       // sem texto — ver Venda.origemCancelamento.
       final controladorMotivo = TextEditingController();
+      // Mesma regra do gatilho notificar_status_pedido: site e WhatsApp
+      // sempre avisam; venda do app só quando é entrega.
+      final clienteSeriaAvisado = _venda.canalVenda == 'site_proprio' ||
+          _venda.canalVenda == 'whatsapp' ||
+          (_venda.canalVenda == 'loja_fisica' &&
+              _venda.entregaSelecionada.isNotEmpty &&
+              _venda.entregaSelecionada != 'Retirada na Loja');
       final confirmou = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
           title: const Text('Cancelar venda'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -356,6 +365,15 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              if (clienteSeriaAvisado)
+                CheckboxListTile(
+                  value: avisarCliente,
+                  onChanged: (v) => setDialogState(() => avisarCliente = v ?? true),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('Avisar o cliente pelo WhatsApp'),
+                  subtitle: const Text('Desmarque pra pedido antigo, de teste ou duplicado.'),
+                ),
             ],
           ),
           actions: [
@@ -366,6 +384,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
               child: const Text('Cancelar venda', style: TextStyle(color: Colors.white)),
             ),
           ],
+        ),
         ),
       );
       if (confirmou != true || !mounted) return;
@@ -383,6 +402,7 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
         _venda.idVenda!,
         motivoCodigo: motivoCodigo,
         motivoDescricao: motivoDescricao,
+        avisarCliente: avisarCliente,
       );
       if (!mounted) return;
       setState(() {
@@ -394,7 +414,11 @@ class _VendaDetalhesScreenState extends State<VendaDetalhesScreen> {
         _historicoFuture = VendaRepository().historicoStatus(_venda.idVenda!);
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Venda cancelada. Estoque e saldo do cliente foram estornados.')),
+        SnackBar(
+          content: Text(avisarCliente
+              ? 'Venda cancelada. Estoque e saldo do cliente foram estornados.'
+              : 'Venda cancelada sem avisar o cliente. Estoque e saldo foram estornados.'),
+        ),
       );
     } catch (e) {
       if (!mounted) return;

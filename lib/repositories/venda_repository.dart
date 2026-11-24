@@ -327,8 +327,12 @@ class VendaRepository {
   /// tudo dentro da função `cancelar_pedido` no banco (atômico). Pedidos
   /// com status 'entregue'/'concluido' são bloqueados por trigger contra
   /// qualquer outra edição, só a transição para 'cancelado' é permitida.
-  Future<void> cancelar(String idVenda, {String? motivoCodigo, String? motivoDescricao}) async {
-    await supabase.rpc('cancelar_pedido', params: {
+  /// `avisarCliente: false` usa `cancelar_pedido_sem_aviso`: mesmo
+  /// cancelamento, só sem a mensagem de status pro cliente (pedido velho,
+  /// teste, duplicado).
+  Future<void> cancelar(String idVenda,
+      {String? motivoCodigo, String? motivoDescricao, bool avisarCliente = true}) async {
+    await supabase.rpc(avisarCliente ? 'cancelar_pedido' : 'cancelar_pedido_sem_aviso', params: {
       'p_pedido_id': idVenda,
       'p_motivo_codigo': motivoCodigo,
       'p_motivo_descricao': motivoDescricao,
