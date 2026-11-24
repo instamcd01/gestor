@@ -6,7 +6,7 @@
 import { ImageResponse } from "https://deno.land/x/og_edge@0.0.4/mod.ts";
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { montar, tamanhoPng, LARGURA } from "./layout.js";
+import { montar, montarLista, tamanhoPng, LARGURA } from "./layout.js";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -40,8 +40,10 @@ Deno.serve(async (req) => {
     const { data: seg } = await admin.from("whatsapp_atendente_parametros").select("valor").eq("nome", "orcamento_segredo").maybeSingle();
     if (!seg || req.headers.get("x-orcamento-segredo") !== seg.valor) return json(401, { erro: "sem permissão" });
 
-    const { conversa_id } = await req.json();
-    const { data: dados, error } = await admin.rpc("whatsapp_orcamento_dados", { p_conversa_id: conversa_id });
+    // modo "lista" (24/11): a lista de opções da atendente numa imagem só (whatsapp_lista_dados)
+    const { conversa_id, modo } = await req.json();
+    const lista = modo === "lista";
+    const { data: dados, error } = await admin.rpc(lista ? "whatsapp_lista_dados" : "whatsapp_orcamento_dados", { p_conversa_id: conversa_id });
     if (error) return json(500, { erro: error.message });
     if (!dados || !dados.itens?.length) return json(200, { url: null, motivo: "sem itens" });
 
@@ -58,14 +60,16 @@ Deno.serve(async (req) => {
       i.foto = b ? `data:${b.tipo};base64,${encodeBase64(b.bytes)}` : null;
     }));
 
-    const { arvore, altura } = montar(dados, h, logo);
+    const { arvore, altura } = (lista ? montarLista : montar)(dados, h, logo);
     const resp = new ImageResponse(arvore, { width: LARGURA, height: altura, fonts: await carregarFontes() });
     const png = new Uint8Array(await resp.arrayBuffer());
-    const caminho = `${dados.empresa_id}/atendente-${crypto.randomUUID()}.png`;
+    const caminho = `${dados.empresa_id}/${lista ? "lista" : "atendente"}-${crypto.randomUUID()}.png`;
     const up = await admin.storage.from("orcamentos").upload(caminho, png, { contentType: "image/png" });
     if (up.error) return json(500, { erro: up.error.message });
     const { data: pub } = admin.storage.from("orcamentos").getPublicUrl(caminho);
-    return json(200, { url: pub.publicUrl, altura });
+    // "modo" na resposta: o n8n só usa a imagem de lista quando vem marcada (versão antiga desta função
+    // ignorava o modo e devolveria um orçamento)
+    return json(200, { url: pub.publicUrl, altura, modo: lista ? "lista" : "orcamento" });
   } catch (e) {
     return json(500, { erro: String(e) });
   }

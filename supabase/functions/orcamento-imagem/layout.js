@@ -17,6 +17,61 @@ export function tamanhoPng(bytes) {
   return { w: v.getUint32(16), h: v.getUint32(20) };
 }
 
+// Lista de produtos da atendente numa imagem só (24/11): número, foto, nome e preço de cada opção.
+// Antes ia uma foto por produto e o WhatsApp entregava fora de ordem.
+export function montarLista(dados, h, logo) {
+  const itens = dados.itens.map((i) => ({ ...i, preco: Number(i.preco), preco_cheio: i.preco_cheio == null ? null : Number(i.preco_cheio) }));
+  const sobre = corDoTextoSobre(dados.cor);
+  const W = LARGURA - 48;
+  // nome curto do WhatsApp ("Sachê Whiskas gato adulto carne 85g") e o R$/kg que a busca já calculou
+  const partes = (i) => {
+    const l = String(i.linha || nomeCurto(i.nome || ""));
+    const nome = l.split(/\s+[—–]\s+/)[0].trim();
+    const kg = (l.match(/\((R\$\s?[\d.,]+\/kg)\)/) || [])[1] || null;
+    return { nome, kg };
+  };
+  // linha = 17px × 1,3 ≈ 22; foto 76 + 20 de respiro; rodapé 12 + 48 + 16 de margem (medido no PNG de 24/11)
+  const alturaItem = (i) => Math.max(76, Math.ceil(partes(i).nome.length / 27) * 22 + (partes(i).kg ? 22 : 0)) + 20;
+  const altura = 92 + 8 + itens.reduce((s, i) => s + alturaItem(i) + 1, 0) + 76;
+
+  const cabecalho = h("div", { style: { display: "flex", width: LARGURA, height: 92, alignItems: "center", backgroundColor: dados.cor, paddingLeft: 24, paddingRight: 24 } },
+    h("div", { style: { display: "flex", flexGrow: 1, alignItems: "center" } },
+      logo
+        ? h("img", { src: logo.src, width: Math.round(56 * logo.w / logo.h), height: 56 })
+        : h("div", { style: { display: "flex", fontSize: 24, fontWeight: 800, color: sobre } }, dados.loja)),
+    h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end" } },
+      h("div", { style: { display: "flex", fontSize: 16, fontWeight: 700, color: sobre } }, "Opções pra você"),
+      h("div", { style: { display: "flex", fontSize: 14, color: sobre } }, dados.data)));
+
+  const blocos = [];
+  itens.forEach((i, idx) => {
+    if (idx > 0) blocos.push(h("div", { style: { display: "flex", width: W, height: 1, backgroundColor: LINHA, marginLeft: 24 } }));
+    const { nome, kg } = partes(i);
+    const promo = !!i.preco_cheio && i.preco_cheio > i.preco;
+    const direita = [];
+    if (promo) direita.push(h("div", { style: { display: "flex", fontSize: 15, color: APAGADO, textDecoration: "line-through", whiteSpace: "nowrap" } }, moeda(i.preco_cheio)));
+    direita.push(h("div", { style: { display: "flex", whiteSpace: "nowrap", fontSize: 20, fontWeight: 800, color: promo ? VERDE : TEXTO } }, moeda(i.preco)));
+    const texto = [h("div", { style: { display: "flex", fontSize: 17, lineHeight: 1.3, fontWeight: 600, color: TEXTO } }, nome)];
+    if (kg) texto.push(h("div", { style: { display: "flex", fontSize: 14, color: APAGADO, marginTop: 4 } }, `sai a ${kg.replace(/\s/g, " ")}`));
+    blocos.push(
+      h("div", { style: { display: "flex", width: LARGURA, alignItems: "center", paddingLeft: 24, paddingRight: 24, paddingTop: 10, paddingBottom: 10 } },
+        h("div", { style: { display: "flex", width: 34, height: 34, flexShrink: 0, borderRadius: 17, backgroundColor: dados.cor, color: sobre, fontSize: 18, fontWeight: 800, alignItems: "center", justifyContent: "center" } }, String(i.n)),
+        h("div", { style: { display: "flex", width: 76, height: 76, flexShrink: 0, marginLeft: 12, border: `1px solid ${LINHA}`, borderRadius: 10, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" } },
+          i.foto ? h("img", { src: i.foto, width: 68, height: 68, style: { objectFit: "contain" } }) : h("div", { style: { display: "flex" } }, "")),
+        h("div", { style: { display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, width: W - 34 - 12 - 76 - 14 - 12 - 112, marginLeft: 14 } }, ...texto),
+        h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0, width: 112, marginLeft: 12 } }, ...direita)));
+  });
+
+  const rodape = h("div", { style: { display: "flex", width: W, marginLeft: 24, marginTop: 12, padding: "12px 16px", backgroundColor: "#F0F6FD", borderRadius: 12, alignItems: "center" } },
+    h("div", { style: { display: "flex", fontSize: 16, color: TEXTO } }, "É só responder com o"),
+    h("div", { style: { display: "flex", fontSize: 16, fontWeight: 800, color: TEXTO, marginLeft: 5 } }, "número"),
+    h("div", { style: { display: "flex", fontSize: 16, color: TEXTO, marginLeft: 5 } }, "da opção que quiser"));
+
+  const arvore = h("div", { style: { display: "flex", flexDirection: "column", width: LARGURA, height: altura, backgroundColor: "#FFFFFF", fontFamily: "Inter" } },
+    cabecalho, h("div", { style: { display: "flex", height: 8 } }), ...blocos, rodape);
+  return { arvore, altura };
+}
+
 export function montar(dados, h, logo) {
   const itens = dados.itens.map((i) => ({ ...i, preco: Number(i.preco), preco_cheio: i.preco_cheio == null ? null : Number(i.preco_cheio) }));
   const sub = itens.reduce((s, i) => s + i.qtd * i.preco, 0);
