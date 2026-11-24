@@ -7,6 +7,7 @@ import 'package:gestor/providers/carrinho_provider.dart';
 import 'package:gestor/providers/produto_provider.dart';
 import 'package:gestor/models/cliente.dart';
 import 'package:gestor/models/zona_entrega.dart';
+import 'package:gestor/screens/editar_cliente_screen.dart';
 import 'package:gestor/screens/opcao_entrega_screen.dart';
 import 'package:gestor/screens/pagamento_screen.dart';
 import 'package:gestor/widgets/preco_com_desconto.dart';
@@ -14,6 +15,7 @@ import 'package:uuid/uuid.dart';
 
 import '../config/supabase_config.dart';
 import '../providers/auth_provider.dart';
+import '../providers/cliente_provider.dart';
 import '../providers/zona_entrega_provider.dart';
 import '../repositories/carrinho_cliente_repository.dart';
 import '../repositories/cliente_repository.dart';
@@ -60,6 +62,70 @@ Future<void> resolverZonaEntregaParaCliente(
 
   await zonaProvider.garantirAtualizadas();
   carrinhoProvider.selecionarZonaEntrega(zonaProvider.zonaParaDistancia(distanciaKm));
+}
+
+/// O carrinho guarda uma cópia do cliente de quando ele foi escolhido. Se o
+/// cadastro muda depois (endereço editado no carrinho ou na tela de
+/// Clientes), a cópia ficava velha: distância e frete de antes (caso real
+/// 24/11: 2,9 km no Vender, 8,2 km no cadastro). Troca pela versão da lista
+/// de clientes e, se é entrega, refaz a faixa pela distância nova. Devolve
+/// um aviso pra mostrar quando a faixa mudou (ou saiu de todas), senão null.
+/// Usada pelo Carrinho do celular e pelo Vender do PC — uma regra só.
+Future<String?> atualizarClienteDoCarrinho(
+  BuildContext context,
+  CarrinhoProvider carrinho,
+  ClientProvider clientes,
+) async {
+  final atual = carrinho.clienteSelecionado;
+  if (atual?.idCliente == null) return null;
+  final novo = clientes.clientes.where((c) => c.idCliente == atual!.idCliente).firstOrNull;
+  if (novo == null) return null;
+  final mudouEndereco = novo.enderecoExibicao != atual!.enderecoExibicao ||
+      novo.rangeDistancia != atual.rangeDistancia ||
+      novo.latitude != atual.latitude ||
+      novo.longitude != atual.longitude;
+  if (!mudouEndereco && novo.nome == atual.nome && novo.saldo == atual.saldo) return null;
+
+  final faixaAntes = carrinho.zonaEntregaSelecionada;
+  carrinho.selecionarCliente(novo);
+  if (!mudouEndereco || faixaAntes == null) return null;
+
+  await resolverZonaEntregaParaCliente(context, novo, carrinho);
+  final faixa = carrinho.zonaEntregaSelecionada;
+  final km = novo.rangeDistancia?.toStringAsFixed(1).replaceAll('.', ',');
+  final kmTexto = km == null ? '' : ' ($km km)';
+  // Fora de todas as faixas: não deixa a venda seguir como "retirada" sem
+  // ninguém perceber.
+  if (faixa == null) return 'Endereço novo$kmTexto fora das faixas de entrega — escolha a entrega de novo.';
+  if (faixa.id != faixaAntes.id) return 'Endereço novo$kmTexto: entrega mudou pra ${faixa.nome}.';
+  return null;
+}
+
+/// Editar o endereço do cliente do carrinho sem sair da venda. O cadastro
+/// recalcula a rota ao salvar e atualiza o `ClientProvider`; quem chama
+/// escuta o provider e aplica com `atualizarClienteDoCarrinho`.
+/// `comoJanela`: no PC abre numa janela por cima da venda.
+Future<void> editarEnderecoDoClienteDoCarrinho(BuildContext context, CarrinhoProvider carrinho,
+    {bool comoJanela = false}) async {
+  final cliente = carrinho.clienteSelecionado;
+  if (cliente?.idCliente == null) return;
+  final tela = EditarClienteScreen(clienteSelecionado: cliente!);
+  if (comoJanela) {
+    await showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        clipBehavior: Clip.antiAlias,
+        insetPadding: const EdgeInsets.all(40),
+        child: SizedBox(
+          width: 760,
+          height: (MediaQuery.sizeOf(ctx).height - 80).clamp(400, 860).toDouble(),
+          child: tela,
+        ),
+      ),
+    );
+  } else {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => tela));
+  }
 }
 
 /// Abre a tela de Entrega (cliente, zona, retirada, agendamento) e aplica o
@@ -148,9 +214,12 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
   double? _valorMinimoPedido;
   bool _salvandoOrcamento = false;
   final TextEditingController _cupomController = TextEditingController();
+  late final ClientProvider _clientes;
+  bool _sincronizando = false;
 
   @override
   void dispose() {
+    _clientes.removeListener(_sincronizarCliente);
     _cupomController.dispose();
     super.dispose();
   }
@@ -160,6 +229,22 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
     super.initState();
     idVenda = widget.idVenda.isNotEmpty ? widget.idVenda : const Uuid().v4();
     _carregarValorMinimo();
+    _clientes = context.read<ClientProvider>()..addListener(_sincronizarCliente);
+    // O cadastro pode ter mudado enquanto o carrinho estava fechado.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _sincronizarCliente());
+  }
+
+  Future<void> _sincronizarCliente() async {
+    if (_sincronizando || !mounted) return;
+    _sincronizando = true;
+    try {
+      final aviso = await atualizarClienteDoCarrinho(context, context.read<CarrinhoProvider>(), _clientes);
+      if (aviso != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(aviso)));
+      }
+    } finally {
+      _sincronizando = false;
+    }
   }
 
   Future<void> _carregarValorMinimo() async {
@@ -305,13 +390,28 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                       leading: const Icon(Icons.person_outline),
                       title: Text(carrinhoProvider.clienteSelecionado!.nome),
                       subtitle: Text(
-                        carrinhoProvider.clienteSelecionado!.enderecoExibicao,
-                        maxLines: 1,
+                        [
+                          carrinhoProvider.clienteSelecionado!.enderecoExibicao,
+                          if (carrinhoProvider.clienteSelecionado!.rangeDistancia != null)
+                            '${carrinhoProvider.clienteSelecionado!.rangeDistancia!.toStringAsFixed(1).replaceAll('.', ',')} km',
+                        ].where((p) => p.isNotEmpty).join(' · '),
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      trailing: TextButton(
-                        onPressed: () => selecionarCliente(carrinhoProvider),
-                        child: const Text('Trocar'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (carrinhoProvider.clienteSelecionado!.idCliente != null)
+                            IconButton(
+                              icon: const Icon(Icons.edit_location_alt_outlined),
+                              tooltip: 'Editar endereço',
+                              onPressed: () => editarEnderecoDoClienteDoCarrinho(context, carrinhoProvider),
+                            ),
+                          TextButton(
+                            onPressed: () => selecionarCliente(carrinhoProvider),
+                            child: const Text('Trocar'),
+                          ),
+                        ],
                       ),
                     ),
                   )

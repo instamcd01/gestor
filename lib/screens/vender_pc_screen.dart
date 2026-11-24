@@ -28,7 +28,6 @@ import 'carrinhos_do_dia_screen.dart';
 import 'conclusao_venda_screen.dart';
 import 'conversas_whatsapp_screen.dart';
 import 'desconto_screen.dart';
-import 'editar_cliente_screen.dart';
 import 'pagamento_credito_screen.dart';
 import 'pagamento_link_screen.dart';
 import 'pagamento_outros_screen.dart';
@@ -331,65 +330,25 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
     if (mounted && _fase == _Fase.montando) _buscaFoco.requestFocus();
   }
 
-  /// O carrinho guarda uma cópia do cliente de quando ele foi escolhido.
-  /// Se o cadastro muda depois (endereço editado aqui ou na tela de
-  /// Clientes), a cópia ficava velha: distância e frete de antes. Sempre que
-  /// a lista de clientes muda, troca pela versão nova e, se é entrega,
-  /// recalcula a faixa pela distância nova.
+  /// Cadastro mudou (endereço editado aqui ou na tela de Clientes): o
+  /// carrinho pega a versão nova e refaz a faixa (ver
+  /// `atualizarClienteDoCarrinho`).
   bool _sincronizando = false;
   Future<void> _sincronizarClienteDoCarrinho() async {
     if (_sincronizando || !mounted) return;
-    final carrinho = context.read<CarrinhoProvider>();
-    final atual = carrinho.clienteSelecionado;
-    if (atual?.idCliente == null) return;
-    final novo = _clientes.clientes.where((c) => c.idCliente == atual!.idCliente).firstOrNull;
-    if (novo == null) return;
-    final mudouEndereco = novo.enderecoExibicao != atual!.enderecoExibicao ||
-        novo.rangeDistancia != atual.rangeDistancia ||
-        novo.latitude != atual.latitude ||
-        novo.longitude != atual.longitude;
-    if (!mudouEndereco && novo.nome == atual.nome && novo.saldo == atual.saldo) return;
-
     _sincronizando = true;
     try {
-      final faixaAntes = carrinho.zonaEntregaSelecionada;
-      carrinho.selecionarCliente(novo);
-      if (!mudouEndereco || faixaAntes == null) return;
-      await resolverZonaEntregaParaCliente(context, novo, carrinho);
-      if (!mounted) return;
-      final faixa = carrinho.zonaEntregaSelecionada;
-      final km = novo.rangeDistancia?.toStringAsFixed(1).replaceAll('.', ',');
-      if (faixa == null) {
-        // Fora de todas as faixas: não deixa a venda seguir como "retirada"
-        // sem ninguém perceber.
-        _aviso('Endereço novo${km == null ? '' : ' ($km km)'} fora das faixas de entrega — '
-            'escolha a entrega de novo (F8).');
-      } else if (faixa.id != faixaAntes.id) {
-        _aviso('Endereço novo${km == null ? '' : ' ($km km)'}: entrega mudou pra ${faixa.nome}.');
-      }
+      final aviso = await atualizarClienteDoCarrinho(context, context.read<CarrinhoProvider>(), _clientes);
+      if (aviso != null && mounted) _aviso(aviso);
     } finally {
       _sincronizando = false;
     }
   }
 
-  /// Editar o endereço sem sair do Vender: abre o cadastro numa janela por
-  /// cima da venda. Ao salvar, o cadastro recalcula a rota e o
-  /// `_sincronizarClienteDoCarrinho` atualiza distância e faixa aqui.
+  /// Editar o endereço sem sair do Vender: o cadastro abre numa janela por
+  /// cima da venda.
   Future<void> _editarEnderecoCliente() async {
-    final cliente = context.read<CarrinhoProvider>().clienteSelecionado;
-    if (cliente?.idCliente == null) return;
-    await showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        clipBehavior: Clip.antiAlias,
-        insetPadding: const EdgeInsets.all(40),
-        child: SizedBox(
-          width: 760,
-          height: (MediaQuery.sizeOf(ctx).height - 80).clamp(400, 860).toDouble(),
-          child: EditarClienteScreen(clienteSelecionado: cliente!),
-        ),
-      ),
-    );
+    await editarEnderecoDoClienteDoCarrinho(context, context.read<CarrinhoProvider>(), comoJanela: true);
     if (mounted && _fase == _Fase.montando) _buscaFoco.requestFocus();
   }
 
