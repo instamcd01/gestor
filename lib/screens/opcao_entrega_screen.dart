@@ -364,7 +364,13 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
     }
 
     final clientesParaMostrar = _buscaClienteController.text.isEmpty && _clientesFiltrados.isEmpty
-        ? (List<Cliente>.from(todosClientes)..sort((a, b) => recencia(b).compareTo(recencia(a)))).take(8).toList()
+        ? (todosClientes
+                // números do simulador de testes da atendente (55219000000xx) não entram na lista rápida
+                .where((c) => !c.celular.replaceAll(RegExp(r'\D'), '').contains('219000000'))
+                .toList()
+              ..sort((a, b) => recencia(b).compareTo(recencia(a))))
+            .take(8)
+            .toList()
         : _clientesFiltrados;
 
     return Scaffold(
