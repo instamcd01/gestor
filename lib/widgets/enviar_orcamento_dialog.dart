@@ -118,21 +118,27 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
       if (logos.isNotEmpty) _baixar(logos.first.url).then((b) => _logo = b),
       _buscarPrecosDe(),
       if (cliente != null)
-        Supabase.instance.client.rpc('whatsapp_orcamento_preparar', params: {
-          'p_cliente_id': cliente.idCliente,
-          'p_imagem_url': null,
-        }).then((r) => _consulta = Map<String, dynamic>.from(r as Map)).catchError((Object e) {
-          debugPrint('Erro ao consultar envio do orçamento: $e');
-          _consulta = {'ok': false, 'motivo': 'erro'};
-          return _consulta!;
-        }),
+        Supabase.instance.client
+            .rpc('whatsapp_orcamento_preparar', params: {
+              'p_cliente_id': cliente.idCliente,
+              'p_imagem_url': null,
+            })
+            .then((r) => _consulta = Map<String, dynamic>.from(r as Map))
+            .catchError((Object e) {
+              debugPrint('Erro ao consultar envio do orçamento: $e');
+              _consulta = {'ok': false, 'motivo': 'erro'};
+              return _consulta!;
+            }),
     ]);
     if (mounted) setState(() => _carregando = false);
   }
 
   /// Preço "de" riscado igual ao site (RPC precos_de_exibicao). Falhou: fica o preço de catálogo.
   Future<void> _buscarPrecosDe() async {
-    final ids = [for (final i in widget.carrinho.itens) if (i.produto.id != null) i.produto.id!];
+    final ids = [
+      for (final i in widget.carrinho.itens)
+        if (i.produto.id != null) i.produto.id!
+    ];
     if (ids.isEmpty) return;
     try {
       final linhas = await Supabase.instance.client.rpc('precos_de_exibicao', params: {'p_ids': ids}) as List;
@@ -181,7 +187,8 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
             }),
           )
           .timeout(const Duration(seconds: 30));
-      final corpo = resposta.statusCode == 200 ? jsonDecode(resposta.body) as Map<String, dynamic> : const <String, dynamic>{};
+      final corpo =
+          resposta.statusCode == 200 ? jsonDecode(resposta.body) as Map<String, dynamic> : const <String, dynamic>{};
       if (corpo['ok'] == true) {
         navegador.pop();
         mensageiro.showSnackBar(SnackBar(content: Text('Orçamento enviado pra $nome.')));
@@ -226,8 +233,13 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
     final colorScheme = Theme.of(context).colorScheme;
     final carrinho = widget.carrinho;
     final zona = carrinho.zonaEntregaSelecionada;
+    // 25/11 (Lucas): orçamento também sem cliente (quem quer ver o valor antes de se cadastrar).
+    // Sem telefone não dá pra mandar pelo WhatsApp da loja: fica só salvar/compartilhar a imagem.
+    final semCliente = carrinho.clienteSelecionado == null;
     final podeEnviar = _consulta?['ok'] == true;
-    final aviso = _erro ?? (!_carregando && !podeEnviar ? textoMotivoOrcamento(_consulta?['motivo']?.toString()) : null);
+    final aviso = _erro ??
+        (!_carregando && !podeEnviar && !semCliente ? textoMotivoOrcamento(_consulta?['motivo']?.toString()) : null);
+    final celular = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
     final ocupado = _enviando || _salvando;
 
     return Dialog(
@@ -245,7 +257,7 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Orçamento para ${carrinho.clienteSelecionado?.nome ?? 'o cliente'}',
+                      semCliente ? 'Orçamento' : 'Orçamento para ${carrinho.clienteSelecionado!.nome}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
@@ -276,8 +288,9 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
                             data: DateTime.now(),
                             itens: itensDoOrcamento(carrinho.itens, _fotos, _precosDe),
                             desconto: carrinho.desconto,
-                            retirada: zona == null,
-                            entrega: carrinho.valorEntregaCalculado,
+                            retirada: zona == null && !semCliente,
+                            entrega: semCliente && zona == null ? null : carrinho.valorEntregaCalculado,
+                            entregaAEscolher: semCliente && zona == null,
                             entregaCheia: zona?.valor,
                             minimoFreteGratis: zona?.valorMinimoFreteGratis,
                             // 25/11: mesmo orçamento completo da atendente (função orcamento-imagem).
@@ -297,25 +310,48 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                 child: Text(aviso, style: TextStyle(fontSize: 13, color: colorScheme.error)),
               ),
+            if (semCliente && !_carregando)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: Text(
+                  'Sem cliente escolhido: a imagem sai sem nome e sem entrega. Mande pelo WhatsApp do '
+                  'celular; pra enviar direto daqui, escolha o cliente antes.',
+                  style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: _carregando || ocupado ? null : _salvar,
-                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
-                      child: Text(_salvando ? 'Salvando...' : 'Salvar imagem', maxLines: 1, overflow: TextOverflow.ellipsis),
+                  if (semCliente)
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _carregando || ocupado ? null : _salvar,
+                        style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+                        icon: Icon(celular ? Icons.share : Icons.download),
+                        label: Text(_salvando ? 'Preparando...' : (celular ? 'Compartilhar imagem' : 'Salvar imagem'),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _carregando || ocupado ? null : _salvar,
+                        style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+                        child: Text(_salvando ? 'Salvando...' : 'Salvar imagem',
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _carregando || ocupado || !podeEnviar ? null : _enviar,
-                      style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
-                      child: Text(_enviando ? 'Enviando...' : 'Enviar no WhatsApp', maxLines: 1, overflow: TextOverflow.ellipsis),
+                  if (!semCliente) const SizedBox(width: 10),
+                  if (!semCliente)
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _carregando || ocupado || !podeEnviar ? null : _enviar,
+                        style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+                        child: Text(_enviando ? 'Enviando...' : 'Enviar no WhatsApp',
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),

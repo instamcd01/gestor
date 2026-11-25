@@ -486,10 +486,13 @@ class _CarrinhoScreenState extends State<CarrinhoScreen> {
                   ),
 
                 const SizedBox(height: 12),
-                if (carrinhoProvider.itens.isNotEmpty && carrinhoProvider.clienteSelecionado != null) ...[
+                // 25/11: também sem cliente (só a imagem, pra mandar pelo celular)
+                if (carrinhoProvider.itens.isNotEmpty) ...[
                   OutlinedButton(
                     onPressed: () => mostrarEnviarOrcamento(context, carrinhoProvider),
-                    child: const Text('Enviar orçamento no WhatsApp'),
+                    child: Text(carrinhoProvider.clienteSelecionado != null
+                        ? 'Enviar orçamento no WhatsApp'
+                        : 'Orçamento em imagem'),
                   ),
                   const SizedBox(height: 8),
                 ],

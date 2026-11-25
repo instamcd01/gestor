@@ -65,6 +65,10 @@ class OrcamentoImagemWidget extends StatelessWidget {
   final String? prazo;
   final bool agendado;
 
+  /// Sem cliente ainda (25/11): a entrega não foi escolhida. Some a linha de entrega e a
+  /// meta do frete grátis, e o total vira "Total dos produtos".
+  final bool entregaAEscolher;
+
   const OrcamentoImagemWidget({
     super.key,
     required this.nomeLoja,
@@ -84,6 +88,7 @@ class OrcamentoImagemWidget extends StatelessWidget {
     this.parcelas,
     this.prazo,
     this.agendado = false,
+    this.entregaAEscolher = false,
   });
 
   static const largura = 540.0;
@@ -117,7 +122,7 @@ class OrcamentoImagemWidget extends StatelessWidget {
 
   /// Lucas (24/11): a meta do frete grátis aparece sempre que falta valor (antes, só
   /// quando faltava até metade do mínimo).
-  bool get _mostrarMetaFrete => _faltaFreteGratis > 0;
+  bool get _mostrarMetaFrete => !entregaAEscolher && _faltaFreteGratis > 0;
 
   List<(String, String, String?)> get _linhasEntrega => [
         if (retirada)
@@ -270,7 +275,10 @@ class OrcamentoImagemWidget extends StatelessWidget {
               if (promo)
                 Text(_moeda.format(item.totalCheio),
                     style: const TextStyle(
-                        fontSize: 15, color: _apagado, decoration: TextDecoration.lineThrough, decorationColor: _apagado)),
+                        fontSize: 15,
+                        color: _apagado,
+                        decoration: TextDecoration.lineThrough,
+                        decorationColor: _apagado)),
               Text(_moeda.format(item.total),
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: promo ? _verde : _texto)),
             ],
@@ -288,7 +296,10 @@ class OrcamentoImagemWidget extends StatelessWidget {
             if (valorCortado != null) ...[
               Text(valorCortado,
                   style: const TextStyle(
-                      fontSize: 15, color: _apagado, decoration: TextDecoration.lineThrough, decorationColor: _apagado)),
+                      fontSize: 15,
+                      color: _apagado,
+                      decoration: TextDecoration.lineThrough,
+                      decorationColor: _apagado)),
               const SizedBox(width: 8),
             ],
             Text(valor, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: cor)),
@@ -297,9 +308,8 @@ class OrcamentoImagemWidget extends StatelessWidget {
       );
 
   Widget _resumo() {
-    final valorEntrega = retirada || entrega == 0
-        ? 'Grátis'
-        : (entrega == null ? 'a calcular' : _moeda.format(entrega));
+    final valorEntrega =
+        retirada || entrega == 0 ? 'Grátis' : (entrega == null ? 'a calcular' : _moeda.format(entrega));
     return Container(
       margin: const EdgeInsets.fromLTRB(24, 8, 24, 0),
       padding: const EdgeInsets.only(top: 14),
@@ -314,19 +324,23 @@ class OrcamentoImagemWidget extends StatelessWidget {
             _linhaResumo(cupom != null && cupom!.isNotEmpty ? 'Desconto (cupom $cupom)' : 'Desconto',
                 '− ${_moeda.format(desconto)}',
                 cor: _verde),
-          _linhaResumo(
-            retirada ? 'Retirada na loja' : 'Entrega',
-            valorEntrega,
-            cor: _freteGratisGanho || retirada ? _verde : _apagado,
-            valorCortado: _freteGratisGanho ? _moeda.format(entregaCheia) : null,
-          ),
+          if (!entregaAEscolher)
+            _linhaResumo(
+              retirada ? 'Retirada na loja' : 'Entrega',
+              valorEntrega,
+              cor: _freteGratisGanho || retirada ? _verde : _apagado,
+              valorCortado: _freteGratisGanho ? _moeda.format(entregaCheia) : null,
+            ),
           const SizedBox(height: 4),
           Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              const Expanded(child: Text('Total', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: _texto))),
-              Text(_moeda.format(_total), style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: _texto)),
+              Expanded(
+                  child: Text(entregaAEscolher ? 'Total dos produtos' : 'Total',
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: _texto))),
+              Text(_moeda.format(_total),
+                  style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: _texto)),
             ],
           ),
         ],

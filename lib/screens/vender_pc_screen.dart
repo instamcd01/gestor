@@ -1548,12 +1548,13 @@ class _VenderPcScreenState extends State<VenderPcScreen> {
                   ),
                 ),
               const SizedBox(height: 10),
-              if (itens.isNotEmpty && cliente != null) ...[
+              // 25/11: também sem cliente (só a imagem, pra mandar pelo celular)
+              if (itens.isNotEmpty) ...[
                 SizedBox(
                   width: double.infinity,
                   child: _botaoContorno(
                     colorScheme,
-                    rotulo: 'Enviar orçamento no WhatsApp',
+                    rotulo: cliente != null ? 'Enviar orçamento no WhatsApp' : 'Orçamento em imagem',
                     altura: 36,
                     onPressed: () async {
                       await mostrarEnviarOrcamento(context, carrinho);
