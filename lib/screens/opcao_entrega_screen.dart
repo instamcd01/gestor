@@ -10,6 +10,7 @@ import '../models/zona_entrega.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cliente_provider.dart';
 import '../providers/zona_entrega_provider.dart';
+import '../repositories/conversa_whatsapp_repository.dart';
 import '../repositories/cliente_repository.dart';
 import '../services/distancia_service.dart';
 import '../utils/agendamento_utils.dart';
@@ -45,6 +46,11 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
   Cliente? _clienteSelecionado;
   List<Cliente> _clientesFiltrados = [];
   bool _carregandoClientes = true;
+
+  /// Última mensagem no WhatsApp por cliente (últimos 3 dias). A lista sem busca
+  /// mostra primeiro quem está conversando agora — antes eram só os últimos
+  /// cadastrados, e cliente antigo falando no WhatsApp não aparecia (Lucas, 25/11).
+  Map<String, DateTime> _ultimaConversa = {};
 
   // Cadastros "consultivos" do histórico do Kyte (sem login, ficam fora da
   // lista normal — ver [[gestor_vinculo_cliente_cross_canal]]) só aparecem
@@ -103,11 +109,21 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
   }
 
   Future<void> _carregarClientes() async {
+    final conversas = ConversaWhatsappRepository().listarRecentes(dias: 3).catchError((Object e) {
+      debugPrint('Erro ao buscar conversas recentes do WhatsApp: $e');
+      return <ConversaWhatsappResumo>[];
+    });
+    final clientesProvider = Provider.of<ClientProvider>(context, listen: false);
     final kyte = await ClienteRepository().listarHistoricoKyte();
-    await Provider.of<ClientProvider>(context, listen: false).carregarClientes();
+    await clientesProvider.carregarClientes();
+    final recentes = await conversas;
     if (!mounted) return;
     setState(() {
       _todosClientesKyte = kyte;
+      _ultimaConversa = {
+        for (final c in recentes.reversed)
+          if (c.clienteId != null) c.clienteId!: c.ultimaEm,
+      };
       _carregandoClientes = false;
     });
     // Quem digitou antes da lista terminar de carregar via só o cadastro
@@ -338,15 +354,17 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
   Widget build(BuildContext context) {
     final clienteProvider = context.watch<ClientProvider>();
     final todosClientes = clienteProvider.clientes;
-    // A lista geral vem em ordem alfabética (certo pra buscar por nome),
-    // mas o atalho "sem busca" faz mais sentido mostrar quem foi cadastrado
-    // por último — é o caso mais comum de quem acabou de criar o cliente
-    // durante a venda e precisa achá-lo rápido.
+    // A lista geral vem em ordem alfabética (certo pra buscar por nome). Sem
+    // busca, mostra os mais recentes: quem falou no WhatsApp por último ou foi
+    // cadastrado por último (quem acabou de criar o cliente durante a venda).
+    DateTime recencia(Cliente c) {
+      final conversa = _ultimaConversa[c.idCliente];
+      final cadastro = c.dataCadastro ?? DateTime(0);
+      return conversa != null && conversa.isAfter(cadastro) ? conversa : cadastro;
+    }
+
     final clientesParaMostrar = _buscaClienteController.text.isEmpty && _clientesFiltrados.isEmpty
-        ? (List<Cliente>.from(todosClientes)
-              ..sort((a, b) => (b.dataCadastro ?? DateTime(0)).compareTo(a.dataCadastro ?? DateTime(0))))
-            .take(5)
-            .toList()
+        ? (List<Cliente>.from(todosClientes)..sort((a, b) => recencia(b).compareTo(recencia(a)))).take(8).toList()
         : _clientesFiltrados;
 
     return Scaffold(
@@ -406,7 +424,10 @@ class _OpcaoEntregaScreenState extends State<OpcaoEntregaScreen> {
                       subtitle: Text(cliente.enderecoCompleto.isNotEmpty
                           ? cliente.enderecoExibicao
                           : cliente.celular),
-                      trailing: const Icon(Icons.person),
+                      // Balão = falou no WhatsApp nos últimos 3 dias
+                      trailing: Icon(_ultimaConversa.containsKey(cliente.idCliente)
+                          ? Icons.chat_bubble_outline
+                          : Icons.person),
                       selected: _clienteSelecionado?.idCliente == cliente.idCliente,
                       onTap: () => _selecionarCliente(cliente),
                     );
