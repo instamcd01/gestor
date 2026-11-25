@@ -10,6 +10,7 @@ import '../utils/formatadores_input.dart';
 import '../widgets/entrega_economica_section.dart';
 import '../widgets/estado_erro_lista.dart';
 import 'dados_loja_screen.dart';
+import 'entrega_oferta_config_screen.dart';
 
 /// Configurações de entrega (Configurações > Opções de Entrega): as
 /// faixas de distância x preço usadas no checkout pra calcular o frete a
@@ -124,6 +125,20 @@ class _ConfiguracaoEntregaScreenState extends State<ConfiguracaoEntregaScreen> {
               style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ),
+          // Entregador por oferta no WhatsApp (só o dono mexe: RLS de entrega_oferta_config)
+          if (context.watch<AuthProvider>().isDono)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.two_wheeler),
+                title: const Text('Entregador por oferta (WhatsApp)'),
+                subtitle: const Text('Rota oferecida aos motoboys, o primeiro que aceita leva'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const EntregaOfertaConfigScreen()),
+                ),
+              ),
+            ),
           const SizedBox(height: 12),
           Text(
             'Faixas de Entrega',

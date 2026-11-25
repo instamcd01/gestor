@@ -27,6 +27,10 @@ class Entregador {
   final double? custoSalarioMensal;
   final double? custoSalarioDiaria;
   final String? authUserId; // preenchido quando já vinculou conta no app Entregador (Fase 1)
+  /// Entregador por oferta (19/11): recebe as rotas no WhatsApp e o 1º que aceita leva.
+  final bool freelancerOferta;
+  /// Pode levar pedido pago em dinheiro na entrega (motoboy novo começa sem).
+  final bool aceitaDinheiro;
 
   Entregador({
     this.id,
@@ -45,6 +49,8 @@ class Entregador {
     this.custoSalarioMensal,
     this.custoSalarioDiaria,
     this.authUserId,
+    this.freelancerOferta = false,
+    this.aceitaDinheiro = false,
   });
 
   factory Entregador.fromSupabase(Map<String, dynamic> row) {
@@ -65,6 +71,8 @@ class Entregador {
       custoSalarioMensal: (row['custo_salario_mensal'] as num?)?.toDouble(),
       custoSalarioDiaria: (row['custo_salario_diaria'] as num?)?.toDouble(),
       authUserId: row['auth_user_id'] as String?,
+      freelancerOferta: row['freelancer_oferta'] as bool? ?? false,
+      aceitaDinheiro: row['aceita_dinheiro'] as bool? ?? false,
     );
   }
 
@@ -84,6 +92,8 @@ class Entregador {
       'custo_por_parada_rota': custoPorParadaRota,
       'custo_salario_mensal': custoSalarioMensal,
       'custo_salario_diaria': custoSalarioDiaria,
+      'freelancer_oferta': freelancerOferta,
+      'aceita_dinheiro': aceitaDinheiro,
     };
   }
 }

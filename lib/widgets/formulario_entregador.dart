@@ -40,6 +40,8 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
   late final TextEditingController _custoSalarioDiariaController;
   late bool _ativo;
   late bool _veiculoDaLoja;
+  late bool _freelancerOferta;
+  late bool _aceitaDinheiro;
   String? _veiculoId;
   String? _custoModo;
   bool _salvando = false;
@@ -61,6 +63,8 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
     _custoSalarioDiariaController = TextEditingController(text: ClienteValidators.formatarMoeda(e?.custoSalarioDiaria));
     _ativo = e?.ativo ?? true;
     _veiculoDaLoja = e?.veiculoDaLoja ?? false;
+    _freelancerOferta = e?.freelancerOferta ?? false;
+    _aceitaDinheiro = e?.aceitaDinheiro ?? false;
     _veiculoId = e?.veiculoId;
     _custoModo = e?.custoModo;
   }
@@ -108,6 +112,8 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
       custoPorParadaRota: ClienteValidators.parseNumero(_custoPorParadaController.text),
       custoSalarioMensal: ClienteValidators.parseNumero(_custoSalarioMensalController.text),
       custoSalarioDiaria: ClienteValidators.parseNumero(_custoSalarioDiariaController.text),
+      freelancerOferta: _freelancerOferta,
+      aceitaDinheiro: _freelancerOferta && _aceitaDinheiro,
     );
 
     try {
@@ -163,8 +169,14 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _telefoneController,
-                decoration: const InputDecoration(labelText: 'Telefone (opcional)'),
+                decoration: InputDecoration(
+                  labelText: _freelancerOferta ? 'WhatsApp (com DDD)' : 'Telefone (opcional)',
+                ),
                 keyboardType: TextInputType.phone,
+                // As ofertas chegam por WhatsApp: sem número não tem pra onde mandar
+                validator: (v) => _freelancerOferta && (v ?? '').replaceAll(RegExp(r'\D'), '').length < 10
+                    ? 'Informe o WhatsApp com DDD'
+                    : null,
               ),
               const SizedBox(height: 12),
               Row(
@@ -210,6 +222,22 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
                   ),
                 const SizedBox(height: 8),
               ],
+              // Entregador por oferta (19/11): a rota chega no WhatsApp, o 1º que aceita leva
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Recebe ofertas de entrega no WhatsApp'),
+                subtitle: const Text('Quando cair um pedido, ele recebe a rota com o valor e pode aceitar ou recusar'),
+                value: _freelancerOferta,
+                onChanged: (v) => setState(() => _freelancerOferta = v),
+              ),
+              if (_freelancerOferta)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Pode levar pedido pago em dinheiro'),
+                  subtitle: const Text('Deixe desligado pra quem está começando'),
+                  value: _aceitaDinheiro,
+                  onChanged: (v) => setState(() => _aceitaDinheiro = v),
+                ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Ativo'),
