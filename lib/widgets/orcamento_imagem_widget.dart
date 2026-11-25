@@ -65,8 +65,8 @@ class OrcamentoImagemWidget extends StatelessWidget {
   final String? prazo;
   final bool agendado;
 
-  /// Sem cliente ainda (25/11): a entrega não foi escolhida. Some a linha de entrega e a
-  /// meta do frete grátis, e o total vira "Total dos produtos".
+  /// Sem cliente ainda (25/11): a entrega não foi escolhida. A linha de entrega diz "a calcular"
+  /// e some a meta do frete grátis.
   final bool entregaAEscolher;
 
   const OrcamentoImagemWidget({
@@ -324,21 +324,21 @@ class OrcamentoImagemWidget extends StatelessWidget {
             _linhaResumo(cupom != null && cupom!.isNotEmpty ? 'Desconto (cupom $cupom)' : 'Desconto',
                 '− ${_moeda.format(desconto)}',
                 cor: _verde),
-          if (!entregaAEscolher)
-            _linhaResumo(
-              retirada ? 'Retirada na loja' : 'Entrega',
-              valorEntrega,
-              cor: _freteGratisGanho || retirada ? _verde : _apagado,
-              valorCortado: _freteGratisGanho ? _moeda.format(entregaCheia) : null,
-            ),
+          // sem cliente: "Entrega · a calcular" — avisa que o total ainda muda (Lucas, 25/11)
+          _linhaResumo(
+            retirada ? 'Retirada na loja' : 'Entrega',
+            entregaAEscolher ? 'a calcular' : valorEntrega,
+            cor: _freteGratisGanho || retirada ? _verde : _apagado,
+            valorCortado: _freteGratisGanho ? _moeda.format(entregaCheia) : null,
+          ),
           const SizedBox(height: 4),
           Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
               Expanded(
-                  child: Text(entregaAEscolher ? 'Total dos produtos' : 'Total',
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: _texto))),
+                  child:
+                      Text('Total', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: _texto))),
               Text(_moeda.format(_total),
                   style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: _texto)),
             ],

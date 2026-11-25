@@ -310,15 +310,6 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                 child: Text(aviso, style: TextStyle(fontSize: 13, color: colorScheme.error)),
               ),
-            if (semCliente && !_carregando)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: Text(
-                  'Sem cliente escolhido: a imagem sai sem nome e sem entrega. Mande pelo WhatsApp do '
-                  'celular; pra enviar direto daqui, escolha o cliente antes.',
-                  style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
-                ),
-              ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
