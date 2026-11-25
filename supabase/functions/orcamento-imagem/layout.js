@@ -77,19 +77,47 @@ export function montar(dados, h, logo) {
   const sub = itens.reduce((s, i) => s + i.qtd * i.preco, 0);
   const subCheio = itens.reduce((s, i) => s + i.qtd * (i.preco_cheio && i.preco_cheio > i.preco ? i.preco_cheio : i.preco), 0);
   const descPromo = subCheio - sub;
-  const entrega = Number(dados.entrega || 0);
-  const total = sub + entrega;
+  // 24/11 (Lucas): orçamento completo — nome do cliente, desconto/cupom, retirada, entrega/pagamento/parcelas/prazo
+  // (dados.info, gravado pelo chamar_dono) e "Preços válidos para hoje". Meta do frete grátis aparece SEMPRE que falta.
+  const info = dados.info || {};
+  const retirada = info.retirada === true;
+  const desconto = Math.max(0, Number(info.desconto || 0));
+  const entrega = retirada ? 0 : Number(dados.entrega || 0);
+  const total = sub - desconto + entrega;
   const minimo = dados.minimo_frete_gratis ? Number(dados.minimo_frete_gratis) : null;
-  const falta = minimo && entrega > 0 && sub < minimo ? minimo - sub : 0;
-  const mostrarMeta = !!minimo && falta > 0 && falta <= minimo * 0.5; // longe demais desanima (regra do Gestor)
-  const economia = descPromo;
+  const falta = !retirada && minimo && entrega > 0 && sub < minimo ? minimo - sub : 0;
+  const mostrarMeta = !!minimo && falta > 0;
+  const economia = descPromo + desconto;
   const sobre = corDoTextoSobre(dados.cor);
   const W = LARGURA - 48; // conteúdo dentro das margens de 24
 
+  // Parcelas (só crédito): a escolhida pelo cliente, ou "1x sem juros ou até Nx"
+  const parcelas = Array.isArray(dados.parcelas) ? dados.parcelas.map((p) => ({ n: Number(p.n), valor: Number(p.valor), juros: Number(p.juros) })) : [];
+  let textoParcelas = null;
+  if (parcelas.length) {
+    const escolhida = info.parcelas_escolhidas && parcelas.find((p) => p.n === Number(info.parcelas_escolhidas));
+    const semJuros = parcelas.filter((p) => p.juros === 0).pop();
+    const maior = parcelas[parcelas.length - 1];
+    if (escolhida) textoParcelas = `${escolhida.n}x de ${moeda(escolhida.valor)}${escolhida.juros === 0 ? " sem juros" : ""}`;
+    else if (maior.n > 1) textoParcelas = `${semJuros ? `${semJuros.n}x de ${moeda(semJuros.valor)} sem juros ou ` : ""}até ${maior.n}x de ${moeda(maior.valor)}`;
+  }
+
+  // Quadro de entrega: rótulo à esquerda, texto à direita (quebra de linha estimada pela quantidade de letras)
+  const linhasInfo = [];
+  if (retirada) linhasInfo.push({ rotulo: "Retirada", valor: ["Na loja"] });
+  else if (info.endereco) linhasInfo.push({ rotulo: "Entregar em", valor: [info.endereco].concat(info.referencia ? [`Ref.: ${info.referencia}`] : []) });
+  if (info.pagamento) linhasInfo.push({ rotulo: "Pagamento", valor: [info.pagamento].concat(textoParcelas ? [textoParcelas] : []) });
+  if (info.prazo) linhasInfo.push({ rotulo: info.agendado ? "Agendado" : (retirada ? "Pronto em" : "Chega em"), valor: [info.prazo] });
+  // letras por linha: 1ª linha em 16px negrito ~44; as de baixo em 15px normal cabem ~52 (medido na prévia de 25/11)
+  const alturaLinhaInfo = (l) => l.valor.reduce((s, v, k) => s + Math.ceil(String(v).length / (k === 0 ? 44 : 52)) * 21, 0) + 14;
+  const alturaQuadro = linhasInfo.length ? 14 + 28 + linhasInfo.reduce((s, l) => s + alturaLinhaInfo(l), 0) : 0;
+  const temCliente = !!dados.cliente;
+
   const alturaItem = (i) => Math.max(68, Math.ceil(nomeCurto(i.nome).length / 30) * 22 + 28) + 24;
-  const altura = 92 + 8 + itens.reduce((s, i) => s + alturaItem(i) + 1, 0)
-    + 8 + 15 + (descPromo >= 0.01 ? 3 : 2) * 28 + 52
-    + (mostrarMeta ? 84 : 0) + (economia >= 0.01 ? 66 : 0) + 4;
+  const linhasResumo = 2 + (descPromo >= 0.01 ? 1 : 0) + (desconto >= 0.01 ? 1 : 0);
+  const altura = 92 + (temCliente ? 44 : 8) + itens.reduce((s, i) => s + alturaItem(i) + 1, 0)
+    + 8 + 15 + linhasResumo * 28 + 52
+    + (mostrarMeta ? 84 : 0) + (economia >= 0.01 ? 66 : 0) + alturaQuadro + 30;
 
   const linhaResumo = (rotulo, valor, cor = APAGADO) =>
     h("div", { style: { display: "flex", width: W, alignItems: "center", marginBottom: 6 } },
@@ -127,12 +155,18 @@ export function montar(dados, h, logo) {
 
   const resumo = [linhaResumo("Subtotal", moeda(subCheio))];
   if (descPromo >= 0.01) resumo.push(linhaResumo("Promoções", "− " + moeda(descPromo), VERDE));
-  resumo.push(linhaResumo("Entrega", entrega === 0 ? "Grátis" : moeda(entrega), entrega === 0 ? VERDE : APAGADO));
+  if (desconto >= 0.01) resumo.push(linhaResumo(info.desconto_rotulo ? `Desconto (${info.desconto_rotulo})` : "Desconto", "− " + moeda(desconto), VERDE));
+  if (retirada) resumo.push(linhaResumo("Retirada na loja", "Grátis", VERDE));
+  else resumo.push(linhaResumo("Entrega", entrega === 0 ? "Grátis" : moeda(entrega), entrega === 0 ? VERDE : APAGADO));
   resumo.push(h("div", { style: { display: "flex", width: W, alignItems: "flex-end", marginTop: 4 } },
     h("div", { style: { display: "flex", flexGrow: 1, fontSize: 22, fontWeight: 700, color: TEXTO, paddingBottom: 4 } }, "Total"),
     h("div", { style: { display: "flex", fontSize: 34, fontWeight: 800, color: TEXTO } }, moeda(total))));
 
-  const filhos = [cabecalho, h("div", { style: { display: "flex", height: 8 } }), ...blocosItens,
+  const saudacao = temCliente
+    ? h("div", { style: { display: "flex", width: W, marginLeft: 24, height: 44, alignItems: "flex-end", fontSize: 17, color: APAGADO } },
+        h("span", {}, "Para"), h("span", { style: { fontWeight: 700, color: TEXTO, marginLeft: 5 } }, dados.cliente))
+    : h("div", { style: { display: "flex", height: 8 } });
+  const filhos = [cabecalho, saudacao, ...blocosItens,
     h("div", { style: { display: "flex", flexDirection: "column", width: W, marginLeft: 24, marginTop: 8, paddingTop: 14, borderTop: `2px solid ${TEXTO}` } }, ...resumo)];
 
   if (mostrarMeta) filhos.push(
@@ -147,6 +181,17 @@ export function montar(dados, h, logo) {
     h("div", { style: { display: "flex", width: W, marginLeft: 24, marginTop: 14, alignItems: "center", padding: "12px 16px", backgroundColor: VERDE_FUNDO, borderRadius: 12 } },
       h("div", { style: { display: "flex", flexGrow: 1, fontSize: 17, fontWeight: 600, color: VERDE } }, "Você está economizando"),
       h("div", { style: { display: "flex", fontSize: 20, fontWeight: 800, color: VERDE } }, moeda(economia))));
+
+  if (linhasInfo.length) filhos.push(
+    h("div", { style: { display: "flex", flexDirection: "column", width: W, marginLeft: 24, marginTop: 14, padding: "14px 16px 0", border: `1px solid ${LINHA}`, borderRadius: 12 } },
+      ...linhasInfo.map((l) =>
+        h("div", { style: { display: "flex", width: W - 34, marginBottom: 14 } },
+          h("div", { style: { display: "flex", width: 104, flexShrink: 0, fontSize: 15, color: APAGADO, paddingTop: 1 } }, l.rotulo),
+          h("div", { style: { display: "flex", flexDirection: "column", flexGrow: 1, width: W - 34 - 104 } },
+            ...l.valor.map((v, k) => h("div", { style: { display: "flex", fontSize: k === 0 ? 16 : 15, lineHeight: 1.3, fontWeight: k === 0 ? 600 : 400, color: k === 0 ? TEXTO : APAGADO } }, String(v))))))));
+
+  filhos.push(h("div", { style: { display: "flex", width: W, marginLeft: 24, marginTop: 14, justifyContent: "center", fontSize: 13, color: APAGADO } },
+    `Preços válidos para hoje, ${dados.data_curta || dados.data}.`));
 
   const arvore = h("div", { style: { display: "flex", flexDirection: "column", width: LARGURA, height: altura, backgroundColor: "#FFFFFF", fontFamily: "Inter" } }, ...filhos);
   return { arvore, altura };

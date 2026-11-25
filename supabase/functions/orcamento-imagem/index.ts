@@ -41,9 +41,12 @@ Deno.serve(async (req) => {
     if (!seg || req.headers.get("x-orcamento-segredo") !== seg.valor) return json(401, { erro: "sem permissão" });
 
     // modo "lista" (24/11): a lista de opções da atendente numa imagem só (whatsapp_lista_dados)
-    const { conversa_id, modo } = await req.json();
+    // "previa" (24/11): desenha dados prontos (mesmo formato da RPC) — teste sem mexer em conversa de cliente
+    const { conversa_id, modo, previa } = await req.json();
     const lista = modo === "lista";
-    const { data: dados, error } = await admin.rpc(lista ? "whatsapp_lista_dados" : "whatsapp_orcamento_dados", { p_conversa_id: conversa_id });
+    const { data: dados, error } = previa
+      ? { data: previa, error: null }
+      : await admin.rpc(lista ? "whatsapp_lista_dados" : "whatsapp_orcamento_dados", { p_conversa_id: conversa_id });
     if (error) return json(500, { erro: error.message });
     if (!dados || !dados.itens?.length) return json(200, { url: null, motivo: "sem itens" });
 
@@ -63,7 +66,7 @@ Deno.serve(async (req) => {
     const { arvore, altura } = (lista ? montarLista : montar)(dados, h, logo);
     const resp = new ImageResponse(arvore, { width: LARGURA, height: altura, fonts: await carregarFontes() });
     const png = new Uint8Array(await resp.arrayBuffer());
-    const caminho = `${dados.empresa_id}/${lista ? "lista" : "atendente"}-${crypto.randomUUID()}.png`;
+    const caminho = `${dados.empresa_id}/${previa ? "previa" : lista ? "lista" : "atendente"}-${crypto.randomUUID()}.png`;
     const up = await admin.storage.from("orcamentos").upload(caminho, png, { contentType: "image/png" });
     if (up.error) return json(500, { erro: up.error.message });
     const { data: pub } = admin.storage.from("orcamentos").getPublicUrl(caminho);

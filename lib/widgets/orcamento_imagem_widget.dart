@@ -51,6 +51,20 @@ class OrcamentoImagemWidget extends StatelessWidget {
   final double? minimoFreteGratis;
   final bool retirada;
 
+  /// Primeiro nome do cliente ("Para Márcia"). null = sem a linha.
+  final String? cliente;
+
+  /// Código do cupom, mostrado ao lado do desconto ("Desconto (cupom BAIRRO10)").
+  final String? cupom;
+
+  /// Quadro de entrega (mesmo do orçamento da atendente, função orcamento-imagem):
+  /// endereço, pagamento (+ parcelas) e prazo. Linha null = não aparece.
+  final String? endereco;
+  final String? pagamento;
+  final String? parcelas;
+  final String? prazo;
+  final bool agendado;
+
   const OrcamentoImagemWidget({
     super.key,
     required this.nomeLoja,
@@ -63,6 +77,13 @@ class OrcamentoImagemWidget extends StatelessWidget {
     this.entregaCheia,
     this.minimoFreteGratis,
     this.retirada = false,
+    this.cliente,
+    this.cupom,
+    this.endereco,
+    this.pagamento,
+    this.parcelas,
+    this.prazo,
+    this.agendado = false,
   });
 
   static const largura = 540.0;
@@ -72,10 +93,6 @@ class OrcamentoImagemWidget extends StatelessWidget {
   static const _verde = Color(0xFF1F7A45);
   static const _verdeFundo = Color(0xFFE7F5EC);
   static const _trilha = Color(0xFFD5DEE8);
-
-  /// Longe demais do frete grátis, a meta desanima em vez de animar: só aparece
-  /// quando falta até metade do mínimo.
-  static const fracaoMaximaParaMostrarMeta = 0.5;
 
   static final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
 
@@ -98,8 +115,19 @@ class OrcamentoImagemWidget extends StatelessWidget {
     return _subtotal >= minimo ? 0 : minimo - _subtotal;
   }
 
-  bool get _mostrarMetaFrete =>
-      _faltaFreteGratis > 0 && _faltaFreteGratis <= minimoFreteGratis! * fracaoMaximaParaMostrarMeta;
+  /// Lucas (24/11): a meta do frete grátis aparece sempre que falta valor (antes, só
+  /// quando faltava até metade do mínimo).
+  bool get _mostrarMetaFrete => _faltaFreteGratis > 0;
+
+  List<(String, String, String?)> get _linhasEntrega => [
+        if (retirada)
+          ('Retirada', 'Na loja', null)
+        else if (endereco != null && endereco!.trim().isNotEmpty)
+          ('Entregar em', endereco!, null),
+        if (pagamento != null && pagamento!.trim().isNotEmpty) ('Pagamento', pagamento!, parcelas),
+        if (prazo != null && prazo!.trim().isNotEmpty)
+          (agendado ? 'Agendado' : (retirada ? 'Pronto em' : 'Chega em'), prazo!, null),
+      ];
 
   Color get _sobrePrimaria =>
       ThemeData.estimateBrightnessForColor(corPrimaria) == Brightness.light ? _texto : Colors.white;
@@ -117,7 +145,19 @@ class OrcamentoImagemWidget extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _cabecalho(),
-              const SizedBox(height: 8),
+              if (cliente != null && cliente!.trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 18, 24, 2),
+                  child: Text.rich(TextSpan(
+                    style: const TextStyle(fontSize: 17, color: _apagado),
+                    children: [
+                      const TextSpan(text: 'Para '),
+                      TextSpan(text: cliente, style: const TextStyle(fontWeight: FontWeight.w700, color: _texto)),
+                    ],
+                  )),
+                )
+              else
+                const SizedBox(height: 8),
               for (final (i, item) in itens.indexed) ...[
                 if (i > 0) const Divider(height: 1, indent: 24, endIndent: 24, color: _linha),
                 _item(item),
@@ -125,7 +165,13 @@ class OrcamentoImagemWidget extends StatelessWidget {
               _resumo(),
               if (_mostrarMetaFrete) _metaFreteGratis(),
               if (_economia >= 0.01) _faixaEconomia(),
-              const SizedBox(height: 22),
+              if (_linhasEntrega.isNotEmpty) _quadroEntrega(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+                child: Text('Preços válidos para hoje, ${DateFormat('dd/MM').format(data)}.',
+                    textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: _apagado)),
+              ),
+              const SizedBox(height: 18),
             ],
           ),
         ),
@@ -262,7 +308,10 @@ class OrcamentoImagemWidget extends StatelessWidget {
           _linhaResumo('Subtotal', _moeda.format(_subtotalCheio)),
           if (_descontoPromocoes >= 0.01)
             _linhaResumo('Promoções', '− ${_moeda.format(_descontoPromocoes)}', cor: _verde),
-          if (desconto > 0) _linhaResumo('Desconto', '− ${_moeda.format(desconto)}', cor: _verde),
+          if (desconto > 0)
+            _linhaResumo(cupom != null && cupom!.isNotEmpty ? 'Desconto (cupom $cupom)' : 'Desconto',
+                '− ${_moeda.format(desconto)}',
+                cor: _verde),
           _linhaResumo(
             retirada ? 'Retirada na loja' : 'Entrega',
             valorEntrega,
@@ -316,6 +365,41 @@ class OrcamentoImagemWidget extends StatelessWidget {
       ),
     );
   }
+
+  Widget _quadroEntrega() => Container(
+        margin: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+        decoration: BoxDecoration(border: Border.all(color: _linha), borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          children: [
+            for (final (rotulo, valor, extra) in _linhasEntrega)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 104,
+                      child: Text(rotulo, style: const TextStyle(fontSize: 15, color: _apagado)),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(valor,
+                              style: const TextStyle(
+                                  fontSize: 16, height: 1.3, fontWeight: FontWeight.w600, color: _texto)),
+                          if (extra != null)
+                            Text(extra, style: const TextStyle(fontSize: 15, height: 1.3, color: _apagado)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
 
   Widget _faixaEconomia() => Container(
         margin: const EdgeInsets.fromLTRB(24, 14, 24, 0),

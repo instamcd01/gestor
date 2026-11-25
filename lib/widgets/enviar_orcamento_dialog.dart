@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/cliente.dart';
 import '../providers/branding_provider.dart';
 import '../providers/carrinho_provider.dart';
 import 'orcamento_imagem_widget.dart';
@@ -31,6 +32,20 @@ List<ItemOrcamentoImagem> itensDoOrcamento(List<ItemCarrinho> itens, Map<String,
           foto: fotos[item.produto.id ?? ''],
         ),
     ];
+
+/// "MÁRCIA regina souza" vira "Márcia" (a linha "Para Márcia" do orçamento).
+String? primeiroNomeOrcamento(String? nome) {
+  final primeiro = (nome ?? '').trim().split(RegExp(r'\s+')).first;
+  if (primeiro.length < 2 || !RegExp(r'^[A-Za-zÀ-ÿ]').hasMatch(primeiro)) return null;
+  return primeiro[0].toUpperCase() + primeiro.substring(1).toLowerCase();
+}
+
+/// "Rua X, 12 – Bairro": curto, pra caber no quadro de entrega do orçamento.
+String? enderecoOrcamento(Cliente? cliente) {
+  if (cliente == null || cliente.endereco.trim().isEmpty) return null;
+  final rua = [cliente.endereco.trim(), if (cliente.numero.trim().isNotEmpty) cliente.numero.trim()].join(', ');
+  return cliente.bairro.trim().isEmpty ? rua : '$rua – ${cliente.bairro.trim()}';
+}
 
 /// Texto pra quem está vendendo, a partir da recusa do envio.
 String textoMotivoOrcamento(String? motivo, {String? erro}) => switch (motivo) {
@@ -241,6 +256,13 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
                             entrega: carrinho.valorEntregaCalculado,
                             entregaCheia: zona?.valor,
                             minimoFreteGratis: zona?.valorMinimoFreteGratis,
+                            // 25/11: mesmo orçamento completo da atendente (função orcamento-imagem).
+                            // Pagamento fica de fora: no Gestor ele só é escolhido ao fechar a venda.
+                            cliente: primeiroNomeOrcamento(carrinho.clienteSelecionado?.nome),
+                            cupom: carrinho.cupomAplicado?.codigo,
+                            endereco: zona == null ? null : enderecoOrcamento(carrinho.clienteSelecionado),
+                            prazo: carrinho.agendamentoSelecionado?.label,
+                            agendado: carrinho.agendamentoSelecionado != null,
                           ),
                         ),
                       ),
