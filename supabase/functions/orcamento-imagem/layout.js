@@ -53,6 +53,9 @@ export function montarLista(dados, h, logo) {
     direita.push(h("div", { style: { display: "flex", whiteSpace: "nowrap", fontSize: 20, fontWeight: 800, color: promo ? VERDE : TEXTO } }, moeda(i.preco)));
     const texto = [h("div", { style: { display: "flex", fontSize: 17, lineHeight: 1.3, fontWeight: 600, color: TEXTO } }, nome)];
     if (kg) texto.push(h("div", { style: { display: "flex", fontSize: 14, color: APAGADO, marginTop: 4 } }, `sai a ${kg.replace(/\s/g, " ")}`));
+    // 25/11: selo "−X%" embaixo do preço, igual ao card do site
+    const pct = promo ? Math.round((1 - i.preco / i.preco_cheio) * 100) : 0;
+    if (pct > 0) direita.push(h("div", { style: { display: "flex", marginTop: 4, backgroundColor: VERDE, color: "#FFFFFF", fontSize: 13, fontWeight: 700, borderRadius: 5, paddingLeft: 7, paddingRight: 7, paddingTop: 2, paddingBottom: 2 } }, `−${pct}%`));
     blocos.push(
       h("div", { style: { display: "flex", width: LARGURA, alignItems: "center", paddingLeft: 24, paddingRight: 24, paddingTop: 10, paddingBottom: 10 } },
         h("div", { style: { display: "flex", width: 34, height: 34, flexShrink: 0, borderRadius: 17, backgroundColor: dados.cor, color: sobre, fontSize: 18, fontWeight: 800, alignItems: "center", justifyContent: "center" } }, String(i.n)),
@@ -87,7 +90,10 @@ export function montar(dados, h, logo) {
   const minimo = dados.minimo_frete_gratis ? Number(dados.minimo_frete_gratis) : null;
   const falta = !retirada && minimo && entrega > 0 && sub < minimo ? minimo - sub : 0;
   const mostrarMeta = !!minimo && falta > 0;
-  const economia = descPromo + desconto;
+  // 25/11: frete grátis conquistado conta no "economizando", igual ao site (valor cheio da zona riscado)
+  const entregaCheia = Number(dados.entrega_cheia || 0);
+  const freteGanho = !retirada && entrega === 0 && entregaCheia > 0;
+  const economia = descPromo + desconto + (freteGanho ? entregaCheia : 0);
   const sobre = corDoTextoSobre(dados.cor);
   const W = LARGURA - 48; // conteúdo dentro das margens de 24
 
@@ -157,6 +163,11 @@ export function montar(dados, h, logo) {
   if (descPromo >= 0.01) resumo.push(linhaResumo("Promoções", "− " + moeda(descPromo), VERDE));
   if (desconto >= 0.01) resumo.push(linhaResumo(info.desconto_rotulo ? `Desconto (${info.desconto_rotulo})` : "Desconto", "− " + moeda(desconto), VERDE));
   if (retirada) resumo.push(linhaResumo("Retirada na loja", "Grátis", VERDE));
+  else if (freteGanho) resumo.push(
+    h("div", { style: { display: "flex", width: W, alignItems: "center", marginBottom: 6 } },
+      h("div", { style: { display: "flex", flexGrow: 1, fontSize: 16, color: VERDE } }, "Entrega"),
+      h("div", { style: { display: "flex", fontSize: 15, color: APAGADO, textDecoration: "line-through", marginRight: 8 } }, moeda(entregaCheia)),
+      h("div", { style: { display: "flex", fontSize: 16, fontWeight: 600, color: VERDE } }, "Grátis")));
   else resumo.push(linhaResumo("Entrega", entrega === 0 ? "Grátis" : moeda(entrega), entrega === 0 ? VERDE : APAGADO));
   resumo.push(h("div", { style: { display: "flex", width: W, alignItems: "flex-end", marginTop: 4 } },
     h("div", { style: { display: "flex", flexGrow: 1, fontSize: 22, fontWeight: 700, color: TEXTO, paddingBottom: 4 } }, "Total"),

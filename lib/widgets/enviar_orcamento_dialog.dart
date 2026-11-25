@@ -20,17 +20,24 @@ import 'orcamento_imagem_widget.dart';
 
 const _urlEnvio = 'https://n8n.lukz.com.br/webhook/orcamento-whatsapp-87d65e3578a20292a4748bf6060a1193';
 
-/// Linhas do orçamento a partir do carrinho. Preço cortado só quando o preço de
-/// catálogo é mesmo maior que o cobrado (promoção ou kit).
-List<ItemOrcamentoImagem> itensDoOrcamento(List<ItemCarrinho> itens, Map<String, Uint8List?> fotos) => [
+/// Linhas do orçamento a partir do carrinho. Preço cortado só quando o preço "de"
+/// é mesmo maior que o cobrado. [precosDe] vem de `precos_de_exibicao` (mesma regra do
+/// site: preço normal, preço nos aplicativos quando a loja liga o comparativo, kit);
+/// sem ele, vale o preço de catálogo.
+List<ItemOrcamentoImagem> itensDoOrcamento(List<ItemCarrinho> itens, Map<String, Uint8List?> fotos,
+        [Map<String, double> precosDe = const {}]) =>
+    [
       for (final item in itens)
-        ItemOrcamentoImagem(
-          nome: item.produto.nome,
-          quantidade: item.quantidade,
-          precoUnitario: item.precoUnitario,
-          precoCheio: item.produto.preco > item.precoUnitario ? item.produto.preco : null,
-          foto: fotos[item.produto.id ?? ''],
-        ),
+        () {
+          final de = precosDe[item.produto.id ?? ''] ?? item.produto.preco;
+          return ItemOrcamentoImagem(
+            nome: item.produto.nome,
+            quantidade: item.quantidade,
+            precoUnitario: item.precoUnitario,
+            precoCheio: de > item.precoUnitario ? de : null,
+            foto: fotos[item.produto.id ?? ''],
+          );
+        }(),
     ];
 
 /// "MÁRCIA regina souza" vira "Márcia" (a linha "Para Márcia" do orçamento).
@@ -73,6 +80,7 @@ class _EnviarOrcamentoDialog extends StatefulWidget {
 class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
   final _chaveImagem = GlobalKey();
   final _fotos = <String, Uint8List?>{};
+  final _precosDe = <String, double>{};
   Uint8List? _logo;
   bool _carregando = true;
   bool _enviando = false;
@@ -108,6 +116,7 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
       for (final item in widget.carrinho.itens)
         _baixar(item.produto.imagemUrlExibicao).then((b) => _fotos[item.produto.id ?? ''] = b),
       if (logos.isNotEmpty) _baixar(logos.first.url).then((b) => _logo = b),
+      _buscarPrecosDe(),
       if (cliente != null)
         Supabase.instance.client.rpc('whatsapp_orcamento_preparar', params: {
           'p_cliente_id': cliente.idCliente,
@@ -119,6 +128,21 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
         }),
     ]);
     if (mounted) setState(() => _carregando = false);
+  }
+
+  /// Preço "de" riscado igual ao site (RPC precos_de_exibicao). Falhou: fica o preço de catálogo.
+  Future<void> _buscarPrecosDe() async {
+    final ids = [for (final i in widget.carrinho.itens) if (i.produto.id != null) i.produto.id!];
+    if (ids.isEmpty) return;
+    try {
+      final linhas = await Supabase.instance.client.rpc('precos_de_exibicao', params: {'p_ids': ids}) as List;
+      for (final l in linhas) {
+        final de = (l['preco_de'] as num?)?.toDouble();
+        if (de != null) _precosDe[l['produto_id'] as String] = de;
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar preço "de" do orçamento: $e');
+    }
   }
 
   Future<Uint8List> _gerarPng() async {
@@ -250,7 +274,7 @@ class _EnviarOrcamentoDialogState extends State<_EnviarOrcamentoDialog> {
                             corPrimaria: context.read<BrandingProvider>().corPrimaria,
                             logo: _logo,
                             data: DateTime.now(),
-                            itens: itensDoOrcamento(carrinho.itens, _fotos),
+                            itens: itensDoOrcamento(carrinho.itens, _fotos, _precosDe),
                             desconto: carrinho.desconto,
                             retirada: zona == null,
                             entrega: carrinho.valorEntregaCalculado,
