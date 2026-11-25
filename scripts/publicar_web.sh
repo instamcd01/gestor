@@ -4,7 +4,7 @@
 # Compila aqui (a VPS tem só 2 núcleos — build Flutter lá pesa) e envia só os
 # arquivos prontos pro ramo `web-deploy`, que o serviço gestor-web do
 # Easypanel usa (Dockerfile com nginx, sem compilar nada). Depois do push,
-# clicar "Implantar" no serviço (ou deixar o deploy automático ligado).
+# o Easypanel implanta sozinho (implantação automática ligada em 25/11).
 #
 # Uso: bash scripts/publicar_web.sh
 set -euo pipefail
@@ -53,4 +53,15 @@ git add -A
 git -c user.name="$(git -C "$raiz" config user.name)" -c user.email="$(git -C "$raiz" config user.email)" \
   commit -q -m "Gestor web a partir de ${origem_commit}"
 git push -f -q "$(git -C "$raiz" remote get-url origin)" web-deploy
-echo "Publicado no ramo web-deploy (origem ${origem_commit}). Falta: Implantar no Easypanel."
+echo "Publicado no ramo web-deploy (origem ${origem_commit})."
+
+# 25/11: "Implantação automática" ligada no serviço gestor-web do Easypanel: o push acima já
+# coloca no ar sozinho (~1 min). Confere se o arquivo novo chegou no site.
+for _ in $(seq 1 12); do
+  if curl -fsS -m 15 "https://gestor.deliverypetexpress.com.br/main.dart.js?v=$RANDOM" | cmp -s - build/web/main.dart.js; then
+    echo "No ar: gestor.deliverypetexpress.com.br já entrega esta versão."
+    exit 0
+  fi
+  sleep 10
+done
+echo "AVISO: em 2 min o site ainda não mostrou a versão nova. Confira o gestor-web no Easypanel (Implantações)."
