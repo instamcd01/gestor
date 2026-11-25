@@ -57,8 +57,11 @@ echo "Publicado no ramo web-deploy (origem ${origem_commit})."
 
 # 25/11: "Implantação automática" ligada no serviço gestor-web do Easypanel: o push acima já
 # coloca no ar sozinho (~1 min). Confere se o arquivo novo chegou no site.
+no_ar="$(mktemp)"
+trap 'rm -rf "$tmp" "$no_ar"' EXIT
 for _ in $(seq 1 12); do
-  if curl -fsS -m 15 "https://gestor.deliverypetexpress.com.br/main.dart.js?v=$RANDOM" | cmp -s - build/web/main.dart.js; then
+  # baixa pra arquivo: comparar pelo pipe dá diferença falsa no Git Bash do Windows
+  if curl -fsS -m 30 -o "$no_ar" "https://gestor.deliverypetexpress.com.br/main.dart.js?v=$RANDOM"     && cmp -s "$no_ar" "$raiz/build/web/main.dart.js"; then
     echo "No ar: gestor.deliverypetexpress.com.br já entrega esta versão."
     exit 0
   fi
