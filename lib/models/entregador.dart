@@ -31,6 +31,8 @@ class Entregador {
   final bool freelancerOferta;
   /// Pode levar pedido pago em dinheiro na entrega (motoboy novo começa sem).
   final bool aceitaDinheiro;
+  /// Tem maquininha (Tap to Pay/Point): pode levar pedido cobrado no cartão na entrega
+  final bool aceitaCartao;
 
   Entregador({
     this.id,
@@ -51,6 +53,7 @@ class Entregador {
     this.authUserId,
     this.freelancerOferta = false,
     this.aceitaDinheiro = false,
+    this.aceitaCartao = false,
   });
 
   factory Entregador.fromSupabase(Map<String, dynamic> row) {
@@ -73,6 +76,7 @@ class Entregador {
       authUserId: row['auth_user_id'] as String?,
       freelancerOferta: row['freelancer_oferta'] as bool? ?? false,
       aceitaDinheiro: row['aceita_dinheiro'] as bool? ?? false,
+      aceitaCartao: row['aceita_cartao'] as bool? ?? false,
     );
   }
 
@@ -94,6 +98,7 @@ class Entregador {
       'custo_salario_diaria': custoSalarioDiaria,
       'freelancer_oferta': freelancerOferta,
       'aceita_dinheiro': aceitaDinheiro,
+      'aceita_cartao': aceitaCartao,
     };
   }
 }

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../utils/cliente_validators.dart';
+import 'entrega_oferta_acerto_screen.dart';
 
 /// Entregador por oferta no WhatsApp (19/11): o pedido de entrega cai, a rota vai como oferta
 /// pros motoboys marcados no cadastro, o 1º que aceita leva. Aqui o dono liga/desliga e ajusta
@@ -23,6 +24,8 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
   final _parada = TextEditingController();
   final _telefoneAviso = TextEditingController();
   final _antecedencia = TextEditingController();
+  final _minimo = TextEditingController();
+  final _antecedenciaOferta = TextEditingController();
 
   bool _carregando = true;
   bool _salvando = false;
@@ -35,14 +38,14 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
   void initState() {
     super.initState();
     _carregar();
-    for (final c in [_saida, _km, _parada]) {
+    for (final c in [_saida, _km, _parada, _minimo]) {
       c.addListener(() => setState(() {}));
     }
   }
 
   @override
   void dispose() {
-    for (final c in [_saida, _km, _parada, _telefoneAviso, _antecedencia]) {
+    for (final c in [_saida, _km, _parada, _telefoneAviso, _antecedencia, _minimo, _antecedenciaOferta]) {
       c.dispose();
     }
     super.dispose();
@@ -66,6 +69,8 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
         _parada.text = ClienteValidators.formatarMoeda((cfg?['valor_parada_extra'] as num?)?.toDouble() ?? 2);
         _telefoneAviso.text = cfg?['telefone_aviso'] as String? ?? '';
         _antecedencia.text = '${cfg?['antecedencia_sem_aceite_min'] ?? 15}';
+        _minimo.text = ClienteValidators.formatarMoeda((cfg?['valor_minimo'] as num?)?.toDouble() ?? 7);
+        _antecedenciaOferta.text = '${cfg?['antecedencia_oferta_min'] ?? 30}';
         _motoboys = (motoboys as List).length;
         _carregando = false;
       });
@@ -78,8 +83,10 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
 
   /// Mesma conta de entrega_oferta_calcular: saída + km só de ida + paradas extras,
   /// arredondado pra cima de 50 em 50 centavos.
-  String _exemplo(double km, int paradas) =>
-      _moeda.format(((_n(_saida) + _n(_km) * km + _n(_parada) * (paradas - 1)) * 2).ceil() / 2);
+  String _exemplo(double km, int paradas) {
+    final conta = ((_n(_saida) + _n(_km) * km + _n(_parada) * (paradas - 1)) * 2).ceil() / 2;
+    return _moeda.format(conta < _n(_minimo) ? _n(_minimo) : conta);
+  }
 
   Future<void> _salvar() async {
     // reconta na hora: a tela pode ter sido aberta antes de cadastrar o motoboy (25/11: o "ligar" não gravava)
@@ -112,6 +119,8 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
             ? null
             : _telefoneAviso.text.replaceAll(RegExp(r'\D'), ''),
         'antecedencia_sem_aceite_min': int.tryParse(_antecedencia.text.trim()) ?? 15,
+        'valor_minimo': _n(_minimo),
+        'antecedencia_oferta_min': int.tryParse(_antecedenciaOferta.text.trim()) ?? 30,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
       if (_empresaId == null) {
@@ -157,6 +166,16 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
                   style: TextStyle(color: cores.onSurfaceVariant),
                 ),
                 const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.payments_outlined),
+                    title: const Text('Acerto com motoboys'),
+                    subtitle: const Text('Quanto pagar ou receber de cada um'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                        context, MaterialPageRoute(builder: (_) => const EntregaOfertaAcertoScreen())),
+                  ),
+                ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Ligado', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -172,6 +191,7 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
                 _campoValor(_saida, 'Por saída (cada rota)'),
                 _campoValor(_km, 'Por km (só a ida)', ajuda: 'A volta não conta'),
                 _campoValor(_parada, 'Por entrega a mais na mesma rota'),
+                _campoValor(_minimo, 'Valor mínimo por rota', ajuda: 'Entrega curta não sai por menos que isso'),
                 Card(
                   color: cores.surfaceContainerHighest,
                   child: Padding(
@@ -187,6 +207,18 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
                         Text('2 entregas, 5 km até a última: ${_exemplo(5, 2)}'),
                       ],
                     ),
+                  ),
+                ),
+                const Divider(height: 32),
+                Text('Quando a oferta sai', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _antecedenciaOferta,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Mandar a oferta quantos minutos antes da hora de sair',
+                    suffixText: 'min',
+                    helperText: 'Até lá os pedidos vão se juntando na mesma rota e o motoboy não fica esperando',
                   ),
                 ),
                 const Divider(height: 32),

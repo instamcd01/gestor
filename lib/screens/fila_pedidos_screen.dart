@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../widgets/rota_oferta_fila.dart';
 import '../widgets/faixa_rolavel.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -74,6 +75,9 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       _abrirPedidoPedido();
     });
     pedidoParaAbrir.addListener(_abrirPedidoPedido);
+    // Entregador por oferta (25/11): em qual rota cada pedido está e o botão "Entregar ao motoboy"
+    RotasOfertaFila.instancia.addListener(_aoMudarRotas);
+    RotasOfertaFila.instancia.comecar();
     // Os selos de urgência dependem só da hora atual (não de dado novo do
     // servidor) — atualiza sozinho pra não precisar puxar pra atualizar só
     // pra ver um pedido virar "atrasado".
@@ -85,11 +89,19 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   @override
   void dispose() {
     pedidoParaAbrir.removeListener(_abrirPedidoPedido);
+    RotasOfertaFila.instancia.removeListener(_aoMudarRotas);
+    RotasOfertaFila.instancia.parar();
     _timerUrgencia?.cancel();
     _filaFoco.dispose();
     _buscaController.dispose();
     super.dispose();
   }
+
+  void _aoMudarRotas() {
+    if (mounted) setState(() {});
+  }
+
+  RotaOfertaInfo? _rotaDe(Venda venda) => RotasOfertaFila.instancia.value[venda.idVenda];
 
   /// Início/fim da janela agendada, seja ela do iFood (agendado +
   /// entregaPrevista*) ou escolhida manualmente — pelo cliente no site ou
@@ -633,6 +645,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 12.5, color: apagado),
               ),
+              if (_rotaDe(venda) != null) ...[
+                const SizedBox(height: 6),
+                SeloRotaOferta(info: _rotaDe(venda)!),
+              ],
               const SizedBox(height: 4),
               Row(
                 children: [
@@ -850,7 +866,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       if (venda.ehPlataformaDelivery && venda.numeroExibicaoMarketplace != null) '${venda.nomePlataforma} #${venda.numeroExibicaoMarketplace}',
     ].join(' · ');
 
+    final rotaOferta = _rotaDe(venda);
     final acoes = <Widget>[
+      if (rotaOferta != null) SeloRotaOferta(info: rotaOferta),
+      if (rotaOferta?.aguardandoSaida == true) BotaoEntregarMotoboy(info: rotaOferta!),
       if (_podeSeparar(venda))
         OutlinedButton.icon(
           onPressed: () => _abrirSeparacao(venda),
@@ -1594,6 +1613,18 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                if (_rotaDe(venda) != null) ...[
+                                  Row(
+                                    children: [
+                                      Flexible(child: SeloRotaOferta(info: _rotaDe(venda)!)),
+                                      if (_rotaDe(venda)!.aguardandoSaida) ...[
+                                        const SizedBox(width: 8),
+                                        BotaoEntregarMotoboy(info: _rotaDe(venda)!, compacto: true),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
                                 InkWell(
                                   onTap: () => Navigator.push(
                                     context,

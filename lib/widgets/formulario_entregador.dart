@@ -42,6 +42,7 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
   late bool _veiculoDaLoja;
   late bool _freelancerOferta;
   late bool _aceitaDinheiro;
+  late bool _aceitaCartao;
   String? _veiculoId;
   String? _custoModo;
   bool _salvando = false;
@@ -65,6 +66,7 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
     _veiculoDaLoja = e?.veiculoDaLoja ?? false;
     _freelancerOferta = e?.freelancerOferta ?? false;
     _aceitaDinheiro = e?.aceitaDinheiro ?? false;
+    _aceitaCartao = e?.aceitaCartao ?? false;
     _veiculoId = e?.veiculoId;
     _custoModo = e?.custoModo;
   }
@@ -114,6 +116,7 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
       custoSalarioDiaria: ClienteValidators.parseNumero(_custoSalarioDiariaController.text),
       freelancerOferta: _freelancerOferta,
       aceitaDinheiro: _freelancerOferta && _aceitaDinheiro,
+      aceitaCartao: _freelancerOferta && _aceitaCartao,
     );
 
     try {
@@ -237,6 +240,14 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
                   subtitle: const Text('Deixe desligado pra quem está começando'),
                   value: _aceitaDinheiro,
                   onChanged: (v) => setState(() => _aceitaDinheiro = v),
+                ),
+              if (_freelancerOferta)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Tem maquininha (cobra cartão na entrega)'),
+                  subtitle: const Text('Sem isso, pedido com cartão na entrega não vai pra ele'),
+                  value: _aceitaCartao,
+                  onChanged: (v) => setState(() => _aceitaCartao = v),
                 ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
