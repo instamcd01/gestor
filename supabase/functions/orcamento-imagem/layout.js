@@ -100,16 +100,17 @@ export function montar(dados, h, logo) {
   const sobre = corDoTextoSobre(dados.cor);
   const W = LARGURA - 48; // conteúdo dentro das margens de 24
 
-  // Parcelas (só crédito): a escolhida pelo cliente, ou "1x sem juros ou até Nx"
+  // Parcelas (só crédito). 25/11 (Lucas): "até 3x de R$ 54,02" dava a entender que era sem juros — agora vai um
+  // quadro com TODAS as opções, cada uma com o valor da parcela e o total (igual ao site), e a escolhida em destaque.
   const parcelas = Array.isArray(dados.parcelas) ? dados.parcelas.map((p) => ({ n: Number(p.n), valor: Number(p.valor), juros: Number(p.juros) })) : [];
+  const escolhidaN = info.parcelas_escolhidas ? Number(info.parcelas_escolhidas) : null;
+  const mostrarParcelas = parcelas.length > 1;
   let textoParcelas = null;
-  if (parcelas.length) {
-    const escolhida = info.parcelas_escolhidas && parcelas.find((p) => p.n === Number(info.parcelas_escolhidas));
-    const semJuros = parcelas.filter((p) => p.juros === 0).pop();
-    const maior = parcelas[parcelas.length - 1];
-    if (escolhida) textoParcelas = `${escolhida.n}x de ${moeda(escolhida.valor)}${escolhida.juros === 0 ? " sem juros" : ""}`;
-    else if (maior.n > 1) textoParcelas = `${semJuros ? `${semJuros.n}x de ${moeda(semJuros.valor)} sem juros ou ` : ""}até ${maior.n}x de ${moeda(maior.valor)}`;
+  if (parcelas.length && escolhidaN) {
+    const e = parcelas.find((p) => p.n === escolhidaN);
+    if (e) textoParcelas = e.juros === 0 ? `${e.n}x de ${moeda(e.valor)} sem juros` : `${e.n}x de ${moeda(e.valor)} (total ${moeda(e.valor * e.n)})`;
   }
+  const alturaParcelas = mostrarParcelas ? 14 + 30 + parcelas.length * 27 + 10 : 0;
 
   // Quadro de entrega: rótulo à esquerda, texto à direita (quebra de linha estimada pela quantidade de letras)
   const linhasInfo = [];
@@ -126,7 +127,7 @@ export function montar(dados, h, logo) {
   const linhasResumo = 2 + (descPromo >= 0.01 ? 1 : 0) + (desconto >= 0.01 ? 1 : 0);
   const altura = 92 + (temCliente ? 44 : 8) + itens.reduce((s, i) => s + alturaItem(i) + 1, 0)
     + 8 + 15 + linhasResumo * 28 + 52
-    + (mostrarMeta ? 84 : 0) + (economia >= 0.01 ? 66 : 0) + alturaQuadro + 30;
+    + (mostrarMeta ? 84 : 0) + (economia >= 0.01 ? 66 : 0) + alturaQuadro + alturaParcelas + 30;
 
   const linhaResumo = (rotulo, valor, cor = APAGADO) =>
     h("div", { style: { display: "flex", width: W, alignItems: "center", marginBottom: 6 } },
@@ -204,6 +205,18 @@ export function montar(dados, h, logo) {
           h("div", { style: { display: "flex", width: 104, flexShrink: 0, fontSize: 15, color: APAGADO, paddingTop: 1 } }, l.rotulo),
           h("div", { style: { display: "flex", flexDirection: "column", flexGrow: 1, width: W - 34 - 104 } },
             ...l.valor.map((v, k) => h("div", { style: { display: "flex", fontSize: k === 0 ? 16 : 15, lineHeight: 1.3, fontWeight: k === 0 ? 600 : 400, color: k === 0 ? TEXTO : APAGADO } }, String(v))))))));
+
+  if (mostrarParcelas) filhos.push(
+    h("div", { style: { display: "flex", flexDirection: "column", width: W, marginLeft: 24, marginTop: 14, padding: "14px 16px 10px", border: `1px solid ${LINHA}`, borderRadius: 12 } },
+      h("div", { style: { display: "flex", fontSize: 15, color: APAGADO, marginBottom: 8 } }, "Parcelas no cartão de crédito"),
+      ...parcelas.map((p) => {
+        const destaque = escolhidaN === p.n;
+        const cor = destaque ? VERDE : TEXTO;
+        return h("div", { style: { display: "flex", width: W - 34, height: 27, alignItems: "center" } },
+          h("div", { style: { display: "flex", width: 150, fontSize: 16, fontWeight: destaque ? 800 : 600, color: cor } }, `${p.n}x de ${moeda(p.valor)}`),
+          h("div", { style: { display: "flex", flexGrow: 1, justifyContent: "flex-end", fontSize: 15, fontWeight: destaque ? 700 : 400, color: p.juros === 0 ? VERDE : APAGADO } },
+            p.juros === 0 ? "sem juros" : `total ${moeda(p.valor * p.n)}`));
+      })));
 
   filhos.push(h("div", { style: { display: "flex", width: W, marginLeft: 24, marginTop: 14, justifyContent: "center", fontSize: 13, color: APAGADO } },
     `Preços válidos para hoje, ${dados.data_curta || dados.data}.`));
