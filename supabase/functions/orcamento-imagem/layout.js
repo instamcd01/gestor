@@ -147,15 +147,16 @@ export function montar(dados, h, logo) {
     const direita = [];
     if (promo) direita.push(h("div", { style: { display: "flex", fontSize: 15, color: APAGADO, textDecoration: "line-through" } }, moeda(i.qtd * i.preco_cheio)));
     direita.push(h("div", { style: { display: "flex", fontSize: 18, fontWeight: 700, color: promo ? VERDE : TEXTO } }, moeda(i.qtd * i.preco)));
-    const linhaQtd = [h("div", { style: { display: "flex", fontSize: 15, color: APAGADO } }, `${i.qtd} × ${moeda(i.preco)}`)];
-    if (pct > 0) linhaQtd.push(h("div", { style: { display: "flex", marginLeft: 8, backgroundColor: VERDE, color: "#FFFFFF", fontSize: 13, fontWeight: 700, borderRadius: 5, paddingLeft: 7, paddingRight: 7, paddingTop: 2, paddingBottom: 2 } }, `−${pct}%`));
+    // 25/11 (Lucas): com 1 unidade, "1 × R$ X" repetia o preço da direita — some.
+    const linhaQtd = i.qtd !== 1 ? [h("div", { style: { display: "flex", fontSize: 15, color: APAGADO, marginRight: 8 } }, `${i.qtd} × ${moeda(i.preco)}`)] : [];
+    if (pct > 0) linhaQtd.push(h("div", { style: { display: "flex",backgroundColor: VERDE, color: "#FFFFFF", fontSize: 13, fontWeight: 700, borderRadius: 5, paddingLeft: 7, paddingRight: 7, paddingTop: 2, paddingBottom: 2 } }, `−${pct}%`));
     blocosItens.push(
       h("div", { style: { display: "flex", width: LARGURA, alignItems: "center", paddingLeft: 24, paddingRight: 24, paddingTop: 12, paddingBottom: 12 } },
         h("div", { style: { display: "flex", width: 68, height: 68, flexShrink: 0, border: `1px solid ${LINHA}`, borderRadius: 10, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" } },
           i.foto ? h("img", { src: i.foto, width: 60, height: 60, style: { objectFit: "contain" } }) : h("div", { style: { display: "flex", fontSize: 12, color: APAGADO } }, "")),
         h("div", { style: { display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, width: W - 68 - 14 - 12 - 104, marginLeft: 14 } },
           h("div", { style: { display: "flex", fontSize: 17, lineHeight: 1.3, fontWeight: 600, color: TEXTO } }, nomeCurto(i.nome)),
-          h("div", { style: { display: "flex", alignItems: "center", marginTop: 4 } }, ...linhaQtd)),
+          ...(linhaQtd.length ? [h("div", { style: { display: "flex", alignItems: "center", marginTop: 4 } }, ...linhaQtd)] : [])),
         h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0, width: 104, marginLeft: 12 } }, ...direita)));
   });
 

@@ -247,17 +247,21 @@ class OrcamentoImagemWidget extends StatelessWidget {
                 // cliente mais precisa conferir.
                 Text(nomeCurto(item.nome),
                     style: const TextStyle(fontSize: 17, height: 1.25, fontWeight: FontWeight.w600, color: _texto)),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Text('${item.quantidade} × ${_moeda.format(item.precoUnitario)}',
-                        style: const TextStyle(fontSize: 15, color: _apagado)),
-                    if (percentual > 0) _selo('−$percentual%'),
-                  ],
-                ),
+                // 25/11 (Lucas): com 1 unidade, "1 × R$ X" repetia o preço da direita — some.
+                if (item.quantidade != 1 || percentual > 0) ...[
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (item.quantidade != 1)
+                        Text('${item.quantidade} × ${_moeda.format(item.precoUnitario)}',
+                            style: const TextStyle(fontSize: 15, color: _apagado)),
+                      if (percentual > 0) _selo('−$percentual%'),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
