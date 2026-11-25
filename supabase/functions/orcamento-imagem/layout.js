@@ -10,6 +10,9 @@ function corDoTextoSobre(hex) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 ? TEXTO : "#FFFFFF";
 }
 
+// 25/11 (Lucas): selo "−X%" no canto da foto, como no card do site (sobra pra fora da borda)
+const seloFoto = (h, pct) => h("div", { style: { display: "flex", position: "absolute", top: -7, left: -7, backgroundColor: VERDE, color: "#FFFFFF", fontSize: 12, fontWeight: 800, borderRadius: 6, paddingLeft: 6, paddingRight: 6, paddingTop: 2, paddingBottom: 2 } }, `−${pct}%`);
+
 // Largura/altura de um PNG pelos bytes do cabeçalho (IHDR) — o satori exige o tamanho da imagem.
 export function tamanhoPng(bytes) {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -55,12 +58,12 @@ export function montarLista(dados, h, logo) {
     if (kg) texto.push(h("div", { style: { display: "flex", fontSize: 14, color: APAGADO, marginTop: 4 } }, `sai a ${kg.replace(/\s/g, " ")}`));
     // 25/11: selo "−X%" embaixo do preço, igual ao card do site
     const pct = promo ? Math.round((1 - i.preco / i.preco_cheio) * 100) : 0;
-    if (pct > 0) direita.push(h("div", { style: { display: "flex", marginTop: 4, backgroundColor: VERDE, color: "#FFFFFF", fontSize: 13, fontWeight: 700, borderRadius: 5, paddingLeft: 7, paddingRight: 7, paddingTop: 2, paddingBottom: 2 } }, `−${pct}%`));
     blocos.push(
       h("div", { style: { display: "flex", width: LARGURA, alignItems: "center", paddingLeft: 24, paddingRight: 24, paddingTop: 10, paddingBottom: 10 } },
         h("div", { style: { display: "flex", width: 34, height: 34, flexShrink: 0, borderRadius: 17, backgroundColor: dados.cor, color: sobre, fontSize: 18, fontWeight: 800, alignItems: "center", justifyContent: "center" } }, String(i.n)),
-        h("div", { style: { display: "flex", width: 76, height: 76, flexShrink: 0, marginLeft: 12, border: `1px solid ${LINHA}`, borderRadius: 10, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" } },
-          i.foto ? h("img", { src: i.foto, width: 68, height: 68, style: { objectFit: "contain" } }) : h("div", { style: { display: "flex" } }, "")),
+        h("div", { style: { display: "flex", width: 76, height: 76, flexShrink: 0, marginLeft: 12, border: `1px solid ${LINHA}`, borderRadius: 10, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", position: "relative" } },
+          i.foto ? h("img", { src: i.foto, width: 68, height: 68, style: { objectFit: "contain" } }) : h("div", { style: { display: "flex" } }, ""),
+          ...(pct > 0 ? [seloFoto(h, pct)] : [])),
         h("div", { style: { display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, width: W - 34 - 12 - 76 - 14 - 12 - 112, marginLeft: 14 } }, ...texto),
         h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0, width: 112, marginLeft: 12 } }, ...direita)));
   });
@@ -149,11 +152,11 @@ export function montar(dados, h, logo) {
     direita.push(h("div", { style: { display: "flex", fontSize: 18, fontWeight: 700, color: promo ? VERDE : TEXTO } }, moeda(i.qtd * i.preco)));
     // 25/11 (Lucas): com 1 unidade, "1 × R$ X" repetia o preço da direita — some.
     const linhaQtd = i.qtd !== 1 ? [h("div", { style: { display: "flex", fontSize: 15, color: APAGADO, marginRight: 8 } }, `${i.qtd} × ${moeda(i.preco)}`)] : [];
-    if (pct > 0) linhaQtd.push(h("div", { style: { display: "flex",backgroundColor: VERDE, color: "#FFFFFF", fontSize: 13, fontWeight: 700, borderRadius: 5, paddingLeft: 7, paddingRight: 7, paddingTop: 2, paddingBottom: 2 } }, `−${pct}%`));
     blocosItens.push(
       h("div", { style: { display: "flex", width: LARGURA, alignItems: "center", paddingLeft: 24, paddingRight: 24, paddingTop: 12, paddingBottom: 12 } },
-        h("div", { style: { display: "flex", width: 68, height: 68, flexShrink: 0, border: `1px solid ${LINHA}`, borderRadius: 10, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" } },
-          i.foto ? h("img", { src: i.foto, width: 60, height: 60, style: { objectFit: "contain" } }) : h("div", { style: { display: "flex", fontSize: 12, color: APAGADO } }, "")),
+        h("div", { style: { display: "flex", width: 68, height: 68, flexShrink: 0, border: `1px solid ${LINHA}`, borderRadius: 10, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center", position: "relative" } },
+          i.foto ? h("img", { src: i.foto, width: 60, height: 60, style: { objectFit: "contain" } }) : h("div", { style: { display: "flex", fontSize: 12, color: APAGADO } }, ""),
+          ...(pct > 0 ? [seloFoto(h, pct)] : [])),
         h("div", { style: { display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, width: W - 68 - 14 - 12 - 104, marginLeft: 14 } },
           h("div", { style: { display: "flex", fontSize: 17, lineHeight: 1.3, fontWeight: 600, color: TEXTO } }, nomeCurto(i.nome)),
           ...(linhaQtd.length ? [h("div", { style: { display: "flex", alignItems: "center", marginTop: 4 } }, ...linhaQtd)] : [])),

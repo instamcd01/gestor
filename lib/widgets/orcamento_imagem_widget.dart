@@ -211,10 +211,11 @@ class OrcamentoImagemWidget extends StatelessWidget {
     );
   }
 
+  /// 25/11 (Lucas): selo "−X%" no canto da foto, como no card do site.
   Widget _selo(String texto) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-        decoration: BoxDecoration(color: _verde, borderRadius: BorderRadius.circular(5)),
-        child: Text(texto, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: _verde, borderRadius: BorderRadius.circular(6)),
+        child: Text(texto, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white)),
       );
 
   Widget _item(ItemOrcamentoImagem item) {
@@ -224,19 +225,25 @@ class OrcamentoImagemWidget extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Row(
         children: [
-          Container(
-            width: 68,
-            height: 68,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: _linha),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            clipBehavior: Clip.antiAlias,
-            padding: const EdgeInsets.all(3),
-            child: item.foto == null
-                ? const Icon(Icons.pets, color: _linha, size: 30)
-                : Image.memory(item.foto!, fit: BoxFit.contain),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: _linha),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                clipBehavior: Clip.antiAlias,
+                padding: const EdgeInsets.all(3),
+                child: item.foto == null
+                    ? const Icon(Icons.pets, color: _linha, size: 30)
+                    : Image.memory(item.foto!, fit: BoxFit.contain),
+              ),
+              if (percentual > 0) Positioned(top: -7, left: -7, child: _selo('−$percentual%')),
+            ],
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -248,19 +255,10 @@ class OrcamentoImagemWidget extends StatelessWidget {
                 Text(nomeCurto(item.nome),
                     style: const TextStyle(fontSize: 17, height: 1.25, fontWeight: FontWeight.w600, color: _texto)),
                 // 25/11 (Lucas): com 1 unidade, "1 × R$ X" repetia o preço da direita — some.
-                if (item.quantidade != 1 || percentual > 0) ...[
+                if (item.quantidade != 1) ...[
                   const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      if (item.quantidade != 1)
-                        Text('${item.quantidade} × ${_moeda.format(item.precoUnitario)}',
-                            style: const TextStyle(fontSize: 15, color: _apagado)),
-                      if (percentual > 0) _selo('−$percentual%'),
-                    ],
-                  ),
+                  Text('${item.quantidade} × ${_moeda.format(item.precoUnitario)}',
+                      style: const TextStyle(fontSize: 15, color: _apagado)),
                 ],
               ],
             ),
