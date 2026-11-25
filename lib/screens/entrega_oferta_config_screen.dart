@@ -82,6 +82,18 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
       _moeda.format(((_n(_saida) + _n(_km) * km + _n(_parada) * (paradas - 1)) * 2).ceil() / 2);
 
   Future<void> _salvar() async {
+    // reconta na hora: a tela pode ter sido aberta antes de cadastrar o motoboy (25/11: o "ligar" não gravava)
+    if (_ativo && _motoboys == 0) {
+      try {
+        final motoboys = await _db
+            .from('entregadores')
+            .select('id')
+            .eq('freelancer_oferta', true)
+            .eq('ativo', true)
+            .isFilter('deleted_at', null);
+        _motoboys = (motoboys as List).length;
+      } catch (_) {}
+    }
     if (_ativo && _motoboys == 0) {
       setState(() => _erro = 'Marque pelo menos um motoboy como "Recebe ofertas" (Usuários › Entregadores) antes de ligar.');
       return;
@@ -105,7 +117,8 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
       if (_empresaId == null) {
         throw Exception('configuração da loja não encontrada (só o dono pode alterar)');
       }
-      await _db.from('entrega_oferta_config').update(dados).eq('empresa_id', _empresaId!);
+      final gravado = await _db.from('entrega_oferta_config').update(dados).eq('empresa_id', _empresaId!).select('ativo');
+      if ((gravado as List).isEmpty) throw Exception('nada foi gravado (só o dono pode alterar)');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_ativo ? 'Salvo. As ofertas estão ligadas.' : 'Salvo. As ofertas estão desligadas.')),
