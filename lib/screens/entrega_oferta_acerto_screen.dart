@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -23,8 +24,9 @@ class _Rota {
 class _Motoboy {
   final String id;
   final String nome;
+  final String? pix;
   final List<_Rota> rotas = [];
-  _Motoboy(this.id, this.nome);
+  _Motoboy(this.id, this.nome, this.pix);
   double get valor => rotas.fold(0, (s, r) => s + r.valor);
   double get dinheiro => rotas.fold(0, (s, r) => s + r.dinheiro);
   double get saldo => valor - dinheiro;
@@ -33,6 +35,7 @@ class _Motoboy {
 class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
   final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
   List<_Motoboy> _motoboys = [];
+  List<Map<String, dynamic>> _historico = [];
   bool _carregando = true;
   String? _erro;
   String? _acertando;
@@ -51,7 +54,7 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
     try {
       final rows = await Supabase.instance.client
           .from('rotas_entrega')
-          .select('entregador_id, finalizada_em, n_pedidos, valor_entregador, dinheiro_recebido, entregador:entregadores(nome)')
+          .select('entregador_id, finalizada_em, n_pedidos, valor_entregador, dinheiro_recebido, entregador:entregadores(nome, chave_pix)')
           .eq('origem', 'oferta')
           .eq('status', 'concluida')
           .isFilter('acertado_em', null)
@@ -60,7 +63,10 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
       final porId = <String, _Motoboy>{};
       for (final r in rows as List) {
         final id = r['entregador_id'] as String;
-        final m = porId.putIfAbsent(id, () => _Motoboy(id, (r['entregador'] as Map?)?['nome']?.toString() ?? 'Motoboy'));
+        final m = porId.putIfAbsent(
+            id,
+            () => _Motoboy(id, (r['entregador'] as Map?)?['nome']?.toString() ?? 'Motoboy',
+                (r['entregador'] as Map?)?['chave_pix']?.toString()));
         m.rotas.add(_Rota(
           DateTime.tryParse(r['finalizada_em']?.toString() ?? '')?.toLocal() ?? DateTime.now(),
           (r['n_pedidos'] as num?)?.toInt() ?? 1,
@@ -68,7 +74,17 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
           (r['dinheiro_recebido'] as num?)?.toDouble() ?? 0,
         ));
       }
-      if (mounted) setState(() => _motoboys = porId.values.toList());
+      final hist = await Supabase.instance.client
+          .from('entregador_acertos')
+          .select('created_at, rotas, saldo, forma, entregador:entregadores(nome)')
+          .order('created_at', ascending: false)
+          .limit(20);
+      if (mounted) {
+        setState(() {
+          _motoboys = porId.values.toList();
+          _historico = [for (final h in hist as List) Map<String, dynamic>.from(h as Map)];
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _erro = 'Não foi possível carregar: $e');
     } finally {
@@ -81,22 +97,51 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
       : 'Ele devolve ${_moeda.format(-saldo)}';
 
   Future<void> _acertar(_Motoboy m) async {
-    final confirmou = await showDialog<bool>(
+    final lojaPaga = m.saldo >= 0;
+    final forma = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Acerto com ${m.nome}'),
-        content: Text('${m.rotas.length} rota(s) · ${_textoSaldo(m.saldo)}.\n\nMarcar como acertado?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${m.rotas.length} rota(s) · ${_textoSaldo(m.saldo)}.'),
+            if (lojaPaga && (m.pix ?? '').isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Chave Pix: ${m.pix}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              TextButton.icon(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: m.pix!));
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chave Pix copiada.')));
+                },
+                icon: const Icon(Icons.copy, size: 18),
+                label: const Text('Copiar chave Pix'),
+              ),
+            ],
+            if (lojaPaga && (m.pix ?? '').isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text('Sem chave Pix no cadastro dele (Usuários › Entregadores).', style: TextStyle(fontSize: 12)),
+              ),
+          ],
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Acertado')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+          OutlinedButton(
+              onPressed: () => Navigator.pop(ctx, 'dinheiro'),
+              child: Text(lojaPaga ? 'Paguei em dinheiro' : 'Recebi em dinheiro')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'pix'), child: Text(lojaPaga ? 'Paguei no Pix' : 'Recebi no Pix')),
         ],
       ),
     );
-    if (confirmou != true || !mounted) return;
+    if (forma == null || !mounted) return;
     final mensageiro = ScaffoldMessenger.of(context);
     setState(() => _acertando = m.id);
     try {
-      final r = await Supabase.instance.client.rpc('entrega_oferta_acertar', params: {'p_entregador_id': m.id})
+      final r = await Supabase.instance.client
+              .rpc('entrega_oferta_acertar', params: {'p_entregador_id': m.id, 'p_forma': forma})
           as Map<String, dynamic>?;
       mensageiro.showSnackBar(SnackBar(
           content: Text(r?['ok'] == true ? 'Acerto com ${m.nome} registrado.' : (r?['mensagem']?.toString() ?? 'Não deu.'))));
@@ -158,6 +203,20 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
                                   ],
                                 ),
                               ),
+                            if (_historico.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              Text('Acertos feitos', style: Theme.of(context).textTheme.titleMedium),
+                              for (final h in _historico)
+                                ListTile(
+                                  dense: true,
+                                  title: Text('${(h['entregador'] as Map?)?['nome'] ?? ''} · ${h['rotas']} rota(s)'),
+                                  subtitle: Text(DateFormat('dd/MM HH:mm')
+                                      .format(DateTime.tryParse(h['created_at'].toString())?.toLocal() ?? DateTime.now())),
+                                  trailing: Text(
+                                      '${((h['saldo'] as num?) ?? 0) >= 0 ? 'pagou' : 'recebeu'} '
+                                      '${_moeda.format(((h['saldo'] as num?) ?? 0).abs())}${h['forma'] == null ? '' : ' (${h['forma']})'}'),
+                                ),
+                            ],
                           ],
                         ),
                 ),

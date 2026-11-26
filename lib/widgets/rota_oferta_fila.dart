@@ -15,6 +15,7 @@ class RotaOfertaInfo {
   final DateTime? prazoSaida;
   final bool chegou;
   final int n;
+  final int entregues;
 
   RotaOfertaInfo({
     required this.rotaId,
@@ -24,6 +25,7 @@ class RotaOfertaInfo {
     this.prazoSaida,
     this.chegou = false,
     this.n = 1,
+    this.entregues = 0,
   });
 
   bool get aguardandoSaida => status == 'aceita';
@@ -57,12 +59,20 @@ class RotasOfertaFila extends ValueNotifier<Map<String, RotaOfertaInfo>> {
     try {
       final rows = await Supabase.instance.client
           .from('rota_pedidos')
-          .select('pedido_id, rota:rotas_entrega!inner(id, status, origem, valor_entregador, prazo_saida, '
+          .select('pedido_id, pedido:pedidos(status), rota:rotas_entrega!inner(id, status, origem, valor_entregador, prazo_saida, '
               'chegou_loja_em, n_pedidos, entregador:entregadores(nome))')
           .eq('rota.origem', 'oferta')
           .inFilter('rota.status', ['ofertada', 'aceita', 'em_andamento', 'sem_entregador']);
       final mapa = <String, RotaOfertaInfo>{};
+      final entreguesPorRota = <String, int>{};
       for (final r in rows as List) {
+        final st = (r['pedido'] as Map?)?['status'];
+        if (st == 'entregue' || st == 'concluido') {
+          final id = (r['rota'] as Map)['id'] as String;
+          entreguesPorRota[id] = (entreguesPorRota[id] ?? 0) + 1;
+        }
+      }
+      for (final r in rows) {
         final rota = r['rota'] as Map<String, dynamic>;
         final ent = rota['entregador'] as Map<String, dynamic>?;
         mapa[r['pedido_id'] as String] = RotaOfertaInfo(
@@ -73,6 +83,7 @@ class RotasOfertaFila extends ValueNotifier<Map<String, RotaOfertaInfo>> {
           prazoSaida: rota['prazo_saida'] == null ? null : DateTime.tryParse(rota['prazo_saida'] as String)?.toLocal(),
           chegou: rota['chegou_loja_em'] != null,
           n: (rota['n_pedidos'] as num?)?.toInt() ?? 1,
+          entregues: entreguesPorRota[rota['id']] ?? 0,
         );
       }
       value = mapa;
@@ -97,7 +108,10 @@ class RotasOfertaFila extends ValueNotifier<Map<String, RotaOfertaInfo>> {
 /// Selo do pedido na Fila: "🛵 LUCAS · sair 20:52 · R$ 13,00 · chegou".
 class SeloRotaOferta extends StatelessWidget {
   final RotaOfertaInfo info;
-  const SeloRotaOferta({super.key, required this.info});
+  /// Motoboy chegou e este pedido ainda não está pronto (a loja precisa correr)
+  final bool pedidoNaoPronto;
+  final VoidCallback? onTap;
+  const SeloRotaOferta({super.key, required this.info, this.pedidoNaoPronto = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -111,11 +125,12 @@ class SeloRotaOferta extends StatelessWidget {
               '${info.n > 1 ? ' · ${info.n} pedidos' : ''}',
           info.chegou ? Colors.green.shade700 : Colors.orange.shade800
         ),
-      'em_andamento' => ('${info.entregador ?? 'Motoboy'} em rota', Colors.blue.shade700),
+      'em_andamento' => ('${info.entregador ?? 'Motoboy'} em rota · ${info.entregues} de ${info.n} entregues', Colors.blue.shade700),
       'sem_entregador' => ('Sem motoboy: a loja entrega', Colors.red.shade700),
       _ => (info.status, Colors.grey),
     };
-    return Container(
+    final alerta = pedidoNaoPronto && info.status == 'aceita' && info.chegou;
+    final selo = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: cor.withValues(alpha: 0.12),
@@ -128,13 +143,14 @@ class SeloRotaOferta extends StatelessWidget {
           Icon(Icons.two_wheeler, size: 15, color: cor),
           const SizedBox(width: 5),
           Flexible(
-            child: Text(texto,
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cor),
+            child: Text(alerta ? '$texto · ⚠️ pedido ainda não está pronto' : texto,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: alerta ? Colors.red.shade700 : cor),
                 overflow: TextOverflow.ellipsis),
           ),
         ],
       ),
     );
+    return onTap == null ? selo : InkWell(onTap: onTap, borderRadius: BorderRadius.circular(6), child: selo);
   }
 }
 

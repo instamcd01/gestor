@@ -33,6 +33,7 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
   late final TextEditingController _telefoneController;
   late final TextEditingController _veiculoController;
   late final TextEditingController _placaController;
+  late final TextEditingController _pixController;
   late final TextEditingController _custoPorEntregaController;
   late final TextEditingController _custoPorKmController;
   late final TextEditingController _custoPorParadaController;
@@ -57,6 +58,7 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
     _telefoneController = TextEditingController(text: e?.telefone ?? '');
     _veiculoController = TextEditingController(text: e?.tipoVeiculo ?? '');
     _placaController = TextEditingController(text: e?.placaVeiculo ?? '');
+    _pixController = TextEditingController(text: e?.chavePix ?? '');
     _custoPorEntregaController = TextEditingController(text: ClienteValidators.formatarMoeda(e?.custoPorEntrega));
     _custoPorKmController = TextEditingController(text: ClienteValidators.formatarMoeda(e?.custoPorKm));
     _custoPorParadaController = TextEditingController(text: ClienteValidators.formatarMoeda(e?.custoPorParadaRota));
@@ -87,6 +89,7 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
     _telefoneController.dispose();
     _veiculoController.dispose();
     _placaController.dispose();
+    _pixController.dispose();
     _custoPorEntregaController.dispose();
     _custoPorKmController.dispose();
     _custoPorParadaController.dispose();
@@ -117,6 +120,7 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
       freelancerOferta: _freelancerOferta,
       aceitaDinheiro: _freelancerOferta && _aceitaDinheiro,
       aceitaCartao: _freelancerOferta && _aceitaCartao,
+      chavePix: _pixController.text.trim().isEmpty ? null : _pixController.text.trim(),
     );
 
     try {
@@ -240,6 +244,14 @@ class _FormularioEntregadorState extends State<FormularioEntregador> {
                   subtitle: const Text('Deixe desligado pra quem está começando'),
                   value: _aceitaDinheiro,
                   onChanged: (v) => setState(() => _aceitaDinheiro = v),
+                ),
+              if (_freelancerOferta)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: TextFormField(
+                    controller: _pixController,
+                    decoration: const InputDecoration(labelText: 'Chave Pix (pra pagar o acerto)'),
+                  ),
                 ),
               if (_freelancerOferta)
                 SwitchListTile(

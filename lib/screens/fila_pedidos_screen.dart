@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/rota_oferta_fila.dart';
+import 'entrega_oferta_rotas_screen.dart';
 import '../widgets/faixa_rolavel.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -102,6 +103,15 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
   }
 
   RotaOfertaInfo? _rotaDe(Venda venda) => RotasOfertaFila.instancia.value[venda.idVenda];
+
+  void _abrirRotas() => Navigator.push(context, MaterialPageRoute(builder: (_) => const EntregaOfertaRotasScreen()));
+
+  /// Selo da rota do pedido: avisa se o motoboy já chegou e este pedido ainda não está pronto
+  Widget _seloRota(Venda venda) => SeloRotaOferta(
+        info: _rotaDe(venda)!,
+        pedidoNaoPronto: venda.status == 'pendente' || venda.status == 'preparando',
+        onTap: _abrirRotas,
+      );
 
   /// Início/fim da janela agendada, seja ela do iFood (agendado +
   /// entregaPrevista*) ou escolhida manualmente — pelo cliente no site ou
@@ -647,7 +657,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
               ),
               if (_rotaDe(venda) != null) ...[
                 const SizedBox(height: 6),
-                SeloRotaOferta(info: _rotaDe(venda)!),
+                _seloRota(venda),
               ],
               const SizedBox(height: 4),
               Row(
@@ -868,7 +878,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
 
     final rotaOferta = _rotaDe(venda);
     final acoes = <Widget>[
-      if (rotaOferta != null) SeloRotaOferta(info: rotaOferta),
+      if (rotaOferta != null) _seloRota(venda),
       if (rotaOferta?.aguardandoSaida == true) BotaoEntregarMotoboy(info: rotaOferta!),
       if (_podeSeparar(venda))
         OutlinedButton.icon(
@@ -1415,6 +1425,11 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       appBar: AppBar(
         title: const Text('Fila de Pedidos'),
         actions: [
+          IconButton(
+            tooltip: 'Rotas de motoboy',
+            icon: const Icon(Icons.two_wheeler),
+            onPressed: _abrirRotas,
+          ),
           if (largo)
             SizedBox(
               width: 260,
@@ -1616,7 +1631,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
                                 if (_rotaDe(venda) != null) ...[
                                   Row(
                                     children: [
-                                      Flexible(child: SeloRotaOferta(info: _rotaDe(venda)!)),
+                                      Flexible(child: _seloRota(venda)),
                                       if (_rotaDe(venda)!.aguardandoSaida) ...[
                                         const SizedBox(width: 8),
                                         BotaoEntregarMotoboy(info: _rotaDe(venda)!, compacto: true),

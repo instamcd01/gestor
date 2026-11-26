@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../utils/cliente_validators.dart';
 import 'entrega_oferta_acerto_screen.dart';
+import 'entrega_oferta_rotas_screen.dart';
 
 /// Entregador por oferta no WhatsApp (19/11): o pedido de entrega cai, a rota vai como oferta
 /// pros motoboys marcados no cadastro, o 1º que aceita leva. Aqui o dono liga/desliga e ajusta
@@ -25,6 +26,12 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
   final _telefoneAviso = TextEditingController();
   final _antecedencia = TextEditingController();
   final _minimo = TextEditingController();
+  final _bonusChuva = TextEditingController();
+  final _chuvaMm = TextEditingController();
+  final _bonusPico = TextEditingController();
+  final _picoHorarios = TextEditingController();
+  final _inicio = TextEditingController();
+  final _fim = TextEditingController();
   final _antecedenciaOferta = TextEditingController();
 
   bool _carregando = true;
@@ -45,7 +52,8 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
 
   @override
   void dispose() {
-    for (final c in [_saida, _km, _parada, _telefoneAviso, _antecedencia, _minimo, _antecedenciaOferta]) {
+    for (final c in [_saida, _km, _parada, _telefoneAviso, _antecedencia, _minimo, _antecedenciaOferta,
+      _bonusChuva, _chuvaMm, _bonusPico, _picoHorarios, _inicio, _fim]) {
       c.dispose();
     }
     super.dispose();
@@ -71,6 +79,12 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
         _antecedencia.text = '${cfg?['antecedencia_sem_aceite_min'] ?? 15}';
         _minimo.text = ClienteValidators.formatarMoeda((cfg?['valor_minimo'] as num?)?.toDouble() ?? 7);
         _antecedenciaOferta.text = '${cfg?['antecedencia_oferta_min'] ?? 30}';
+        _bonusChuva.text = ClienteValidators.formatarMoeda((cfg?['bonus_chuva'] as num?)?.toDouble() ?? 0);
+        _chuvaMm.text = '${cfg?['chuva_mm_minimo'] ?? 1}';
+        _bonusPico.text = ClienteValidators.formatarMoeda((cfg?['bonus_pico'] as num?)?.toDouble() ?? 0);
+        _picoHorarios.text = cfg?['pico_horarios'] as String? ?? '';
+        _inicio.text = (cfg?['oferta_inicio'] as String?)?.substring(0, 5) ?? '';
+        _fim.text = (cfg?['oferta_fim'] as String?)?.substring(0, 5) ?? '';
         _motoboys = (motoboys as List).length;
         _carregando = false;
       });
@@ -80,6 +94,13 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
   }
 
   double _n(TextEditingController c) => ClienteValidators.parseNumero(c.text) ?? 0;
+
+  /// "18" / "18:30" → "18:30"; vazio = sem limite
+  String? _hora(String t) {
+    final m = RegExp(r'^(\d{1,2})(?::(\d{2}))?$').firstMatch(t.trim());
+    if (m == null) return null;
+    return '${m.group(1)!.padLeft(2, '0')}:${m.group(2) ?? '00'}';
+  }
 
   /// Mesma conta de entrega_oferta_calcular: saída + km só de ida + paradas extras,
   /// arredondado pra cima de 50 em 50 centavos.
@@ -121,6 +142,12 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
         'antecedencia_sem_aceite_min': int.tryParse(_antecedencia.text.trim()) ?? 15,
         'valor_minimo': _n(_minimo),
         'antecedencia_oferta_min': int.tryParse(_antecedenciaOferta.text.trim()) ?? 30,
+        'bonus_chuva': _n(_bonusChuva),
+        'chuva_mm_minimo': double.tryParse(_chuvaMm.text.trim().replaceAll(',', '.')) ?? 1,
+        'bonus_pico': _n(_bonusPico),
+        'pico_horarios': _picoHorarios.text.trim().isEmpty ? null : _picoHorarios.text.trim(),
+        'oferta_inicio': _hora(_inicio.text),
+        'oferta_fim': _hora(_fim.text),
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
       if (_empresaId == null) {
@@ -168,6 +195,16 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
                 const SizedBox(height: 8),
                 Card(
                   child: ListTile(
+                    leading: const Icon(Icons.two_wheeler),
+                    title: const Text('Rotas de motoboy'),
+                    subtitle: const Text('Rotas abertas, pausar ofertas, pedidos fora e os que voltaram'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                        context, MaterialPageRoute(builder: (_) => const EntregaOfertaRotasScreen())),
+                  ),
+                ),
+                Card(
+                  child: ListTile(
                     leading: const Icon(Icons.payments_outlined),
                     title: const Text('Acerto com motoboys'),
                     subtitle: const Text('Quanto pagar ou receber de cada um'),
@@ -208,6 +245,34 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
                       ],
                     ),
                   ),
+                ),
+                const Divider(height: 32),
+                Text('Bônus', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                _campoValor(_bonusChuva, 'A mais quando chove', ajuda: 'Pela previsão do tempo do período (manhã, tarde, noite). 0 = desligado'),
+                TextField(
+                  controller: _chuvaMm,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Conta como chuva a partir de', suffixText: 'mm no período'),
+                ),
+                const SizedBox(height: 12),
+                _campoValor(_bonusPico, 'A mais no horário de pico', ajuda: '0 = desligado'),
+                TextField(
+                  controller: _picoHorarios,
+                  decoration: const InputDecoration(labelText: 'Horários de pico', hintText: '11:30-13:30,18:00-20:30'),
+                ),
+                const Divider(height: 32),
+                Text('Horário das ofertas', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: TextField(controller: _inicio, decoration: const InputDecoration(labelText: 'Das', hintText: '09:00'))),
+                  const SizedBox(width: 12),
+                  Expanded(child: TextField(controller: _fim, decoration: const InputDecoration(labelText: 'Até', hintText: '21:00'))),
+                ]),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('Vazio = o dia todo. Fora do horário os pedidos não viram oferta (a loja entrega).',
+                      style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant)),
                 ),
                 const Divider(height: 32),
                 Text('Quando a oferta sai', style: Theme.of(context).textTheme.titleMedium),
