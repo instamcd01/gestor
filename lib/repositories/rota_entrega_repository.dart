@@ -12,6 +12,9 @@ class RotaEntregaRepository {
         .from('rotas_entrega')
         .select('*, entregador:entregadores(nome, custo_modo)')
         .eq('data_rota', dataIso)
+        // Rotas do entregador por oferta têm tela própria (Rotas de motoboy);
+        // aqui só as montadas à mão, senão dava pra mexer nelas pelo caminho errado.
+        .neq('origem', 'oferta')
         .order('created_at', ascending: true);
     return (rows as List).map((r) => RotaEntrega.fromSupabase(r as Map<String, dynamic>)).toList();
   }
