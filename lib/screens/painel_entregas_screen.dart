@@ -140,7 +140,7 @@ class _Rota {
         posLat: (r['pos_lat'] as num?)?.toDouble(),
         posLon: (r['pos_lon'] as num?)?.toDouble(),
         posEm: _dt(r['pos_em']),
-        gpsFalha: r['gps_falha'] as String?,
+        gpsFalha: (r['gps_falha'] as String?)?.split(':').first, // "estado:código:mensagem" → estado
         ofertaSaiu: r['ofertada_em'] != null,
         ofertadaEm: _dt(r['ofertada_em']),
         saiuEm: _dt(r['saiu_em']),
