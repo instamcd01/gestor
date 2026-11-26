@@ -25,9 +25,14 @@ class _PedidoRota {
   final String cliente;
   final String bairro;
   final String status;
-  _PedidoRota(this.id, this.numero, this.cliente, this.bairro, this.status);
+  final String? foto;
+  final bool contestado;
+  final bool devolucaoConfirmada;
+  _PedidoRota(this.id, this.numero, this.cliente, this.bairro, this.status,
+      {this.foto, this.contestado = false, this.devolucaoConfirmada = false});
 
-  factory _PedidoRota.de(Map<String, dynamic> p) {
+  /// [p] = pedido; [rp] = linha de rota_pedidos (prova, reclamação, devolução), quando houver
+  factory _PedidoRota.de(Map<String, dynamic> p, [Map<String, dynamic>? rp]) {
     final c = p['cliente'] as Map<String, dynamic>?;
     return _PedidoRota(
       p['id'] as String,
@@ -35,6 +40,9 @@ class _PedidoRota {
       ((c?['nome'] as String?) ?? 'Cliente').split(' ').first,
       (c?['bairro'] as String?) ?? '',
       p['status'] as String? ?? '',
+      foto: rp?['foto_path'] as String?,
+      contestado: rp?['contestado_em'] != null && rp?['contestacao_resolvida_em'] == null,
+      devolucaoConfirmada: rp?['devolucao_confirmada_em'] != null,
     );
   }
 }
@@ -49,7 +57,10 @@ class _Rota {
   final bool chegou;
   final double? km;
   final List<_PedidoRota> pedidos;
-  _Rota(this.id, this.status, this.motoboy, this.valor, this.bonus, this.prazoSaida, this.chegou, this.km, this.pedidos);
+  final bool calculando;
+  final String? erroRota;
+  _Rota(this.id, this.status, this.motoboy, this.valor, this.bonus, this.prazoSaida, this.chegou, this.km, this.pedidos,
+      {this.calculando = false, this.erroRota});
 }
 
 class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
@@ -58,6 +69,7 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
   List<_Rota> _rotas = [];
   List<(_PedidoRota, String)> _fora = []; // pedido + motivo
   List<_PedidoRota> _naoEntregues = [];
+  List<_PedidoRota> _reclamacoes = [];
   bool _ligado = false;
   DateTime? _pausadoAte;
   bool _carregando = true;
@@ -82,8 +94,9 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
       final cfg = await _db.from('entrega_oferta_config').select('ativo, pausado_ate').maybeSingle();
       final rotas = await _db
           .from('rotas_entrega')
-          .select('id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, entregador:entregadores(nome), '
-              'rota_pedidos(ordem, pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro)))')
+          .select('id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, google_ok, google_erro, ofertada_em, '
+              'entregador:entregadores(nome), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
+              'pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro)))')
           .eq('origem', 'oferta')
           .inFilter('status', ['ofertada', 'aceita', 'em_andamento', 'sem_entregador'])
           .order('created_at');
@@ -93,11 +106,19 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
           .select('motivo, pedido:pedidos!inner(id, numero_sequencial, status, cliente:clientes(nome, bairro))')
           .gte('created_at', desde)
           .inFilter('pedido.status', ['pendente', 'preparando', 'pronto']);
+      // voltaram (não entregues) e reclamações do cliente das rotas de oferta
       final voltou = await _db
-          .from('pedidos')
-          .select('id, numero_sequencial, status, cliente:clientes(nome, bairro)')
-          .eq('status', 'nao_entregue')
-          .gte('updated_at', DateTime.now().subtract(const Duration(days: 2)).toUtc().toIso8601String());
+          .from('rota_pedidos')
+          .select('foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
+              'pedido:pedidos!inner(id, numero_sequencial, status, updated_at, cliente:clientes(nome, bairro))')
+          .eq('pedido.status', 'nao_entregue')
+          .gte('pedido.updated_at', DateTime.now().subtract(const Duration(days: 3)).toUtc().toIso8601String());
+      final reclamou = await _db
+          .from('rota_pedidos')
+          .select('foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
+              'pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro))')
+          .not('contestado_em', 'is', null)
+          .isFilter('contestacao_resolvida_em', null);
       if (!mounted) return;
       setState(() {
         _ligado = cfg?['ativo'] as bool? ?? false;
@@ -114,14 +135,21 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
               r['chegou_loja_em'] != null,
               (r['km_ida'] as num?)?.toDouble(),
               ([...(r['rota_pedidos'] as List)]..sort((a, b) => ((a['ordem'] as num?) ?? 0).compareTo((b['ordem'] as num?) ?? 0)))
-                  .map((rp) => _PedidoRota.de(rp['pedido'] as Map<String, dynamic>))
+                  .map((rp) => _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>))
                   .toList(),
+              calculando: r['status'] == 'ofertada' && r['google_ok'] != true && r['ofertada_em'] == null && r['google_erro'] == null,
+              erroRota: r['google_erro'] as String?,
             ),
         ];
         _fora = [
           for (final f in fora as List) (_PedidoRota.de(f['pedido'] as Map<String, dynamic>), f['motivo'] as String? ?? ''),
         ];
-        _naoEntregues = [for (final p in voltou as List) _PedidoRota.de(p as Map<String, dynamic>)];
+        _naoEntregues = [
+          for (final rp in voltou as List) _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>),
+        ];
+        _reclamacoes = [
+          for (final rp in reclamou as List) _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>),
+        ];
         _carregando = false;
       });
     } catch (e) {
@@ -146,6 +174,28 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
     unawaited(RotasOfertaFila.instancia.atualizar());
   }
 
+  /// Foto de prova (bucket privado: link assinado de 5 min)
+  Future<void> _verFoto(String path, String titulo) async {
+    try {
+      final url = await _db.storage.from('entregas-provas').createSignedUrl(path, 300);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => Dialog(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(title: Text(titulo), trailing: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx))),
+              Flexible(child: InteractiveViewer(child: Image.network(url, fit: BoxFit.contain))),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não deu pra abrir a foto: $e')));
+    }
+  }
+
   Future<bool> _confirmar(String titulo, String texto, String botao) async =>
       await showDialog<bool>(
         context: context,
@@ -161,6 +211,8 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
       true;
 
   String _rotuloStatus(_Rota r) => switch (r.status) {
+        'ofertada' when r.erroRota != null => 'Não consegui calcular a rota: confira o endereço',
+        'ofertada' when r.calculando => 'Calculando a rota exata…',
         'ofertada' => 'Esperando um motoboy aceitar',
         'aceita' => '${r.motoboy ?? 'Motoboy'} ${r.chegou ? 'chegou na loja' : 'está vindo'}',
         'em_andamento' => '${r.motoboy ?? 'Motoboy'} em rota',
@@ -279,6 +331,14 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
                             decoration: p.status == 'cancelado' ? TextDecoration.lineThrough : null,
                             color: p.status == 'entregue' ? Colors.green.shade700 : null)),
                   ),
+                  if (p.contestado) Icon(Icons.report_problem, size: 18, color: Colors.orange.shade800),
+                  if (p.foto != null)
+                    IconButton(
+                      tooltip: 'Ver foto da entrega',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                      onPressed: () => _verFoto(p.foto!, 'Pedido #${p.numero}'),
+                    ),
                   if (p.status == 'entregue') const Icon(Icons.check_circle, size: 18, color: Colors.green),
                   if (p.status == 'nao_entregue') Icon(Icons.undo, size: 18, color: Colors.red.shade700),
                   if (antesDeSair)
@@ -434,21 +494,78 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
                       child: Center(child: Text('Nenhuma rota aberta agora.')),
                     ),
                   for (final r in _rotas) _cartaoRota(r),
+                  if (_reclamacoes.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('Cliente reclamou da entrega', style: Theme.of(context).textTheme.titleMedium),
+                    for (final p in _reclamacoes)
+                      Card(
+                        child: ListTile(
+                          leading: Icon(Icons.report_problem, color: Colors.orange.shade800),
+                          title: Text('#${p.numero} · ${p.cliente}'),
+                          subtitle: const Text('Respondeu "Tive um problema". O acerto dessa rota espera você resolver.'),
+                          trailing: Wrap(spacing: 4, children: [
+                            if (p.foto != null)
+                              IconButton(
+                                  icon: const Icon(Icons.photo_camera_outlined),
+                                  onPressed: () => _verFoto(p.foto!, 'Entrega · pedido #${p.numero}')),
+                            TextButton(
+                              onPressed: _ocupado == null
+                                  ? () => _rpc('rec${p.id}', 'entrega_oferta_resolver_reclamacao', {'p_pedido_id': p.id},
+                                      ok: 'Reclamação marcada como resolvida.')
+                                  : null,
+                              child: const Text('Resolvido'),
+                            ),
+                          ]),
+                        ),
+                      ),
+                  ],
                   if (_naoEntregues.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text('Voltaram (não entregues)', style: Theme.of(context).textTheme.titleMedium),
                     for (final p in _naoEntregues)
                       Card(
-                        child: ListTile(
-                          leading: Icon(Icons.undo, color: Colors.red.shade700),
-                          title: Text('#${p.numero} · ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}'),
-                          subtitle: const Text('Reentregue ou, se o cliente desistiu, cancele o pedido no detalhe dele'),
-                          trailing: FilledButton.tonal(
-                            onPressed: _ocupado == null
-                                ? () => _rpc('re${p.id}', 'entrega_oferta_reentregar', {'p_pedido_id': p.id},
-                                    ok: 'Pedido #${p.numero} voltou pra fila e pra oferta.')
-                                : null,
-                            child: const Text('Reentregar'),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 8, 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(children: [
+                                Icon(Icons.undo, color: Colors.red.shade700),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                    child: Text('#${p.numero} · ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}',
+                                        style: const TextStyle(fontWeight: FontWeight.w600))),
+                              ]),
+                              Text(
+                                p.devolucaoConfirmada
+                                    ? 'Pedido de volta na loja. Reentregue ou, se o cliente desistiu, cancele no detalhe do pedido.'
+                                    : 'Confirme quando o motoboy trouxer o pedido de volta (o acerto dele espera isso).',
+                                style: TextStyle(color: cores.onSurfaceVariant),
+                              ),
+                              Wrap(spacing: 4, children: [
+                                if (p.foto != null)
+                                  TextButton.icon(
+                                    onPressed: () => _verFoto(p.foto!, 'Fachada · pedido #${p.numero}'),
+                                    icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                                    label: const Text('Ver foto'),
+                                  ),
+                                if (!p.devolucaoConfirmada)
+                                  FilledButton.tonal(
+                                    onPressed: _ocupado == null
+                                        ? () => _rpc('dev${p.id}', 'entrega_oferta_confirmar_devolucao', {'p_pedido_id': p.id},
+                                            ok: 'Devolução do pedido #${p.numero} confirmada.')
+                                        : null,
+                                    child: const Text('Recebi de volta'),
+                                  ),
+                                TextButton(
+                                  onPressed: _ocupado == null
+                                      ? () => _rpc('re${p.id}', 'entrega_oferta_reentregar', {'p_pedido_id': p.id},
+                                          ok: 'Pedido #${p.numero} voltou pra fila e pra oferta.')
+                                      : null,
+                                  child: const Text('Reentregar'),
+                                ),
+                              ]),
+                            ],
                           ),
                         ),
                       ),

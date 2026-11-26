@@ -18,7 +18,8 @@ class _Rota {
   final int n;
   final double valor;
   final double dinheiro;
-  _Rota(this.quando, this.n, this.valor, this.dinheiro);
+  final List<String> pendencias;
+  _Rota(this.quando, this.n, this.valor, this.dinheiro, [this.pendencias = const []]);
 }
 
 class _Motoboy {
@@ -27,8 +28,10 @@ class _Motoboy {
   final String? pix;
   final List<_Rota> rotas = [];
   _Motoboy(this.id, this.nome, this.pix);
-  double get valor => rotas.fold(0, (s, r) => s + r.valor);
-  double get dinheiro => rotas.fold(0, (s, r) => s + r.dinheiro);
+  /// Só entra no acerto rota sem pendência (devolução não confirmada / reclamação do cliente)
+  List<_Rota> get liberadas => rotas.where((r) => r.pendencias.isEmpty).toList();
+  double get valor => liberadas.fold(0, (s, r) => s + r.valor);
+  double get dinheiro => liberadas.fold(0, (s, r) => s + r.dinheiro);
   double get saldo => valor - dinheiro;
 }
 
@@ -54,7 +57,7 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
     try {
       final rows = await Supabase.instance.client
           .from('rotas_entrega')
-          .select('entregador_id, finalizada_em, n_pedidos, valor_entregador, dinheiro_recebido, entregador:entregadores(nome, chave_pix)')
+          .select('id, entregador_id, finalizada_em, n_pedidos, valor_entregador, dinheiro_recebido, entregador:entregadores(nome, chave_pix)')
           .eq('origem', 'oferta')
           .eq('status', 'concluida')
           .isFilter('acertado_em', null)
@@ -67,11 +70,13 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
             id,
             () => _Motoboy(id, (r['entregador'] as Map?)?['nome']?.toString() ?? 'Motoboy',
                 (r['entregador'] as Map?)?['chave_pix']?.toString()));
+        final pend = await Supabase.instance.client.rpc('entrega_oferta_pendencias_rota', params: {'p_rota_id': r['id']});
         m.rotas.add(_Rota(
           DateTime.tryParse(r['finalizada_em']?.toString() ?? '')?.toLocal() ?? DateTime.now(),
           (r['n_pedidos'] as num?)?.toInt() ?? 1,
           (r['valor_entregador'] as num?)?.toDouble() ?? 0,
           (r['dinheiro_recebido'] as num?)?.toDouble() ?? 0,
+          [for (final x in (pend as List? ?? const [])) x.toString()],
         ));
       }
       final hist = await Supabase.instance.client
@@ -106,7 +111,7 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${m.rotas.length} rota(s) · ${_textoSaldo(m.saldo)}.'),
+            Text('${m.liberadas.length} rota(s) · ${_textoSaldo(m.saldo)}.'),
             if (lojaPaga && (m.pix ?? '').isNotEmpty) ...[
               const SizedBox(height: 12),
               Text('Chave Pix: ${m.pix}', style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -188,6 +193,10 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
                                         dense: true,
                                         title: Text(
                                             '${DateFormat('dd/MM HH:mm').format(r.quando)} · ${r.n} entrega${r.n == 1 ? '' : 's'}'),
+                                        subtitle: r.pendencias.isEmpty
+                                            ? null
+                                            : Text('Fora deste acerto: ${r.pendencias.join('; ')} (em Rotas de motoboy)',
+                                                style: TextStyle(color: cores.error)),
                                         trailing: Text(
                                             '${_moeda.format(r.valor)}${r.dinheiro > 0 ? '\n− ${_moeda.format(r.dinheiro)} dinheiro' : ''}',
                                             textAlign: TextAlign.right),
@@ -195,7 +204,7 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
                                     Padding(
                                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                                       child: FilledButton(
-                                        onPressed: _acertando == null ? () => _acertar(m) : null,
+                                        onPressed: _acertando == null && m.liberadas.isNotEmpty ? () => _acertar(m) : null,
                                         style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(44)),
                                         child: Text(_acertando == m.id ? 'Registrando…' : 'Marcar acertado'),
                                       ),
