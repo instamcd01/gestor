@@ -87,7 +87,7 @@ Map<String, dynamic> demo() => {
         {'id': 'e1', 'nome': 'Carlos Souza', 'disponivel': true},
         {'id': 'e2', 'nome': 'Renan Lima', 'disponivel': true},
         {'id': 'e3', 'nome': 'Diego Alves', 'disponivel': false},
-        {'id': 'e4', 'nome': 'Marcos Silva', 'disponivel': true},
+        {'id': 'e4', 'nome': 'Marcos Silva', 'disponivel': true, 'pos_lat': -22.8690, 'pos_lon': -43.5620, 'pos_em': _t(const Duration(minutes: -1))},
       ],
       'acerto': [
         {'n_pedidos': 4, 'valor_entregador': 27.3, 'dinheiro_recebido': 0, 'entregador': {'nome': 'Carlos Souza'}},

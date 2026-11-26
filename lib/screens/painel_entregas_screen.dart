@@ -201,7 +201,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
   List<_PedidoRota> _reclamacoes = [];
   List<_Acerto> _acertos = [];
   List<_RotaLoja> _rotasLoja = [];
-  List<({String id, String nome, bool disponivel})> _motoboys = [];
+  List<({String id, String nome, bool disponivel, double? lat, double? lon, DateTime? em})> _motoboys = [];
   bool _ligado = false;
   DateTime? _pausadoAte;
   double _chuvaValor = 0;
@@ -282,7 +282,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
             .eq('origem', 'manual')
             .eq('data_rota', hoje)
             .neq('status', 'concluida'),
-        _db.from('entregadores').select('id, nome, disponivel').eq('freelancer_oferta', true).eq('ativo', true).isFilter('deleted_at', null).order('nome'),
+        _db.from('entregadores').select('id, nome, disponivel, pos_lat, pos_lon, pos_em').eq('freelancer_oferta', true).eq('ativo', true).isFilter('deleted_at', null).order('nome'),
         _db
             .from('rotas_entrega')
             .select('n_pedidos, valor_entregador, dinheiro_recebido, entregador:entregadores(nome)')
@@ -349,7 +349,14 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       _rotasLoja = [for (final r in (d['rotas_loja'] as List? ?? const [])) _RotaLoja.de(Map<String, dynamic>.from(r as Map))];
       _motoboys = [
         for (final m in (d['motoboys'] as List? ?? const []))
-          (id: m['id'] as String, nome: (m['nome'] as String? ?? 'Motoboy').split(' ').first, disponivel: m['disponivel'] as bool? ?? true),
+          (
+            id: m['id'] as String,
+            nome: (m['nome'] as String? ?? 'Motoboy').split(' ').first,
+            disponivel: m['disponivel'] as bool? ?? true,
+            lat: (m['pos_lat'] as num?)?.toDouble(),
+            lon: (m['pos_lon'] as num?)?.toDouble(),
+            em: _Rota._dt(m['pos_em']),
+          ),
       ];
       _carregando = false;
     });
@@ -609,7 +616,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhum motoboy cadastrado pra receber ofertas.')));
       return;
     }
-    final m = await showModalBottomSheet<({String id, String nome, bool disponivel})>(
+    final m = await showModalBottomSheet<({String id, String nome, bool disponivel, double? lat, double? lon, DateTime? em})>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -950,6 +957,38 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
           semGps.add(r);
         }
       }
+      // motoboys disponíveis (Kitsune aberto, posição de até 10 min) — termo v3
+      for (final m in _motoboys) {
+        if (!m.disponivel || _ocupadoComRota(m.nome) || m.lat == null || m.lon == null || m.em == null) continue;
+        if (DateTime.now().difference(m.em!).inMinutes > 10) continue;
+        final pt = ll.LatLng(m.lat!, m.lon!);
+        pontos.add(pt);
+        marcas.add(osm.Marker(
+          point: pt,
+          width: 150,
+          height: 56,
+          alignment: Alignment.topCenter,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                  color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)]),
+              child: Text('${m.nome} · livre · ${_haQuanto(m.em!)}',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF166534))),
+            ),
+            const SizedBox(height: 3),
+            Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                  color: const Color(0xFF15803D), shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+              alignment: Alignment.center,
+              child: Text(m.nome.substring(0, 1).toUpperCase(),
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+        ));
+      }
       for (final r in _rotasLoja) {
         final trecho = <ll.LatLng>[loja];
         for (final p in r.paradas) {
@@ -1006,7 +1045,8 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
               const Text('Mapa agora', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
               Wrap(spacing: 14, runSpacing: 4, children: [
                 legenda(const Color(0xFF1E1E24), 'Loja', ponto: true),
-                legenda(_cores.primary, 'Motoboy (GPS)', ponto: true),
+                legenda(_cores.primary, 'Motoboy em rota', ponto: true),
+                legenda(const Color(0xFF15803D), 'Motoboy livre', ponto: true),
                 legenda(const Color(0xFF1D4ED8), 'em rota'),
                 legenda(const Color(0xFF15803D), 'indo/na loja'),
                 legenda(const Color(0xFFB45309), 'esperando aceite'),
