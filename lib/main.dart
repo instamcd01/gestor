@@ -1,3 +1,4 @@
+import 'widgets/aviso_nova_versao.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SemanticsBinding;
@@ -99,6 +100,7 @@ class MyApp extends StatelessWidget {
             darkTheme: branding.temaEscuro,
             themeMode: branding.temaModo,
             home: const AuthGate(),
+            builder: (context, child) => AvisoNovaVersao(child: child ?? const SizedBox.shrink()),
             routes: {
               '/home': (context) => HomeScreen(),
               '/historico_vendas': (context) => HistoricoVendasScreen(),
