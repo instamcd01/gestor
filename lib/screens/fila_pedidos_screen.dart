@@ -1425,10 +1425,10 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
       appBar: AppBar(
         title: const Text('Fila de Pedidos'),
         actions: [
-          IconButton(
-            tooltip: 'Rotas de motoboy',
-            icon: const Icon(Icons.two_wheeler),
+          TextButton.icon(
             onPressed: _abrirRotas,
+            icon: const Icon(Icons.two_wheeler),
+            label: const Text('Motoboys'),
           ),
           if (largo)
             SizedBox(

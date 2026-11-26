@@ -13,6 +13,7 @@ import '../providers/tarefa_provider.dart';
 import '../screens/clientes_hub_screen.dart';
 import '../screens/configuracoes_screen.dart';
 import '../screens/desempenho_hub_screen.dart';
+import '../screens/entrega_oferta_rotas_screen.dart';
 import '../screens/financas_screen.dart';
 import '../screens/fila_pedidos_screen.dart';
 import '../screens/historico_vendas_screen.dart';
@@ -139,6 +140,12 @@ final List<AppDestino> appDestinos = [
     titulo: 'Rotas de Entrega',
     icone: Icons.alt_route,
     builder: (_) => const RotasEntregaScreen(),
+    modulos: [Modulos.entregas],
+  ),
+  AppDestino(
+    titulo: 'Rotas de motoboy',
+    icone: Icons.two_wheeler,
+    builder: (_) => const EntregaOfertaRotasScreen(),
     modulos: [Modulos.entregas],
   ),
   AppDestino(
