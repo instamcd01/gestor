@@ -64,8 +64,10 @@ class _Rota {
   final double? posLat;
   final double? posLon;
   final DateTime? posEm;
+  /// Kitsune avisou que o GPS falhou (negado/bloqueado/desligado/semSinal)
+  final String? gpsFalha;
   _Rota(this.id, this.status, this.motoboy, this.valor, this.bonus, this.prazoSaida, this.chegou, this.km, this.pedidos,
-      {this.calculando = false, this.erroRota, this.posLat, this.posLon, this.posEm});
+      {this.calculando = false, this.erroRota, this.posLat, this.posLon, this.posEm, this.gpsFalha});
 }
 
 class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
@@ -100,7 +102,7 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
       final rotas = await _db
           .from('rotas_entrega')
           .select('id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, google_ok, google_erro, ofertada_em, '
-              'pos_lat, pos_lon, pos_em, '
+              'pos_lat, pos_lon, pos_em, gps_falha, '
               'entregador:entregadores(nome), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
               'pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro)))')
           .eq('origem', 'oferta')
@@ -148,6 +150,7 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
               posLat: (r['pos_lat'] as num?)?.toDouble(),
               posLon: (r['pos_lon'] as num?)?.toDouble(),
               posEm: r['pos_em'] == null ? null : DateTime.tryParse(r['pos_em'] as String)?.toLocal(),
+              gpsFalha: r['gps_falha'] as String?,
             ),
         ];
         _fora = [
@@ -337,6 +340,23 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
               ].join(' · '),
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
+            if ((r.status == 'aceita' || r.status == 'em_andamento') && r.gpsFalha != null) ...[
+              const SizedBox(height: 8),
+              Row(children: [
+                Icon(Icons.location_disabled, size: 18, color: Theme.of(context).colorScheme.error),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    switch (r.gpsFalha) {
+                      'negado' || 'bloqueado' => 'GPS do motoboy bloqueado no celular dele (o Kitsune mostra como liberar)',
+                      'desligado' => 'Localização do celular do motoboy está desligada',
+                      _ => 'GPS do motoboy sem sinal agora',
+                    },
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+              ]),
+            ],
             if ((r.status == 'aceita' || r.status == 'em_andamento') && r.posLat != null) ...[
               const SizedBox(height: 8),
               Row(children: [
