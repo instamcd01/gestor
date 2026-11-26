@@ -12,6 +12,7 @@ import 'entrega_oferta_acerto_screen.dart';
 import 'entrega_oferta_config_screen.dart';
 import 'entrega_oferta_resumo_screen.dart';
 import 'rotas_entrega_screen.dart';
+import 'trajeto_rota_screen.dart';
 
 /// Painel de Entregas (26/11, desenho aprovado https://claude.ai/artifact/WTXKPmYdWim27QCo4zpbeb):
 /// junta as antigas "Rotas de Entrega" e "Rotas de motoboy". Cabeçalho (ofertas, chuva, rota da loja),
@@ -1305,6 +1306,11 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       if (r.status == 'aceita')
         BotaoEntregarMotoboy(info: RotaOfertaInfo(rotaId: r.id, status: r.status, entregador: r.motoboy, n: r.pedidos.length)),
       if ((r.status == 'aceita' || r.status == 'em_andamento') && r.posLat != null) _botao('Ver no mapa', () => _abrirMapaMotoboy(r), icone: Icons.map_outlined),
+      if (r.status == 'em_andamento' || r.status == 'concluida')
+        _botao('Ver trajeto', () {
+          if (_demo) return;
+          Navigator.push(context, MaterialPageRoute(builder: (_) => TrajetoRotaScreen(rotaId: r.id, titulo: 'Rota · ${r.bairros}')));
+        }, icone: Icons.route),
       if (esperando && r.ofertaSaiu) _botao('Aumentar valor', () => _escolherBonus(r), icone: Icons.trending_up),
       if (esperando) _botao('Oferecer só para…', () => _oferecerPara(r), icone: Icons.person_outline),
       if (esperando && !r.ofertaSaiu)
