@@ -55,8 +55,11 @@ class _PedidoRota {
   final double? lon;
   /// fim da janela prometida ao cliente (pedido ou iFood)
   final DateTime? prometidoAte;
+  /// motoboy pediu pra devolver (não entregou) e espera a loja autorizar
+  final bool devolucaoPedida;
+  final String? motivoDevolucao;
   _PedidoRota(this.id, this.numero, this.cliente, this.bairro, this.status,
-      {this.foto, this.contestado = false, this.devolucaoConfirmada = false, this.lat, this.lon, this.prometidoAte});
+      {this.foto, this.contestado = false, this.devolucaoConfirmada = false, this.lat, this.lon, this.prometidoAte, this.devolucaoPedida = false, this.motivoDevolucao});
 
   bool get entregue => status == 'entregue' || status == 'concluido';
   bool get resolvido => entregue || status == 'cancelado' || status == 'nao_entregue';
@@ -75,6 +78,8 @@ class _PedidoRota {
       devolucaoConfirmada: rp?['devolucao_confirmada_em'] != null,
       lat: (c?['latitude'] as num?)?.toDouble(),
       lon: (c?['longitude'] as num?)?.toDouble(),
+      devolucaoPedida: rp?['devolucao_pedida_em'] != null && p['status'] != 'nao_entregue',
+      motivoDevolucao: rp?['devolucao_motivo'] as String?,
       prometidoAte: _Rota._dt(p['previsao_entrega_fim']) ??
           _Rota._dt(((p['mp'] is List && (p['mp'] as List).isNotEmpty) ? (p['mp'] as List).first : p['mp'] as Map?)?['entrega_prevista_fim']),
     );
@@ -237,7 +242,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
   // ── Dados ────────────────────────────────────────────────────────────────────────────────────────
   static const _selRota = 'id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, google_ok, google_erro, '
       'ofertada_em, saiu_em, finalizada_em, pos_lat, pos_lon, pos_em, gps_falha, origem, '
-      'entregador:entregadores(nome, telefone), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
+      'entregador:entregadores(nome, telefone), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, devolucao_pedida_em, devolucao_motivo, '
       'pedido:pedidos(id, numero_sequencial, status, previsao_entrega_fim, mp:marketplace_pedidos(entrega_prevista_fim), '
       'cliente:clientes(nome, bairro, latitude, longitude)))';
 
@@ -1134,6 +1139,23 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
             ));
       }
     }
+    for (final r in _rotas.where((r) => r.status == 'em_andamento')) {
+      for (final p in r.pedidos.where((p) => p.devolucaoPedida)) {
+        itens.add((u) => _item(
+              '${r.motoboy ?? 'Motoboy'} pede pra devolver #${p.numero} · ${p.cliente}',
+              '${p.motivoDevolucao ?? 'não conseguiu entregar'} · chegou, ligou, esperou e tirou foto. Só traz de volta se você autorizar.',
+              [
+                _botao('Autorizar devolução', () => _rpc('aut${p.id}', 'entrega_oferta_autorizar_devolucao', {'p_pedido_id': p.id},
+                    ok: 'Devolução do #${p.numero} autorizada. O motoboy foi avisado.'), principal: true),
+                _botao('Pedir pra tentar de novo', () => _rpc('ten${p.id}', 'entrega_oferta_tentar_de_novo', {'p_pedido_id': p.id},
+                    ok: 'Pedimos pro motoboy tentar o #${p.numero} de novo.')),
+                if (p.foto != null) _botao('Ver foto', () => _verFoto(p.foto!, 'Fachada · pedido #${p.numero}')),
+                if (r.telefoneMotoboy != null) _botao('Ligar pro ${r.motoboy ?? 'motoboy'}', () => _ligar(r.telefoneMotoboy), icone: Icons.call),
+              ],
+              ultimo: u,
+            ));
+      }
+    }
     for (final r in _rotas.where((r) => r.status == 'sem_entregador')) {
       itens.add((u) => _item(
             'Ninguém aceitou: ${r.bairros} · ${r.pedidos.length} entrega${r.pedidos.length == 1 ? '' : 's'}',
@@ -1246,6 +1268,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       'entregue' || 'concluido' => ('entregue', Colors.green.shade800),
       'cancelado' => ('cancelado', _suave),
       'nao_entregue' => ('não entregue', _tomProblema.texto),
+      _ when p.devolucaoPedida => ('pede devolução', _tomProblema.texto),
       _ => (proxima ? 'próxima' : '', _tomEmRota.texto),
     };
     return Padding(
@@ -1300,7 +1323,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
   Widget _cartaoRota(_Rota r) {
     final (rotulo, tom) = _status(r);
     final info = _linhaInfo(r);
-    final proxima = r.status == 'em_andamento' ? r.pedidos.indexWhere((p) => !p.resolvido) : -1;
+    final proxima = r.status == 'em_andamento' ? r.pedidos.indexWhere((p) => !p.resolvido && !p.devolucaoPedida) : -1;
     final esperando = r.status == 'ofertada';
     final botoes = <Widget>[
       if (r.status == 'aceita')

@@ -31,7 +31,8 @@ Map<String, dynamic> demo() => {
           'rota_pedidos': [
             _rp(1, _ped('p1', 11421, 'Ana', 'Inhoaíba', 'entregue', -22.8995, -43.5960), foto: 'x.jpg'),
             _rp(2, _ped('p2', 11425, 'Bruno', 'Cosmos', 'pronto', -22.9165, -43.6136, prometido: const Duration(minutes: -6))),
-            _rp(3, _ped('p3', 11430, 'Márcia', 'Cosmos', 'pronto', -22.9230, -43.6180)),
+            {'ordem': 3, 'foto_path': 'f.jpg', 'devolucao_pedida_em': _t(const Duration(minutes: -1)), 'devolucao_motivo': 'Cliente ausente',
+              'pedido': _ped('p3', 11430, 'Márcia', 'Cosmos', 'pronto', -22.9230, -43.6180)},
           ],
         },
         {
