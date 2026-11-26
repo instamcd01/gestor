@@ -1293,6 +1293,8 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
 
   Widget _parada(_Rota r, int n, _PedidoRota p, bool proxima) {
     final antesDeSair = r.status == 'ofertada' || r.status == 'aceita';
+    // rota já saiu, mas o motoboy pode ainda estar na loja: dá pra tirar/mover pedido que ainda não foi entregue
+    final naRua = r.status == 'em_andamento' && !p.resolvido && !p.devolucaoPedida;
     final (String direita, Color cor) = switch (p.status) {
       'entregue' || 'concluido' => ('entregue', Colors.green.shade800),
       'cancelado' => ('cancelado', _suave),
@@ -1323,7 +1325,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
             style: TextButton.styleFrom(minimumSize: const Size(0, 32), padding: const EdgeInsets.symmetric(horizontal: 6)),
             child: const Text('foto', style: TextStyle(fontSize: 13)),
           ),
-        if (antesDeSair)
+        if (antesDeSair || naRua)
           PopupMenuButton<String>(
             tooltip: 'Ações do pedido #${p.numero}',
             padding: EdgeInsets.zero,
@@ -1335,6 +1337,20 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
             ),
             icon: Icon(Icons.more_horiz, size: 20, color: _suave),
             onSelected: (acao) async {
+              if (naRua &&
+                  !await _confirmar('O ${r.motoboy ?? 'motoboy'} ainda está na loja?',
+                      acao == 'tirar'
+                          ? 'O pedido #${p.numero} sai da rota dele e fica na loja (volta pra "pronto"). O valor da rota é recalculado e ele recebe "deixe esse pedido na loja".'
+                          : 'O pedido #${p.numero} sai da rota dele (valor recalculado, ele recebe "deixe esse pedido na loja") e vai pra rota que você escolher.',
+                      acao == 'tirar' ? 'Tirar da rota' : 'Continuar')) {
+                return;
+              }
+              if (naRua && acao == 'mover') {
+                // tira da rota na rua primeiro; depois coloca na rota escolhida
+                await _rpc('p${p.id}', 'entrega_oferta_tirar_pedido', {'p_pedido_id': p.id}, ok: 'Pedido #${p.numero} saiu da rota.');
+                await _juntar(p, tirarDe: r.id);
+                return;
+              }
               if (acao == 'tirar') {
                 await _rpc('p${p.id}', 'entrega_oferta_tirar_pedido', {'p_pedido_id': p.id}, ok: 'Pedido #${p.numero} saiu da rota.');
               } else if (acao == 'mover') {
@@ -1343,11 +1359,16 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
                 await _rpc('p${p.id}', 'entrega_oferta_eu_entrego', {'p_pedido_id': p.id}, ok: 'Pedido #${p.numero}: a loja entrega.');
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'mover', child: Text('Mover pra outra rota…')),
-              PopupMenuItem(value: 'tirar', child: Text('Tirar da rota (volta pra oferta)')),
-              PopupMenuItem(value: 'eu', child: Text('Eu entrego este')),
-            ],
+            itemBuilder: (_) => naRua
+                ? const [
+                    PopupMenuItem(value: 'mover', child: Text('Mover pra outra rota…')),
+                    PopupMenuItem(value: 'tirar', child: Text('Tirar da rota (fica na loja)')),
+                  ]
+                : const [
+                    PopupMenuItem(value: 'mover', child: Text('Mover pra outra rota…')),
+                    PopupMenuItem(value: 'tirar', child: Text('Tirar da rota (volta pra oferta)')),
+                    PopupMenuItem(value: 'eu', child: Text('Eu entrego este')),
+                  ],
           ),
       ]),
     );
