@@ -13,20 +13,33 @@ import 'entrega_oferta_config_screen.dart';
 import 'entrega_oferta_resumo_screen.dart';
 import 'rotas_entrega_screen.dart';
 
-/// Painel de Entregas (26/11, era "Rotas de motoboy"): mapa com loja, motoboys (GPS) e paradas, botão
-/// "Está chovendo" (bônus manual), resumo do dia, "Precisa de você", rotas, "Juntando pedidos" e
-/// atalhos pro acerto e pra rota da loja (entrega própria).
+/// Painel de Entregas (26/11, desenho aprovado https://claude.ai/artifact/WTXKPmYdWim27QCo4zpbeb):
+/// junta as antigas "Rotas de Entrega" e "Rotas de motoboy". Cabeçalho (ofertas, chuva, rota da loja),
+/// faixa da chuva, resumo do dia, mapa (loja, motoboys pelo GPS, paradas), "Precisa de você",
+/// rotas (abertas / concluídas, com a lista de entregas), "Juntando pedidos" e o acerto do dia.
 ///
-/// Rotas do entregador por oferta (25/11, visão do lojista): todas as rotas abertas num lugar só e o
-/// controle da loja — entregar ao motoboy, aumentar o valor e oferecer de novo, trocar o motoboy,
-/// cancelar (a loja entrega), tirar pedido, "eu entrego", oferecer mesmo assim, juntar pedido numa
-/// rota, reentregar o que voltou e pausar as ofertas. Tudo por RPC (entrega_oferta_*), só equipe da loja.
+/// Ações por RPC (entrega_oferta_*), só equipe da loja. [demo] = dados de exemplo da bancada
+/// (test_manual/main_painel_entregas.dart): mesmo formato das linhas do banco, sem rede.
 class PainelEntregasScreen extends StatefulWidget {
-  const PainelEntregasScreen({super.key});
+  final Map<String, dynamic>? demo;
+  const PainelEntregasScreen({super.key, this.demo});
 
   @override
   State<PainelEntregasScreen> createState() => _PainelEntregasScreenState();
 }
+
+// ── Cores fixas de situação (iguais em qualquer loja; a marca vem do tema) ─────────────────────────
+class _Tom {
+  final Color texto;
+  final Color fundo;
+  const _Tom(this.texto, this.fundo);
+}
+
+const _tomEmRota = _Tom(Color(0xFF1E3A8A), Color(0xFFDBEAFE));
+const _tomLoja = _Tom(Color(0xFF166534), Color(0xFFDCFCE7));
+const _tomEspera = _Tom(Color(0xFF92400E), Color(0xFFFEF3C7));
+const _tomProblema = _Tom(Color(0xFF991B1B), Color(0xFFFEE2E2));
+const _tomNeutro = _Tom(Color(0xFF3F3F46), Color(0xFFE4E4E7));
 
 class _PedidoRota {
   final String id;
@@ -43,6 +56,7 @@ class _PedidoRota {
       {this.foto, this.contestado = false, this.devolucaoConfirmada = false, this.lat, this.lon});
 
   bool get entregue => status == 'entregue' || status == 'concluido';
+  bool get resolvido => entregue || status == 'cancelado' || status == 'nao_entregue';
 
   /// [p] = pedido; [rp] = linha de rota_pedidos (prova, reclamação, devolução), quando houver
   factory _PedidoRota.de(Map<String, dynamic> p, [Map<String, dynamic>? rp]) {
@@ -74,25 +88,85 @@ class _Rota {
   final List<_PedidoRota> pedidos;
   final bool calculando;
   final String? erroRota;
-  /// GPS do motoboy durante a rota (Kitsune manda a cada 30 s com o app aberto)
   final double? posLat;
   final double? posLon;
   final DateTime? posEm;
-  /// Kitsune avisou que o GPS falhou (negado/bloqueado/desligado/semSinal)
   final String? gpsFalha;
-  /// a oferta já saiu pros motoboys (null = ainda juntando pedidos)
   final bool ofertaSaiu;
+  final DateTime? ofertadaEm;
+  final DateTime? saiuEm;
+  final DateTime? finalizadaEm;
+  final double troco;
   _Rota(this.id, this.status, this.motoboy, this.valor, this.bonus, this.prazoSaida, this.chegou, this.km, this.pedidos,
-      {this.calculando = false, this.erroRota, this.posLat, this.posLon, this.posEm, this.gpsFalha, this.ofertaSaiu = true});
+      {this.calculando = false,
+      this.erroRota,
+      this.posLat,
+      this.posLon,
+      this.posEm,
+      this.gpsFalha,
+      this.ofertaSaiu = true,
+      this.ofertadaEm,
+      this.saiuEm,
+      this.finalizadaEm,
+      this.troco = 0});
+
+  String get bairros {
+    final bs = <String>[];
+    for (final p in pedidos) {
+      if (p.bairro.isNotEmpty && !bs.contains(p.bairro)) bs.add(p.bairro);
+    }
+    return bs.isEmpty ? 'região da loja' : bs.join(', ');
+  }
+
+  int get entregues => pedidos.where((p) => p.entregue).length;
+
+  static DateTime? _dt(dynamic v) => v == null ? null : DateTime.tryParse(v as String)?.toLocal();
+
+  factory _Rota.de(Map<String, dynamic> r) => _Rota(
+        r['id'] as String,
+        r['status'] as String,
+        ((r['entregador'] as Map?)?['nome'] as String?)?.split(' ').first,
+        (r['valor_entregador'] as num?)?.toDouble(),
+        (r['bonus'] as num?)?.toDouble() ?? 0,
+        _dt(r['prazo_saida']),
+        r['chegou_loja_em'] != null,
+        (r['km_ida'] as num?)?.toDouble(),
+        ([...(r['rota_pedidos'] as List? ?? const [])]
+              ..sort((a, b) => ((a['ordem'] as num?) ?? 0).compareTo((b['ordem'] as num?) ?? 0)))
+            .map((rp) => _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>))
+            .toList(),
+        calculando: r['status'] == 'ofertada' && r['google_ok'] != true && r['ofertada_em'] == null && r['google_erro'] == null,
+        erroRota: r['google_erro'] as String?,
+        posLat: (r['pos_lat'] as num?)?.toDouble(),
+        posLon: (r['pos_lon'] as num?)?.toDouble(),
+        posEm: _dt(r['pos_em']),
+        gpsFalha: r['gps_falha'] as String?,
+        ofertaSaiu: r['ofertada_em'] != null,
+        ofertadaEm: _dt(r['ofertada_em']),
+        saiuEm: _dt(r['saiu_em']),
+        finalizadaEm: _dt(r['finalizada_em']),
+        troco: (r['troco'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class _Acerto {
+  final String nome;
+  int rotas = 0;
+  int entregas = 0;
+  double ganhou = 0;
+  double dinheiro = 0;
+  _Acerto(this.nome);
+  double get saldo => ganhou - dinheiro; // >0 a loja paga; <0 ele devolve
 }
 
 class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
-  final _db = Supabase.instance.client;
   final _moeda = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
   List<_Rota> _rotas = [];
+  List<_Rota> _concluidas = [];
   List<(_PedidoRota, String)> _fora = []; // pedido + motivo
   List<_PedidoRota> _naoEntregues = [];
   List<_PedidoRota> _reclamacoes = [];
+  List<_Acerto> _acertos = [];
   bool _ligado = false;
   DateTime? _pausadoAte;
   double _chuvaValor = 0;
@@ -100,12 +174,20 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
   Map<String, dynamic>? _resumo;
   ll.LatLng? _loja;
   bool _carregando = true;
+  bool _verConcluidas = false;
   String? _ocupado;
   Timer? _timer;
+
+  bool get _demo => widget.demo != null;
+  SupabaseClient get _db => Supabase.instance.client;
 
   @override
   void initState() {
     super.initState();
+    if (_demo) {
+      _aplicar(widget.demo!);
+      return;
+    }
     _carregar();
     _timer = Timer.periodic(const Duration(seconds: 20), (_) => _carregar());
   }
@@ -116,92 +198,119 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
     super.dispose();
   }
 
+  // ── Dados ────────────────────────────────────────────────────────────────────────────────────────
+  static const _selRota = 'id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, google_ok, google_erro, '
+      'ofertada_em, saiu_em, finalizada_em, pos_lat, pos_lon, pos_em, gps_falha, '
+      'entregador:entregadores(nome), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
+      'pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro, latitude, longitude)))';
+
   Future<void> _carregar() async {
+    if (_demo) return;
     try {
       final cfg = await _db.from('entrega_oferta_config').select('ativo, pausado_ate, chuva_valor, chuva_ate, empresa_id').maybeSingle();
-      final resumo = await _db.rpc('entrega_oferta_resumo', params: {'p_dias': 1});
+      Map<String, dynamic>? loja;
       if (_loja == null && cfg?['empresa_id'] != null) {
-        final e = await _db.from('empresas').select('latitude, longitude').eq('id', cfg!['empresa_id'] as String).maybeSingle();
-        final lat = (e?['latitude'] as num?)?.toDouble(), lon = (e?['longitude'] as num?)?.toDouble();
-        if (lat != null && lon != null) _loja = ll.LatLng(lat, lon);
+        loja = await _db.from('empresas').select('latitude, longitude').eq('id', cfg!['empresa_id'] as String).maybeSingle();
       }
-      final rotas = await _db
-          .from('rotas_entrega')
-          .select('id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, google_ok, google_erro, ofertada_em, '
-              'pos_lat, pos_lon, pos_em, gps_falha, '
-              'entregador:entregadores(nome), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
-              'pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro, latitude, longitude)))')
-          .eq('origem', 'oferta')
-          .inFilter('status', ['ofertada', 'aceita', 'em_andamento', 'sem_entregador'])
-          .order('created_at');
-      final desde = DateTime.now().subtract(const Duration(hours: 12)).toUtc().toIso8601String();
-      final fora = await _db
-          .from('entrega_oferta_pedidos_fora')
-          .select('motivo, pedido:pedidos!inner(id, numero_sequencial, status, cliente:clientes(nome, bairro))')
-          .gte('created_at', desde)
-          .inFilter('pedido.status', ['pendente', 'preparando', 'pronto']);
-      // voltaram (não entregues) e reclamações do cliente das rotas de oferta
-      final voltou = await _db
-          .from('rota_pedidos')
-          .select('foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
-              'pedido:pedidos!inner(id, numero_sequencial, status, updated_at, cliente:clientes(nome, bairro))')
-          .eq('pedido.status', 'nao_entregue')
-          .gte('pedido.updated_at', DateTime.now().subtract(const Duration(days: 3)).toUtc().toIso8601String());
-      final reclamou = await _db
-          .from('rota_pedidos')
-          .select('foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
-              'pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro))')
-          .not('contestado_em', 'is', null)
-          .isFilter('contestacao_resolvida_em', null);
+      final hoje = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final desde12h = DateTime.now().subtract(const Duration(hours: 12)).toUtc().toIso8601String();
+      final res = await Future.wait<dynamic>([
+        _db.rpc('entrega_oferta_resumo', params: {'p_dias': 1}),
+        _db
+            .from('rotas_entrega')
+            .select(_selRota)
+            .eq('origem', 'oferta')
+            .inFilter('status', ['ofertada', 'aceita', 'em_andamento', 'sem_entregador'])
+            .order('created_at'),
+        _db.from('rotas_entrega').select(_selRota).eq('origem', 'oferta').eq('status', 'concluida').eq('data_rota', hoje).order('finalizada_em'),
+        _db
+            .from('entrega_oferta_pedidos_fora')
+            .select('motivo, lucro_estimado, custo_estimado, pedido:pedidos!inner(id, numero_sequencial, status, cliente:clientes(nome, bairro))')
+            .gte('created_at', desde12h)
+            .inFilter('pedido.status', ['pendente', 'preparando', 'pronto']),
+        _db
+            .from('rota_pedidos')
+            .select('foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
+                'pedido:pedidos!inner(id, numero_sequencial, status, updated_at, cliente:clientes(nome, bairro))')
+            .eq('pedido.status', 'nao_entregue')
+            .gte('pedido.updated_at', DateTime.now().subtract(const Duration(days: 3)).toUtc().toIso8601String()),
+        _db
+            .from('rota_pedidos')
+            .select('foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
+                'pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro))')
+            .not('contestado_em', 'is', null)
+            .isFilter('contestacao_resolvida_em', null),
+        _db
+            .from('rotas_entrega')
+            .select('n_pedidos, valor_entregador, dinheiro_recebido, entregador:entregadores(nome)')
+            .eq('origem', 'oferta')
+            .eq('status', 'concluida')
+            .isFilter('acertado_em', null)
+            .not('entregador_id', 'is', null),
+      ]);
       if (!mounted) return;
-      setState(() {
-        _ligado = cfg?['ativo'] as bool? ?? false;
-        _pausadoAte = cfg?['pausado_ate'] == null ? null : DateTime.tryParse(cfg!['pausado_ate'] as String)?.toLocal();
-        _chuvaValor = (cfg?['chuva_valor'] as num?)?.toDouble() ?? 0;
-        _chuvaAte = cfg?['chuva_ate'] == null ? null : DateTime.tryParse(cfg!['chuva_ate'] as String)?.toLocal();
-        _resumo = resumo is Map ? Map<String, dynamic>.from(resumo) : null;
-        _rotas = [
-          for (final r in rotas as List)
-            _Rota(
-              r['id'] as String,
-              r['status'] as String,
-              ((r['entregador'] as Map?)?['nome'] as String?)?.split(' ').first,
-              (r['valor_entregador'] as num?)?.toDouble(),
-              (r['bonus'] as num?)?.toDouble() ?? 0,
-              r['prazo_saida'] == null ? null : DateTime.tryParse(r['prazo_saida'] as String)?.toLocal(),
-              r['chegou_loja_em'] != null,
-              (r['km_ida'] as num?)?.toDouble(),
-              ([...(r['rota_pedidos'] as List)]..sort((a, b) => ((a['ordem'] as num?) ?? 0).compareTo((b['ordem'] as num?) ?? 0)))
-                  .map((rp) => _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>))
-                  .toList(),
-              calculando: r['status'] == 'ofertada' && r['google_ok'] != true && r['ofertada_em'] == null && r['google_erro'] == null,
-              erroRota: r['google_erro'] as String?,
-              posLat: (r['pos_lat'] as num?)?.toDouble(),
-              posLon: (r['pos_lon'] as num?)?.toDouble(),
-              posEm: r['pos_em'] == null ? null : DateTime.tryParse(r['pos_em'] as String)?.toLocal(),
-              gpsFalha: r['gps_falha'] as String?,
-              ofertaSaiu: r['ofertada_em'] != null,
-            ),
-        ];
-        _fora = [
-          for (final f in fora as List) (_PedidoRota.de(f['pedido'] as Map<String, dynamic>), f['motivo'] as String? ?? ''),
-        ];
-        _naoEntregues = [
-          for (final rp in voltou as List) _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>),
-        ];
-        _reclamacoes = [
-          for (final rp in reclamou as List) _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>),
-        ];
-        _carregando = false;
+      _aplicar({
+        'cfg': cfg,
+        'loja': loja,
+        'resumo': res[0],
+        'rotas': res[1],
+        'concluidas': res[2],
+        'fora': res[3],
+        'voltou': res[4],
+        'reclamou': res[5],
+        'acerto': res[6],
       });
     } catch (e) {
-      debugPrint('Erro ao carregar rotas: $e');
+      debugPrint('Erro ao carregar o painel de entregas: $e');
       if (mounted) setState(() => _carregando = false);
     }
   }
 
+  void _aplicar(Map<String, dynamic> d) {
+    final cfg = d['cfg'] as Map<String, dynamic>?;
+    final loja = d['loja'] as Map<String, dynamic>?;
+    final acertos = <String, _Acerto>{};
+    for (final a in (d['acerto'] as List? ?? const [])) {
+      final nome = ((a['entregador'] as Map?)?['nome'] as String?)?.split(' ').first ?? 'Motoboy';
+      final x = acertos.putIfAbsent(nome, () => _Acerto(nome));
+      x.rotas++;
+      x.entregas += (a['n_pedidos'] as num?)?.toInt() ?? 0;
+      x.ganhou += (a['valor_entregador'] as num?)?.toDouble() ?? 0;
+      x.dinheiro += (a['dinheiro_recebido'] as num?)?.toDouble() ?? 0;
+    }
+    setState(() {
+      _ligado = cfg?['ativo'] as bool? ?? false;
+      _pausadoAte = _Rota._dt(cfg?['pausado_ate']);
+      _chuvaValor = (cfg?['chuva_valor'] as num?)?.toDouble() ?? 0;
+      _chuvaAte = _Rota._dt(cfg?['chuva_ate']);
+      final lat = (loja?['latitude'] as num?)?.toDouble(), lon = (loja?['longitude'] as num?)?.toDouble();
+      if (lat != null && lon != null) _loja = ll.LatLng(lat, lon);
+      _resumo = d['resumo'] is Map ? Map<String, dynamic>.from(d['resumo'] as Map) : null;
+      _rotas = [for (final r in (d['rotas'] as List? ?? const [])) _Rota.de(Map<String, dynamic>.from(r as Map))];
+      _concluidas = [for (final r in (d['concluidas'] as List? ?? const [])) _Rota.de(Map<String, dynamic>.from(r as Map))];
+      _fora = [
+        for (final f in (d['fora'] as List? ?? const []))
+          (_PedidoRota.de(f['pedido'] as Map<String, dynamic>), f['motivo'] as String? ?? ''),
+      ];
+      _naoEntregues = [
+        for (final rp in (d['voltou'] as List? ?? const []))
+          _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>),
+      ];
+      _reclamacoes = [
+        for (final rp in (d['reclamou'] as List? ?? const []))
+          _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>),
+      ];
+      _acertos = acertos.values.toList();
+      _carregando = false;
+    });
+  }
+
   Future<void> _rpc(String chave, String fn, Map<String, dynamic> params, {String? ok}) async {
     final mensageiro = ScaffoldMessenger.of(context);
+    if (_demo) {
+      mensageiro.showSnackBar(SnackBar(content: Text('(bancada) $fn')));
+      return;
+    }
     setState(() => _ocupado = chave);
     try {
       final r = await _db.rpc(fn, params: params);
@@ -218,6 +327,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
 
   /// Foto de prova (bucket privado: link assinado de 5 min)
   Future<void> _verFoto(String path, String titulo) async {
+    if (_demo) return;
     try {
       final url = await _db.storage.from('entregas-provas').createSignedUrl(path, 300);
       if (!mounted) return;
@@ -252,38 +362,27 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       ) ==
       true;
 
+  String _hora(DateTime t) => DateFormat('HH:mm').format(t);
+
   String _haQuanto(DateTime t) {
-    final m = DateTime.now().difference(t).inMinutes;
-    if (m < 1) return 'agora';
+    final s = DateTime.now().difference(t).inSeconds;
+    if (s < 60) return 'há $s s';
+    final m = s ~/ 60;
     if (m < 60) return 'há $m min';
-    return 'às ${DateFormat('HH:mm').format(t)}';
+    return 'às ${_hora(t)}';
   }
 
-  String _rotuloStatus(_Rota r) => switch (r.status) {
-        'ofertada' when r.erroRota != null => 'Não consegui calcular a rota: confira o endereço',
-        'ofertada' when r.calculando => 'Calculando a rota exata…',
-        'ofertada' => 'Esperando um motoboy aceitar',
-        'aceita' => '${r.motoboy ?? 'Motoboy'} ${r.chegou ? 'chegou na loja' : 'está vindo'}',
-        'em_andamento' => '${r.motoboy ?? 'Motoboy'} em rota',
-        'sem_entregador' => 'Ninguém aceitou: a loja entrega',
-        _ => r.status,
-      };
-
-  Color _corStatus(_Rota r) => switch (r.status) {
-        'ofertada' => Colors.blueGrey,
-        'aceita' => r.chegou ? Colors.green.shade700 : Colors.orange.shade800,
-        'em_andamento' => Colors.blue.shade700,
-        'sem_entregador' => Colors.red.shade700,
-        _ => Colors.grey,
-      };
+  String _km(double? km) => km == null ? '' : '${km.toStringAsFixed(1).replaceAll('.', ',')} km';
 
   String _motivoFora(String m) => switch (m) {
-        'nao_paga_entrega' => 'Não paga a entrega com motoboy',
-        'loja_entrega' => 'A loja vai entregar',
-        'loja_tirou' => 'Tirado da rota pela loja',
-        _ => 'Fora das ofertas',
+        'nao_paga_entrega' => 'não paga o motoboy',
+        'loja_entrega' => 'a loja vai entregar',
+        'loja_tirou' => 'tirado da rota pela loja',
+        'sem_localizacao' => 'endereço sem localização',
+        _ => 'fora das ofertas',
       };
 
+  // ── Ações ────────────────────────────────────────────────────────────────────────────────────────
   Future<void> _escolherBonus(_Rota r) async {
     final valor = await showModalBottomSheet<double>(
       context: context,
@@ -324,8 +423,8 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
             for (final r in abertas)
               ListTile(
                 leading: const Icon(Icons.two_wheeler),
-                title: Text(_rotuloStatus(r)),
-                subtitle: Text(r.pedidos.map((x) => '#${x.numero} ${x.bairro}').join(' · ')),
+                title: Text('${r.bairros} · ${r.pedidos.length} entrega${r.pedidos.length == 1 ? '' : 's'}'),
+                subtitle: Text(r.pedidos.map((x) => '#${x.numero}').join(' · ')),
                 onTap: () => Navigator.pop(ctx, r),
               ),
           ],
@@ -337,168 +436,25 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
         ok: 'Pedido #${p.numero} entrou na rota.');
   }
 
-  Widget _cartaoRota(_Rota r) {
-    final cor = _corStatus(r);
-    final hora = r.prazoSaida == null ? null : DateFormat('HH:mm').format(r.prazoSaida!);
-    final antesDeSair = r.status == 'ofertada' || r.status == 'aceita';
-    final entregues = r.pedidos.where((p) => p.status == 'entregue' || p.status == 'concluido').length;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: cor.withValues(alpha: 0.5))),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.two_wheeler, color: cor),
-                const SizedBox(width: 8),
-                Expanded(child: Text(_rotuloStatus(r), style: TextStyle(fontWeight: FontWeight.w700, color: cor))),
-                if (r.valor != null)
-                  Text(_moeda.format(r.valor), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              [
-                '${r.pedidos.length} entrega${r.pedidos.length == 1 ? '' : 's'}',
-                if (r.km != null) '${r.km!.toStringAsFixed(1).replaceAll('.', ',')} km',
-                if (hora != null && antesDeSair) 'sair até $hora',
-                if (r.status == 'em_andamento') '$entregues de ${r.pedidos.length} entregues',
-                if (r.bonus > 0) 'bônus ${_moeda.format(r.bonus)}',
-              ].join(' · '),
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            if ((r.status == 'aceita' || r.status == 'em_andamento') && r.gpsFalha != null) ...[
-              const SizedBox(height: 8),
-              Row(children: [
-                Icon(Icons.location_disabled, size: 18, color: Theme.of(context).colorScheme.error),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    switch (r.gpsFalha) {
-                      'negado' || 'bloqueado' => 'GPS do motoboy bloqueado no celular dele (o Kitsune mostra como liberar)',
-                      'desligado' => 'Localização do celular do motoboy está desligada',
-                      _ => 'GPS do motoboy sem sinal agora',
-                    },
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                ),
-              ]),
-            ],
-            if ((r.status == 'aceita' || r.status == 'em_andamento') && r.posLat != null) ...[
-              const SizedBox(height: 8),
-              Row(children: [
-                Icon(Icons.my_location, size: 18,
-                    color: DateTime.now().difference(r.posEm!).inMinutes < 3 ? Colors.green.shade700 : Colors.orange.shade800),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'GPS: visto ${_haQuanto(r.posEm!)}',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () => launchUrl(
-                      Uri.parse('https://www.google.com/maps/search/?api=1&query=${r.posLat},${r.posLon}'),
-                      mode: LaunchMode.externalApplication),
-                  icon: const Icon(Icons.map_outlined, size: 18),
-                  label: const Text('Ver no mapa'),
-                ),
-              ]),
-            ],
-            const Divider(height: 20),
-            for (final p in r.pedidos)
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('#${p.numero} · ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}',
-                        style: TextStyle(
-                            decoration: p.status == 'cancelado' ? TextDecoration.lineThrough : null,
-                            color: p.status == 'entregue' ? Colors.green.shade700 : null)),
-                  ),
-                  if (p.contestado) Icon(Icons.report_problem, size: 18, color: Colors.orange.shade800),
-                  if (p.foto != null)
-                    IconButton(
-                      tooltip: 'Ver foto da entrega',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                      onPressed: () => _verFoto(p.foto!, 'Pedido #${p.numero}'),
-                    ),
-                  if (p.status == 'entregue') const Icon(Icons.check_circle, size: 18, color: Colors.green),
-                  if (p.status == 'nao_entregue') Icon(Icons.undo, size: 18, color: Colors.red.shade700),
-                  if (antesDeSair)
-                    PopupMenuButton<String>(
-                      tooltip: 'Ações do pedido',
-                      onSelected: (acao) async {
-                        if (acao == 'tirar') {
-                          await _rpc('p${p.id}', 'entrega_oferta_tirar_pedido', {'p_pedido_id': p.id},
-                              ok: 'Pedido #${p.numero} saiu da rota.');
-                        } else {
-                          await _rpc('p${p.id}', 'entrega_oferta_eu_entrego', {'p_pedido_id': p.id},
-                              ok: 'Pedido #${p.numero}: a loja entrega.');
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'tirar', child: Text('Tirar da rota (volta pra oferta)')),
-                        PopupMenuItem(value: 'eu', child: Text('Eu entrego este')),
-                      ],
-                    ),
-                ],
-              ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (r.status == 'aceita')
-                  BotaoEntregarMotoboy(
-                    info: RotaOfertaInfo(rotaId: r.id, status: r.status, entregador: r.motoboy, n: r.pedidos.length),
-                  ),
-                if (r.status != 'em_andamento')
-                  OutlinedButton.icon(
-                    onPressed: _ocupado == null ? () => _escolherBonus(r) : null,
-                    icon: const Icon(Icons.trending_up, size: 18),
-                    label: Text(r.status == 'aceita' ? 'Aumentar valor' : 'Aumentar valor e oferecer'),
-                  ),
-                if (r.status == 'aceita')
-                  OutlinedButton.icon(
-                    onPressed: _ocupado == null
-                        ? () async {
-                            if (await _confirmar('Trocar motoboy',
-                                '${r.motoboy ?? 'O motoboy'} sai da rota e ela é oferecida pros outros.', 'Trocar')) {
-                              await _rpc('troca${r.id}', 'entrega_oferta_trocar_motoboy', {'p_rota_id': r.id},
-                                  ok: 'Rota oferecida pros outros motoboys.');
-                            }
-                          }
-                        : null,
-                    icon: const Icon(Icons.swap_horiz, size: 18),
-                    label: const Text('Trocar motoboy'),
-                  ),
-                if (r.status != 'em_andamento')
-                  TextButton.icon(
-                    onPressed: _ocupado == null
-                        ? () async {
-                            if (await _confirmar('Cancelar a rota',
-                                'A loja entrega estes pedidos. ${r.status == 'aceita' ? 'O motoboy é avisado.' : ''}', 'Cancelar rota')) {
-                              await _rpc('canc${r.id}', 'entrega_oferta_cancelar_rota', {'p_rota_id': r.id},
-                                  ok: 'Rota cancelada: a loja entrega.');
-                            }
-                          }
-                        : null,
-                    icon: Icon(Icons.close, size: 18, color: Colors.red.shade700),
-                    label: Text('Cancelar (eu entrego)', style: TextStyle(color: Colors.red.shade700)),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+  Future<void> _cancelarRota(_Rota r) async {
+    if (await _confirmar('Eu entrego esta rota',
+        'A rota é cancelada e a loja entrega estes pedidos.${r.status == 'aceita' ? ' O motoboy é avisado.' : ''}', 'Eu entrego')) {
+      await _rpc('canc${r.id}', 'entrega_oferta_cancelar_rota', {'p_rota_id': r.id}, ok: 'Rota cancelada: a loja entrega.');
+    }
   }
 
-  Future<void> _pausar() async {
+  Future<void> _trocarMotoboy(_Rota r) async {
+    if (await _confirmar('Trocar motoboy', '${r.motoboy ?? 'O motoboy'} sai da rota e ela é oferecida pros outros.', 'Trocar')) {
+      await _rpc('troca${r.id}', 'entrega_oferta_trocar_motoboy', {'p_rota_id': r.id}, ok: 'Rota oferecida pros outros motoboys.');
+    }
+  }
+
+  Future<void> _pausarOuRetomar() async {
+    if (!_ligado) {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const EntregaOfertaConfigScreen()));
+      await _carregar();
+      return;
+    }
     if (_pausadoAte != null && _pausadoAte!.isAfter(DateTime.now())) {
       await _rpc('pausa', 'entrega_oferta_pausar', {'p_ate': null}, ok: 'Ofertas retomadas.');
       return;
@@ -512,7 +468,10 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const ListTile(title: Text('Pausar ofertas novas', style: TextStyle(fontWeight: FontWeight.w700))),
+              const ListTile(
+                title: Text('Pausar ofertas novas', style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text('As rotas que já têm motoboy continuam.'),
+              ),
               ListTile(title: const Text('Por 30 minutos'), onTap: () => Navigator.pop(ctx, agora.add(const Duration(minutes: 30)))),
               ListTile(title: const Text('Por 1 hora'), onTap: () => Navigator.pop(ctx, agora.add(const Duration(hours: 1)))),
               ListTile(title: const Text('Por 2 horas'), onTap: () => Navigator.pop(ctx, agora.add(const Duration(hours: 2)))),
@@ -524,19 +483,13 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
     );
     if (ate == null) return;
     await _rpc('pausa', 'entrega_oferta_pausar', {'p_ate': ate.toUtc().toIso8601String()},
-        ok: 'Ofertas pausadas até ${DateFormat('dd/MM HH:mm').format(ate)}. As rotas abertas continuam.');
+        ok: 'Ofertas pausadas até ${DateFormat('dd/MM HH:mm').format(ate)}.');
   }
 
-  // ── Chuva (bônus manual, decisão 26/11) ─────────────────────────────────────
   bool get _chovendo => _chuvaAte != null && _chuvaAte!.isAfter(DateTime.now()) && _chuvaValor > 0;
 
-  Future<void> _chuva() async {
-    if (_chovendo) {
-      final desligar = await _confirmar('Desligar o bônus de chuva?',
-          'As próximas ofertas saem sem os ${_moeda.format(_chuvaValor)} a mais. Rotas já aceitas não mudam.', 'Desligar');
-      if (desligar) await _rpc('chuva', 'entrega_oferta_chuva', {'p_valor': 0, 'p_ate': null}, ok: 'Bônus de chuva desligado.');
-      return;
-    }
+  /// Liga (ou muda) o bônus de chuva. [mudar] = já ligado, trocar valor/horário.
+  Future<void> _ligarChuva({bool mudar = false}) async {
     var valor = _chuvaValor > 0 ? _chuvaValor : 3.0;
     var horas = 2;
     final ok = await showModalBottomSheet<bool>(
@@ -544,36 +497,38 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, set) => SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('Está chovendo', style: TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text('Cada rota oferecida ganha um valor a mais. Desliga sozinho na hora escolhida.'),
-                ),
-                const Text('Valor a mais por rota'),
-                const SizedBox(height: 6),
+                Text(mudar ? 'Mudar o bônus de chuva' : 'Está chovendo',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text('Cada rota oferecida ganha um valor a mais. Desliga sozinho na hora escolhida.',
+                    style: TextStyle(color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 16),
+                const Text('Valor a mais por rota', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
                 Wrap(spacing: 8, children: [
                   for (final v in [2.0, 3.0, 5.0])
                     ChoiceChip(label: Text(_moeda.format(v)), selected: valor == v, onSelected: (_) => set(() => valor = v)),
                 ]),
-                const SizedBox(height: 12),
-                const Text('Por quanto tempo'),
-                const SizedBox(height: 6),
-                Wrap(spacing: 8, children: [
+                const SizedBox(height: 16),
+                const Text('Por quanto tempo', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: [
                   for (final h in [1, 2, 3])
                     ChoiceChip(
-                        label: Text('$h h (até ${DateFormat('HH:mm').format(DateTime.now().add(Duration(hours: h)))})'),
+                        label: Text('$h h · até ${_hora(DateTime.now().add(Duration(hours: h)))}'),
                         selected: horas == h,
                         onSelected: (_) => set(() => horas = h)),
                 ]),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
-                  child: FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Ligar bônus de chuva')),
+                  height: 48,
+                  child: FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(mudar ? 'Salvar' : 'Ligar bônus de chuva')),
                 ),
               ],
             ),
@@ -584,415 +539,712 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
     if (ok != true) return;
     final ate = DateTime.now().add(Duration(hours: horas));
     await _rpc('chuva', 'entrega_oferta_chuva', {'p_valor': valor, 'p_ate': ate.toUtc().toIso8601String()},
-        ok: 'Chuva ligada: +${_moeda.format(valor)} por rota até ${DateFormat('HH:mm').format(ate)}.');
+        ok: 'Chuva ligada: +${_moeda.format(valor)} por rota até ${_hora(ate)}.');
   }
 
-  // ── Seções ───────────────────────────────────────────────────────────────────
-  Widget _titulo(String t, {Color? cor, String? sub}) => Padding(
-        padding: const EdgeInsets.only(top: 4, bottom: 8),
-        child: Wrap(crossAxisAlignment: WrapCrossAlignment.end, spacing: 8, children: [
-          Text(t, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: cor)),
-          if (sub != null) Text(sub, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        ]),
+  Future<void> _desligarChuva() =>
+      _rpc('chuva', 'entrega_oferta_chuva', {'p_valor': 0, 'p_ate': null}, ok: 'Bônus de chuva desligado.');
+
+  void _abrirMapaMotoboy(_Rota r) => launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=${r.posLat},${r.posLon}'),
+      mode: LaunchMode.externalApplication);
+
+  // ── Peças visuais ────────────────────────────────────────────────────────────────────────────────
+  ColorScheme get _cores => Theme.of(context).colorScheme;
+  Color get _suave => _cores.onSurfaceVariant;
+
+  Widget _caixa({required Widget child, Color? borda, double larguraBorda = 1, EdgeInsets? padding}) =>
+      Container(
+        width: double.infinity,
+        padding: padding ?? const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _cores.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borda ?? _cores.outlineVariant, width: larguraBorda),
+        ),
+        child: child,
       );
 
-  Widget _topo() {
+  Widget _selo(String t, _Tom tom) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: tom.fundo, borderRadius: BorderRadius.circular(999)),
+        child: Text(t.toUpperCase(), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: tom.texto, letterSpacing: 0.3)),
+      );
+
+  Widget _botao(String t, VoidCallback? onTap, {bool principal = false, IconData? icone}) {
+    final ativo = _ocupado == null ? onTap : null;
+    final estilo = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(Size(0, 40)),
+      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 14)),
+      shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+      textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+    );
+    if (principal) {
+      return icone == null
+          ? FilledButton(onPressed: ativo, style: estilo, child: Text(t))
+          : FilledButton.icon(onPressed: ativo, style: estilo, icon: Icon(icone, size: 18), label: Text(t));
+    }
+    final contorno = estilo.copyWith(
+      foregroundColor: WidgetStatePropertyAll(_cores.onSurface),
+      side: WidgetStatePropertyAll(BorderSide(color: _cores.outlineVariant)),
+    );
+    return icone == null
+        ? OutlinedButton(onPressed: ativo, style: contorno, child: Text(t))
+        : OutlinedButton.icon(onPressed: ativo, style: contorno, icon: Icon(icone, size: 18), label: Text(t));
+  }
+
+  Widget _tituloSecao(String t, {Color? cor, Widget? direita, String? sub}) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 6,
+          children: [
+            Text(t, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: cor)),
+            if (sub != null) Text(sub, style: TextStyle(fontSize: 12, color: _suave)),
+            if (direita != null) direita,
+          ],
+        ),
+      );
+
+  // ── Cabeçalho, chuva e resumo ────────────────────────────────────────────────────────────────────
+  Widget _cabecalho() {
     final pausado = _pausadoAte != null && _pausadoAte!.isAfter(DateTime.now());
-    final cores = Theme.of(context).colorScheme;
+    // sem DateFormat('EEEE', 'pt_BR'): o app não carrega os dados de idioma do intl
+    const dias = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
+    final agora = DateTime.now();
+    final data = '${dias[agora.weekday - 1]}, ${DateFormat('dd/MM').format(agora)}';
+    final corChave = !_ligado ? _cores.outline : (pausado ? Colors.orange.shade700 : Colors.green.shade700);
     return Wrap(
-      spacing: 12,
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 16,
       runSpacing: 12,
       children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 280, maxWidth: 520),
-          child: Card(
-            margin: EdgeInsets.zero,
-            color: !_ligado ? cores.surfaceContainerHighest : (pausado ? Colors.orange.shade50 : Colors.green.shade50),
-            child: ListTile(
-              leading: Icon(!_ligado ? Icons.power_settings_new : (pausado ? Icons.pause_circle : Icons.play_circle),
-                  color: !_ligado ? null : (pausado ? Colors.orange.shade800 : Colors.green.shade700)),
-              title: Text(!_ligado
-                  ? 'Ofertas desligadas'
-                  : pausado
-                      ? 'Ofertas pausadas até ${DateFormat('dd/MM HH:mm').format(_pausadoAte!)}'
-                      : 'Ofertas ligadas'),
-              subtitle: Text(!_ligado ? 'Ligue em Configurar (engrenagem)' : 'Pedido novo vira oferta pros motoboys'),
-              trailing: !_ligado
-                  ? null
-                  : TextButton(onPressed: _ocupado == null ? _pausar : null, child: Text(pausado ? 'Retomar' : 'Pausar')),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text('${data[0].toUpperCase()}${data.substring(1)}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+          Text('Motoboys por oferta e rotas da loja', style: TextStyle(fontSize: 13, color: _suave)),
+        ]),
+        Wrap(spacing: 10, runSpacing: 10, children: [
+          OutlinedButton(
+            onPressed: _ocupado == null ? _pausarOuRetomar : null,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              foregroundColor: _cores.onSurface,
+              side: BorderSide(color: _cores.outlineVariant),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-          ),
-        ),
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 280, maxWidth: 520),
-          child: Card(
-            margin: EdgeInsets.zero,
-            color: _chovendo ? Colors.blue.shade50 : null,
-            child: ListTile(
-              leading: Icon(Icons.umbrella, color: _chovendo ? Colors.blue.shade800 : cores.onSurfaceVariant),
-              title: Text(_chovendo
-                  ? 'Chuva ligada: +${_moeda.format(_chuvaValor)} por rota'
-                  : 'Está chovendo?'),
-              subtitle: Text(_chovendo
-                  ? 'Desliga sozinho às ${DateFormat('HH:mm').format(_chuvaAte!)}'
-                  : 'Liga um valor a mais nas ofertas por algumas horas'),
-              trailing: TextButton(
-                onPressed: _ocupado == null ? _chuva : null,
-                child: Text(_chovendo ? 'Desligar' : 'Ligar'),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                width: 36,
+                height: 20,
+                padding: const EdgeInsets.all(2),
+                alignment: _ligado && !pausado ? Alignment.centerRight : Alignment.centerLeft,
+                decoration: BoxDecoration(color: corChave, borderRadius: BorderRadius.circular(999)),
+                child: Container(width: 16, height: 16, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
               ),
-            ),
+              const SizedBox(width: 10),
+              Text(
+                  !_ligado
+                      ? 'Ofertas desligadas'
+                      : pausado
+                          ? 'Pausadas até ${_hora(_pausadoAte!)}'
+                          : 'Ofertas ligadas',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ]),
           ),
-        ),
+          OutlinedButton.icon(
+            onPressed: _ocupado == null ? (_chovendo ? _desligarChuva : _ligarChuva) : null,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              backgroundColor: _chovendo ? _tomEmRota.fundo : null,
+              foregroundColor: _chovendo ? _tomEmRota.texto : _cores.onSurface,
+              side: BorderSide(color: _chovendo ? const Color(0xFF1D4ED8) : _cores.outlineVariant),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            icon: const Icon(Icons.umbrella, size: 18),
+            label: Text(_chovendo ? 'Chovendo · ligado' : 'Está chovendo?'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RotasEntregaScreen())),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Rota da loja'),
+          ),
+        ]),
       ],
     );
   }
 
-  Widget _resumoDoDia() {
-    final r = _resumo;
-    if (r == null) return const SizedBox.shrink();
-    int i(String k) => (r[k] as num?)?.toInt() ?? 0;
-    double d(String k) => (r[k] as num?)?.toDouble() ?? 0;
-    final abertas = _rotas.where((x) => x.status != 'sem_entregador').length;
-    Widget kpi(String rotulo, String valor, String? sub, {Color? corSub}) => ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 160, maxWidth: 260),
-          child: Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(rotulo, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                const SizedBox(height: 2),
-                Text(valor, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                if (sub != null) Text(sub, style: TextStyle(fontSize: 12, color: corSub ?? Theme.of(context).colorScheme.onSurfaceVariant)),
-              ]),
-            ),
+  Widget _faixaChuva() {
+    if (!_chovendo) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(color: _tomEmRota.fundo, borderRadius: BorderRadius.circular(14)),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          Text.rich(
+            TextSpan(style: TextStyle(color: _tomEmRota.texto, fontSize: 14), children: [
+              const TextSpan(text: 'Bônus de chuva ligado: ', style: TextStyle(fontWeight: FontWeight.w800)),
+              TextSpan(text: '+${_moeda.format(_chuvaValor)} em cada rota oferecida · desliga sozinho às ${_hora(_chuvaAte!)}'),
+            ]),
           ),
-        );
-    final sobra = d('frete_cobrado') - d('pago_motoboys');
-    return Wrap(spacing: 12, runSpacing: 12, children: [
-      kpi('Rotas abertas agora', '$abertas', '${i('rotas_concluidas')} concluídas hoje'),
-      kpi('Entregas hoje', '${i('entregas')}', null),
-      kpi('Ofertas aceitas', '${i('aceitas')} de ${i('ofertadas')}',
-          r['min_ate_aceite'] == null ? null : 'aceite em ~${(r['min_ate_aceite'] as num).round()} min'),
-      kpi('Pago × frete cobrado', '${_moeda.format(d('pago_motoboys'))} × ${_moeda.format(d('frete_cobrado'))}',
-          sobra >= 0 ? 'sobra ${_moeda.format(sobra)}' : 'falta ${_moeda.format(-sobra)}',
-          corSub: sobra >= 0 ? Colors.green.shade700 : Colors.red.shade700),
-    ]);
+          Wrap(spacing: 8, children: [
+            OutlinedButton(
+              onPressed: _ocupado == null ? () => _ligarChuva(mudar: true) : null,
+              style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: _tomEmRota.texto,
+                  side: const BorderSide(color: Color(0xFF93C5FD)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              child: const Text('Mudar valor / horário'),
+            ),
+            FilledButton(
+              onPressed: _ocupado == null ? _desligarChuva : null,
+              style: FilledButton.styleFrom(
+                  backgroundColor: _tomEmRota.texto, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              child: const Text('Desligar agora'),
+            ),
+          ]),
+        ],
+      ),
+    );
   }
 
+  Widget _resumoDoDia(bool largo) {
+    final r = _resumo ?? const {};
+    int i(String k) => (r[k] as num?)?.toInt() ?? 0;
+    double d(String k) => (r[k] as num?)?.toDouble() ?? 0;
+    final emRota = _rotas.where((x) => x.status == 'em_andamento').length;
+    final indo = _rotas.where((x) => x.status == 'aceita').length;
+    final esperando = _rotas.where((x) => x.status == 'ofertada').length;
+    final sobra = d('frete_cobrado') - d('pago_motoboys');
+    final naoEntregues = _naoEntregues.length;
+    Widget kpi(String rotulo, Widget valor, String sub, {Color? corSub}) => _caixa(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(rotulo, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _suave)),
+            const SizedBox(height: 4),
+            valor,
+            const SizedBox(height: 2),
+            Text(sub, style: TextStyle(fontSize: 13, color: corSub ?? _suave, fontWeight: corSub == null ? null : FontWeight.w600)),
+          ]),
+        );
+    Widget numero(String a, [String? b]) => Text.rich(TextSpan(children: [
+          TextSpan(text: a, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+          if (b != null) TextSpan(text: ' $b', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: _suave)),
+        ]));
+    final cards = [
+      kpi('Rotas hoje', numero('${_rotas.length + _concluidas.length}'), '$emRota em rota · $indo indo/na loja · $esperando esperando'),
+      kpi('Entregas', numero('${i('entregas')}'), naoEntregues == 0 ? 'nenhuma voltou' : '$naoEntregues não entregue${naoEntregues == 1 ? '' : 's'}'),
+      kpi('Ofertas aceitas', numero('${i('aceitas')}', 'de ${i('ofertadas')}'),
+          r['min_ate_aceite'] == null ? 'sem tempo de aceite ainda' : 'tempo até aceitar: ~${(r['min_ate_aceite'] as num).round()} min'),
+      kpi('Pago a motoboys', numero(_moeda.format(d('pago_motoboys'))),
+          'frete cobrado ${_moeda.format(d('frete_cobrado'))} · ${sobra >= 0 ? 'sobra ${_moeda.format(sobra)}' : 'faltam ${_moeda.format(-sobra)}'}',
+          corSub: sobra >= 0 ? Colors.green.shade800 : Colors.red.shade800),
+    ];
+    final colunas = largo ? 4 : 2;
+    return LayoutBuilder(builder: (context, c) {
+      const gap = 12.0;
+      final w = (c.maxWidth - gap * (colunas - 1)) / colunas;
+      return Wrap(spacing: gap, runSpacing: gap, children: [for (final k in cards) SizedBox(width: w, child: k)]);
+    });
+  }
+
+  // ── Mapa ─────────────────────────────────────────────────────────────────────────────────────────
   Color _corLinha(_Rota r) => switch (r.status) {
-        'em_andamento' => Colors.blue.shade700,
-        'aceita' => Colors.green.shade700,
-        'sem_entregador' => Colors.red.shade700,
-        _ => Colors.amber.shade800,
+        'em_andamento' => const Color(0xFF1D4ED8),
+        'aceita' => const Color(0xFF15803D),
+        'sem_entregador' => const Color(0xFFB91C1C),
+        _ => const Color(0xFFB45309),
       };
 
   Widget _mapa(double altura) {
     final loja = _loja;
-    if (loja == null) {
-      return Card(
-          margin: EdgeInsets.zero,
-          child: SizedBox(height: 120, child: Center(child: Text('Cadastre a localização da loja pra ver o mapa.',
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)))));
-    }
-    final pontos = <ll.LatLng>[loja];
+    final pontos = <ll.LatLng>[];
     final linhas = <osm.Polyline>[];
     final marcas = <osm.Marker>[];
-    for (final r in _rotas) {
-      final cor = _corLinha(r);
-      final trecho = <ll.LatLng>[loja];
-      var n = 0;
-      for (final p in r.pedidos) {
-        n++;
-        if (p.lat == null || p.lon == null) continue;
-        final pt = ll.LatLng(p.lat!, p.lon!);
-        trecho.add(pt);
-        pontos.add(pt);
-        marcas.add(osm.Marker(
-          point: pt,
-          width: 26,
-          height: 26,
-          child: Tooltip(
-            message: '#${p.numero} ${p.cliente} · ${p.bairro}',
-            child: Container(
-              decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: cor, width: 3)),
-              alignment: Alignment.center,
-              child: p.entregue
-                  ? Icon(Icons.check, size: 14, color: cor)
-                  : Text('$n', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: cor)),
-            ),
-          ),
-        ));
-      }
-      if (trecho.length > 1) {
-        linhas.add(osm.Polyline(
-          points: trecho,
-          color: cor.withValues(alpha: 0.85),
-          strokeWidth: 4,
-          pattern: r.status == 'ofertada' || r.status == 'sem_entregador'
-              ? osm.StrokePattern.dashed(segments: const [10, 8])
-              : const osm.StrokePattern.solid(),
-        ));
-      }
-      if ((r.status == 'aceita' || r.status == 'em_andamento') && r.posLat != null && r.posLon != null) {
-        final pt = ll.LatLng(r.posLat!, r.posLon!);
-        pontos.add(pt);
-        final recente = r.posEm != null && DateTime.now().difference(r.posEm!).inMinutes < 3;
-        marcas.add(osm.Marker(
-          point: pt,
-          width: 150,
-          height: 58,
-          alignment: Alignment.topCenter,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6),
-                  boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)]),
-              child: Text('${r.motoboy ?? 'Motoboy'} · ${r.posEm == null ? '' : _haQuanto(r.posEm!)}',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-            ),
-            const SizedBox(height: 2),
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: recente ? Theme.of(context).colorScheme.primary : Colors.grey.shade600,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
+    final semGps = <_Rota>[];
+    if (loja != null) {
+      pontos.add(loja);
+      for (final r in _rotas) {
+        final cor = _corLinha(r);
+        final trecho = <ll.LatLng>[loja];
+        var n = 0;
+        for (final p in r.pedidos) {
+          n++;
+          if (p.lat == null || p.lon == null) continue;
+          final pt = ll.LatLng(p.lat!, p.lon!);
+          trecho.add(pt);
+          pontos.add(pt);
+          marcas.add(osm.Marker(
+            point: pt,
+            width: 26,
+            height: 26,
+            child: Tooltip(
+              message: '#${p.numero} ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}',
+              child: Container(
+                decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: cor, width: 3)),
+                alignment: Alignment.center,
+                child: p.entregue
+                    ? Icon(Icons.check, size: 14, color: cor)
+                    : Text('$n', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: cor)),
               ),
-              alignment: Alignment.center,
-              child: Text((r.motoboy ?? 'M').substring(0, 1).toUpperCase(),
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
             ),
-          ]),
-        ));
+          ));
+        }
+        if (trecho.length > 1) {
+          linhas.add(osm.Polyline(
+            points: trecho,
+            color: cor.withValues(alpha: 0.85),
+            strokeWidth: 4,
+            pattern: r.status == 'ofertada' || r.status == 'sem_entregador'
+                ? osm.StrokePattern.dashed(segments: const [10, 8])
+                : const osm.StrokePattern.solid(),
+          ));
+        }
+        final ativo = r.status == 'aceita' || r.status == 'em_andamento';
+        if (ativo && r.posLat != null && r.posLon != null) {
+          final pt = ll.LatLng(r.posLat!, r.posLon!);
+          pontos.add(pt);
+          final recente = r.posEm != null && DateTime.now().difference(r.posEm!).inMinutes < 3;
+          marcas.add(osm.Marker(
+            point: pt,
+            width: 160,
+            height: 62,
+            alignment: Alignment.topCenter,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3)]),
+                child: Text('${r.motoboy ?? 'Motoboy'} · ${r.posEm == null ? '' : _haQuanto(r.posEm!)}',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1E1E24))),
+              ),
+              const SizedBox(height: 3),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: recente ? _cores.primary : Colors.grey.shade600,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [BoxShadow(color: (recente ? _cores.primary : Colors.grey).withValues(alpha: 0.3), blurRadius: 0, spreadRadius: 5)],
+                ),
+                alignment: Alignment.center,
+                child: Text((r.motoboy ?? 'M').substring(0, 1).toUpperCase(),
+                    style: TextStyle(color: _cores.onPrimary, fontWeight: FontWeight.w800)),
+              ),
+            ]),
+          ));
+        } else if (ativo) {
+          semGps.add(r);
+        }
       }
+      marcas.insert(
+          0,
+          osm.Marker(
+            point: loja,
+            width: 44,
+            height: 28,
+            child: Container(
+              decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(7)),
+              alignment: Alignment.center,
+              child: const Text('LOJA', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+            ),
+          ));
     }
-    marcas.insert(
-        0,
-        osm.Marker(
-          point: loja,
-          width: 40,
-          height: 26,
-          child: Container(
-            decoration: BoxDecoration(color: const Color(0xFF1E1E24), borderRadius: BorderRadius.circular(6)),
-            alignment: Alignment.center,
-            child: const Text('LOJA', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
-          ),
-        ));
-    final fit = pontos.length > 1
-        ? osm.CameraFit.bounds(bounds: osm.LatLngBounds.fromPoints(pontos), padding: const EdgeInsets.all(48), maxZoom: 15)
-        : null;
-    final semGps = _rotas.where((r) => (r.status == 'aceita' || r.status == 'em_andamento') && r.posLat == null).map((r) => r.motoboy ?? 'Motoboy').toList();
-    return Card(
-      margin: EdgeInsets.zero,
+    Widget legenda(Color cor, String t, {bool ponto = false}) => Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+              width: ponto ? 12 : 16,
+              height: ponto ? 12 : 4,
+              decoration: BoxDecoration(color: cor, borderRadius: BorderRadius.circular(ponto ? 6 : 2))),
+          const SizedBox(width: 6),
+          Text(t, style: TextStyle(fontSize: 12, color: _suave)),
+        ]);
+    return Container(
       clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+          color: _cores.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _cores.outlineVariant)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Wrap(spacing: 14, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            const Text('Mapa agora', style: TextStyle(fontWeight: FontWeight.w700)),
-            _legenda(Colors.blue.shade700, 'em rota'),
-            _legenda(Colors.green.shade700, 'indo/na loja'),
-            _legenda(Colors.amber.shade800, 'esperando aceite'),
-            _legenda(Colors.red.shade700, 'sem motoboy'),
-          ]),
-        ),
-        SizedBox(
-          height: altura,
-          child: osm.FlutterMap(
-            key: ValueKey('mapa${_rotas.length}'),
-            options: osm.MapOptions(initialCenter: loja, initialZoom: 13, initialCameraFit: fit),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 6,
             children: [
-              osm.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.example.gestor'),
-              osm.PolylineLayer(polylines: linhas),
-              osm.MarkerLayer(markers: marcas),
-              const osm.SimpleAttributionWidget(source: Text('OpenStreetMap')),
+              const Text('Mapa agora', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              Wrap(spacing: 14, runSpacing: 4, children: [
+                legenda(const Color(0xFF1E1E24), 'Loja', ponto: true),
+                legenda(_cores.primary, 'Motoboy (GPS)', ponto: true),
+                legenda(const Color(0xFF1D4ED8), 'em rota'),
+                legenda(const Color(0xFF15803D), 'indo/na loja'),
+                legenda(const Color(0xFFB45309), 'esperando aceite'),
+              ]),
             ],
           ),
         ),
-        if (semGps.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-            child: Text('Sem GPS agora: ${semGps.join(', ')} (o Kitsune precisa estar aberto, com a localização liberada).',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        Divider(height: 1, color: _cores.outlineVariant),
+        SizedBox(
+          height: altura,
+          child: loja == null
+              ? Center(child: Text('Cadastre a localização da loja pra ver o mapa.', style: TextStyle(color: _suave)))
+              : osm.FlutterMap(
+                  key: ValueKey('mapa${_rotas.length}${_rotas.map((r) => r.pedidos.length).join()}'),
+                  options: osm.MapOptions(
+                    initialCenter: loja,
+                    initialZoom: 13,
+                    initialCameraFit: pontos.length > 1
+                        ? osm.CameraFit.bounds(bounds: osm.LatLngBounds.fromPoints(pontos), padding: const EdgeInsets.all(56), maxZoom: 15)
+                        : null,
+                  ),
+                  children: [
+                    osm.TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.example.gestor'),
+                    osm.PolylineLayer(polylines: linhas),
+                    osm.MarkerLayer(markers: marcas),
+                    const osm.SimpleAttributionWidget(source: Text('OpenStreetMap')),
+                  ],
+                ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: Text(
+            semGps.isEmpty
+                ? 'Linha cheia = rota com motoboy · tracejada = esperando aceite. O motoboy aparece quando está com o Kitsune aberto.'
+                : 'Sem GPS agora: ${semGps.map((r) => r.motoboy ?? 'motoboy').join(', ')}'
+                    '${semGps.any((r) => r.gpsFalha != null) ? ' (localização desligada ou bloqueada no celular)' : ' (Kitsune fechado ou sem sinal)'}.',
+            style: TextStyle(fontSize: 12, color: semGps.isEmpty ? _suave : _tomProblema.texto),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  // ── Precisa de você ──────────────────────────────────────────────────────────────────────────────
+  Widget _item(String titulo, String sub, List<Widget> botoes, {bool ultimo = false}) => Container(
+        width: double.infinity,
+        padding: EdgeInsets.only(bottom: ultimo ? 0 : 12),
+        margin: EdgeInsets.only(bottom: ultimo ? 0 : 12),
+        decoration: BoxDecoration(border: ultimo ? null : Border(bottom: BorderSide(color: _cores.outlineVariant.withValues(alpha: 0.6)))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(titulo, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text(sub, style: TextStyle(fontSize: 13, color: _suave)),
+          if (botoes.isNotEmpty) ...[const SizedBox(height: 8), Wrap(spacing: 8, runSpacing: 8, children: botoes)],
+        ]),
+      );
+
+  Widget? _precisaDeVoce() {
+    final itens = <Widget Function(bool)>[];
+    for (final r in _rotas.where((r) => r.status == 'sem_entregador')) {
+      itens.add((u) => _item(
+            'Ninguém aceitou: ${r.bairros} · ${r.pedidos.length} entrega${r.pedidos.length == 1 ? '' : 's'}',
+            [
+              if (r.ofertadaEm != null) 'oferecida às ${_hora(r.ofertadaEm!)}',
+              if (r.prazoSaida != null) 'era pra sair às ${_hora(r.prazoSaida!)}',
+              if (r.valor != null) _moeda.format(r.valor),
+            ].join(' · '),
+            [
+              _botao('Oferecer de novo +R\$ 2', () => _rpc('bonus${r.id}', 'entrega_oferta_bonus', {'p_rota_id': r.id, 'p_valor': 2},
+                  ok: 'Rota oferecida de novo com +R\$ 2.'), principal: true),
+              _botao('Eu entrego', () => _cancelarRota(r)),
+            ],
+            ultimo: u,
+          ));
+    }
+    for (final r in _rotas.where((r) => r.status == 'ofertada' && r.erroRota != null)) {
+      itens.add((u) => _item('Não consegui calcular a rota: ${r.bairros}', 'Confira o endereço do cliente (${r.erroRota}).',
+          [_botao('Eu entrego', () => _cancelarRota(r))], ultimo: u));
+    }
+    for (final r in _rotas.where((r) => (r.status == 'aceita' || r.status == 'em_andamento') && r.gpsFalha != null)) {
+      itens.add((u) => _item(
+          'GPS do ${r.motoboy ?? 'motoboy'} não está chegando',
+          switch (r.gpsFalha) {
+            'semSinal' => 'Sem sinal de GPS agora. Na rua costuma voltar sozinho.',
+            'semRede' => 'O celular dele está sem internet.',
+            _ => 'A localização está desligada ou bloqueada no celular dele. O Kitsune mostra pra ele como ligar.',
+          },
+          const [],
+          ultimo: u));
+    }
+    for (final p in _reclamacoes) {
+      itens.add((u) => _item('#${p.numero} · cliente reclamou da entrega', 'Respondeu "Tive um problema". O acerto dessa rota espera você resolver.', [
+            if (p.foto != null) _botao('Ver foto', () => _verFoto(p.foto!, 'Entrega · pedido #${p.numero}')),
+            _botao('Resolvido', () => _rpc('rec${p.id}', 'entrega_oferta_resolver_reclamacao', {'p_pedido_id': p.id}, ok: 'Reclamação resolvida.')),
+          ], ultimo: u));
+    }
+    for (final p in _naoEntregues) {
+      itens.add((u) => _item(
+            '#${p.numero} não entregue · ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}',
+            p.devolucaoConfirmada ? 'Pedido de volta na loja. Reentregue ou cancele no detalhe do pedido.' : 'O motoboy está trazendo de volta. Confirme quando chegar (o acerto dele espera isso).',
+            [
+              if (p.foto != null) _botao('Ver foto', () => _verFoto(p.foto!, 'Fachada · pedido #${p.numero}')),
+              if (!p.devolucaoConfirmada)
+                _botao('Recebi de volta', () => _rpc('dev${p.id}', 'entrega_oferta_confirmar_devolucao', {'p_pedido_id': p.id},
+                    ok: 'Devolução do pedido #${p.numero} confirmada.')),
+              _botao('Reentregar', () => _rpc('re${p.id}', 'entrega_oferta_reentregar', {'p_pedido_id': p.id},
+                  ok: 'Pedido #${p.numero} voltou pra oferta.')),
+            ],
+            ultimo: u,
+          ));
+    }
+    for (final (p, motivo) in _fora) {
+      itens.add((u) => _item('#${p.numero} ${_motivoFora(motivo)}', '${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}', [
+            _botao('Mandar mesmo assim', () => _rpc('f${p.id}', 'entrega_oferta_forcar', {'p_pedido_id': p.id}, ok: 'Pedido #${p.numero} vai pra oferta.')),
+            _botao('Juntar numa rota', () => _juntar(p)),
+          ], ultimo: u));
+    }
+    if (itens.isEmpty) return null;
+    return _caixa(
+      borda: const Color(0xFFFCA5A5),
+      larguraBorda: 2,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Precisa de você · ${itens.length}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _tomProblema.texto)),
+        const SizedBox(height: 12),
+        for (var i = 0; i < itens.length; i++) itens[i](i == itens.length - 1),
+      ]),
+    );
+  }
+
+  // ── Rotas ────────────────────────────────────────────────────────────────────────────────────────
+  (String, _Tom) _status(_Rota r) {
+    if (r.status == 'concluida') return ('concluída${r.finalizadaEm == null ? '' : ' ${_hora(r.finalizadaEm!)}'}', _tomNeutro);
+    if (r.status == 'em_andamento') return ('em rota · ${r.entregues} de ${r.pedidos.length} entregues', _tomEmRota);
+    if (r.status == 'aceita') return (r.chegou ? 'chegou na loja' : 'vindo pra loja', _tomLoja);
+    if (r.status == 'sem_entregador') return ('sem motoboy', _tomProblema);
+    if (r.calculando) return ('calculando a rota', _tomNeutro);
+    if (!r.ofertaSaiu) return ('juntando pedidos', _tomNeutro);
+    final min = r.ofertadaEm == null ? null : DateTime.now().difference(r.ofertadaEm!).inMinutes;
+    return ('esperando aceite${min == null ? '' : ' · $min min'}', _tomEspera);
+  }
+
+  String _linhaInfo(_Rota r) {
+    final partes = <String>[];
+    switch (r.status) {
+      case 'em_andamento':
+        if (r.saiuEm != null) partes.add('saiu ${_hora(r.saiuEm!)}');
+        if (r.posEm != null) partes.add('GPS visto ${_haQuanto(r.posEm!)}');
+      case 'aceita':
+        if (r.prazoSaida != null) partes.add('sair até ${_hora(r.prazoSaida!)}');
+        if (r.posEm != null) partes.add('GPS visto ${_haQuanto(r.posEm!)}');
+      case 'ofertada':
+        if (!r.ofertaSaiu && r.prazoSaida != null) {
+          partes.add('oferta sai ~${_hora(r.prazoSaida!.subtract(const Duration(minutes: 30)))}');
+        } else if (r.ofertadaEm != null) {
+          partes.add('oferecida às ${_hora(r.ofertadaEm!)}');
+        }
+        if (r.prazoSaida != null) partes.add('sair até ${_hora(r.prazoSaida!)}');
+      case 'concluida':
+        if (r.saiuEm != null) partes.add('saiu ${_hora(r.saiuEm!)}');
+    }
+    if (r.bonus > 0) partes.add('inclui +${_moeda.format(r.bonus)} de bônus');
+    return partes.join(' · ');
+  }
+
+  Widget _parada(_Rota r, int n, _PedidoRota p, bool proxima) {
+    final antesDeSair = r.status == 'ofertada' || r.status == 'aceita';
+    final (String direita, Color cor) = switch (p.status) {
+      'entregue' || 'concluido' => ('entregue', Colors.green.shade800),
+      'cancelado' => ('cancelado', _suave),
+      'nao_entregue' => ('não entregue', _tomProblema.texto),
+      _ => (proxima ? 'próxima' : '', _tomEmRota.texto),
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Expanded(
+          child: Text(
+            '$n. #${p.numero} ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: proxima ? FontWeight.w800 : FontWeight.w500,
+              decoration: p.status == 'cancelado' ? TextDecoration.lineThrough : null,
+            ),
+          ),
+        ),
+        if (p.contestado) Padding(padding: const EdgeInsets.only(left: 6), child: Icon(Icons.report_problem, size: 16, color: Colors.orange.shade800)),
+        if (direita.isNotEmpty)
+          Padding(padding: const EdgeInsets.only(left: 8), child: Text(direita, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: cor))),
+        if (p.foto != null)
+          TextButton(
+            onPressed: () => _verFoto(p.foto!, 'Pedido #${p.numero}'),
+            style: TextButton.styleFrom(minimumSize: const Size(0, 32), padding: const EdgeInsets.symmetric(horizontal: 6)),
+            child: const Text('foto', style: TextStyle(fontSize: 13)),
+          ),
+        if (antesDeSair)
+          PopupMenuButton<String>(
+            tooltip: 'Ações do pedido #${p.numero}',
+            padding: EdgeInsets.zero,
+            iconSize: 20,
+            style: const ButtonStyle(
+              minimumSize: WidgetStatePropertyAll(Size(36, 28)),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+            icon: Icon(Icons.more_horiz, size: 20, color: _suave),
+            onSelected: (acao) async {
+              if (acao == 'tirar') {
+                await _rpc('p${p.id}', 'entrega_oferta_tirar_pedido', {'p_pedido_id': p.id}, ok: 'Pedido #${p.numero} saiu da rota.');
+              } else {
+                await _rpc('p${p.id}', 'entrega_oferta_eu_entrego', {'p_pedido_id': p.id}, ok: 'Pedido #${p.numero}: a loja entrega.');
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'tirar', child: Text('Tirar da rota (volta pra oferta)')),
+              PopupMenuItem(value: 'eu', child: Text('Eu entrego este')),
+            ],
           ),
       ]),
     );
   }
 
-  Widget _legenda(Color cor, String t) => Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 14, height: 4, color: cor),
-        const SizedBox(width: 4),
-        Text(t, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      ]);
-
-  List<Widget> _precisaDeVoce() {
-    final cores = Theme.of(context).colorScheme;
-    final semMotoboy = _rotas.where((r) => r.status == 'sem_entregador').toList();
-    final gps = _rotas.where((r) => (r.status == 'aceita' || r.status == 'em_andamento') && r.gpsFalha != null).toList();
-    final total = semMotoboy.length + _reclamacoes.length + _naoEntregues.length + _fora.length + gps.length;
-    if (total == 0) return const [];
-    return [
-      _titulo('Precisa de você · $total', cor: Colors.red.shade800),
-      for (final r in semMotoboy) _cartaoRota(r),
-      for (final r in gps)
-        Card(
-          child: ListTile(
-            leading: Icon(Icons.location_disabled, color: cores.error),
-            title: Text('GPS do ${r.motoboy ?? 'motoboy'} não está chegando'),
-            subtitle: Text(switch (r.gpsFalha) {
-              'negado' || 'bloqueado' => 'A localização está bloqueada no celular dele. O Kitsune mostra pra ele como liberar.',
-              'desligado' => 'A localização do celular dele está desligada.',
-              _ => 'Sem sinal de GPS agora.',
-            }),
-          ),
-        ),
-      for (final p in _reclamacoes)
-        Card(
-          child: ListTile(
-            leading: Icon(Icons.report_problem, color: Colors.orange.shade800),
-            title: Text('#${p.numero} · ${p.cliente}'),
-            subtitle: const Text('Respondeu "Tive um problema". O acerto dessa rota espera você resolver.'),
-            trailing: Wrap(spacing: 4, children: [
-              if (p.foto != null)
-                IconButton(
-                    tooltip: 'Ver foto',
-                    icon: const Icon(Icons.photo_camera_outlined),
-                    onPressed: () => _verFoto(p.foto!, 'Entrega · pedido #${p.numero}')),
-              TextButton(
-                onPressed: _ocupado == null
-                    ? () => _rpc('rec${p.id}', 'entrega_oferta_resolver_reclamacao', {'p_pedido_id': p.id},
-                        ok: 'Reclamação marcada como resolvida.')
-                    : null,
-                child: const Text('Resolvido'),
-              ),
-            ]),
-          ),
-        ),
-      for (final p in _naoEntregues)
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 8, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Icon(Icons.undo, color: Colors.red.shade700),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: Text('#${p.numero} · ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'} · não entregue',
-                          style: const TextStyle(fontWeight: FontWeight.w600))),
-                ]),
-                Text(
-                  p.devolucaoConfirmada
-                      ? 'Pedido de volta na loja. Reentregue ou, se o cliente desistiu, cancele no detalhe do pedido.'
-                      : 'Confirme quando o motoboy trouxer o pedido de volta (o acerto dele espera isso).',
-                  style: TextStyle(color: cores.onSurfaceVariant),
-                ),
-                Wrap(spacing: 4, children: [
-                  if (p.foto != null)
-                    TextButton.icon(
-                      onPressed: () => _verFoto(p.foto!, 'Fachada · pedido #${p.numero}'),
-                      icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                      label: const Text('Ver foto'),
-                    ),
-                  if (!p.devolucaoConfirmada)
-                    FilledButton.tonal(
-                      onPressed: _ocupado == null
-                          ? () => _rpc('dev${p.id}', 'entrega_oferta_confirmar_devolucao', {'p_pedido_id': p.id},
-                              ok: 'Devolução do pedido #${p.numero} confirmada.')
-                          : null,
-                      child: const Text('Recebi de volta'),
-                    ),
-                  TextButton(
-                    onPressed: _ocupado == null
-                        ? () => _rpc('re${p.id}', 'entrega_oferta_reentregar', {'p_pedido_id': p.id},
-                            ok: 'Pedido #${p.numero} voltou pra fila e pra oferta.')
-                        : null,
-                    child: const Text('Reentregar'),
-                  ),
-                ]),
-              ],
-            ),
-          ),
-        ),
-      for (final (p, motivo) in _fora)
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('#${p.numero} · ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}',
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text(_motivoFora(motivo), style: TextStyle(color: cores.onSurfaceVariant)),
-                Wrap(
-                  spacing: 4,
-                  children: [
-                    TextButton(
-                      onPressed: _ocupado == null
-                          ? () => _rpc('f${p.id}', 'entrega_oferta_forcar', {'p_pedido_id': p.id},
-                              ok: 'Pedido #${p.numero} vai pra oferta.')
-                          : null,
-                      child: const Text('Oferecer mesmo assim'),
-                    ),
-                    TextButton(
-                      onPressed: _ocupado == null ? () => _juntar(p) : null,
-                      child: const Text('Juntar numa rota'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      const SizedBox(height: 8),
+  Widget _cartaoRota(_Rota r) {
+    final (rotulo, tom) = _status(r);
+    final info = _linhaInfo(r);
+    final proxima = r.status == 'em_andamento' ? r.pedidos.indexWhere((p) => !p.resolvido) : -1;
+    final esperando = r.status == 'ofertada';
+    final botoes = <Widget>[
+      if (r.status == 'aceita')
+        BotaoEntregarMotoboy(info: RotaOfertaInfo(rotaId: r.id, status: r.status, entregador: r.motoboy, n: r.pedidos.length)),
+      if ((r.status == 'aceita' || r.status == 'em_andamento') && r.posLat != null) _botao('Ver no mapa', () => _abrirMapaMotoboy(r), icone: Icons.map_outlined),
+      if (esperando && r.ofertaSaiu) _botao('Aumentar valor', () => _escolherBonus(r), icone: Icons.trending_up),
+      if (esperando && !r.ofertaSaiu)
+        _botao('Oferecer agora', () => _rpc('agora${r.id}', 'entrega_oferta_oferecer_agora', {'p_rota_id': r.id}, ok: 'Rota oferecida agora.'),
+            icone: Icons.send),
+      if (r.status == 'aceita') _botao('Aumentar valor', () => _escolherBonus(r), icone: Icons.trending_up),
+      if (r.status == 'aceita') _botao('Trocar motoboy', () => _trocarMotoboy(r), icone: Icons.swap_horiz),
+      if (esperando || r.status == 'aceita') _botao('Eu entrego', () => _cancelarRota(r)),
     ];
-  }
-
-  List<Widget> _rotasAbertas() {
-    final abertas = _rotas.where((r) => r.status == 'aceita' || r.status == 'em_andamento' || (r.status == 'ofertada' && r.ofertaSaiu)).toList();
-    return [
-      _titulo('Rotas abertas · ${abertas.length}'),
-      if (abertas.isEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Text('Nenhuma rota com motoboy agora.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-        ),
-      for (final r in abertas) _cartaoRota(r),
-    ];
-  }
-
-  List<Widget> _juntando() {
-    final js = _rotas.where((r) => r.status == 'ofertada' && !r.ofertaSaiu).toList();
-    if (js.isEmpty) return const [];
-    return [
-      _titulo('Juntando pedidos', sub: 'a oferta sai ~30 min antes da hora de sair, pra juntar pedidos no caminho'),
-      for (final r in js) _cartaoRota(r),
-    ];
-  }
-
-  Widget _atalhos() => Card(
-        margin: EdgeInsets.zero,
-        child: Column(children: [
-          ListTile(
-            leading: const Icon(Icons.payments_outlined),
-            title: const Text('Acerto com motoboys'),
-            subtitle: const Text('Quanto pagar a cada um e o que eles devolvem de dinheiro'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EntregaOfertaAcertoScreen())),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.alt_route),
-            title: const Text('Rota da loja (eu entrego)'),
-            subtitle: const Text('Montar uma rota à mão com os pedidos que a loja vai entregar'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RotasEntregaScreen())),
-          ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _cores.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: esperando && r.ofertaSaiu ? const Color(0xFFD97706) : _cores.outlineVariant),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Align(alignment: Alignment.centerLeft, child: _selo(rotulo, tom))),
+          const SizedBox(width: 12),
+          if (r.valor != null) Text(_moeda.format(r.valor), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
         ]),
-      );
+        const SizedBox(height: 10),
+        Text(
+          [
+            if (r.motoboy != null) r.motoboy!,
+            r.bairros,
+            '${r.pedidos.length} entrega${r.pedidos.length == 1 ? '' : 's'}',
+            if (r.km != null) _km(r.km),
+          ].join(' · '),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+        ),
+        if (info.isNotEmpty) ...[const SizedBox(height: 2), Text(info, style: TextStyle(fontSize: 13, color: _suave))],
+        if ((r.status == 'aceita' || r.status == 'em_andamento') && r.gpsFalha != null && r.posLat == null) ...[
+          const SizedBox(height: 4),
+          Text('GPS desligado ou bloqueado no celular dele', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _tomProblema.texto)),
+        ],
+        const SizedBox(height: 8),
+        for (var i = 0; i < r.pedidos.length; i++) _parada(r, i + 1, r.pedidos[i], i == proxima),
+        if (botoes.isNotEmpty) ...[const SizedBox(height: 10), Wrap(spacing: 8, runSpacing: 8, children: botoes)],
+      ]),
+    );
+  }
+
+  Widget _secaoRotas() {
+    final abertas = _rotas.where((r) => r.status == 'aceita' || r.status == 'em_andamento' || (r.status == 'ofertada' && r.ofertaSaiu)).toList();
+    final lista = _verConcluidas ? _concluidas.reversed.toList() : abertas;
+    Widget filtro(String t, bool sel, VoidCallback onTap) => Padding(
+          padding: const EdgeInsets.only(left: 6),
+          child: ChoiceChip(label: Text(t), selected: sel, onSelected: (_) => onTap(), showCheckmark: false),
+        );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _tituloSecao(
+        'Rotas de hoje',
+        direita: Row(mainAxisSize: MainAxisSize.min, children: [
+          filtro('Abertas · ${abertas.length}', !_verConcluidas, () => setState(() => _verConcluidas = false)),
+          filtro('Concluídas · ${_concluidas.length}', _verConcluidas, () => setState(() => _verConcluidas = true)),
+        ]),
+      ),
+      if (lista.isEmpty)
+        _caixa(
+          child: Text(_verConcluidas ? 'Nenhuma rota concluída hoje.' : 'Nenhuma rota com motoboy agora. Pedido novo vira oferta sozinho.',
+              style: TextStyle(color: _suave)),
+        ),
+      for (final r in lista) _cartaoRota(r),
+    ]);
+  }
+
+  Widget? _juntando() {
+    final js = _rotas.where((r) => r.status == 'ofertada' && !r.ofertaSaiu && r.erroRota == null).toList();
+    if (js.isEmpty) return null;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _tituloSecao('Juntando pedidos', sub: 'a rota espera até ~30 min antes de sair pra pegar mais pedidos no caminho'),
+      for (final r in js) _cartaoRota(r),
+    ]);
+  }
+
+  // ── Acerto ───────────────────────────────────────────────────────────────────────────────────────
+  Widget _acerto() {
+    Widget cel(String t, {bool bold = false, Color? cor, TextAlign? align}) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Text(t, textAlign: align, style: TextStyle(fontSize: 14, fontWeight: bold ? FontWeight.w800 : FontWeight.w500, color: cor)),
+        );
+    Widget cab(String t) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Text(t.toUpperCase(), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _suave, letterSpacing: 0.4)),
+        );
+    void abrir() => Navigator.push(context, MaterialPageRoute(builder: (_) => const EntregaOfertaAcertoScreen())).then((_) => _carregar());
+    return _caixa(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _tituloSecao('Acerto com motoboys', direita: TextButton(onPressed: abrir, child: const Text('Abrir acerto e histórico'))),
+        if (_acertos.isEmpty)
+          Text('Nada pra acertar agora.', style: TextStyle(color: _suave))
+        else
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 720),
+              child: Table(
+                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                columnWidths: const {0: FlexColumnWidth(1.2), 6: IntrinsicColumnWidth()},
+                children: [
+                  TableRow(children: [cab('Motoboy'), cab('Rotas'), cab('Entregas'), cab('Ganhou'), cab('Recebeu em dinheiro'), cab('Acerto'), const SizedBox()]),
+                  for (final a in _acertos)
+                    TableRow(
+                      decoration: BoxDecoration(border: Border(top: BorderSide(color: _cores.outlineVariant.withValues(alpha: 0.6)))),
+                      children: [
+                        cel(a.nome, bold: true),
+                        cel('${a.rotas}'),
+                        cel('${a.entregas}'),
+                        cel(_moeda.format(a.ganhou)),
+                        cel(_moeda.format(a.dinheiro)),
+                        cel(a.saldo >= 0 ? 'loja paga ${_moeda.format(a.saldo)}' : '${a.nome} devolve ${_moeda.format(-a.saldo)}',
+                            bold: true, cor: a.saldo >= 0 ? null : _tomEspera.texto),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: _botao(a.saldo >= 0 ? 'Pagar' : 'Recebi', abrir, principal: a.saldo >= 0),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1004,11 +1256,6 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
             tooltip: 'Resumo da semana',
             icon: const Icon(Icons.insights_outlined),
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EntregaOfertaResumoScreen())),
-          ),
-          IconButton(
-            tooltip: 'Acerto com motoboys',
-            icon: const Icon(Icons.payments_outlined),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EntregaOfertaAcertoScreen())),
           ),
           IconButton(
             tooltip: 'Configurar entregador por oferta',
@@ -1025,41 +1272,51 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
           : RefreshIndicator(
               onRefresh: _carregar,
               child: LayoutBuilder(builder: (context, c) {
-                final largo = c.maxWidth >= 1100;
-                final cabeca = [_topo(), const SizedBox(height: 12), _resumoDoDia(), const SizedBox(height: 16)];
+                final largo = c.maxWidth >= 1000;
+                final precisa = _precisaDeVoce();
+                final juntando = _juntando();
+                final topo = <Widget>[_cabecalho(), _faixaChuva(), const SizedBox(height: 16), _resumoDoDia(largo), const SizedBox(height: 20)];
                 if (!largo) {
                   return ListView(padding: const EdgeInsets.all(16), children: [
-                    ...cabeca,
-                    ..._precisaDeVoce(),
-                    _mapa(300),
-                    const SizedBox(height: 16),
-                    ..._rotasAbertas(),
-                    ..._juntando(),
+                    ...topo,
+                    if (precisa != null) ...[precisa, const SizedBox(height: 16)],
+                    _mapa(280),
+                    const SizedBox(height: 20),
+                    _secaoRotas(),
+                    if (juntando != null) ...[const SizedBox(height: 8), juntando],
                     const SizedBox(height: 8),
-                    _atalhos(),
+                    _acerto(),
                   ]);
                 }
-                return ListView(padding: const EdgeInsets.all(24), children: [
-                  ...cabeca,
-                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Expanded(
-                      flex: 3,
+                return ListView(padding: const EdgeInsets.fromLTRB(32, 24, 32, 48), children: [
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1440),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        _mapa(460),
-                        const SizedBox(height: 16),
-                        ..._juntando(),
-                        _atalhos(),
+                        ...topo,
+                        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Expanded(
+                            flex: 11,
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                              _mapa(440),
+                              const SizedBox(height: 20),
+                              if (juntando != null) juntando,
+                            ]),
+                          ),
+                          const SizedBox(width: 20),
+                          Expanded(
+                            flex: 9,
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                              if (precisa != null) ...[precisa, const SizedBox(height: 20)],
+                              _secaoRotas(),
+                            ]),
+                          ),
+                        ]),
+                        const SizedBox(height: 20),
+                        _acerto(),
                       ]),
                     ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      flex: 2,
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        ..._precisaDeVoce(),
-                        ..._rotasAbertas(),
-                      ]),
-                    ),
-                  ]),
+                  ),
                 ]);
               }),
             ),
