@@ -1140,6 +1140,18 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       }
     }
     for (final r in _rotas.where((r) => r.status == 'em_andamento')) {
+      for (final p in r.pedidos.where((p) => p.status == 'cancelado' && !p.devolucaoConfirmada)) {
+        itens.add((u) => _item(
+              '#${p.numero} cancelado com o ${r.motoboy ?? 'motoboy'} na rua',
+              '${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'} · ele foi avisado pra trazer de volta. O acerto dele espera você confirmar.',
+              [
+                _botao('Recebi de volta', () => _rpc('dev${p.id}', 'entrega_oferta_confirmar_devolucao', {'p_pedido_id': p.id},
+                    ok: 'Pedido #${p.numero} de volta na loja.'), principal: true),
+                if (r.telefoneMotoboy != null) _botao('Ligar pro ${r.motoboy ?? 'motoboy'}', () => _ligar(r.telefoneMotoboy), icone: Icons.call),
+              ],
+              ultimo: u,
+            ));
+      }
       for (final p in r.pedidos.where((p) => p.devolucaoPedida)) {
         itens.add((u) => _item(
               '${r.motoboy ?? 'Motoboy'} pede pra devolver #${p.numero} · ${p.cliente}',
