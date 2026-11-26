@@ -58,8 +58,11 @@ class _PedidoRota {
   /// motoboy pediu pra devolver (não entregou) e espera a loja autorizar
   final bool devolucaoPedida;
   final String? motivoDevolucao;
+  /// cobrar na entrega: no cartão (levar maquininha) / em dinheiro
+  final bool cobraCartao;
+  final bool cobraDinheiro;
   _PedidoRota(this.id, this.numero, this.cliente, this.bairro, this.status,
-      {this.foto, this.contestado = false, this.devolucaoConfirmada = false, this.lat, this.lon, this.prometidoAte, this.devolucaoPedida = false, this.motivoDevolucao});
+      {this.foto, this.contestado = false, this.devolucaoConfirmada = false, this.lat, this.lon, this.prometidoAte, this.devolucaoPedida = false, this.motivoDevolucao, this.cobraCartao = false, this.cobraDinheiro = false});
 
   bool get entregue => status == 'entregue' || status == 'concluido';
   bool get resolvido => entregue || status == 'cancelado' || status == 'nao_entregue';
@@ -79,6 +82,9 @@ class _PedidoRota {
       lat: (c?['latitude'] as num?)?.toDouble(),
       lon: (c?['longitude'] as num?)?.toDouble(),
       devolucaoPedida: rp?['devolucao_pedida_em'] != null && p['status'] != 'nao_entregue',
+      cobraCartao: p['status_pagamento'] != 'pago' &&
+          RegExp(r'cart|cr[eé]d|d[eé]b|maquin', caseSensitive: false).hasMatch('${p['tipo_pagamento'] ?? ''}'),
+      cobraDinheiro: p['status_pagamento'] != 'pago' && '${p['tipo_pagamento'] ?? ''}'.toLowerCase().contains('dinheiro'),
       motivoDevolucao: rp?['devolucao_motivo'] as String?,
       prometidoAte: _Rota._dt(p['previsao_entrega_fim']) ??
           _Rota._dt(((p['mp'] is List && (p['mp'] as List).isNotEmpty) ? (p['mp'] as List).first : p['mp'] as Map?)?['entrega_prevista_fim']),
@@ -243,7 +249,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
   static const _selRota = 'id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, google_ok, google_erro, '
       'ofertada_em, saiu_em, finalizada_em, pos_lat, pos_lon, pos_em, gps_falha, origem, '
       'entregador:entregadores(nome, telefone), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, devolucao_pedida_em, devolucao_motivo, '
-      'pedido:pedidos(id, numero_sequencial, status, previsao_entrega_fim, mp:marketplace_pedidos(entrega_prevista_fim), '
+      'pedido:pedidos(id, numero_sequencial, status, tipo_pagamento, status_pagamento, previsao_entrega_fim, mp:marketplace_pedidos(entrega_prevista_fim), '
       'cliente:clientes(nome, bairro, latitude, longitude)))';
 
   Future<void> _carregar() async {
@@ -470,8 +476,10 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
         ok: r.status == 'aceita' ? 'Valor aumentado. O motoboy foi avisado.' : 'Valor aumentado e rota oferecida de novo.');
   }
 
-  Future<void> _juntar(_PedidoRota p) async {
-    final abertas = _rotas.where((r) => r.status == 'ofertada' || r.status == 'aceita').toList();
+  Future<void> _juntar(_PedidoRota p, {String? tirarDe}) async {
+    final abertas = _rotas
+        .where((r) => (r.status == 'ofertada' || r.status == 'aceita' || r.status == 'em_andamento') && r.id != tirarDe)
+        .toList();
     if (abertas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma rota aberta pra juntar.')));
       return;
@@ -482,12 +490,14 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(title: Text('Juntar o pedido #${p.numero} em qual rota?', style: const TextStyle(fontWeight: FontWeight.w700))),
+            ListTile(title: Text('Colocar o pedido #${p.numero} em qual rota?', style: const TextStyle(fontWeight: FontWeight.w700))),
             for (final r in abertas)
               ListTile(
-                leading: const Icon(Icons.two_wheeler),
-                title: Text('${r.bairros} · ${r.pedidos.length} entrega${r.pedidos.length == 1 ? '' : 's'}'),
-                subtitle: Text(r.pedidos.map((x) => '#${x.numero}').join(' · ')),
+                leading: Icon(Icons.two_wheeler, color: r.status == 'em_andamento' ? Colors.blue.shade700 : null),
+                title: Text('${r.motoboy ?? 'Sem motoboy'} · ${r.bairros} · ${r.pedidos.length} entrega${r.pedidos.length == 1 ? '' : 's'}'),
+                subtitle: Text(r.status == 'em_andamento'
+                    ? 'Já saiu — só se o motoboy ainda estiver na loja pra pegar'
+                    : r.pedidos.map((x) => '#${x.numero}').join(' · ')),
                 onTap: () => Navigator.pop(ctx, r),
               ),
           ],
@@ -495,8 +505,15 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       ),
     );
     if (rota == null) return;
+    if (rota.status == 'em_andamento' &&
+        !await _confirmar('O ${rota.motoboy ?? 'motoboy'} ainda está na loja?',
+            'O pedido #${p.numero} entra na rota dele como mais uma entrega (o valor sobe). Ele recebe "pegue na loja antes de seguir" '
+                'e o pedido já fica como "saiu para entrega" (o cliente é avisado). Entregue o pedido na mão dele.',
+            'Colocar na rota')) {
+      return;
+    }
     await _rpc('juntar${p.id}', 'entrega_oferta_juntar', {'p_pedido_id': p.id, 'p_rota_id': rota.id},
-        ok: 'Pedido #${p.numero} entrou na rota.');
+        ok: rota.status == 'em_andamento' ? 'Pedido #${p.numero} na rota do ${rota.motoboy ?? 'motoboy'}. Entregue na mão dele.' : 'Pedido #${p.numero} entrou na rota.');
   }
 
   Future<void> _cancelarRota(_Rota r) async {
@@ -1288,7 +1305,8 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       child: Row(children: [
         Expanded(
           child: Text(
-            '$n. #${p.numero} ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}',
+            '$n. #${p.numero} ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}'
+            '${p.cobraCartao ? ' · 💳 maquininha' : ''}${p.cobraDinheiro ? ' · 💵 dinheiro' : ''}',
             style: TextStyle(
               fontSize: 13,
               fontWeight: proxima ? FontWeight.w800 : FontWeight.w500,
@@ -1319,11 +1337,14 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
             onSelected: (acao) async {
               if (acao == 'tirar') {
                 await _rpc('p${p.id}', 'entrega_oferta_tirar_pedido', {'p_pedido_id': p.id}, ok: 'Pedido #${p.numero} saiu da rota.');
+              } else if (acao == 'mover') {
+                await _juntar(p, tirarDe: r.id);
               } else {
                 await _rpc('p${p.id}', 'entrega_oferta_eu_entrego', {'p_pedido_id': p.id}, ok: 'Pedido #${p.numero}: a loja entrega.');
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'mover', child: Text('Mover pra outra rota…')),
               PopupMenuItem(value: 'tirar', child: Text('Tirar da rota (volta pra oferta)')),
               PopupMenuItem(value: 'eu', child: Text('Eu entrego este')),
             ],
