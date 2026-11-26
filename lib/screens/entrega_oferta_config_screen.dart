@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../utils/cliente_validators.dart';
 import 'entrega_oferta_acerto_screen.dart';
-import 'entrega_oferta_rotas_screen.dart';
+import 'painel_entregas_screen.dart';
 
 /// Entregador por oferta no WhatsApp (19/11): o pedido de entrega cai, a rota vai como oferta
 /// pros motoboys marcados no cadastro, o 1º que aceita leva. Aqui o dono liga/desliga e ajusta
@@ -26,8 +26,6 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
   final _telefoneAviso = TextEditingController();
   final _antecedencia = TextEditingController();
   final _minimo = TextEditingController();
-  final _bonusChuva = TextEditingController();
-  final _chuvaMm = TextEditingController();
   final _bonusPico = TextEditingController();
   final _picoHorarios = TextEditingController();
   final _inicio = TextEditingController();
@@ -53,7 +51,7 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
   @override
   void dispose() {
     for (final c in [_saida, _km, _parada, _telefoneAviso, _antecedencia, _minimo, _antecedenciaOferta,
-      _bonusChuva, _chuvaMm, _bonusPico, _picoHorarios, _inicio, _fim]) {
+      _bonusPico, _picoHorarios, _inicio, _fim]) {
       c.dispose();
     }
     super.dispose();
@@ -79,8 +77,6 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
         _antecedencia.text = '${cfg?['antecedencia_sem_aceite_min'] ?? 15}';
         _minimo.text = ClienteValidators.formatarMoeda((cfg?['valor_minimo'] as num?)?.toDouble() ?? 7);
         _antecedenciaOferta.text = '${cfg?['antecedencia_oferta_min'] ?? 30}';
-        _bonusChuva.text = ClienteValidators.formatarMoeda((cfg?['bonus_chuva'] as num?)?.toDouble() ?? 0);
-        _chuvaMm.text = '${cfg?['chuva_mm_minimo'] ?? 1}';
         _bonusPico.text = ClienteValidators.formatarMoeda((cfg?['bonus_pico'] as num?)?.toDouble() ?? 0);
         _picoHorarios.text = cfg?['pico_horarios'] as String? ?? '';
         _inicio.text = (cfg?['oferta_inicio'] as String?)?.substring(0, 5) ?? '';
@@ -142,8 +138,6 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
         'antecedencia_sem_aceite_min': int.tryParse(_antecedencia.text.trim()) ?? 15,
         'valor_minimo': _n(_minimo),
         'antecedencia_oferta_min': int.tryParse(_antecedenciaOferta.text.trim()) ?? 30,
-        'bonus_chuva': _n(_bonusChuva),
-        'chuva_mm_minimo': double.tryParse(_chuvaMm.text.trim().replaceAll(',', '.')) ?? 1,
         'bonus_pico': _n(_bonusPico),
         'pico_horarios': _picoHorarios.text.trim().isEmpty ? null : _picoHorarios.text.trim(),
         'oferta_inicio': _hora(_inicio.text),
@@ -196,11 +190,11 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.two_wheeler),
-                    title: const Text('Rotas de motoboy'),
+                    title: const Text('Painel de Entregas'),
                     subtitle: const Text('Rotas abertas, pausar ofertas, pedidos fora e os que voltaram'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.push(
-                        context, MaterialPageRoute(builder: (_) => const EntregaOfertaRotasScreen())),
+                        context, MaterialPageRoute(builder: (_) => const PainelEntregasScreen())),
                   ),
                 ),
                 Card(
@@ -249,12 +243,8 @@ class _EntregaOfertaConfigScreenState extends State<EntregaOfertaConfigScreen> {
                 const Divider(height: 32),
                 Text('Bônus', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
-                _campoValor(_bonusChuva, 'A mais quando chove', ajuda: 'Pela previsão do tempo do período (manhã, tarde, noite). 0 = desligado'),
-                TextField(
-                  controller: _chuvaMm,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Conta como chuva a partir de', suffixText: 'mm no período'),
-                ),
+                Text('Chuva: ligue no Painel de Entregas, botão "Está chovendo" (você escolhe o valor e até que horas).',
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                 const SizedBox(height: 12),
                 _campoValor(_bonusPico, 'A mais no horário de pico', ajuda: '0 = desligado'),
                 TextField(

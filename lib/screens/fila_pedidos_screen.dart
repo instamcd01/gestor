@@ -4,7 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/rota_oferta_fila.dart';
-import 'entrega_oferta_rotas_screen.dart';
+import 'painel_entregas_screen.dart';
 import '../widgets/faixa_rolavel.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -104,7 +104,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
 
   RotaOfertaInfo? _rotaDe(Venda venda) => RotasOfertaFila.instancia.value[venda.idVenda];
 
-  void _abrirRotas() => Navigator.push(context, MaterialPageRoute(builder: (_) => const EntregaOfertaRotasScreen()));
+  void _abrirRotas() => Navigator.push(context, MaterialPageRoute(builder: (_) => const PainelEntregasScreen()));
 
   /// Selo da rota do pedido: avisa se o motoboy já chegou e este pedido ainda não está pronto
   Widget _seloRota(Venda venda) => SeloRotaOferta(
@@ -1428,7 +1428,7 @@ class _FilaPedidosScreenState extends State<FilaPedidosScreen> {
           TextButton.icon(
             onPressed: _abrirRotas,
             icon: const Icon(Icons.two_wheeler),
-            label: const Text('Motoboys'),
+            label: const Text('Entregas'),
           ),
           if (largo)
             SizedBox(

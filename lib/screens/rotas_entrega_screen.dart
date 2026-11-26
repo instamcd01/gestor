@@ -1,4 +1,3 @@
-import 'entrega_oferta_rotas_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -487,13 +486,7 @@ class _RotasEntregaScreenState extends State<RotasEntregaScreen> {
     final currencyFormat = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Rotas de Entrega'), actions: [
-        TextButton.icon(
-          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EntregaOfertaRotasScreen())),
-          icon: const Icon(Icons.two_wheeler),
-          label: const Text('Motoboys'),
-        ),
-      ]),
+      appBar: AppBar(title: const Text('Rota da loja')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _novaRota,
         icon: const Icon(Icons.add),

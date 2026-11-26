@@ -195,7 +195,7 @@ class _EntregaOfertaAcertoScreenState extends State<EntregaOfertaAcertoScreen> {
                                             '${DateFormat('dd/MM HH:mm').format(r.quando)} · ${r.n} entrega${r.n == 1 ? '' : 's'}'),
                                         subtitle: r.pendencias.isEmpty
                                             ? null
-                                            : Text('Fora deste acerto: ${r.pendencias.join('; ')} (em Rotas de motoboy)',
+                                            : Text('Fora deste acerto: ${r.pendencias.join('; ')} (no Painel de Entregas)',
                                                 style: TextStyle(color: cores.error)),
                                         trailing: Text(
                                             '${_moeda.format(r.valor)}${r.dinheiro > 0 ? '\n− ${_moeda.format(r.dinheiro)} dinheiro' : ''}',
