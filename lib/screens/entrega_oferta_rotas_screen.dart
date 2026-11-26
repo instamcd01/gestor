@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../widgets/rota_oferta_fila.dart';
 import 'entrega_oferta_acerto_screen.dart';
@@ -59,8 +60,12 @@ class _Rota {
   final List<_PedidoRota> pedidos;
   final bool calculando;
   final String? erroRota;
+  /// GPS do motoboy durante a rota (Kitsune manda a cada 30 s com o app aberto)
+  final double? posLat;
+  final double? posLon;
+  final DateTime? posEm;
   _Rota(this.id, this.status, this.motoboy, this.valor, this.bonus, this.prazoSaida, this.chegou, this.km, this.pedidos,
-      {this.calculando = false, this.erroRota});
+      {this.calculando = false, this.erroRota, this.posLat, this.posLon, this.posEm});
 }
 
 class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
@@ -95,6 +100,7 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
       final rotas = await _db
           .from('rotas_entrega')
           .select('id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, google_ok, google_erro, ofertada_em, '
+              'pos_lat, pos_lon, pos_em, '
               'entregador:entregadores(nome), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
               'pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro)))')
           .eq('origem', 'oferta')
@@ -139,6 +145,9 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
                   .toList(),
               calculando: r['status'] == 'ofertada' && r['google_ok'] != true && r['ofertada_em'] == null && r['google_erro'] == null,
               erroRota: r['google_erro'] as String?,
+              posLat: (r['pos_lat'] as num?)?.toDouble(),
+              posLon: (r['pos_lon'] as num?)?.toDouble(),
+              posEm: r['pos_em'] == null ? null : DateTime.tryParse(r['pos_em'] as String)?.toLocal(),
             ),
         ];
         _fora = [
@@ -209,6 +218,13 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
         ),
       ) ==
       true;
+
+  String _haQuanto(DateTime t) {
+    final m = DateTime.now().difference(t).inMinutes;
+    if (m < 1) return 'agora';
+    if (m < 60) return 'há $m min';
+    return 'às ${DateFormat('HH:mm').format(t)}';
+  }
 
   String _rotuloStatus(_Rota r) => switch (r.status) {
         'ofertada' when r.erroRota != null => 'Não consegui calcular a rota: confira o endereço',
@@ -321,6 +337,27 @@ class _EntregaOfertaRotasScreenState extends State<EntregaOfertaRotasScreen> {
               ].join(' · '),
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
+            if ((r.status == 'aceita' || r.status == 'em_andamento') && r.posLat != null) ...[
+              const SizedBox(height: 8),
+              Row(children: [
+                Icon(Icons.my_location, size: 18,
+                    color: DateTime.now().difference(r.posEm!).inMinutes < 3 ? Colors.green.shade700 : Colors.orange.shade800),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'GPS: visto ${_haQuanto(r.posEm!)}',
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => launchUrl(
+                      Uri.parse('https://www.google.com/maps/search/?api=1&query=${r.posLat},${r.posLon}'),
+                      mode: LaunchMode.externalApplication),
+                  icon: const Icon(Icons.map_outlined, size: 18),
+                  label: const Text('Ver no mapa'),
+                ),
+              ]),
+            ],
             const Divider(height: 20),
             for (final p in r.pedidos)
               Row(
