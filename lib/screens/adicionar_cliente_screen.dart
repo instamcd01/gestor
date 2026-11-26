@@ -288,6 +288,17 @@ class _AdicionarClienteScreenState extends State<AdicionarClienteScreen> {
         }
       }
 
+      // 26/11 (Rayssa "sem localização"): endereço digitado (sem escolher no
+      // mapa) não salvava coordenada — a oferta de motoboy e o mapa precisam
+      // do ponto. Pede ao Google o ponto do número digitado.
+      if (_latitude == null && _longitude == null && enderecoCliente != null) {
+        final ponto = await DistanciaService.geocodificarParaCoordenadas(enderecoCliente);
+        if (ponto != null) {
+          _latitude = ponto.lat;
+          _longitude = ponto.lng;
+        }
+      }
+
       final cliente = Cliente(
         nome: _nomeController.text.trim(),
         celular: _celularController.text.trim(),

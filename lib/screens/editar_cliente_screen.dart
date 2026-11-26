@@ -410,6 +410,17 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
         }
       }
 
+      // 26/11 (Rayssa "sem localização"): endereço digitado (sem escolher no
+      // mapa) não salvava coordenada — a oferta de motoboy e o mapa precisam
+      // do ponto. Pede ao Google o ponto do número digitado.
+      if (_latitude == null && _longitude == null && enderecoCliente != null) {
+        final ponto = await DistanciaService.geocodificarParaCoordenadas(enderecoCliente);
+        if (ponto != null) {
+          _latitude = ponto.lat;
+          _longitude = ponto.lng;
+        }
+      }
+
       final clienteAtualizado = _montarClienteAtualizado();
       if (!mounted) return;
       await Provider.of<ClientProvider>(context, listen: false).atualizarCliente(clienteAtualizado);
