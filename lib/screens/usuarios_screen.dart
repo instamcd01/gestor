@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/convite_empresa.dart';
 import '../models/convite_entregador.dart';
 import '../models/entregador.dart';
 import '../models/usuario.dart';
 import '../providers/auth_provider.dart';
+import '../providers/branding_provider.dart';
 import '../providers/entregador_provider.dart';
 import '../providers/usuario_provider.dart';
 import '../repositories/convite_entregador_repository.dart';
@@ -657,6 +659,8 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                               switch (acao) {
                                 case 'convite':
                                   _gerarConviteEntregador(entregador);
+                                case 'whatsapp':
+                                  _enviarConviteWhatsApp(entregador);
                                 case 'editar':
                                   _abrirFormularioEntregador(existente: entregador);
                                 case 'excluir':
@@ -664,7 +668,9 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
                               }
                             },
                             itemBuilder: (ctx) => [
-                              if (!vinculado)
+                              if (entregador.freelancerOferta && (entregador.telefone ?? '').isNotEmpty)
+                                const PopupMenuItem(value: 'whatsapp', child: Text('Enviar convite pelo WhatsApp')),
+                              if (!vinculado && !entregador.freelancerOferta)
                                 const PopupMenuItem(value: 'convite', child: Text('Gerar convite')),
                               const PopupMenuItem(value: 'editar', child: Text('Editar')),
                               const PopupMenuItem(value: 'excluir', child: Text('Remover')),
@@ -709,4 +715,30 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
             ),
     );
   }
+
+  /// Convite do motoboy por oferta (26/11): abre o WhatsApp da loja com a mensagem pronta — link do
+  /// Kitsune e os passos (entrar com o WhatsApp, aceitar o termo, instalar, ficar Disponível).
+  /// O login do Kitsune é pelo número (código no WhatsApp), não precisa de código de convite.
+  Future<void> _enviarConviteWhatsApp(Entregador entregador) async {
+    var tel = (entregador.telefone ?? '').replaceAll(RegExp(r'\D'), '');
+    if (tel.length == 10 || tel.length == 11) tel = '55$tel';
+    final loja = context.read<BrandingProvider>().nomeEmpresa;
+    final nome = entregador.nome.trim().split(' ').first;
+    final texto = 'Oi, $nome! Aqui é da $loja. As ofertas de entrega chegam pelo Kitsune, nosso app de entregas:\n\n'
+        '1. Abra https://kitsune.inari.lukz.com.br\n'
+        '2. Entre com este número de WhatsApp: chega um código aqui\n'
+        '3. Leia e aceite o termo do entregador\n'
+        '4. Toque em "Instalar o Kitsune" pra ficar com o ícone no celular\n'
+        '5. Deixe "Disponível pra entregas" ligado quando quiser receber ofertas\n\n'
+        'A oferta chega aqui no WhatsApp com o valor e o bairro. O 1º que aceitar leva a rota.';
+    final ok = await launchUrl(Uri.parse('https://wa.me/$tel?text=${Uri.encodeComponent(texto)}'), mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      await Clipboard.setData(ClipboardData(text: texto));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Não abriu o WhatsApp: a mensagem foi copiada, é só colar.')));
+      }
+    }
+  }
+
 }
