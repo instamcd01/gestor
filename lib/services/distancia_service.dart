@@ -388,6 +388,37 @@ class DistanciaService {
   /// Geocodifica um endereço em texto pra coordenadas — usado pra colocar
   /// o marcador da loja no mapa da rota (ver rota_mapa_screen.dart), já
   /// que `empresas.latitude/longitude` nem sempre está preenchido.
+  /// Ponto do endereço SÓ se o Google achou o número exato (ROOFTOP ou
+  /// RANGE_INTERPOLATED, com street_number, sem partial_match). Senão null —
+  /// centro da rua/CEP pode errar centenas de metros e mudar frete/rota
+  /// (decisão do Lucas 26/11). Aí a equipe marca no mapa.
+  static Future<({double lat, double lng})?> coordenadaExataDoEndereco(String endereco) async {
+    if (endereco.trim().isEmpty) return null;
+    if (kIsWeb) return maps_web.coordenadaExataViaJs(endereco);
+    try {
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
+        'address': endereco,
+        'region': 'br',
+        'components': 'country:BR',
+        'key': _apiKey,
+      });
+      final resposta = await http.get(uri).timeout(const Duration(seconds: 10));
+      final json = jsonDecode(resposta.body) as Map<String, dynamic>;
+      if (json['status'] != 'OK') return null;
+      final r = (json['results'] as List).first as Map<String, dynamic>;
+      final geo = r['geometry'] as Map<String, dynamic>;
+      final tipo = geo['location_type'];
+      final temNumero = (r['address_components'] as List)
+          .any((c) => ((c as Map)['types'] as List).contains('street_number'));
+      if (!(tipo == 'ROOFTOP' || tipo == 'RANGE_INTERPOLATED') || r['partial_match'] == true || !temNumero) return null;
+      final loc = geo['location'] as Map<String, dynamic>;
+      return (lat: (loc['lat'] as num).toDouble(), lng: (loc['lng'] as num).toDouble());
+    } catch (e) {
+      debugPrint('Erro ao buscar coordenada exata: $e');
+      return null;
+    }
+  }
+
   static Future<({double lat, double lng})?> geocodificarParaCoordenadas(String endereco) async {
     if (endereco.trim().isEmpty) return null;
 

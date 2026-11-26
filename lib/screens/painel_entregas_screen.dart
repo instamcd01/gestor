@@ -451,7 +451,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
         'nao_paga_entrega' => 'não paga o motoboy',
         'loja_entrega' => 'a loja vai entregar',
         'loja_tirou' => 'tirado da rota pela loja',
-        'sem_localizacao' => 'endereço sem localização',
+        'sem_localizacao' => 'sem ponto no mapa · edite o cliente e toque em "Mapa"',
         _ => 'fora das ofertas',
       };
 

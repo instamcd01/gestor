@@ -21,6 +21,8 @@ Future<List<List<double>>?> buscarMatrizDistanciasViaJs(List<String> pontos) asy
 
 Future<({double lat, double lng})?> geocodificarParaCoordenadasViaJs(String endereco) async => null;
 
+Future<({double lat, double lng})?> coordenadaExataViaJs(String endereco) async => null;
+
 Future<EnderecoEncontrado?> buscarEnderecoPorEnderecoViaJs(
   String endereco, {
   String region = 'br',

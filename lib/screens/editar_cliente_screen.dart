@@ -412,12 +412,18 @@ class _EditarClienteScreenState extends State<EditarClienteScreen> {
 
       // 26/11 (Rayssa "sem localização"): endereço digitado (sem escolher no
       // mapa) não salvava coordenada — a oferta de motoboy e o mapa precisam
-      // do ponto. Pede ao Google o ponto do número digitado.
+      // do ponto. Só aceita o ponto do NÚMERO exato; senão avisa pra marcar no mapa.
       if (_latitude == null && _longitude == null && enderecoCliente != null) {
-        final ponto = await DistanciaService.geocodificarParaCoordenadas(enderecoCliente);
+        final ponto = await DistanciaService.coordenadaExataDoEndereco(enderecoCliente);
         if (ponto != null) {
           _latitude = ponto.lat;
           _longitude = ponto.lng;
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            duration: Duration(seconds: 8),
+            content: Text('Não achei o número desse endereço no mapa. Edite o cliente e toque em "Mapa" (ao lado do endereço) '
+                'pra marcar a casa — sem isso a entrega por motoboy não calcula a rota.'),
+          ));
         }
       }
 

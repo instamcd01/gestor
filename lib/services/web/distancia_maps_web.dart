@@ -139,6 +139,24 @@ Future<({double lat, double lng})?> geocodificarParaCoordenadasViaJs(String ende
   }
 }
 
+/// Só devolve o ponto quando o Google achou o NÚMERO (ROOFTOP/RANGE_INTERPOLATED,
+/// com street_number, sem partial_match). Centro da rua/bairro não serve pra frete/rota.
+Future<({double lat, double lng})?> coordenadaExataViaJs(String endereco) async {
+  try {
+    final response = await Geocoder().geocode(GeocoderRequest(address: endereco, region: 'br'));
+    if (response.results.isEmpty) return null;
+    final r = response.results.first;
+    final tipo = r.geometry.locationType;
+    final exato = (tipo == GeocoderLocationType.ROOFTOP || tipo == GeocoderLocationType.RANGE_INTERPOLATED) &&
+        r.partialMatch != true &&
+        r.addressComponents.any((c) => c.types.contains('street_number'));
+    if (!exato) return null;
+    return (lat: r.geometry.location.lat.toDouble(), lng: r.geometry.location.lng.toDouble());
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<EnderecoEncontrado?> buscarEnderecoPorEnderecoViaJs(
   String endereco, {
   String region = 'br',
