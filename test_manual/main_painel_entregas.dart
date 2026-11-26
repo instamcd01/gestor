@@ -7,10 +7,11 @@ import 'package:gestor/theme/app_theme.dart';
 
 String _t(Duration d) => DateTime.now().toUtc().add(d).toIso8601String();
 
-Map<String, dynamic> _ped(String id, int n, String nome, String bairro, String status, double lat, double lon) => {
+Map<String, dynamic> _ped(String id, int n, String nome, String bairro, String status, double lat, double lon, {Duration? prometido}) => {
       'id': id,
       'numero_sequencial': n,
       'status': status,
+      'previsao_entrega_fim': prometido == null ? null : _t(prometido),
       'cliente': {'nome': nome, 'bairro': bairro, 'latitude': lat, 'longitude': lon},
     };
 
@@ -26,10 +27,10 @@ Map<String, dynamic> demo() => {
           'ofertada_em': _t(const Duration(minutes: -40)), 'saiu_em': _t(const Duration(minutes: -22)),
           'prazo_saida': _t(const Duration(minutes: -20)), 'chegou_loja_em': _t(const Duration(minutes: -25)),
           'pos_lat': -22.8930, 'pos_lon': -43.5880, 'pos_em': _t(const Duration(seconds: -40)),
-          'entregador': {'nome': 'Carlos Souza'},
+          'entregador': {'nome': 'Carlos Souza', 'telefone': '21999990001'},
           'rota_pedidos': [
             _rp(1, _ped('p1', 11421, 'Ana', 'Inhoaíba', 'entregue', -22.8995, -43.5960), foto: 'x.jpg'),
-            _rp(2, _ped('p2', 11425, 'Bruno', 'Cosmos', 'pronto', -22.9165, -43.6136)),
+            _rp(2, _ped('p2', 11425, 'Bruno', 'Cosmos', 'pronto', -22.9165, -43.6136, prometido: const Duration(minutes: -6))),
             _rp(3, _ped('p3', 11430, 'Márcia', 'Cosmos', 'pronto', -22.9230, -43.6180)),
           ],
         },
@@ -73,6 +74,21 @@ Map<String, dynamic> demo() => {
         {'foto_path': 'z.jpg', 'devolucao_confirmada_em': null, 'pedido': _ped('p10', 11418, 'Diego', 'Cosmos', 'nao_entregue', -22.91, -43.60)},
       ],
       'reclamou': [],
+      'rotas_loja': [
+        {
+          'id': 'm1', 'status': 'em_andamento', 'entregador': {'nome': 'Lucas'},
+          'rota_pedidos': [
+            {'pedido': {'status': 'entregue', 'cliente': {'latitude': -22.8650, 'longitude': -43.5850}}},
+            {'pedido': {'status': 'pronto', 'cliente': {'latitude': -22.8600, 'longitude': -43.5950}}},
+          ],
+        },
+      ],
+      'motoboys': [
+        {'id': 'e1', 'nome': 'Carlos Souza', 'disponivel': true},
+        {'id': 'e2', 'nome': 'Renan Lima', 'disponivel': true},
+        {'id': 'e3', 'nome': 'Diego Alves', 'disponivel': false},
+        {'id': 'e4', 'nome': 'Marcos Silva', 'disponivel': true},
+      ],
       'acerto': [
         {'n_pedidos': 4, 'valor_entregador': 27.3, 'dinheiro_recebido': 0, 'entregador': {'nome': 'Carlos Souza'}},
         {'n_pedidos': 3, 'valor_entregador': 21.0, 'dinheiro_recebido': 0, 'entregador': {'nome': 'Carlos Souza'}},

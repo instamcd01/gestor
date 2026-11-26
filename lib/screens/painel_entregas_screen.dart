@@ -52,8 +52,10 @@ class _PedidoRota {
   final bool devolucaoConfirmada;
   final double? lat;
   final double? lon;
+  /// fim da janela prometida ao cliente (pedido ou iFood)
+  final DateTime? prometidoAte;
   _PedidoRota(this.id, this.numero, this.cliente, this.bairro, this.status,
-      {this.foto, this.contestado = false, this.devolucaoConfirmada = false, this.lat, this.lon});
+      {this.foto, this.contestado = false, this.devolucaoConfirmada = false, this.lat, this.lon, this.prometidoAte});
 
   bool get entregue => status == 'entregue' || status == 'concluido';
   bool get resolvido => entregue || status == 'cancelado' || status == 'nao_entregue';
@@ -72,6 +74,8 @@ class _PedidoRota {
       devolucaoConfirmada: rp?['devolucao_confirmada_em'] != null,
       lat: (c?['latitude'] as num?)?.toDouble(),
       lon: (c?['longitude'] as num?)?.toDouble(),
+      prometidoAte: _Rota._dt(p['previsao_entrega_fim']) ??
+          _Rota._dt(((p['mp'] is List && (p['mp'] as List).isNotEmpty) ? (p['mp'] as List).first : p['mp'] as Map?)?['entrega_prevista_fim']),
     );
   }
 }
@@ -97,6 +101,9 @@ class _Rota {
   final DateTime? saiuEm;
   final DateTime? finalizadaEm;
   final double troco;
+  final String? telefoneMotoboy;
+  /// rota montada à mão (a loja entrega), não é do entregador por oferta
+  final bool daLoja;
   _Rota(this.id, this.status, this.motoboy, this.valor, this.bonus, this.prazoSaida, this.chegou, this.km, this.pedidos,
       {this.calculando = false,
       this.erroRota,
@@ -108,7 +115,9 @@ class _Rota {
       this.ofertadaEm,
       this.saiuEm,
       this.finalizadaEm,
-      this.troco = 0});
+      this.troco = 0,
+      this.telefoneMotoboy,
+      this.daLoja = false});
 
   String get bairros {
     final bs = <String>[];
@@ -146,6 +155,30 @@ class _Rota {
         saiuEm: _dt(r['saiu_em']),
         finalizadaEm: _dt(r['finalizada_em']),
         troco: (r['troco'] as num?)?.toDouble() ?? 0,
+        telefoneMotoboy: (r['entregador'] as Map?)?['telefone'] as String?,
+        daLoja: r['origem'] == 'manual',
+      );
+}
+
+/// Rota montada à mão (a loja entrega) — aparece no painel e no mapa, gestão na tela "Rota da loja".
+class _RotaLoja {
+  final String id;
+  final String status;
+  final String? entregador;
+  final List<({bool entregue, double? lat, double? lon})> paradas;
+  _RotaLoja(this.id, this.status, this.entregador, this.paradas);
+  factory _RotaLoja.de(Map<String, dynamic> r) => _RotaLoja(
+        r['id'] as String,
+        r['status'] as String? ?? '',
+        ((r['entregador'] as Map?)?['nome'] as String?)?.split(' ').first,
+        [
+          for (final rp in (r['rota_pedidos'] as List? ?? const []))
+            (
+              entregue: ['entregue', 'concluido'].contains((rp['pedido'] as Map?)?['status']),
+              lat: (((rp['pedido'] as Map?)?['cliente'] as Map?)?['latitude'] as num?)?.toDouble(),
+              lon: (((rp['pedido'] as Map?)?['cliente'] as Map?)?['longitude'] as num?)?.toDouble(),
+            ),
+        ],
       );
 }
 
@@ -167,6 +200,8 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
   List<_PedidoRota> _naoEntregues = [];
   List<_PedidoRota> _reclamacoes = [];
   List<_Acerto> _acertos = [];
+  List<_RotaLoja> _rotasLoja = [];
+  List<({String id, String nome, bool disponivel})> _motoboys = [];
   bool _ligado = false;
   DateTime? _pausadoAte;
   double _chuvaValor = 0;
@@ -200,9 +235,10 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
 
   // ── Dados ────────────────────────────────────────────────────────────────────────────────────────
   static const _selRota = 'id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, google_ok, google_erro, '
-      'ofertada_em, saiu_em, finalizada_em, pos_lat, pos_lon, pos_em, gps_falha, '
-      'entregador:entregadores(nome), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
-      'pedido:pedidos(id, numero_sequencial, status, cliente:clientes(nome, bairro, latitude, longitude)))';
+      'ofertada_em, saiu_em, finalizada_em, pos_lat, pos_lon, pos_em, gps_falha, origem, '
+      'entregador:entregadores(nome, telefone), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, '
+      'pedido:pedidos(id, numero_sequencial, status, previsao_entrega_fim, mp:marketplace_pedidos(entrega_prevista_fim), '
+      'cliente:clientes(nome, bairro, latitude, longitude)))';
 
   Future<void> _carregar() async {
     if (_demo) return;
@@ -242,6 +278,13 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
             .isFilter('contestacao_resolvida_em', null),
         _db
             .from('rotas_entrega')
+            .select('id, status, entregador:entregadores(nome), rota_pedidos(pedido:pedidos(status, cliente:clientes(latitude, longitude)))')
+            .eq('origem', 'manual')
+            .eq('data_rota', hoje)
+            .neq('status', 'concluida'),
+        _db.from('entregadores').select('id, nome, disponivel').eq('freelancer_oferta', true).eq('ativo', true).isFilter('deleted_at', null).order('nome'),
+        _db
+            .from('rotas_entrega')
             .select('n_pedidos, valor_entregador, dinheiro_recebido, entregador:entregadores(nome)')
             .eq('origem', 'oferta')
             .eq('status', 'concluida')
@@ -258,7 +301,9 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
         'fora': res[3],
         'voltou': res[4],
         'reclamou': res[5],
-        'acerto': res[6],
+        'rotas_loja': res[6],
+        'motoboys': res[7],
+        'acerto': res[8],
       });
     } catch (e) {
       debugPrint('Erro ao carregar o painel de entregas: $e');
@@ -301,6 +346,11 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
           _PedidoRota.de(rp['pedido'] as Map<String, dynamic>, rp as Map<String, dynamic>),
       ];
       _acertos = acertos.values.toList();
+      _rotasLoja = [for (final r in (d['rotas_loja'] as List? ?? const [])) _RotaLoja.de(Map<String, dynamic>.from(r as Map))];
+      _motoboys = [
+        for (final m in (d['motoboys'] as List? ?? const []))
+          (id: m['id'] as String, nome: (m['nome'] as String? ?? 'Motoboy').split(' ').first, disponivel: m['disponivel'] as bool? ?? true),
+      ];
       _carregando = false;
     });
   }
@@ -545,6 +595,44 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
   Future<void> _desligarChuva() =>
       _rpc('chuva', 'entrega_oferta_chuva', {'p_valor': 0, 'p_ate': null}, ok: 'Bônus de chuva desligado.');
 
+  void _ligar(String? tel) {
+    final t = (tel ?? '').replaceAll(RegExp(r'\D'), '');
+    if (t.isEmpty) return;
+    launchUrl(Uri.parse('tel:+${t.startsWith('55') ? t : '55$t'}'));
+  }
+
+  bool _ocupadoComRota(String nome) =>
+      _rotas.any((r) => (r.status == 'aceita' || r.status == 'em_andamento') && r.motoboy == nome);
+
+  Future<void> _oferecerPara(_Rota r) async {
+    if (_motoboys.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhum motoboy cadastrado pra receber ofertas.')));
+      return;
+    }
+    final m = await showModalBottomSheet<({String id, String nome, bool disponivel})>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const ListTile(
+            title: Text('Oferecer só para…', style: TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text('Só ele recebe a oferta. Se não aceitar, a rota volta pra você decidir.'),
+          ),
+          for (final x in _motoboys)
+            ListTile(
+              leading: Icon(Icons.two_wheeler, color: x.disponivel ? Colors.green.shade700 : _suave),
+              title: Text(x.nome),
+              subtitle: Text(_ocupadoComRota(x.nome) ? 'está com uma rota agora' : (x.disponivel ? 'disponível' : 'de folga')),
+              enabled: !_ocupadoComRota(x.nome),
+              onTap: () => Navigator.pop(ctx, x),
+            ),
+        ]),
+      ),
+    );
+    if (m == null) return;
+    await _rpc('para${r.id}', 'entrega_oferta_oferecer_para', {'p_rota_id': r.id, 'p_entregador_id': m.id},
+        ok: 'Rota oferecida só pro ${m.nome}.');
+  }
+
   void _abrirMapaMotoboy(_Rota r) => launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=${r.posLat},${r.posLon}'),
       mode: LaunchMode.externalApplication);
 
@@ -760,6 +848,18 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
     });
   }
 
+  Widget _linhaMotoboys() {
+    final livres = _motoboys.where((m) => m.disponivel && !_ocupadoComRota(m.nome)).length;
+    final disp = livres;
+    return Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+      Text('Motoboys livres agora: $livres de ${_motoboys.length}',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: disp == 0 ? _tomProblema.texto : _cores.onSurface)),
+      for (final m in _motoboys)
+        _selo('${m.nome} · ${_ocupadoComRota(m.nome) ? 'em rota' : (m.disponivel ? 'disponível' : 'de folga')}',
+            _ocupadoComRota(m.nome) ? _tomEmRota : (m.disponivel ? _tomLoja : _tomNeutro)),
+    ]);
+  }
+
   // ── Mapa ─────────────────────────────────────────────────────────────────────────────────────────
   Color _corLinha(_Rota r) => switch (r.status) {
         'em_andamento' => const Color(0xFF1D4ED8),
@@ -850,6 +950,25 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
           semGps.add(r);
         }
       }
+      for (final r in _rotasLoja) {
+        final trecho = <ll.LatLng>[loja];
+        for (final p in r.paradas) {
+          if (p.lat == null || p.lon == null) continue;
+          final pt = ll.LatLng(p.lat!, p.lon!);
+          trecho.add(pt);
+          pontos.add(pt);
+          marcas.add(osm.Marker(
+            point: pt,
+            width: 22,
+            height: 22,
+            child: Container(
+              decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: const Color(0xFF52525B), width: 3)),
+              child: p.entregue ? const Icon(Icons.check, size: 12, color: Color(0xFF52525B)) : null,
+            ),
+          ));
+        }
+        if (trecho.length > 1) linhas.add(osm.Polyline(points: trecho, color: const Color(0xFF52525B), strokeWidth: 3));
+      }
       marcas.insert(
           0,
           osm.Marker(
@@ -891,6 +1010,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
                 legenda(const Color(0xFF1D4ED8), 'em rota'),
                 legenda(const Color(0xFF15803D), 'indo/na loja'),
                 legenda(const Color(0xFFB45309), 'esperando aceite'),
+                if (_rotasLoja.isNotEmpty) legenda(const Color(0xFF52525B), 'rota da loja'),
               ]),
             ],
           ),
@@ -947,6 +1067,32 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
 
   Widget? _precisaDeVoce() {
     final itens = <Widget Function(bool)>[];
+    final agora = DateTime.now();
+    for (final r in _rotas.where((r) => r.status == 'aceita' || r.status == 'em_andamento')) {
+      for (final p in r.pedidos.where((p) => !p.resolvido && p.prometidoAte != null && p.prometidoAte!.isBefore(agora))) {
+        itens.add((u) => _item(
+              'Entrega atrasada: #${p.numero} ${p.cliente}${p.bairro.isEmpty ? '' : ' · ${p.bairro}'}',
+              'prometido até ${_hora(p.prometidoAte!)} (${agora.difference(p.prometidoAte!).inMinutes} min atrás) · ${r.motoboy ?? 'motoboy'}'
+                  '${r.posEm == null ? '' : ' · GPS ${_haQuanto(r.posEm!)}'}',
+              [
+                if (r.telefoneMotoboy != null) _botao('Ligar pro ${r.motoboy ?? 'motoboy'}', () => _ligar(r.telefoneMotoboy), principal: true, icone: Icons.call),
+                if (r.posLat != null) _botao('Ver no mapa', () => _abrirMapaMotoboy(r), icone: Icons.map_outlined),
+              ],
+              ultimo: u,
+            ));
+      }
+      if (r.status == 'em_andamento' && r.posEm != null && agora.difference(r.posEm!).inMinutes >= 5 && r.gpsFalha == null) {
+        itens.add((u) => _item(
+              'GPS do ${r.motoboy ?? 'motoboy'} parado há ${agora.difference(r.posEm!).inMinutes} min',
+              'Pode ser o Kitsune fechado, a tela apagada ou ele parado. Última posição ${_haQuanto(r.posEm!)}.',
+              [
+                if (r.telefoneMotoboy != null) _botao('Ligar pro ${r.motoboy ?? 'motoboy'}', () => _ligar(r.telefoneMotoboy), icone: Icons.call),
+                _botao('Ver no mapa', () => _abrirMapaMotoboy(r), icone: Icons.map_outlined),
+              ],
+              ultimo: u,
+            ));
+      }
+    }
     for (final r in _rotas.where((r) => r.status == 'sem_entregador')) {
       itens.add((u) => _item(
             'Ninguém aceitou: ${r.bairros} · ${r.pedidos.length} entrega${r.pedidos.length == 1 ? '' : 's'}',
@@ -958,6 +1104,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
             [
               _botao('Oferecer de novo +R\$ 2', () => _rpc('bonus${r.id}', 'entrega_oferta_bonus', {'p_rota_id': r.id, 'p_valor': 2},
                   ok: 'Rota oferecida de novo com +R\$ 2.'), principal: true),
+              _botao('Oferecer só para…', () => _oferecerPara(r)),
               _botao('Eu entrego', () => _cancelarRota(r)),
             ],
             ultimo: u,
@@ -1119,6 +1266,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
         BotaoEntregarMotoboy(info: RotaOfertaInfo(rotaId: r.id, status: r.status, entregador: r.motoboy, n: r.pedidos.length)),
       if ((r.status == 'aceita' || r.status == 'em_andamento') && r.posLat != null) _botao('Ver no mapa', () => _abrirMapaMotoboy(r), icone: Icons.map_outlined),
       if (esperando && r.ofertaSaiu) _botao('Aumentar valor', () => _escolherBonus(r), icone: Icons.trending_up),
+      if (esperando) _botao('Oferecer só para…', () => _oferecerPara(r), icone: Icons.person_outline),
       if (esperando && !r.ofertaSaiu)
         _botao('Oferecer agora', () => _rpc('agora${r.id}', 'entrega_oferta_oferecer_agora', {'p_rota_id': r.id}, ok: 'Rota oferecida agora.'),
             icone: Icons.send),
@@ -1164,6 +1312,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
 
   Widget _secaoRotas() {
     final abertas = _rotas.where((r) => r.status == 'aceita' || r.status == 'em_andamento' || (r.status == 'ofertada' && r.ofertaSaiu)).toList();
+    final nAbertas = abertas.length + _rotasLoja.length;
     final lista = _verConcluidas ? _concluidas.reversed.toList() : abertas;
     Widget filtro(String t, bool sel, VoidCallback onTap) => Padding(
           padding: const EdgeInsets.only(left: 6),
@@ -1173,7 +1322,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       _tituloSecao(
         'Rotas de hoje',
         direita: Row(mainAxisSize: MainAxisSize.min, children: [
-          filtro('Abertas · ${abertas.length}', !_verConcluidas, () => setState(() => _verConcluidas = false)),
+          filtro('Abertas · $nAbertas', !_verConcluidas, () => setState(() => _verConcluidas = false)),
           filtro('Concluídas · ${_concluidas.length}', _verConcluidas, () => setState(() => _verConcluidas = true)),
         ]),
       ),
@@ -1183,7 +1332,27 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
               style: TextStyle(color: _suave)),
         ),
       for (final r in lista) _cartaoRota(r),
+      if (!_verConcluidas) for (final r in _rotasLoja) _cartaoRotaLoja(r),
     ]);
+  }
+
+  Widget _cartaoRotaLoja(_RotaLoja r) {
+    final entregues = r.paradas.where((p) => p.entregue).length;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: _cores.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _cores.outlineVariant)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _selo('rota da loja · ${r.status == 'em_andamento' ? '$entregues de ${r.paradas.length} entregues' : 'planejada'}', _tomNeutro),
+        const SizedBox(height: 10),
+        Text('${r.entregador ?? 'Entregador da loja'} · ${r.paradas.length} entrega${r.paradas.length == 1 ? '' : 's'}',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 10),
+        _botao('Abrir rota da loja', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RotasEntregaScreen())).then((_) => _carregar()),
+            icone: Icons.open_in_new),
+      ]),
+    );
   }
 
   Widget? _juntando() {
@@ -1275,7 +1444,15 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
                 final largo = c.maxWidth >= 1000;
                 final precisa = _precisaDeVoce();
                 final juntando = _juntando();
-                final topo = <Widget>[_cabecalho(), _faixaChuva(), const SizedBox(height: 16), _resumoDoDia(largo), const SizedBox(height: 20)];
+                final topo = <Widget>[
+                  _cabecalho(),
+                  _faixaChuva(),
+                  const SizedBox(height: 16),
+                  _resumoDoDia(largo),
+                  const SizedBox(height: 12),
+                  _linhaMotoboys(),
+                  const SizedBox(height: 20),
+                ];
                 if (!largo) {
                   return ListView(padding: const EdgeInsets.all(16), children: [
                     ...topo,
