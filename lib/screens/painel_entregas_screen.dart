@@ -109,6 +109,8 @@ class _Rota {
   final DateTime? posEm;
   final String? gpsFalha;
   final bool ofertaSaiu;
+  /// a oferta "saiu", mas nenhum motoboy podia receber (ex.: rota no cartão e ninguém com maquininha)
+  final bool ninguemRecebeu;
   final DateTime? ofertadaEm;
   final DateTime? saiuEm;
   final DateTime? finalizadaEm;
@@ -124,6 +126,7 @@ class _Rota {
       this.posEm,
       this.gpsFalha,
       this.ofertaSaiu = true,
+      this.ninguemRecebeu = false,
       this.ofertadaEm,
       this.saiuEm,
       this.finalizadaEm,
@@ -163,6 +166,7 @@ class _Rota {
         posEm: _dt(r['pos_em']),
         gpsFalha: (r['gps_falha'] as String?)?.split(':').first, // "estado:código:mensagem" → estado
         ofertaSaiu: r['ofertada_em'] != null,
+        ninguemRecebeu: r['status'] == 'ofertada' && r['ofertada_em'] != null && r['ofertas'] is List && (r['ofertas'] as List).isEmpty,
         ofertadaEm: _dt(r['ofertada_em']),
         saiuEm: _dt(r['saiu_em']),
         finalizadaEm: _dt(r['finalizada_em']),
@@ -248,7 +252,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
   // ── Dados ────────────────────────────────────────────────────────────────────────────────────────
   static const _selRota = 'id, status, valor_entregador, bonus, prazo_saida, chegou_loja_em, km_ida, google_ok, google_erro, '
       'ofertada_em, saiu_em, finalizada_em, pos_lat, pos_lon, pos_em, gps_falha, origem, '
-      'entregador:entregadores(nome, telefone), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, devolucao_pedida_em, devolucao_motivo, '
+      'entregador:entregadores(nome, telefone), ofertas:rota_ofertas(entregador_id), rota_pedidos(ordem, foto_path, contestado_em, contestacao_resolvida_em, devolucao_confirmada_em, devolucao_pedida_em, devolucao_motivo, '
       'pedido:pedidos(id, numero_sequencial, status, tipo_pagamento, status_pagamento, previsao_entrega_fim, mp:marketplace_pedidos(entrega_prevista_fim), '
       'cliente:clientes(nome, bairro, latitude, longitude)))';
 
@@ -1264,6 +1268,9 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
     if (r.status == 'sem_entregador') return ('sem motoboy', _tomProblema);
     if (r.calculando) return ('calculando a rota', _tomNeutro);
     if (!r.ofertaSaiu) return ('juntando pedidos', _tomNeutro);
+    if (r.ninguemRecebeu) {
+      return (r.pedidos.any((p) => p.cobraCartao) ? 'ninguém recebeu · nenhum motoboy com maquininha' : 'ninguém recebeu · nenhum motoboy pode pegar', _tomProblema);
+    }
     final min = r.ofertadaEm == null ? null : DateTime.now().difference(r.ofertadaEm!).inMinutes;
     return ('esperando aceite${min == null ? '' : ' · $min min'}', _tomEspera);
   }
