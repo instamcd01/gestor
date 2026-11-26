@@ -484,7 +484,7 @@ class VendaRepository {
     Map<String, double>? pagamentosDetalhados;
     if (metadata['pagamentosDetalhados'] != null) {
       pagamentosDetalhados = Map<String, dynamic>.from(metadata['pagamentosDetalhados'])
-          .map((k, v) => MapEntry(k, (v as num).toDouble()));
+          .map((k, v) => MapEntry(k, _numMeta(v)?.toDouble() ?? 0.0));
     }
 
     final marketplacePedidoRow = row['marketplace_pedidos'] as Map<String, dynamic>?;
@@ -507,10 +507,10 @@ class VendaRepository {
     // metadata.trocoPara ("pagará com R$ X") — sem derivar daqui o troco
     // não aparecia pro entregador em pedido do site pago em dinheiro.
     final valorTotal = (row['valor_total'] as num?)?.toDouble() ?? 0.0;
-    final trocoPara = (metadata['trocoPara'] as num?)?.toDouble();
-    final troco = (metadata['troco'] as num?)?.toDouble() ??
+    final trocoPara = _numMeta(metadata['trocoPara'])?.toDouble();
+    final troco = _numMeta(metadata['troco'])?.toDouble() ??
         (trocoPara != null && trocoPara > valorTotal ? trocoPara - valorTotal : 0.0);
-    final valorPago = (metadata['valorPago'] as num?)?.toDouble() ?? trocoPara ?? 0.0;
+    final valorPago = _numMeta(metadata['valorPago'])?.toDouble() ?? trocoPara ?? 0.0;
 
     return Venda(
       idVenda: row['id'] as String?,
@@ -522,8 +522,8 @@ class VendaRepository {
       cupomId: usoCupom?['cupom_id'] as String?,
       cupomCodigo: cupomCodigo,
       cupomRegra: cupomRegra,
-      saldoUsado: (metadata['saldoUsado'] as num?)?.toDouble() ?? 0.0,
-      petcashUsado: (metadata['petcashAplicado'] as num?)?.toDouble() ?? 0.0,
+      saldoUsado: _numMeta(metadata['saldoUsado'])?.toDouble() ?? 0.0,
+      petcashUsado: _numMeta(metadata['petcashAplicado'])?.toDouble() ?? 0.0,
       valorEntrega: (row['valor_entrega'] as num?)?.toDouble() ?? 0.0,
       entregaSelecionada: metadata['entregaSelecionada']?.toString() ?? '',
       valorTotal: valorTotal,
@@ -568,14 +568,14 @@ class VendaRepository {
       linkConfirmacaoEntrega: marketplacePedidoRow?['link_confirmacao_entrega']?.toString(),
       statusPagamento: row['status_pagamento']?.toString(),
       mercadoPagoPaymentTypeId: metadata['mercadoPagoPaymentTypeId']?.toString(),
-      mercadoPagoInstallments: (metadata['mercadoPagoInstallments'] as num?)?.toInt(),
+      mercadoPagoInstallments: _numMeta(metadata['mercadoPagoInstallments'])?.toInt(),
       mercadoPagoPaymentId: metadata['mercadoPagoPaymentId']?.toString(),
       mercadoPagoRefundId: metadata['mercadoPagoRefundId']?.toString(),
       mercadoPagoEstornadoEm: DateTime.tryParse(metadata['estornadoEm']?.toString() ?? '')?.toLocal(),
-      mercadoPagoTaxa: (metadata['mercadoPagoTaxa'] as num?)?.toDouble(),
-      estornoParcialPendente: (metadata['estornoParcialPendente'] as num?)?.toDouble(),
-      parcelasCartao: (metadata['parcelas'] as num?)?.toInt(),
-      jurosParcelamento: (metadata['jurosParcelamento'] as num?)?.toDouble(),
+      mercadoPagoTaxa: _numMeta(metadata['mercadoPagoTaxa'])?.toDouble(),
+      estornoParcialPendente: _numMeta(metadata['estornoParcialPendente'])?.toDouble(),
+      parcelasCartao: _numMeta(metadata['parcelas'])?.toInt(),
+      jurosParcelamento: _numMeta(metadata['jurosParcelamento'])?.toDouble(),
       custoEmbalagem: (row['custo_embalagem_valor'] as num?)?.toDouble(),
       taxaMaquininha: (row['taxa_maquininha_valor'] as num?)?.toDouble(),
       custoEntregaReal: (row['custo_entrega_valor'] as num?)?.toDouble(),
@@ -604,4 +604,13 @@ class VendaRepository {
       balcao: metadata['modalidade'] == 'balcao',
     );
   }
+}
+
+/// Número que vem do `metadata` (jsonb) de um pedido: pode ter sido gravado como número ou como texto
+/// ("100"). Um só pedido com texto derrubava a lista inteira de vendas ("String is not a subtype of num?",
+/// 26/11, pedido de teste com trocoPara "100").
+num? _numMeta(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v;
+  return num.tryParse(v.toString().trim().replaceAll(',', '.'));
 }
