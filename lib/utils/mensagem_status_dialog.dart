@@ -129,7 +129,7 @@ Future<_MensagemEntregue?> _escolherMensagemEntregue(BuildContext context, Venda
           subtitle: Text(
             'Depois que o cliente responder — pra todo cliente que responder, não só quem elogiou '
             '(o Google proíbe pedir de forma seletiva).'
-            '${anterior != null ? '\nJá pedida pra este cliente em ${formato.format(anterior)}.' : ''}',
+            '${anterior.abriu != null ? '\n⚠️ Já abriu o link do Google em ${formato.format(anterior.abriu!)} — provavelmente já avaliou.' : anterior.pedida != null ? '\nJá pedida pra este cliente em ${formato.format(anterior.pedida!)}.' : ''}',
           ),
           onTap: () => Navigator.pop(ctx, _MensagemEntregue.avaliacao),
         ),
@@ -180,22 +180,33 @@ Future<({String linkGoogle, String? dominio, String pet})?> _dadosAvaliacaoGoogl
   }
 }
 
-/// Último pedido de avaliação feito pra este cliente (qualquer pedido).
-Future<DateTime?> _ultimoPedidoAvaliacao(Venda venda) async {
+/// Último pedido de avaliação feito pra este cliente (qualquer pedido) e a
+/// última vez que ele abriu o link do Google (= provavelmente já avaliou).
+Future<({DateTime? pedida, DateTime? abriu})> _ultimoPedidoAvaliacao(Venda venda) async {
   final clienteId = venda.cliente.idCliente;
-  if (clienteId == null) return null;
+  if (clienteId == null) return (pedida: null, abriu: null);
   try {
     final data = await supabase
         .from('avaliacoes_google_pedidas')
-        .select('enviado_em')
+        .select('enviado_em, clicado_em')
         .eq('cliente_id', clienteId)
         .order('enviado_em', ascending: false)
-        .limit(1)
-        .maybeSingle();
-    return data == null ? null : DateTime.parse(data['enviado_em'] as String).toLocal();
+        .limit(20);
+    final linhas = (data as List).cast<Map<String, dynamic>>();
+    DateTime? abriu;
+    for (final l in linhas) {
+      final c = l['clicado_em'] as String?;
+      if (c == null) continue;
+      final d = DateTime.parse(c).toLocal();
+      if (abriu == null || d.isAfter(abriu)) abriu = d;
+    }
+    return (
+      pedida: linhas.isEmpty ? null : DateTime.parse(linhas.first['enviado_em'] as String).toLocal(),
+      abriu: abriu,
+    );
   } catch (e) {
     debugPrint('Erro ao ler pedidos de avaliação anteriores: $e');
-    return null;
+    return (pedida: null, abriu: null);
   }
 }
 
