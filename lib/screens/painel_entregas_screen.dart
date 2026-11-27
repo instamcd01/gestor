@@ -1197,12 +1197,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
               if (r.prazoSaida != null) 'era pra sair às ${_hora(r.prazoSaida!)}',
               if (r.valor != null) _moeda.format(r.valor),
             ].join(' · '),
-            [
-              _botao('Oferecer de novo +R\$ 2', () => _rpc('bonus${r.id}', 'entrega_oferta_bonus', {'p_rota_id': r.id, 'p_valor': 2},
-                  ok: 'Rota oferecida de novo com +R\$ 2.'), principal: true),
-              _botao('Oferecer só para…', () => _oferecerPara(r)),
-              _botao('Eu entrego', () => _cancelarRota(r)),
-            ],
+            _botoesSemMotoboy(r, principal: true),
             ultimo: u,
           ));
     }
@@ -1381,6 +1376,16 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
     );
   }
 
+  /// Rota em que ninguém aceitou: oferecer de novo (mesmo valor ou +R$ 2), só pra um motoboy, ou a loja entrega.
+  List<Widget> _botoesSemMotoboy(_Rota r, {bool principal = false}) => [
+        _botao('Oferecer de novo', () => _rpc('bonus${r.id}', 'entrega_oferta_bonus', {'p_rota_id': r.id, 'p_valor': 0},
+            ok: 'Rota oferecida de novo.'), principal: principal, icone: principal ? null : Icons.send),
+        _botao('Oferecer de novo +R\$ 2', () => _rpc('bonus${r.id}', 'entrega_oferta_bonus', {'p_rota_id': r.id, 'p_valor': 2},
+            ok: 'Rota oferecida de novo com +R\$ 2.'), icone: principal ? null : Icons.trending_up),
+        _botao('Oferecer só para…', () => _oferecerPara(r), icone: principal ? null : Icons.person_outline),
+        _botao('Eu entrego', () => _cancelarRota(r)),
+      ];
+
   Widget _cartaoRota(_Rota r) {
     final (rotulo, tom) = _status(r);
     final info = _linhaInfo(r);
@@ -1403,6 +1408,7 @@ class _PainelEntregasScreenState extends State<PainelEntregasScreen> {
       if (r.status == 'aceita') _botao('Aumentar valor', () => _escolherBonus(r), icone: Icons.trending_up),
       if (r.status == 'aceita') _botao('Trocar motoboy', () => _trocarMotoboy(r), icone: Icons.swap_horiz),
       if (esperando || r.status == 'aceita') _botao('Eu entrego', () => _cancelarRota(r)),
+      if (r.status == 'sem_entregador') ..._botoesSemMotoboy(r),
     ];
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
